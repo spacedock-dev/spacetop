@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-add-archived-tasks-view
 issue:
 pr:
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 ## Problem statement
