@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-autodiscover-docs-workflows
 issue:
 pr:
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 When `spacetop` is launched without an explicit `--workflow-dir` / `-w`, it should discover Spacedock workflow directories in the current repository and present them to the user. A single repository can host multiple workflows (for example `docs/spacetop-dev/` today, plus future product or research workflows), and the TUI must let the user pick which to open when more than one is found. When exactly one workflow is found, it opens automatically so routine single-workflow repos feel like "just run `spacetop`".
