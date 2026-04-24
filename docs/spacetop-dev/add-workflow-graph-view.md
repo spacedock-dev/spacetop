@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-add-workflow-graph-view
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 The main TUI page should visually present the workflow's stage graph — nodes for each stage with its defaults/properties (initial, terminal, gate, worktree, feedback-to), forward edges between stages, and a distinct edge style for feedback loops (e.g., `review --feedback-to--> implement`). The graph is derived from the parsed `WorkflowSnapshot`, not hard-coded, so it reflects whatever workflow is loaded.
