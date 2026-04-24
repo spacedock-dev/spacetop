@@ -1,16 +1,17 @@
 ---
 id: 006
 title: Show completed (archived) tasks in the TUI
-status: review
+status: done
 source: captain feedback after build-initial-tui-overview
 started: 2026-04-24T15:54:38Z
-completed:
-verdict:
+completed: 2026-04-24T17:26:08Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-add-archived-tasks-view
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-24T17:26:08Z
 ---
 
 ## Problem statement
