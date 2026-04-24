@@ -7,7 +7,7 @@ started: 2026-04-24T16:04:53Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-add-workflow-dir-short-flag
 issue:
 pr:
 ---
