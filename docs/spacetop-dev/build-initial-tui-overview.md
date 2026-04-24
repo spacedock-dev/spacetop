@@ -107,3 +107,16 @@ Planned the initial overview as a read-only ratatui layer over parser-owned work
 ### Summary
 
 Implemented the initial read-only ratatui overview over parser-owned `WorkflowSnapshot` data. The app now loads workflow state, derives stage counts, tracks in-memory selection and quit state, renders summary/list/preview panes, and runs through a crossterm terminal loop that restores terminal state on exit.
+
+## Stage Report: review
+
+- FAILED: DONE/SKIPPED/FAILED accounting must show whether AC-1 (TUI renders real markdown workflow state) is satisfied with fresh evidence.
+  REJECTED: fresh `cargo test` failed 14/16 because tests still expect `implement: 1`, while the real workflow file is now `status: review` after commit `490bde8`.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-2 (navigation does not mutate workflow files) is satisfied with fresh evidence.
+  `expect -c 'spawn cargo run -- --workflow-dir docs/spacetop-dev; ... send "q"'` exited 0, and `git diff -- docs/spacetop-dev` was empty before this report append.
+- FAILED: DONE/SKIPPED/FAILED accounting must show whether AC-3 (selected task preview exposes useful state) is satisfied with fresh evidence, plus `cargo fmt --check`, `cargo test`, and smoke/no-mutation results.
+  `cargo fmt --check` passed, smoke/no-mutation passed, but `cargo test` failed in `app::tests::loads_real_workflow_state_and_derives_stage_counts` and `ui::tests::renders_real_workflow_summary_task_list_and_preview`.
+
+### Summary
+
+Verdict: REJECTED. The implementation appears scoped to the expected app/UI/runtime files and the PTY smoke run did not mutate workflow files, but the automated evidence is not currently reproducible because the tests are coupled to mutable workflow status in `docs/spacetop-dev`.
