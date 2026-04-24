@@ -384,11 +384,25 @@ mod tests {
     fn parses_work_item_frontmatter_and_preserves_markdown_body() {
         let root = fixture_root();
         let allowed_statuses = stage_names(&root);
-        let item = parse_work_item(
-            &root.join("parse-spacedock-workflow-files.md"),
-            &allowed_statuses,
-        )
-        .expect("work item should parse");
+        let path = write_temp_markdown(
+            "work-item.md",
+            r#"---
+id: "002"
+title: Parse Spacedock Workflow Files
+status: implement
+source: commission seed
+score: 1.0
+worktree: .worktrees/spacedock-ensign-parse-spacedock-workflow-files
+---
+
+Read Spacedock workflow files into typed models.
+
+## Acceptance criteria
+
+Body text should be preserved without frontmatter.
+"#,
+        );
+        let item = parse_work_item(&path, &allowed_statuses).expect("work item should parse");
 
         assert_eq!(item.id, "002");
         assert_eq!(item.title, "Parse Spacedock Workflow Files");
@@ -411,10 +425,18 @@ mod tests {
 
         assert_eq!(snapshot.definition.stages.len(), 5);
         assert_eq!(snapshot.items.len(), 2);
-        assert!(snapshot
+        let allowed_statuses = snapshot
+            .definition
+            .stages
+            .iter()
+            .map(|stage| stage.name.as_str())
+            .collect::<Vec<_>>();
+        let parsed_task = snapshot
             .items
             .iter()
-            .any(|item| item.id == "002" && item.status == "implement"));
+            .find(|item| item.id == "002")
+            .expect("task 002 should be loaded");
+        assert!(allowed_statuses.contains(&parsed_task.status.as_str()));
     }
 
     #[test]

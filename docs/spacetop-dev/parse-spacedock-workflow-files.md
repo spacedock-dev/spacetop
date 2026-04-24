@@ -117,3 +117,16 @@ Implemented read-only Spacedock workflow parsing behind `src/parser.rs` with typ
 ### Summary
 
 Verdict: REJECTED. The parser implementation appears scoped and includes actionable error variants, but the branch cannot be approved while the claimed `cargo test` evidence no longer reproduces; the failing tests are coupled to workflow state that changed when this entity entered review.
+
+## Stage Report: implement
+
+- DONE: DONE/SKIPPED/FAILED accounting must show the tests no longer depend on the live mutable status of this workflow task.
+  Replaced the exact work item status test with a temp markdown fixture and changed the live directory assertion to require task `002` status membership in README-defined stages.
+- DONE: DONE/SKIPPED/FAILED accounting must show the original parser acceptance criteria remain covered.
+  README parsing, stable work item frontmatter/body parsing, directory loading, and parser error tests remain covered in `src/parser.rs`.
+- DONE: DONE/SKIPPED/FAILED accounting must show fresh `cargo fmt --check` and `cargo test` evidence after the fix.
+  `cargo fmt --check` passed; `cargo test` passed with 11 tests.
+
+### Summary
+
+Fixed the review rejection by removing test coupling to the mutable status of `docs/spacetop-dev/parse-spacedock-workflow-files.md`. The exact work item metadata/body assertions now use a stable temp fixture, while the live workflow directory test verifies item loading and allowed status validation without hard-coding the current stage.
