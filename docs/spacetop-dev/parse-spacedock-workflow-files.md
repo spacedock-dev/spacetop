@@ -104,3 +104,16 @@ Planned the parser work as a read-only Rust domain/parser layer that can be test
 ### Summary
 
 Implemented read-only Spacedock workflow parsing behind `src/parser.rs` with typed domain models in `src/domain/mod.rs`. The directory loader builds a `WorkflowSnapshot` from top-level workflow markdown while ignoring README and subdirectory workflow support files; no TUI rendering or workflow-state writes were added.
+
+## Stage Report: review
+
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-1 (workflow README stage metadata parsing) is satisfied with fresh evidence.
+  `src/parser.rs` defines `parse_workflow_readme`; fresh `cargo test` showed `parser::tests::parses_workflow_readme_stage_metadata_with_defaults_and_overrides ... ok`.
+- FAILED: DONE/SKIPPED/FAILED accounting must show whether AC-2 (work item frontmatter/body parsing) is satisfied with fresh evidence.
+  Fresh `cargo test` failed because parser tests still expect this task's mutable workflow status to be `implement`, but the review transition commit changed it to `review`.
+- FAILED: DONE/SKIPPED/FAILED accounting must show whether AC-3 (actionable parser errors) is satisfied with fresh evidence, plus `cargo fmt --check` and `cargo test` results.
+  Error-path tests passed and `cargo fmt --check` passed, but fresh `cargo test` failed overall: 9 passed, 2 failed (`parses_work_item_frontmatter_and_preserves_markdown_body`, `loads_workflow_snapshot_from_directory_ignoring_mods_and_archive`).
+
+### Summary
+
+Verdict: REJECTED. The parser implementation appears scoped and includes actionable error variants, but the branch cannot be approved while the claimed `cargo test` evidence no longer reproduces; the failing tests are coupled to workflow state that changed when this entity entered review.
