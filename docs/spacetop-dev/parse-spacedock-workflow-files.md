@@ -91,3 +91,16 @@ Ownership boundary: the implementation worker should not modify `docs/spacetop-d
 ### Summary
 
 Planned the parser work as a read-only Rust domain/parser layer that can be tested without a terminal backend. The plan accounts for the current repository state, where the Rust crate has not been scaffolded yet, and keeps later TUI work dependent on a typed `WorkflowSnapshot` rather than markdown parsing in rendering code.
+
+## Stage Report: implement
+
+- DONE: DONE/SKIPPED/FAILED accounting must show workflow README frontmatter is parsed into typed stage metadata with defaults/overrides.
+  Added `parse_workflow_readme` and `WorkflowDefinition`/`StageDefinition`; tests assert `docs/spacetop-dev/README.md` stages, initial/terminal flags, review gate metadata, and default concurrency.
+- DONE: DONE/SKIPPED/FAILED accounting must show work item frontmatter and markdown body are parsed into typed task records.
+  Added `parse_work_item` and `WorkItem`; tests assert task id/title/status/source/score/worktree fields and body preservation.
+- DONE: DONE/SKIPPED/FAILED accounting must show invalid/malformed files produce actionable errors and `cargo fmt --check` / `cargo test` evidence.
+  Tests cover missing frontmatter, malformed YAML, missing required fields, and unknown status; `cargo fmt --check` passed and `cargo test` passed with 11 tests.
+
+### Summary
+
+Implemented read-only Spacedock workflow parsing behind `src/parser.rs` with typed domain models in `src/domain/mod.rs`. The directory loader builds a `WorkflowSnapshot` from top-level workflow markdown while ignoring README and subdirectory workflow support files; no TUI rendering or workflow-state writes were added.
