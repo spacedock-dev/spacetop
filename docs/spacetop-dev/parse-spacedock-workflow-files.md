@@ -1,9 +1,9 @@
 ---
 id: 002
 title: Parse Spacedock Workflow Files
-status: design
+status: plan
 source: commission seed
-started:
+started: 2026-04-24T14:30:53Z
 completed:
 verdict:
 score: 1.0
