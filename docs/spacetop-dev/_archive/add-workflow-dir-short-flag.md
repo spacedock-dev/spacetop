@@ -1,16 +1,17 @@
 ---
 id: 004
 title: Add short `-w` alias for `--workflow-dir`
-status: review
+status: done
 source: captain feedback after build-initial-tui-overview
 started: 2026-04-24T16:04:53Z
-completed:
-verdict:
+completed: 2026-04-24T16:31:57Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-add-workflow-dir-short-flag
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-24T16:31:57Z
 ---
 
 Expose `-w` as a short alias for the existing `--workflow-dir` CLI flag so the common invocation (`spacetop -w docs/spacetop-dev`) is ergonomic. Scope is strictly the CLI surface; no behavior change.
