@@ -1,7 +1,7 @@
 ---
 id: 002
 title: Parse Spacedock Workflow Files
-status: implement
+status: review
 source: commission seed
 started: 2026-04-24T14:30:53Z
 completed:
@@ -92,3 +92,55 @@ Ownership boundary: the implementation worker should not modify `docs/spacetop-d
 ### Summary
 
 Planned the parser work as a read-only Rust domain/parser layer that can be tested without a terminal backend. The plan accounts for the current repository state, where the Rust crate has not been scaffolded yet, and keeps later TUI work dependent on a typed `WorkflowSnapshot` rather than markdown parsing in rendering code.
+
+## Stage Report: implement
+
+- DONE: DONE/SKIPPED/FAILED accounting must show workflow README frontmatter is parsed into typed stage metadata with defaults/overrides.
+  Added `parse_workflow_readme` and `WorkflowDefinition`/`StageDefinition`; tests assert `docs/spacetop-dev/README.md` stages, initial/terminal flags, review gate metadata, and default concurrency.
+- DONE: DONE/SKIPPED/FAILED accounting must show work item frontmatter and markdown body are parsed into typed task records.
+  Added `parse_work_item` and `WorkItem`; tests assert task id/title/status/source/score/worktree fields and body preservation.
+- DONE: DONE/SKIPPED/FAILED accounting must show invalid/malformed files produce actionable errors and `cargo fmt --check` / `cargo test` evidence.
+  Tests cover missing frontmatter, malformed YAML, missing required fields, and unknown status; `cargo fmt --check` passed and `cargo test` passed with 11 tests.
+
+### Summary
+
+Implemented read-only Spacedock workflow parsing behind `src/parser.rs` with typed domain models in `src/domain/mod.rs`. The directory loader builds a `WorkflowSnapshot` from top-level workflow markdown while ignoring README and subdirectory workflow support files; no TUI rendering or workflow-state writes were added.
+
+## Stage Report: review
+
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-1 (workflow README stage metadata parsing) is satisfied with fresh evidence.
+  `src/parser.rs` defines `parse_workflow_readme`; fresh `cargo test` showed `parser::tests::parses_workflow_readme_stage_metadata_with_defaults_and_overrides ... ok`.
+- FAILED: DONE/SKIPPED/FAILED accounting must show whether AC-2 (work item frontmatter/body parsing) is satisfied with fresh evidence.
+  Fresh `cargo test` failed because parser tests still expect this task's mutable workflow status to be `implement`, but the review transition commit changed it to `review`.
+- FAILED: DONE/SKIPPED/FAILED accounting must show whether AC-3 (actionable parser errors) is satisfied with fresh evidence, plus `cargo fmt --check` and `cargo test` results.
+  Error-path tests passed and `cargo fmt --check` passed, but fresh `cargo test` failed overall: 9 passed, 2 failed (`parses_work_item_frontmatter_and_preserves_markdown_body`, `loads_workflow_snapshot_from_directory_ignoring_mods_and_archive`).
+
+### Summary
+
+Verdict: REJECTED. The parser implementation appears scoped and includes actionable error variants, but the branch cannot be approved while the claimed `cargo test` evidence no longer reproduces; the failing tests are coupled to workflow state that changed when this entity entered review.
+
+## Stage Report: implement
+
+- DONE: DONE/SKIPPED/FAILED accounting must show the tests no longer depend on the live mutable status of this workflow task.
+  Replaced the exact work item status test with a temp markdown fixture and changed the live directory assertion to require task `002` status membership in README-defined stages.
+- DONE: DONE/SKIPPED/FAILED accounting must show the original parser acceptance criteria remain covered.
+  README parsing, stable work item frontmatter/body parsing, directory loading, and parser error tests remain covered in `src/parser.rs`.
+- DONE: DONE/SKIPPED/FAILED accounting must show fresh `cargo fmt --check` and `cargo test` evidence after the fix.
+  `cargo fmt --check` passed; `cargo test` passed with 11 tests.
+
+### Summary
+
+Fixed the review rejection by removing test coupling to the mutable status of `docs/spacetop-dev/parse-spacedock-workflow-files.md`. The exact work item metadata/body assertions now use a stable temp fixture, while the live workflow directory test verifies item loading and allowed status validation without hard-coding the current stage.
+
+## Stage Report: review (cycle 2)
+
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-1 (workflow README stage metadata parsing) is satisfied with fresh evidence.
+  `parse_workflow_readme` maps README stage defaults/overrides into typed stages; fresh `cargo test` passed `parser::tests::parses_workflow_readme_stage_metadata_with_defaults_and_overrides`.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-2 (work item frontmatter/body parsing) is satisfied with fresh evidence, including the mutable-status regression fix.
+  `parse_work_item` parses typed frontmatter and body from a stable temp fixture, while `load_workflow_dir` now asserts live task `002` status is any README-defined stage instead of hard-coding `implement`; fresh `cargo test` passed all 11 tests.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-3 (actionable parser errors) is satisfied with fresh evidence, plus `cargo fmt --check` and `cargo test` results.
+  Error tests cover missing frontmatter, malformed YAML, missing required field, and unknown status messages; `cargo fmt --check` passed and `cargo test` passed with 11 tests.
+
+### Summary
+
+Verdict: PASSED. The feedback fix resolves the rejected-review regression without weakening the parser acceptance coverage, and the implementation remains read-only and scoped to typed workflow README/work item parsing with actionable error messages.
