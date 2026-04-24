@@ -1,16 +1,17 @@
 ---
 id: 005
 title: Auto-discover Spacedock workflows under `docs/`
-status: review
+status: done
 source: captain feedback after build-initial-tui-overview
 started: 2026-04-24T16:06:48Z
-completed:
-verdict:
+completed: 2026-04-24T17:01:17Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-autodiscover-docs-workflows
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-24T17:01:17Z
 ---
 
 When `spacetop` is launched without an explicit `--workflow-dir` / `-w`, it should discover Spacedock workflow directories in the current repository and present them to the user. A single repository can host multiple workflows (for example `docs/spacetop-dev/` today, plus future product or research workflows), and the TUI must let the user pick which to open when more than one is found. When exactly one workflow is found, it opens automatically so routine single-workflow repos feel like "just run `spacetop`".
