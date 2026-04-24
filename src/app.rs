@@ -29,6 +29,23 @@ pub struct OverviewState {
     pub archive_loaded: bool,
     pub archive_error: Option<String>,
     pub selected_index_archived: usize,
+    pub last_refresh_error: Option<String>,
+}
+
+/// Derive a stable slug from a work-item path. Prefer the file stem; when the
+/// item lives in a folder-form `{slug}/index.md`, fall back to the parent
+/// directory name so reload selection-preservation still matches across the
+/// legacy and folder layouts.
+fn slug_of(path: &Path) -> Option<String> {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned());
+    match stem.as_deref() {
+        Some("index") => path
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|s| s.to_string_lossy().into_owned()),
+        Some(_) => stem,
+        None => None,
+    }
 }
 
 impl OverviewState {
@@ -53,6 +70,7 @@ impl OverviewState {
             archive_loaded: false,
             archive_error: None,
             selected_index_archived: 0,
+            last_refresh_error: None,
         }
     }
 
@@ -71,7 +89,79 @@ impl OverviewState {
             archive_loaded: false,
             archive_error: None,
             selected_index_archived: 0,
+            last_refresh_error: None,
         }
+    }
+
+    /// Deterministic reload seam: swap the active snapshot in-place while
+    /// preserving selection by slug (file stem) with a clamped-index fallback.
+    /// Leaves `view_scope` and the archived-view state untouched — the
+    /// watcher-driven refresh only re-parses active items; archived items are
+    /// invalidated so the next scope toggle reloads them.
+    pub fn reload_from_snapshot(&mut self, snapshot: WorkflowSnapshot) {
+        let prior_slug = self
+            .snapshot
+            .items
+            .get(self.selected_index)
+            .and_then(|item| slug_of(&item.path));
+
+        self.snapshot = snapshot;
+        // Invalidate archive view — a watcher-driven reload may have touched
+        // `_archive/` too. Dropping the cached list forces a rescan the next
+        // time the user toggles to archived scope.
+        self.archived_items.clear();
+        self.archive_loaded = false;
+        self.archive_error = None;
+
+        let len = self.snapshot.items.len();
+        if len == 0 {
+            self.selected_index = 0;
+        } else if let Some(slug) = prior_slug {
+            if let Some(pos) = self
+                .snapshot
+                .items
+                .iter()
+                .position(|item| slug_of(&item.path).as_deref() == Some(slug.as_str()))
+            {
+                self.selected_index = pos;
+            } else if self.selected_index >= len {
+                self.selected_index = len - 1;
+            }
+        } else if self.selected_index >= len {
+            self.selected_index = len - 1;
+        }
+
+        // Clamp archived selection too (archived list is now empty).
+        if self.view_scope == ViewScope::Archived {
+            self.selected_index_archived = 0;
+        }
+
+        self.last_refresh_error = None;
+    }
+
+    /// FS-touching reload wrapper. On success, delegates to
+    /// `reload_from_snapshot`. On parse error, retains the prior snapshot
+    /// and records the error in `last_refresh_error`.
+    pub fn reload(&mut self) -> Result<(), ParseError> {
+        match load_workflow_dir(&self.workflow_dir) {
+            Ok(snapshot) => {
+                self.reload_from_snapshot(snapshot);
+                Ok(())
+            }
+            Err(err) => {
+                let msg = err.to_string();
+                self.last_refresh_error = Some(msg);
+                Err(err)
+            }
+        }
+    }
+
+    pub fn last_refresh_error(&self) -> Option<&str> {
+        self.last_refresh_error.as_deref()
+    }
+
+    pub fn set_refresh_error(&mut self, message: String) {
+        self.last_refresh_error = Some(message);
     }
 
     pub fn workflow_dir(&self) -> &Path {
@@ -292,6 +382,7 @@ impl PickerState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum AppMode {
     Picker(PickerState),
     Overview(OverviewState),
@@ -401,6 +492,32 @@ impl App {
 
     pub fn archive_error(&self) -> Option<&str> {
         self.overview().archive_error()
+    }
+
+    pub fn last_refresh_error(&self) -> Option<&str> {
+        match &self.mode {
+            AppMode::Overview(state) => state.last_refresh_error(),
+            AppMode::Picker(_) => None,
+        }
+    }
+
+    pub fn set_refresh_error(&mut self, message: String) {
+        if let AppMode::Overview(state) = &mut self.mode {
+            state.set_refresh_error(message);
+        }
+    }
+
+    pub fn reload_from_snapshot(&mut self, snapshot: WorkflowSnapshot) {
+        if let AppMode::Overview(state) = &mut self.mode {
+            state.reload_from_snapshot(snapshot);
+        }
+    }
+
+    pub fn reload(&mut self) -> Result<(), ParseError> {
+        match &mut self.mode {
+            AppMode::Overview(state) => state.reload(),
+            AppMode::Picker(_) => Ok(()),
+        }
     }
 
     pub fn should_quit(&self) -> bool {
@@ -758,5 +875,207 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
+        WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: PathBuf::from("workflow"),
+                stages: vec![StageDefinition {
+                    name: "plan".to_string(),
+                    initial: true,
+                    terminal: false,
+                    gate: false,
+                    fresh: false,
+                    feedback_to: None,
+                    worktree: false,
+                    concurrency: None,
+                }],
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+            },
+            items: paths
+                .iter()
+                .enumerate()
+                .map(|(index, p)| WorkItem {
+                    path: PathBuf::from(p),
+                    id: format!("{index:03}"),
+                    title: format!("Task {p}"),
+                    status: "plan".to_string(),
+                    source: None,
+                    started: None,
+                    completed: None,
+                    verdict: None,
+                    score: None,
+                    worktree: None,
+                    issue: None,
+                    pr: None,
+                    body: String::new(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn reload_from_snapshot_preserves_selection_by_slug() {
+        let mut app = App::from_snapshot(
+            PathBuf::from("workflow"),
+            snapshot_with_paths(&["workflow/alpha.md", "workflow/beta.md", "workflow/gamma.md"]),
+        );
+        app.handle_key(key(KeyCode::Down)); // select beta (index 1)
+        assert_eq!(
+            app.selected_item().map(|i| i.path.clone()),
+            Some(PathBuf::from("workflow/beta.md"))
+        );
+
+        // Reorder: beta now at index 1 still, but amid different neighbors.
+        app.reload_from_snapshot(snapshot_with_paths(&[
+            "workflow/gamma.md",
+            "workflow/beta.md",
+            "workflow/delta.md",
+        ]));
+
+        assert_eq!(app.selected_index(), 1);
+        assert_eq!(
+            app.selected_item().map(|i| i.path.clone()),
+            Some(PathBuf::from("workflow/beta.md"))
+        );
+    }
+
+    #[test]
+    fn reload_from_snapshot_preserves_selection_by_slug_at_new_index() {
+        let mut app = App::from_snapshot(
+            PathBuf::from("workflow"),
+            snapshot_with_paths(&["workflow/alpha.md", "workflow/beta.md", "workflow/gamma.md"]),
+        );
+        app.handle_key(key(KeyCode::Down)); // beta at index 1
+
+        // beta moved to index 2.
+        app.reload_from_snapshot(snapshot_with_paths(&[
+            "workflow/alpha.md",
+            "workflow/gamma.md",
+            "workflow/beta.md",
+        ]));
+
+        assert_eq!(app.selected_index(), 2);
+    }
+
+    #[test]
+    fn reload_from_snapshot_clamps_when_slug_missing() {
+        let mut app = App::from_snapshot(
+            PathBuf::from("workflow"),
+            snapshot_with_paths(&["workflow/alpha.md", "workflow/beta.md", "workflow/gamma.md"]),
+        );
+        app.handle_key(key(KeyCode::End)); // select gamma (index 2)
+        assert_eq!(app.selected_index(), 2);
+
+        // gamma is gone, snapshot shrinks to 2 items.
+        app.reload_from_snapshot(snapshot_with_paths(&[
+            "workflow/alpha.md",
+            "workflow/beta.md",
+        ]));
+
+        assert_eq!(app.selected_index(), 1);
+    }
+
+    #[test]
+    fn reload_from_snapshot_empty_clears_selection() {
+        let mut app = App::from_snapshot(
+            PathBuf::from("workflow"),
+            snapshot_with_paths(&["workflow/alpha.md", "workflow/beta.md"]),
+        );
+        app.handle_key(key(KeyCode::Down));
+        app.reload_from_snapshot(snapshot_with_paths(&[]));
+        assert_eq!(app.selected_index(), 0);
+        assert!(app.selected_item().is_none());
+    }
+
+    #[test]
+    fn reload_from_snapshot_clears_prior_error() {
+        let mut app = App::from_snapshot(
+            PathBuf::from("workflow"),
+            snapshot_with_paths(&["workflow/alpha.md"]),
+        );
+        app.set_refresh_error("boom".into());
+        assert_eq!(app.last_refresh_error(), Some("boom"));
+
+        app.reload_from_snapshot(snapshot_with_paths(&["workflow/alpha.md"]));
+        assert_eq!(app.last_refresh_error(), None);
+    }
+
+    #[test]
+    fn reload_from_snapshot_preserves_view_scope() {
+        use crate::domain::WorkItem;
+        let mut overview = super::OverviewState::from_snapshot(
+            PathBuf::from("workflow"),
+            snapshot_with_paths(&["workflow/alpha.md"]),
+        );
+        // Force into archived scope with synthetic archived items.
+        overview.view_scope = ViewScope::Archived;
+        overview.archived_items = vec![WorkItem {
+            path: PathBuf::from("workflow/_archive/old.md"),
+            id: "old".into(),
+            title: "Old".into(),
+            status: "done".into(),
+            source: None,
+            started: None,
+            completed: None,
+            verdict: None,
+            score: None,
+            worktree: None,
+            issue: None,
+            pr: None,
+            body: String::new(),
+        }];
+        overview.archive_loaded = true;
+
+        overview.reload_from_snapshot(snapshot_with_paths(&[
+            "workflow/alpha.md",
+            "workflow/beta.md",
+        ]));
+
+        // View scope preserved; archived cache invalidated so the next
+        // toggle will rescan.
+        assert_eq!(overview.view_scope, ViewScope::Archived);
+        assert!(!overview.archive_loaded);
+        assert!(overview.archived_items.is_empty());
+    }
+
+    #[test]
+    fn reload_retains_prior_snapshot_on_parse_error() {
+        // Minimal real workflow fixture in a tempdir.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::write(
+            root.join("README.md"),
+            "---\nstages:\n  states:\n    - name: plan\n      initial: true\n---\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("task-one.md"),
+            "---\nid: 001\ntitle: One\nstatus: plan\n---\n\nbody\n",
+        )
+        .unwrap();
+
+        let mut app = App::load(root.to_path_buf()).expect("load ok");
+        let prior_snapshot = app.snapshot().clone();
+
+        // Poison one task file: invalid YAML frontmatter.
+        std::fs::write(
+            root.join("task-one.md"),
+            "---\nid: [not valid yaml\nstatus\n---\nbody\n",
+        )
+        .unwrap();
+
+        let result = app.reload();
+        assert!(result.is_err(), "parse should fail");
+        assert_eq!(
+            app.snapshot(),
+            &prior_snapshot,
+            "prior snapshot retained on parse error"
+        );
+        assert!(app.last_refresh_error().is_some());
     }
 }

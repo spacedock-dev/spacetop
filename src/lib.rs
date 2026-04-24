@@ -4,13 +4,15 @@ pub mod discovery;
 pub mod domain;
 pub mod parser;
 pub mod ui;
+pub mod watcher;
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
-use app::App;
+use app::{App, AppMode};
 use cli::Cli;
 use crossterm::{
     event::{self, Event},
@@ -18,6 +20,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use watcher::{WatcherBackend, WatcherConfig, WorkflowWatcher};
 
 /// Result of resolving a CLI invocation into a launch decision, prior to any
 /// TUI startup. Exposed so integration tests can assert zero/one/many and the
@@ -82,6 +85,15 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("failed to initialize terminal")?;
 
+    // Start the filesystem watcher against the current overview's workflow
+    // dir. If we're in picker mode there's no single workflow to watch yet;
+    // the watcher is re-initialized once the user enters an overview via
+    // the picker.
+    let mut watcher_state: Option<(
+        WorkflowWatcher,
+        std::sync::mpsc::Receiver<watcher::RefreshSignal>,
+    )> = start_watcher_for(&mut app);
+
     loop {
         terminal
             .draw(|frame| ui::render(frame, &app))
@@ -91,18 +103,69 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
             break;
         }
 
-        if event::poll(Duration::from_millis(250)).context("failed to poll terminal events")? {
+        // 1. Drain any pending refresh signals.
+        if let Some((_, ref rx)) = watcher_state {
+            loop {
+                match rx.try_recv() {
+                    Ok(_) => {
+                        let _ = app.reload();
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        app.set_refresh_error("watcher: disconnected".into());
+                        watcher_state = None;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 2. Short crossterm poll.
+        let prior_mode_was_picker = matches!(app.mode(), AppMode::Picker(_));
+        if event::poll(Duration::from_millis(100)).context("failed to poll terminal events")? {
             if let Event::Key(key) = event::read().context("failed to read terminal event")? {
                 app.handle_key(key);
             }
         }
+
+        // If we just transitioned from picker to overview, spin up the
+        // watcher on the selected workflow dir.
+        if prior_mode_was_picker && matches!(app.mode(), AppMode::Overview(_)) {
+            watcher_state = start_watcher_for(&mut app);
+        }
     }
+
+    drop(watcher_state);
 
     terminal
         .show_cursor()
         .context("failed to restore terminal cursor")?;
 
     Ok(())
+}
+
+fn start_watcher_for(
+    app: &mut App,
+) -> Option<(
+    WorkflowWatcher,
+    std::sync::mpsc::Receiver<watcher::RefreshSignal>,
+)> {
+    let AppMode::Overview(_) = app.mode() else {
+        return None;
+    };
+    let dir = app.workflow_dir().to_path_buf();
+    match WorkflowWatcher::start(&dir, WatcherConfig::default()) {
+        Ok((w, rx)) => {
+            if w.backend() == WatcherBackend::Poll {
+                app.set_refresh_error("watcher: polling fallback".into());
+            }
+            Some((w, rx))
+        }
+        Err(err) => {
+            app.set_refresh_error(format!("watcher: unavailable ({err})"));
+            None
+        }
+    }
 }
 
 struct TerminalRestore;
