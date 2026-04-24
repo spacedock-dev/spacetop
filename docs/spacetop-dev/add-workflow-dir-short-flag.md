@@ -1,7 +1,7 @@
 ---
 id: 004
 title: Add short `-w` alias for `--workflow-dir`
-status: implement
+status: review
 source: captain feedback after build-initial-tui-overview
 started: 2026-04-24T16:04:53Z
 completed:
