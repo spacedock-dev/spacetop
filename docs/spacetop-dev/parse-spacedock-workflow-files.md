@@ -130,3 +130,16 @@ Verdict: REJECTED. The parser implementation appears scoped and includes actiona
 ### Summary
 
 Fixed the review rejection by removing test coupling to the mutable status of `docs/spacetop-dev/parse-spacedock-workflow-files.md`. The exact work item metadata/body assertions now use a stable temp fixture, while the live workflow directory test verifies item loading and allowed status validation without hard-coding the current stage.
+
+## Stage Report: review (cycle 2)
+
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-1 (workflow README stage metadata parsing) is satisfied with fresh evidence.
+  `parse_workflow_readme` maps README stage defaults/overrides into typed stages; fresh `cargo test` passed `parser::tests::parses_workflow_readme_stage_metadata_with_defaults_and_overrides`.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-2 (work item frontmatter/body parsing) is satisfied with fresh evidence, including the mutable-status regression fix.
+  `parse_work_item` parses typed frontmatter and body from a stable temp fixture, while `load_workflow_dir` now asserts live task `002` status is any README-defined stage instead of hard-coding `implement`; fresh `cargo test` passed all 11 tests.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-3 (actionable parser errors) is satisfied with fresh evidence, plus `cargo fmt --check` and `cargo test` results.
+  Error tests cover missing frontmatter, malformed YAML, missing required field, and unknown status messages; `cargo fmt --check` passed and `cargo test` passed with 11 tests.
+
+### Summary
+
+Verdict: PASSED. The feedback fix resolves the rejected-review regression without weakening the parser acceptance coverage, and the implementation remains read-only and scoped to typed workflow README/work item parsing with actionable error messages.
