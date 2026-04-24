@@ -12,6 +12,10 @@ issue:
 pr:
 ---
 
+### Feedback Cycles
+
+- **cycle 1 (2026-04-24, review → implement):** Drop deadlock in `WorkflowWatcher`. The debounce thread blocks at the outer `raw_rx.recv()` (`src/watcher.rs:204`); the only live `raw_tx` clone is held by the `event_handler` closure inside `_watcher`, which is a struct field dropped only AFTER `Drop::drop` returns. `Drop::drop`'s `handle.join()` therefore waits forever whenever the watched directory is quiet. Reproduced: `watcher::tests::start_real_backend_against_tempdir` hangs past 30 s, making full `cargo test` hang. Suggested fix: either `recv_timeout` on the outer loop with a shutdown `try_recv` per iteration, or restructure so `_watcher` (or its sender) is dropped/taken before `handle.join()` runs.
+
 ## Problem statement
 
 The SpaceTop TUI currently loads `WorkflowSnapshot` exactly once, inside
