@@ -586,3 +586,19 @@ Verdict: REJECTED. Required fix: the debounce thread must observe shutdown witho
 ### Summary
 
 Replaced the deadlocked outer `raw_rx.recv()` in `debounce_loop` with a bounded `recv_timeout` + shutdown poll (`SHUTDOWN_POLL_INTERVAL = 100 ms`), so `Drop::drop` no longer needs the backend's `_watcher` field to be torn down before `handle.join()` returns. Added `drop_returns_promptly_on_quiet_tempdir` as the regression guard — it spins a real `WorkflowWatcher` against an empty tempdir, drops it on a helper thread, and fails the test (rather than hanging the suite) if the join doesn't return within 2 s. Three pre-existing test failures in `app`/`ui` that hard-code expectations about the worktree's own workflow state are unrelated to the watcher and were verified to fail on the parent commit before this patch.
+
+## Stage Report: review (cycle 2)
+
+- DONE: `cargo test` on the worktree branch completes in bounded time; new regression test is present and asserts a real timeout bound; cycle-1 hang is gone.
+  `cargo test --tests` finishes in 0.35s wallclock (timed via `time`); `watcher::tests::drop_returns_promptly_on_quiet_tempdir` (`src/watcher.rs:421-439`) spawns the watcher drop on a helper thread and panics via `done_rx.recv_timeout(Duration::from_secs(2))` rather than `.join()` — a real bounded assertion. Cycle-1 hang in `start_real_backend_against_tempdir` no longer reproduces; both real-backend tests now pass.
+- DONE: AC-1..AC-6 verification evidence still holds, no regressions in the existing tests, clippy errors verified pre-existing on main.
+  All AC-N evidence from cycle-1 review still passes (deterministic `reload_from_snapshot` + slug-preserve/clamp/empty/error-clear/view-scope tests, `reload_retains_prior_snapshot_on_parse_error`, integration `tests/watcher_fs.rs` `#[ignore]`'d). 73 passed; 3 pre-existing fixture-drift failures (`app::tests::loads_real_workflow_state_and_derives_stage_counts`, `ui::tests::renders_real_workflow_summary_task_list_and_preview`, `ui::graph::tests::header_row_contains_scope_label_and_workflow_path`) all hardcode current-workflow content (`"Build Initial TUI Overview"`, `"Build the first read-only"`, `spacetop-dev` path) — same class as called out at implement. `cargo clippy --all-targets -- -D warnings` reports only `src/parser.rs:319 unnecessary_lazy_evaluations`; verified pre-existing via `git show main:src/parser.rs` showing the identical `then(|| text)` form.
+- DONE: Diff confined to plan-owned files.
+  `git diff main...HEAD --stat`: only `Cargo.lock`, `Cargo.toml`, `src/app.rs`, `src/lib.rs`, `src/watcher.rs`, `tests/watcher_fs.rs`, and the entity file. No drive-by changes.
+- DONE: Drop-safety code-review of `src/watcher.rs` diff. The fix is correct: the outer wait now uses `recv_timeout(SHUTDOWN_POLL_INTERVAL)` (100 ms) plus a per-tick `shutdown_rx.try_recv()` (lines 215-227), and the inner burst loop already had `try_recv` after each event (line 255). Even when the backend's `_watcher` keeps a live `raw_tx` clone alive past `Drop::drop`'s `handle.join()`, the loop returns within ~100 ms of the shutdown send. The disconnect-path returns are also intact for non-Drop teardowns.
+- DONE: Recommend a verdict.
+  Verdict: PASSED. The cycle-1 deadlock is genuinely gone, the regression test asserts a real 2s bound (not `.join().unwrap()`), no new defects detected in the diff, and the surviving test/clippy noise is independently confirmed pre-existing on main.
+
+### Summary
+
+Cycle-2 fix lands the right primitive: bounded `recv_timeout` + shutdown poll on the outer wait removes the deadlock without depending on `_watcher` teardown ordering. The regression test runs the actual deadlock scenario (real backend, quiet tempdir, drop in helper thread, fail on 2s timeout) — a proper bounded assertion. Full `cargo test` completes in 0.35s with no hangs; the only failures and the lone clippy error are independently verified pre-existing on main. Recommending PASSED.
