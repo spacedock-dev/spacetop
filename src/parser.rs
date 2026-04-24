@@ -98,6 +98,79 @@ pub fn parse_work_item(path: &Path, _allowed_statuses: &[String]) -> Result<Work
     parse_work_item_contents(path, &contents, _allowed_statuses)
 }
 
+/// Return the `_archive/` directory for the workflow.
+pub fn archive_dir(workflow_dir: &Path) -> std::path::PathBuf {
+    workflow_dir.join("_archive")
+}
+
+/// Load archived work items from `_archive/*.md` and `_archive/*/index.md`.
+///
+/// - Missing `_archive/` directory returns `Ok(Vec::new())`.
+/// - Folder entities are picked up via `_archive/<dir>/index.md`; nested
+///   sibling markdown files inside a folder entity are ignored.
+/// - Results are sorted newest-first by `completed` timestamp. Items with
+///   no `completed` timestamp sort last; within that group, filename
+///   ordering (ascending) is used as a deterministic tiebreaker.
+pub fn load_archived_items(
+    workflow_dir: &Path,
+    allowed_statuses: &[String],
+) -> Result<Vec<WorkItem>, ParseError> {
+    let archive_root = archive_dir(workflow_dir);
+    if !archive_root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let path_label = display_path(&archive_root);
+    let mut item_paths = Vec::new();
+    for entry in fs::read_dir(&archive_root).map_err(|source| ParseError::ReadDirectory {
+        path: path_label.clone(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| ParseError::ReadDirectory {
+            path: path_label.clone(),
+            source,
+        })?;
+        let entry_path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|source| ParseError::ReadDirectory {
+                path: path_label.clone(),
+                source,
+            })?;
+        if file_type.is_dir() {
+            let index_path = entry_path.join("index.md");
+            if index_path.is_file() {
+                item_paths.push(index_path);
+            }
+            continue;
+        }
+        if entry_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            == Some("md")
+        {
+            item_paths.push(entry_path);
+        }
+    }
+    item_paths.sort();
+
+    let mut items = Vec::with_capacity(item_paths.len());
+    for item_path in item_paths {
+        items.push(parse_work_item(&item_path, allowed_statuses)?);
+    }
+
+    items.sort_by(
+        |a, b| match (a.completed.as_deref(), b.completed.as_deref()) {
+            (Some(ac), Some(bc)) => bc.cmp(ac).then_with(|| a.path.cmp(&b.path)),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.path.cmp(&b.path),
+        },
+    );
+
+    Ok(items)
+}
+
 pub fn load_workflow_dir(path: &Path) -> Result<WorkflowSnapshot, ParseError> {
     let definition = parse_workflow_readme(&path.join("README.md"))?;
     let allowed_statuses = definition
@@ -316,7 +389,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{load_workflow_dir, parse_work_item, parse_workflow_readme};
+    use super::{load_archived_items, load_workflow_dir, parse_work_item, parse_workflow_readme};
 
     fn fixture_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev")
@@ -508,6 +581,149 @@ Body
 
         assert!(error.contains("malformed YAML frontmatter"));
         assert!(error.contains("malformed.md"));
+    }
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("spacetop-archive-{label}-{unique}"));
+        fs::create_dir_all(&dir).expect("temp dir should be created");
+        dir
+    }
+
+    fn write_markdown(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("parent dir should be created");
+        }
+        fs::write(path, contents).expect("markdown should be written");
+    }
+
+    #[test]
+    fn load_archived_items_returns_entries_from_flat_files() {
+        let root = fixture_root();
+        let allowed = stage_names(&root);
+        let items = load_archived_items(&root, &allowed).expect("archive should load");
+
+        assert!(items.len() >= 3, "expected at least 3 archived entries");
+        let titles: Vec<&str> = items.iter().map(|item| item.title.as_str()).collect();
+        assert!(titles.contains(&"Scaffold Rust CLI Project"));
+        assert!(titles.contains(&"Parse Spacedock Workflow Files"));
+        assert!(titles.contains(&"Build Initial TUI Overview"));
+        assert!(items.iter().all(|item| item.status == "done"));
+    }
+
+    #[test]
+    fn load_archived_items_sorts_by_completed_desc_with_missing_last() {
+        let dir = unique_temp_dir("sort");
+        let archive = dir.join("_archive");
+        fs::create_dir_all(&archive).expect("archive dir");
+
+        write_markdown(
+            &archive.join("early.md"),
+            r#"---
+id: "001"
+title: Early
+status: done
+completed: 2026-04-24T14:49:53Z
+---
+
+Body
+"#,
+        );
+        write_markdown(
+            &archive.join("late.md"),
+            r#"---
+id: "002"
+title: Late
+status: done
+completed: 2026-04-24T15:00:00Z
+---
+
+Body
+"#,
+        );
+        write_markdown(
+            &archive.join("unknown.md"),
+            r#"---
+id: "003"
+title: Unknown
+status: done
+---
+
+Body
+"#,
+        );
+
+        let items = load_archived_items(&dir, &["done".to_string()]).expect("archive load");
+        let titles: Vec<&str> = items.iter().map(|item| item.title.as_str()).collect();
+        assert_eq!(titles, vec!["Late", "Early", "Unknown"]);
+    }
+
+    #[test]
+    fn load_archived_items_reads_folder_entity_index_md() {
+        let dir = unique_temp_dir("folder");
+        let archive = dir.join("_archive");
+        let entity = archive.join("foo");
+        fs::create_dir_all(&entity).expect("entity dir");
+
+        write_markdown(
+            &entity.join("index.md"),
+            r#"---
+id: "010"
+title: Folder Entity
+status: done
+completed: 2026-04-24T10:00:00Z
+---
+
+Body
+"#,
+        );
+        write_markdown(
+            &entity.join("notes.md"),
+            r#"---
+id: "011"
+title: Should Be Ignored
+status: done
+---
+
+Body
+"#,
+        );
+
+        let items = load_archived_items(&dir, &["done".to_string()]).expect("archive load");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Folder Entity");
+    }
+
+    #[test]
+    fn load_archived_items_missing_archive_dir_is_empty_ok() {
+        let dir = unique_temp_dir("missing");
+        let items = load_archived_items(&dir, &["done".to_string()]).expect("should be Ok");
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn load_archived_items_propagates_parse_error_with_path() {
+        let dir = unique_temp_dir("broken");
+        let archive = dir.join("_archive");
+        fs::create_dir_all(&archive).expect("archive dir");
+        write_markdown(
+            &archive.join("broken.md"),
+            r#"---
+id: [
+---
+
+Body
+"#,
+        );
+
+        let error = load_archived_items(&dir, &["done".to_string()])
+            .expect_err("broken frontmatter should fail")
+            .to_string();
+        assert!(error.contains("malformed YAML frontmatter"));
+        assert!(error.contains("broken.md"));
     }
 
     #[test]

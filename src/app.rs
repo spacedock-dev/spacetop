@@ -4,7 +4,14 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::discovery::DiscoveredWorkflow;
 use crate::domain::{WorkItem, WorkflowSnapshot};
-use crate::parser::{load_workflow_dir, ParseError};
+use crate::parser::{load_archived_items, load_workflow_dir, ParseError};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ViewScope {
+    #[default]
+    Active,
+    Archived,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageCount {
@@ -17,6 +24,11 @@ pub struct OverviewState {
     pub workflow_dir: PathBuf,
     pub snapshot: WorkflowSnapshot,
     pub selected_index: usize,
+    pub view_scope: ViewScope,
+    pub archived_items: Vec<WorkItem>,
+    pub archive_loaded: bool,
+    pub archive_error: Option<String>,
+    pub selected_index_archived: usize,
 }
 
 impl OverviewState {
@@ -36,6 +48,11 @@ impl OverviewState {
             workflow_dir,
             snapshot,
             selected_index: 0,
+            view_scope: ViewScope::Active,
+            archived_items: Vec::new(),
+            archive_loaded: false,
+            archive_error: None,
+            selected_index_archived: 0,
         }
     }
 
@@ -49,6 +66,11 @@ impl OverviewState {
             workflow_dir,
             snapshot,
             selected_index: 0,
+            view_scope: ViewScope::Active,
+            archived_items: Vec::new(),
+            archive_loaded: false,
+            archive_error: None,
+            selected_index_archived: 0,
         }
     }
 
@@ -61,11 +83,96 @@ impl OverviewState {
     }
 
     pub fn selected_index(&self) -> usize {
-        self.selected_index
+        match self.view_scope {
+            ViewScope::Active => self.selected_index,
+            ViewScope::Archived => self.selected_index_archived,
+        }
     }
 
     pub fn selected_item(&self) -> Option<&WorkItem> {
-        self.snapshot.items.get(self.selected_index)
+        self.visible_items().get(self.selected_index())
+    }
+
+    pub fn view_scope(&self) -> ViewScope {
+        self.view_scope
+    }
+
+    pub fn visible_items(&self) -> &[WorkItem] {
+        match self.view_scope {
+            ViewScope::Active => &self.snapshot.items,
+            ViewScope::Archived => &self.archived_items,
+        }
+    }
+
+    pub fn archived_items(&self) -> &[WorkItem] {
+        &self.archived_items
+    }
+
+    pub fn archived_count(&self) -> Option<usize> {
+        if self.archive_loaded {
+            Some(self.archived_items.len())
+        } else {
+            None
+        }
+    }
+
+    pub fn archive_error(&self) -> Option<&str> {
+        self.archive_error.as_deref()
+    }
+
+    fn ensure_archive_loaded(&mut self) {
+        if self.archive_loaded {
+            return;
+        }
+        let allowed: Vec<String> = self
+            .snapshot
+            .definition
+            .stages
+            .iter()
+            .map(|stage| stage.name.clone())
+            .collect();
+        match load_archived_items(&self.workflow_dir, &allowed) {
+            Ok(items) => {
+                self.archived_items = items;
+                self.archive_error = None;
+            }
+            Err(err) => {
+                self.archived_items = Vec::new();
+                self.archive_error = Some(err.to_string());
+            }
+        }
+        self.archive_loaded = true;
+    }
+
+    fn toggle_scope(&mut self) {
+        self.view_scope = match self.view_scope {
+            ViewScope::Active => {
+                self.ensure_archive_loaded();
+                ViewScope::Archived
+            }
+            ViewScope::Archived => ViewScope::Active,
+        };
+        self.clamp_selection();
+    }
+
+    fn clamp_selection(&mut self) {
+        let len = self.visible_items().len();
+        match self.view_scope {
+            ViewScope::Active => {
+                if len == 0 {
+                    self.selected_index = 0;
+                } else if self.selected_index >= len {
+                    self.selected_index = len - 1;
+                }
+            }
+            ViewScope::Archived => {
+                if len == 0 {
+                    self.selected_index_archived = 0;
+                } else if self.selected_index_archived >= len {
+                    self.selected_index_archived = len - 1;
+                }
+            }
+        }
     }
 
     pub fn stage_counts(&self) -> Vec<StageCount> {
@@ -86,19 +193,34 @@ impl OverviewState {
     }
 
     fn select_next(&mut self) {
-        if self.snapshot.items.is_empty() {
-            self.selected_index = 0;
+        let len = self.visible_items().len();
+        if len == 0 {
+            self.set_scope_index(0);
             return;
         }
-        self.selected_index = (self.selected_index + 1).min(self.snapshot.items.len() - 1);
+        let next = (self.selected_index() + 1).min(len - 1);
+        self.set_scope_index(next);
     }
 
     fn select_previous(&mut self) {
-        self.selected_index = self.selected_index.saturating_sub(1);
+        let prev = self.selected_index().saturating_sub(1);
+        self.set_scope_index(prev);
+    }
+
+    fn select_first(&mut self) {
+        self.set_scope_index(0);
     }
 
     fn select_last(&mut self) {
-        self.selected_index = self.snapshot.items.len().saturating_sub(1);
+        let last = self.visible_items().len().saturating_sub(1);
+        self.set_scope_index(last);
+    }
+
+    fn set_scope_index(&mut self, value: usize) {
+        match self.view_scope {
+            ViewScope::Active => self.selected_index = value,
+            ViewScope::Archived => self.selected_index_archived = value,
+        }
     }
 }
 
@@ -261,6 +383,26 @@ impl App {
         self.overview().stage_counts()
     }
 
+    pub fn view_scope(&self) -> ViewScope {
+        self.overview().view_scope()
+    }
+
+    pub fn visible_items(&self) -> &[WorkItem] {
+        self.overview().visible_items()
+    }
+
+    pub fn archived_items(&self) -> &[WorkItem] {
+        self.overview().archived_items()
+    }
+
+    pub fn archived_count(&self) -> Option<usize> {
+        self.overview().archived_count()
+    }
+
+    pub fn archive_error(&self) -> Option<&str> {
+        self.overview().archive_error()
+    }
+
     pub fn should_quit(&self) -> bool {
         self.should_quit
     }
@@ -271,8 +413,9 @@ impl App {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                 KeyCode::Up | KeyCode::Char('k') => state.select_previous(),
-                KeyCode::Home => state.selected_index = 0,
+                KeyCode::Home => state.select_first(),
                 KeyCode::End => state.select_last(),
+                KeyCode::Char('a') => state.toggle_scope(),
                 _ => {}
             },
             AppMode::Picker(state) => match key.code {
@@ -306,7 +449,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, AppMode};
+    use super::{App, AppMode, ViewScope};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use std::path::{Path, PathBuf};
 
@@ -408,6 +551,58 @@ mod tests {
         let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
         app.handle_key(key(KeyCode::Esc));
         assert!(app.should_quit());
+    }
+
+    #[test]
+    fn default_view_scope_is_active_and_visible_items_match_snapshot() {
+        let app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+        assert_eq!(app.view_scope(), ViewScope::Active);
+        assert_eq!(app.visible_items().len(), app.snapshot().items.len());
+        assert!(app.archived_count().is_none());
+    }
+
+    #[test]
+    fn toggle_scope_key_a_flips_to_archived_and_loads_lazily() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let mut app = App::load(root).expect("workflow should load");
+        assert_eq!(app.view_scope(), ViewScope::Active);
+        assert!(app.archived_count().is_none());
+
+        app.handle_key(key(KeyCode::Char('a')));
+        assert_eq!(app.view_scope(), ViewScope::Archived);
+        assert!(app.archived_count().is_some());
+        assert!(!app.archived_items().is_empty());
+        // Selected item should be an archived entry.
+        let selected = app.selected_item().expect("selected archived item");
+        assert_eq!(selected.status, "done");
+
+        app.handle_key(key(KeyCode::Char('a')));
+        assert_eq!(app.view_scope(), ViewScope::Active);
+    }
+
+    #[test]
+    fn archived_view_selection_is_independent_of_active_selection() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let mut app = App::load(root).expect("workflow should load");
+        app.handle_key(key(KeyCode::Down));
+        let active_index = app.selected_index();
+
+        app.handle_key(key(KeyCode::Char('a')));
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Down));
+        let archived_index = app.selected_index();
+
+        app.handle_key(key(KeyCode::Char('a')));
+        assert_eq!(app.selected_index(), active_index);
+
+        app.handle_key(key(KeyCode::Char('a')));
+        assert_eq!(app.selected_index(), archived_index);
+    }
+
+    #[test]
+    fn archive_count_hidden_before_first_toggle() {
+        let app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(1));
+        assert!(app.archived_count().is_none());
     }
 
     // --- Picker tests ---

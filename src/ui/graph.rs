@@ -11,7 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::app::OverviewState;
+use crate::app::{OverviewState, ViewScope};
 use crate::domain::StageDefinition;
 
 const ASCII_ENV_VAR: &str = "SPACETOP_ASCII";
@@ -33,13 +33,24 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
     let counts = state.stage_counts();
     let counts: Vec<usize> = counts.into_iter().map(|c| c.items).collect();
 
-    // TODO(task-006): absorb ViewScope indicator into ribbon header.
-    let scope_label = "active";
+    let scope_label = match state.view_scope() {
+        ViewScope::Active => "active",
+        ViewScope::Archived => "archived",
+    };
+    let archived_label = match state.archived_count() {
+        Some(n) => format!("archived: {n}"),
+        None => "archived: (press a)".to_string(),
+    };
     let workflow_path = state.workflow_dir().display().to_string();
 
-    let active_stage = state.selected_item().map(|item| item.status.clone());
+    let active_stage = match state.view_scope() {
+        ViewScope::Active => state.selected_item().map(|item| item.status.clone()),
+        ViewScope::Archived => None,
+    };
 
-    let title = format!("Workflow \u{2014} [{scope_label}] \u{2014} {workflow_path}");
+    let title = format!(
+        "Workflow \u{2014} [{scope_label}] \u{2014} {archived_label} \u{2014} {workflow_path}"
+    );
 
     if stages.is_empty() {
         let paragraph = Paragraph::new(Line::from("(no stages defined)"))
