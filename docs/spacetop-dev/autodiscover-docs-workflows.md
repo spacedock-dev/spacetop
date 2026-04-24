@@ -119,6 +119,169 @@ Verified by: unit test on the discovery function against a fixture tree that inc
 
 Task 004 (`add-workflow-dir-short-flag`) lands the `-w` short alias for `--workflow-dir`. This design assumes `-w` exists. If 004 has not merged by the time this task's `implement` stage begins, the implementer should either rebase on 004 or add the short flag themselves (it is a one-line clap change) — either way is acceptable. This task's ACs refer to both `-w` and `--workflow-dir`.
 
+## Implementation plan
+
+The implementation is ordered so each step leaves the tree compiling and the existing `cargo test` suite green. Module ownership is explicit per step.
+
+### Step 1 — Create `src/discovery.rs` (pure library module, no UI, no clap)
+
+Files touched:
+- NEW `src/discovery.rs`
+- `src/lib.rs` (add `pub mod discovery;`)
+- `Cargo.toml` (add `walkdir = "2"` under `[dependencies]` — avoids hand-rolling a symlink-safe walker)
+
+Contents of `src/discovery.rs`:
+- `pub struct DiscoveredWorkflow { pub root: PathBuf, pub title: Option<String> }`
+- `pub enum DiscoveryError { Io(io::Error) }` (use `thiserror`; parse/frontmatter errors on individual candidates are swallowed into "not a workflow", not surfaced as `DiscoveryError`)
+- `pub const PRUNED_DIR_NAMES: &[&str] = &[".git", ".worktrees", "node_modules", "vendor", "dist", "build", "__pycache__", "tests"];`
+- `pub const SPACEDOCK_COMMISSION_PREFIX: &str = "spacedock@";`
+- `pub fn resolve_scan_root(cwd: &Path) -> PathBuf` — walks up looking for `.git` (dir or file), returns first hit; falls back to `cwd.to_path_buf()`.
+- `pub fn discover_workflows(root: &Path) -> Result<Vec<DiscoveredWorkflow>, DiscoveryError>` — uses `walkdir::WalkDir::new(root).follow_links(true)`; rejects entries whose file name is in `PRUNED_DIR_NAMES` via `.filter_entry(...)`; on every visited directory, checks for `README.md`; if frontmatter parses and `commissioned-by` starts with `SPACEDOCK_COMMISSION_PREFIX`, pushes a `DiscoveredWorkflow` with the dir's `canonicalize()` result. Dedup by canonical path using a `HashSet<PathBuf>`. Sort results by `root` before returning.
+- Private helpers: `read_commission_marker(readme: &Path) -> Option<String>` and `read_title(readme: &Path) -> Option<String>`. Both are best-effort — any IO/parse failure returns `None`. Reuse the existing YAML frontmatter split from `src/parser.rs` (extract a small `fn split_frontmatter(text: &str) -> Option<(&str, &str)>` into a shared spot — either pub(crate) in parser or copied; plan picks "extract to `parser::split_frontmatter` as `pub(crate)`" so discovery depends on parser's already-battle-tested split).
+
+Unit tests in `#[cfg(test)] mod tests` at the bottom of `src/discovery.rs`:
+- `discovers_multiple_workflows_in_fixture_tree` — `tempdir()` with two READMEs carrying `commissioned-by: spacedock@0.10.1`; assert both returned, sorted.
+- `discovers_single_workflow` — one README.
+- `discovers_zero_workflows` — no READMEs; returns empty vec.
+- `prunes_directory_names_at_any_depth` — place a workflow under `node_modules/foo/`; assert not returned.
+- `dedupes_symlinked_duplicate_by_realpath` — `std::os::unix::fs::symlink` the workflow dir; assert one entry whose root is the canonical path. Gate on `#[cfg(unix)]`.
+- `handles_symlink_cycle_without_infinite_loop` — create `a/ -> b/ -> a/`; assert returns in bounded time. `#[cfg(unix)]`.
+- `non_spacedock_readmes_are_ignored` — README with `commissioned-by: other@1.0` or no frontmatter at all → not returned.
+- `resolve_scan_root_walks_up_to_dotgit` — tempdir with `.git` dir at top and nested subdir; assert walk-up finds top.
+- `resolve_scan_root_falls_back_to_cwd_without_dotgit` — no `.git` → returns the input path.
+
+### Step 2 — Convert `--workflow-dir` to `Option<PathBuf>` in `src/cli.rs`
+
+Files touched:
+- `src/cli.rs`
+
+Changes:
+- Replace `pub workflow_dir: PathBuf` (with `default_value = "."`) with `pub workflow_dir: Option<PathBuf>` (no `default_value`).
+- Add `#[arg(short = 'w', long, value_name = "PATH")]` so `-w` short alias is present regardless of whether task 004 landed first.
+- Update the existing `parses_workflow_dir` test to expect `Some(PathBuf::from(...))`.
+- Replace the existing `defaults_workflow_dir_to_current_directory` test with `defaults_workflow_dir_to_none` (asserting `cli.workflow_dir.is_none()`).
+- Add `parses_short_w_alias` asserting `-w docs/foo` yields `Some(PathBuf::from("docs/foo"))`.
+
+### Step 3 — Split `AppMode` two-state machine in `src/app.rs`
+
+File ownership decision: keep `src/app.rs` flat — do NOT split into `src/app/mod.rs` + submodules. Rationale: both states are small (picker state is ~30 lines; overview state is already <130 lines). A flat file is easier to grep and keeps all `App` public surface in one place. If the file grows past ~400 lines later we can split then.
+
+Files touched:
+- `src/app.rs`
+
+Changes:
+- Introduce:
+  - `pub struct OverviewState { workflow_dir: PathBuf, snapshot: WorkflowSnapshot, selected_index: usize }` — move today's fields off `App` into this struct. Move `stage_counts`, `selected_item`, `selected_index`, `select_next`, `select_previous`, `select_last` to `impl OverviewState`.
+  - `pub struct PickerState { workflows: Vec<DiscoveredWorkflow>, scan_root: PathBuf, selected_index: usize, error: Option<String> }` with methods `selected(&self) -> Option<&DiscoveredWorkflow>`, `select_next`, `select_previous`, `select_first`, `select_last`, `set_error`, `clear_error`.
+  - `pub enum AppMode { Picker(PickerState), Overview(OverviewState) }`
+- Rewrite `pub struct App { mode: AppMode, should_quit: bool }`.
+- Constructors:
+  - `App::load(path: PathBuf)` — unchanged signature; loads overview; returns `Result<Self, ParseError>`.
+  - `App::from_picker(scan_root: PathBuf, workflows: Vec<DiscoveredWorkflow>) -> Self` — new; requires `workflows.len() >= 2` (debug_assert).
+  - `App::new(workflow_dir)` — keep, builds empty overview (test helper).
+  - `App::from_snapshot(workflow_dir, snapshot)` — keep, builds overview (test helper).
+- Accessors:
+  - `pub fn mode(&self) -> &AppMode`
+  - `pub fn as_overview(&self) -> Option<&OverviewState>`
+  - `pub fn as_picker(&self) -> Option<&PickerState>`
+  - Back-compat thin shims so existing tests keep compiling: `workflow_dir()`, `snapshot()`, `selected_index()`, `selected_item()`, `stage_counts()` delegate into the overview state and `panic!("called overview accessor in picker mode")` if in picker mode — tests that call these always set up overview.
+- `handle_key`:
+  - In `Overview(_)`: same behavior as today (`q`/`Esc` quit; arrows/`j`/`k`/`Home`/`End` move selection).
+  - In `Picker(state)`: `q`/`Esc` → quit; `Down`/`j` → `select_next`; `Up`/`k` → `select_previous`; `Home` → `select_first`; `End` → `select_last`; `Enter` → `OverviewState::load(state.selected().root)` and, on Ok, replace `self.mode` with `AppMode::Overview(...)`; on Err, `state.set_error(format!(...))` and stay.
+
+New unit tests in `src/app.rs` tests module:
+- `picker_state_navigation_is_clamped` — Down past end stays at `len-1`, Up below 0 stays at 0, Home jumps to 0, End jumps to `len-1`.
+- `picker_enter_transitions_to_overview_on_success` — seed picker with one entry pointing at `docs/spacetop-dev`; send Enter; assert `app.as_overview().is_some()` and workflow_dir matches.
+- `picker_enter_surfaces_error_on_load_failure` — seed picker with a non-existent path; send Enter; assert still in picker mode and `state.error.is_some()`.
+- `picker_q_and_esc_quit_without_transition` — assert `should_quit` and still `as_picker().is_some()`.
+
+### Step 4 — Wire discovery into `src/lib.rs::run`
+
+Files touched:
+- `src/lib.rs`
+
+Replace today's body of `run` with:
+1. `match cli.workflow_dir { Some(path) => App::load(path) → run_terminal }` (unchanged explicit path).
+2. `None`:
+   a. `let cwd = std::env::current_dir()?`
+   b. `let scan_root = discovery::resolve_scan_root(&cwd);`
+   c. `let workflows = discovery::discover_workflows(&scan_root)?;`
+   d. `match workflows.len() { 0 => { eprintln!("spacetop: no Spacedock workflows found under {}. Pass --workflow-dir <path> to open a specific directory.", scan_root.display()); return Err(anyhow!("no workflows discovered")); } 1 => App::load(workflows.into_iter().next().unwrap().root) → run_terminal, _ => run_terminal(App::from_picker(scan_root, workflows)) }`
+
+Keep `run_terminal` signature unchanged.
+
+### Step 5 — Picker renderer (`src/ui/picker.rs`) and top-level dispatch
+
+Files touched:
+- NEW `src/ui/picker.rs`
+- `src/ui/mod.rs` (split into `overview::render` submodule OR keep overview render inline and add `mod picker; pub use picker::render as render_picker;`)
+
+File-ownership decision: keep the overview renderer inline in `src/ui/mod.rs` (it is already small and has an existing passing snapshot test — any move risks destabilizing that test for zero benefit). Add `mod picker;` as a sibling. `ui::render` grows a top-level match:
+
+```rust
+pub fn render(frame: &mut Frame<'_>, app: &App) {
+    match app.mode() {
+        AppMode::Picker(state) => picker::render(frame, state),
+        AppMode::Overview(state) => render_overview(frame, state), // extract today's body into a private fn
+    }
+}
+```
+
+`src/ui/picker.rs` contents:
+- `pub fn render(frame: &mut Frame<'_>, state: &PickerState)` — vertical layout: 3-line title bar (`spacetop — pick a workflow` bold + dim scan root), list area showing rows (`path-relative-to-scan-root  —  title-or-blank`) with the selected row rendered with `Modifier::REVERSED`, optional 1-line error status if `state.error.is_some()` rendered in red above the footer, 1-line footer hint `↑/↓ or j/k: move · Enter: open · q/Esc: quit`.
+- Unit tests:
+  - `renders_workflow_rows_and_title` — snapshot via `TestBackend::new(100, 20)`; assert rendered text contains each workflow path, the title bar, and the footer hint.
+  - `renders_selected_row_with_reverse_modifier` — build a state with `selected_index = 1`; draw; inspect `terminal.backend().buffer()` cell styles on the row and assert `Modifier::REVERSED` is set there but not on siblings.
+  - `renders_error_line_when_present` — set `state.error = Some("...".to_string())`; assert the text is rendered.
+
+### Step 6 — Integration tests (`tests/discovery_bypass.rs`)
+
+Files touched:
+- NEW `tests/discovery_bypass.rs`
+- `Cargo.toml` → add `tempfile = "3"` under `[dev-dependencies]`
+
+Tests (all via `tempfile::tempdir()` writing a `.git/` dir plus crafted `README.md` files; no subprocess — call `spacetop::run` directly with a manufactured `Cli { workflow_dir: … }`):
+- `explicit_w_bypasses_discovery_even_when_other_workflows_exist` — AC-4: fixture has two workflow dirs; call `run(Cli { workflow_dir: Some(path_a) })`; stub terminal bypass: actually this needs `run_terminal` abstracted, so we assert at the decision-point level. Plan: factor the decision into `pub(crate) fn decide_app(cli: &Cli, cwd: &Path) -> DecideOutcome` where `enum DecideOutcome { Overview(App), Picker(App), ZeroWorkflowsError(PathBuf) }`. Integration tests call `decide_app` directly and assert the variant; `run` becomes a thin wrapper. This is the only way to test the zero-workflow exit path and the picker-vs-overview branch without spawning the TUI.
+- `multi_workflow_fixture_yields_picker_variant` — AC-1.
+- `single_workflow_fixture_yields_overview_variant` — AC-2.
+- `zero_workflow_fixture_yields_error_variant_with_scan_root` — AC-3: assert the error variant carries the expected scan root, which the caller formats into the stable stderr message. A second assertion in `lib.rs`-level unit test verifies the `eprintln!` literal matches the AC-3 prefix.
+
+### Verification commands
+
+Run in order, all from repo root:
+
+- `cargo fmt --check`
+- `cargo clippy --all-targets -- -D warnings`
+- `cargo test` (runs unit tests in `discovery`, `app`, `ui::picker`, plus the `tests/discovery_bypass.rs` integration suite)
+
+Evidence of completion is a green `cargo test` plus a manual smoke of `cargo run` from repo root (should show picker if/when a second workflow is added, overview today with just `docs/spacetop-dev/`), and `cargo run -- -w docs/spacetop-dev` (unchanged behavior).
+
+### Test strategy summary (mapping to ACs)
+
+| AC | Test location | Test name |
+|----|---------------|-----------|
+| AC-1 multi-workflow picker | `tests/discovery_bypass.rs` | `multi_workflow_fixture_yields_picker_variant` |
+| AC-2 single auto-open | `tests/discovery_bypass.rs` | `single_workflow_fixture_yields_overview_variant` |
+| AC-3 zero + stable stderr | `tests/discovery_bypass.rs` + `src/lib.rs` test | `zero_workflow_fixture_yields_error_variant_with_scan_root` + `zero_workflow_eprintln_prefix_is_stable` |
+| AC-4 `-w` bypass | `tests/discovery_bypass.rs` | `explicit_w_bypasses_discovery_even_when_other_workflows_exist` |
+| AC-5 picker keys + render | `src/app.rs` + `src/ui/picker.rs` | `picker_state_navigation_is_clamped`, `picker_enter_transitions_to_overview_on_success`, `picker_q_and_esc_quit_without_transition`, `renders_workflow_rows_and_title`, `renders_selected_row_with_reverse_modifier` |
+| AC-6 prune + dedup | `src/discovery.rs` | `prunes_directory_names_at_any_depth`, `dedupes_symlinked_duplicate_by_realpath`, `handles_symlink_cycle_without_infinite_loop` |
+| Load error surfaced | `src/app.rs` | `picker_enter_surfaces_error_on_load_failure` |
+
+### File/module ownership summary
+
+| File | Role this task | Split? |
+|------|----------------|--------|
+| `src/discovery.rs` | NEW — walker + domain type | single file, flat |
+| `src/cli.rs` | CHANGED — `Option<PathBuf>`, `-w` short alias | unchanged layout |
+| `src/app.rs` | CHANGED — add `AppMode`, `PickerState`, `OverviewState` | kept flat (not split into `src/app/`) |
+| `src/lib.rs` | CHANGED — add `pub mod discovery`, rewrite `run` body, add `decide_app` seam | unchanged layout |
+| `src/ui/mod.rs` | CHANGED — top-level `match app.mode()` dispatch, extract private `render_overview` | unchanged layout |
+| `src/ui/picker.rs` | NEW — picker renderer | single file |
+| `src/parser.rs` | CHANGED — expose `pub(crate) fn split_frontmatter` for reuse | unchanged layout |
+| `tests/discovery_bypass.rs` | NEW — integration tests driving `decide_app` | single file |
+| `Cargo.toml` | CHANGED — add `walkdir` dep, `tempfile` dev-dep | |
+
 ## Stage Report: design
 
 - DONE: Problem statement, discovery mechanism (what signal identifies a workflow dir, scan scope, recursion policy), and user flow (zero/single/multiple workflows found, picker UX) are locked.
@@ -131,3 +294,16 @@ Task 004 (`add-workflow-dir-short-flag`) lands the `-w` short alias for `--workf
 ### Summary
 
 Locked the discovery signal on `commissioned-by: spacedock@…` in a workflow's README frontmatter (matching `status --discover` exactly so the two tools never disagree), scoped the scan to the git-root walk with the same pruned directory list, and picked a full-screen picker for the multi-workflow case with auto-open for single and non-zero exit + stable stderr message for zero. Explicit `-w/--workflow-dir` bypasses discovery entirely. The implementation will add a new `src/discovery.rs` module and convert `App` into a two-state `Picker` / `Overview` machine; no changes to the existing parser or overview renderer are required.
+
+## Stage Report: plan
+
+- DONE: Step-by-step plan enumerates each file change and the order of implementation (discovery module, CLI Option change, AppMode refactor, lib.rs wiring, picker render, picker event handling), plus verification commands.
+  "Implementation plan" section lists Steps 1–6 (discovery → cli → app → lib.rs → picker render → integration tests) with exact files and signatures; "Verification commands" lists `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` plus a manual smoke of `cargo run` with and without `-w`.
+- DONE: Test strategy names specific tests: discovery walk on fixture repo (multi/single/zero), symlink cycle/prune behaviour, `-w` bypass, picker render/navigation, load-error surfacing in picker.
+  Test strategy table in the plan maps AC-1…AC-6 + load-error case to named tests: `discovers_multiple_workflows_in_fixture_tree`, `discovers_single_workflow`, `discovers_zero_workflows`, `prunes_directory_names_at_any_depth`, `dedupes_symlinked_duplicate_by_realpath`, `handles_symlink_cycle_without_infinite_loop`, `explicit_w_bypasses_discovery_even_when_other_workflows_exist`, `picker_state_navigation_is_clamped`, `picker_enter_transitions_to_overview_on_success`, `picker_enter_surfaces_error_on_load_failure`, `renders_workflow_rows_and_title`, `renders_selected_row_with_reverse_modifier`, `renders_error_line_when_present`.
+- DONE: File/module ownership is explicit — which files each step touches, and whether `src/app.rs` is split (e.g., `src/app/mod.rs` with `overview.rs`/`picker.rs`) or kept flat.
+  "File/module ownership summary" table lists every touched file and its role. Decision recorded: `src/app.rs` stays flat (not split into `src/app/mod.rs`) because both state variants are small and a flat file keeps the public surface greppable; `src/ui/mod.rs` keeps the overview renderer inline and adds `mod picker;` as a sibling to avoid destabilizing the existing overview snapshot test.
+
+### Summary
+
+Drafted a six-step implementation plan ordered so every step leaves `cargo test` green: add `src/discovery.rs` (with `walkdir`-based symlink-safe walk, prune set, realpath dedup, and `resolve_scan_root` git-walk-up), flip `--workflow-dir` to `Option<PathBuf>` and add `-w`, refactor `App` into an `AppMode::{Picker, Overview}` state machine in a flat `src/app.rs`, wire discovery into `lib.rs::run` via a testable `decide_app` seam, add `src/ui/picker.rs` with the picker renderer, and cover every AC with named unit and integration tests. Key decisions: extract `parser::split_frontmatter` as `pub(crate)` so discovery and parser share one frontmatter splitter; introduce `decide_app` as a pure seam so the zero/single/multi and `-w`-bypass branches are testable without spawning a TUI.
