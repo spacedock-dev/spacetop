@@ -98,3 +98,16 @@ Planned the root Rust binary scaffold with a thin `main`, testable CLI boundary,
 ### Summary
 
 Implemented the initial Rust 2021 `spacetop` crate with a thin binary entrypoint, testable CLI parsing, minimal app state, and placeholder domain/UI boundaries. The scaffold does not start a terminal event loop and does not mutate workflow markdown.
+
+## Stage Report: review
+
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-1 (`cargo run -- --help`) is satisfied with fresh evidence.
+  Fresh `cargo run -- --help` exited 0 and displayed SpaceTop read-only TUI usage with `--workflow-dir <PATH>` and default `.`.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-2 (`Cargo.toml` dependency baseline) is satisfied by inspecting the dependency set.
+  Inspected `Cargo.toml`: dependencies are clap, ratatui, crossterm, serde, serde_yaml, anyhow, and thiserror, each referenced by scaffold modules.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-3 (`cargo fmt --check` and `cargo test`) is satisfied with fresh evidence.
+  Fresh `cargo fmt --check` exited 0; fresh `cargo test` exited 0 with 5 passed, 0 failed.
+
+### Summary
+
+Verdict: PASSED. Reviewed the diff against `main`, checked the Rust scaffold boundaries, and independently reran the claimed acceptance commands. No blocking defects found; the scaffold is read-only, keeps terminal setup out of domain/app state, and leaves full parsing/TUI behavior to follow-on tasks.
