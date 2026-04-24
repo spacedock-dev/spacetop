@@ -1,0 +1,30 @@
+# Rust build output
+/target/
+.worktrees/
+
+# Rust profiling and coverage artifacts
+*.profraw
+*.profdata
+tarpaulin-report.html
+cobertura.xml
+lcov.info
+
+# Local editor and OS files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# IDE metadata
+.idea/
+.vscode/
