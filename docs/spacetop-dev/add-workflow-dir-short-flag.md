@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-add-workflow-dir-short-flag
 issue:
 pr:
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Expose `-w` as a short alias for the existing `--workflow-dir` CLI flag so the common invocation (`spacetop -w docs/spacetop-dev`) is ergonomic. Scope is strictly the CLI surface; no behavior change.
