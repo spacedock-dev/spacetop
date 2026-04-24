@@ -1,13 +1,13 @@
 ---
 id: 002
 title: Parse Spacedock Workflow Files
-status: plan
+status: implement
 source: commission seed
 started: 2026-04-24T14:30:53Z
 completed:
 verdict:
 score: 1.0
-worktree:
+worktree: .worktrees/spacedock-ensign-parse-spacedock-workflow-files
 issue:
 pr:
 ---
