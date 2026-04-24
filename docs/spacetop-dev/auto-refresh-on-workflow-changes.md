@@ -3,7 +3,7 @@ id: 008
 title: Auto-refresh task list and detail when workflow files change
 status: design
 source: captain feedback during 006 planning
-started:
+started: 2026-04-24T16:13:15Z
 completed:
 verdict:
 score:
