@@ -1,7 +1,7 @@
 ---
 id: 006
 title: Show completed (archived) tasks in the TUI
-status: implement
+status: review
 source: captain feedback after build-initial-tui-overview
 started: 2026-04-24T15:54:38Z
 completed:
@@ -281,3 +281,39 @@ git diff -- docs/spacetop-dev                    # must be empty
 ### Summary
 
 Implementation is sliced into four layers the implement stage can land as sequential commits: (1) a read-only `load_archived_items` in `src/parser.rs` that reuses `parse_work_item`, skips missing `_archive/` silently, and sorts newest-first by `completed`; (2) `ViewScope { Active, Archived }` plus a lazy `ensure_archive_loaded` + per-scope selection on `App` in `src/app.rs`; (3) summary/list/preview branching in `src/ui/mod.rs` that adds `view:`/`archived:` lines, verdict glyphs with `Modifier::DIM`, and `verdict:`/`completed:` preview fields; (4) no terminal-loop edits — the existing event loop handles the new `a` key for free. Domain types, CLI, and fixtures are unchanged, preserving the active-snapshot regression test verbatim.
+
+## Stage Report: implement
+
+- DONE: Parser adds `load_archived_items` without regressing `WorkflowSnapshot`'s active-only contract; App adds `ViewScope` + toggle; archived view renders with verdict+completed in preview and proper ordering; graph ribbon header surfaces scope indicator and archived count.
+  `src/parser.rs` adds `load_archived_items` + `archive_dir`; `loads_workflow_snapshot_from_directory_ignoring_mods_and_archive` still passes. `src/app.rs` adds `ViewScope { Active, Archived }`, `a` toggle, per-scope selection, lazy `ensure_archive_loaded`. `src/ui/mod.rs` branches preview on scope (adds `verdict:` / `completed:` between `source:` and `path:`) and adds verdict glyphs + DIM on archived rows. `src/ui/graph.rs` now consumes `state.view_scope()` + `state.archived_count()` and renders `[active]`/`[archived]` plus `archived: N` / `archived: (press a)` in the ribbon header title.
+- DONE: `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings` + `cargo test` clean on the worktree branch (pre-existing errors on main named explicitly if they survive).
+  `cargo fmt --check` clean. `cargo test`: 59 passed, 2 pre-existing failures survive identically — `app::tests::loads_real_workflow_state_and_derives_stage_counts` (asserts selected title == "Build Initial TUI Overview" but real workflow now returns task 006 "Show completed (archived) tasks in the TUI") and `ui::tests::renders_real_workflow_summary_task_list_and_preview` (asserts body contains "Build the first read-only"). `cargo clippy --all-targets -- -D warnings` reports only the pre-existing `clippy::unnecessary_lazy_evaluations` at `src/parser.rs` (now line 319 after the new loader; previously 246) — called out in the task spec as out-of-scope.
+- DONE: Smoke run `cargo run -- --workflow-dir docs/spacetop-dev` then press `a` to toggle archived view then `q` to quit leaves `git diff -- docs/spacetop-dev` empty (read-only contract preserved).
+  Ran via `printf 'aq' | script -q /dev/null cargo run -- --workflow-dir docs/spacetop-dev`. App started, ribbon header rendered, `a` toggled to archived scope, `q` quit. `git diff -- docs/spacetop-dev` returns empty.
+
+### Summary
+
+Layered implementation landed: parser gained `load_archived_items` + `archive_dir` (sorting newest-first by `completed`, folder-entity `index.md` support, missing `_archive/` as empty), `App::OverviewState` gained `ViewScope`, lazy archive load, per-scope selection, and an `a` key toggle, and the UI layer added verdict glyphs / DIM on archived rows, `verdict:` + `completed:` preview fields, and scope+count in the graph ribbon header. `WorkflowSnapshot` stays active-only (regression test unchanged), domain types untouched, read-only contract preserved. Pre-existing main-branch fixture-drift test failures and the pre-existing `unnecessary_lazy_evaluations` clippy lint still surface identically — no incidental fixes, no regressions introduced.
+
+## Stage Report: review
+
+- DONE: AC-1 — parser keeps `WorkflowSnapshot` active-only; `load_archived_items` reads flat + folder-entity archives.
+  Reran `parser::tests` on worktree: `loads_workflow_snapshot_from_directory_ignoring_mods_and_archive` passes plus 5 new archive-loader tests (flat-files, sort-by-completed with missing last, folder `index.md`, missing-dir-OK, parse-error path). 12/12 parser tests green.
+- DONE: AC-2 — default scope Active; `a` toggles to Archived; per-scope selection preserved.
+  `app::tests::default_view_scope_is_active_and_visible_items_match_snapshot`, `toggle_scope_key_a_flips_to_archived_and_loads_lazily`, `archived_view_selection_is_independent_of_active_selection`, `archive_count_hidden_before_first_toggle` all pass on the worktree (see `src/app.rs:557+`).
+- DONE: AC-3 — archived preview renders `verdict:` and `completed:` between `source:` and `path:`.
+  `ui::tests::archived_view_preview_renders_verdict_and_completed` passes; verified `src/ui/mod.rs` branches on `state.view_scope()`.
+- DONE: AC-4 — archive ordered newest-first with missing-completed last; scope + count absorbed into graph ribbon header.
+  `parser::tests::load_archived_items_sorts_by_completed_desc_with_missing_last` passes; `ui::graph::tests::header_row_contains_scope_label_and_workflow_path` passes; ribbon consumes `state.view_scope()` + `state.archived_count()` at `src/ui/graph.rs:14,37-40`.
+- DONE: AC-5 — smoke run leaves workflow dir untouched, navigation parity across scopes.
+  Ran `printf 'aq' | script -q /dev/null cargo run -- --workflow-dir docs/spacetop-dev`, exit 0; `git diff -- docs/spacetop-dev` empty.
+- DONE: Diff confined to plan-owned files.
+  `git diff --stat main...HEAD` shows only `src/parser.rs`, `src/app.rs`, `src/ui/mod.rs`, `src/ui/graph.rs`, and the entity file. No CLI/discovery/domain edits.
+- DONE: Surviving lint/test failures verified pre-existing on main.
+  On `main` (stashed worktree), `cargo test --lib -- app::tests::loads_real_workflow_state_and_derives_stage_counts ui::tests::renders_real_workflow_summary_task_list_and_preview` reproduces both failures identically (fixture drift — task 006 now occupies index 0 on disk, breaking hardcoded titles); `cargo clippy --all-targets -- -D warnings` on main also errors at `src/parser.rs:246` with the same `unnecessary_lazy_evaluations` (now line 319 after loader insertion) — confirmed out-of-scope per task spec.
+- DONE: Recommend verdict.
+  See Summary below.
+
+### Summary
+
+Review verdict: PASSED. All five ACs have explicit, reproduced verification evidence; the implementation cleanly stays within the plan-owned module boundaries (`src/parser.rs`, `src/app.rs`, `src/ui/mod.rs`, `src/ui/graph.rs`), preserves the active-snapshot regression test verbatim, and the smoke run confirms the read-only contract. The two surviving test failures and the one surviving clippy error all reproduce bit-for-bit on `main` (fixture drift on title assertions; pre-existing `then` closure lint the task spec explicitly excludes), so they are not defects of this stage. Recommend advancing to the next workflow stage.

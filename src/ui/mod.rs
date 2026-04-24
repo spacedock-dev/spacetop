@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-use crate::app::{App, AppMode, OverviewState};
+use crate::app::{App, AppMode, OverviewState, ViewScope};
 use graph::render_stage_graph;
 
 pub type TerminalEvent = Event;
@@ -43,11 +43,21 @@ fn render_overview(frame: &mut Frame<'_>, state: &OverviewState) {
 }
 
 fn task_list(app: &OverviewState) -> Paragraph<'_> {
-    let lines = if app.snapshot().items.is_empty() {
-        vec![Line::from("No work items found.")]
+    let scope = app.view_scope();
+    let title = match scope {
+        ViewScope::Active => "Tasks",
+        ViewScope::Archived => "Archived",
+    };
+    let items = app.visible_items();
+    let lines: Vec<Line<'_>> = if items.is_empty() {
+        let empty_text = match (scope, app.archive_error()) {
+            (ViewScope::Archived, Some(err)) => format!("archive load failed: {err}"),
+            (ViewScope::Archived, None) => "No archived items found.".to_string(),
+            (ViewScope::Active, _) => "No work items found.".to_string(),
+        };
+        vec![Line::from(empty_text)]
     } else {
-        app.snapshot()
-            .items
+        items
             .iter()
             .enumerate()
             .map(|(index, item)| {
@@ -56,21 +66,31 @@ fn task_list(app: &OverviewState) -> Paragraph<'_> {
                 } else {
                     " "
                 };
-                let line = format!("{marker} {} [{}] {}", item.id, item.status, item.title);
+                let base_line = format!("{marker} {} [{}] {}", item.id, item.status, item.title);
+                let line_text = match scope {
+                    ViewScope::Archived => {
+                        let glyph = match item.verdict.as_deref() {
+                            Some("PASSED") => "[\u{2713}]",
+                            Some(_) => "[\u{2717}]",
+                            None => "[?]",
+                        };
+                        format!("{base_line} {glyph}")
+                    }
+                    ViewScope::Active => base_line,
+                };
+                let mut style = Style::default();
                 if index == app.selected_index() {
-                    Line::from(Span::styled(
-                        line,
-                        Style::default().add_modifier(Modifier::REVERSED),
-                    ))
-                } else {
-                    Line::from(line)
+                    style = style.add_modifier(Modifier::REVERSED);
+                } else if scope == ViewScope::Archived {
+                    style = style.add_modifier(Modifier::DIM);
                 }
+                Line::from(Span::styled(line_text, style))
             })
             .collect()
     };
 
     Paragraph::new(lines)
-        .block(Block::default().title("Tasks").borders(Borders::ALL))
+        .block(Block::default().title(title).borders(Borders::ALL))
         .wrap(Wrap { trim: true })
 }
 
@@ -93,18 +113,23 @@ fn preview(app: &OverviewState) -> Paragraph<'_> {
         .collect::<Vec<_>>()
         .join("\n");
 
-    let lines = vec![
-        Line::from(Span::styled(
-            item.title.as_str(),
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from(format!("status: {}", item.status)),
-        Line::from(format!("score: {score}")),
-        Line::from(format!("source: {source}")),
-        Line::from(format!("path: {}", item.path.display())),
-        Line::from(""),
-        Line::from(body_excerpt),
-    ];
+    let mut lines: Vec<Line<'_>> = Vec::new();
+    lines.push(Line::from(Span::styled(
+        item.title.as_str(),
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(format!("status: {}", item.status)));
+    lines.push(Line::from(format!("score: {score}")));
+    lines.push(Line::from(format!("source: {source}")));
+    if app.view_scope() == ViewScope::Archived {
+        let verdict = item.verdict.as_deref().unwrap_or("n/a");
+        let completed = item.completed.as_deref().unwrap_or("n/a");
+        lines.push(Line::from(format!("verdict: {verdict}")));
+        lines.push(Line::from(format!("completed: {completed}")));
+    }
+    lines.push(Line::from(format!("path: {}", item.path.display())));
+    lines.push(Line::from(""));
+    lines.push(Line::from(body_excerpt));
 
     Paragraph::new(lines)
         .block(Block::default().title("Preview").borders(Borders::ALL))
@@ -158,6 +183,68 @@ mod tests {
             selected.source.as_deref().unwrap_or("n/a")
         )));
         assert!(rendered.contains("Build the first read-only"));
+    }
+
+    #[test]
+    fn active_view_header_shows_scope_and_archived_placeholder() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let app = App::load(root).expect("workflow should load");
+        let mut terminal =
+            Terminal::new(TestBackend::new(180, 20)).expect("test terminal should be created");
+
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("[active]"), "missing [active] label");
+        assert!(
+            rendered.contains("(press a)"),
+            "missing archived placeholder hint"
+        );
+    }
+
+    #[test]
+    fn archived_view_preview_renders_verdict_and_completed() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let mut app = App::load(root).expect("workflow should load");
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+
+        let mut terminal =
+            Terminal::new(TestBackend::new(180, 30)).expect("test terminal should be created");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("[archived]"), "missing [archived] label");
+        assert!(rendered.contains("verdict:"), "missing verdict line");
+        assert!(rendered.contains("completed:"), "missing completed line");
+        assert!(
+            rendered.contains("archived: "),
+            "missing archived count in header"
+        );
+    }
+
+    #[test]
+    fn archived_view_list_appends_verdict_glyphs() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let mut app = App::load(root).expect("workflow should load");
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+
+        let mut terminal =
+            Terminal::new(TestBackend::new(180, 30)).expect("test terminal should be created");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            rendered.contains("\u{2713}"),
+            "missing PASSED check glyph in archived list"
+        );
     }
 
     fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
