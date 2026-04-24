@@ -129,3 +129,16 @@ Firmed up the design for the `-w` short alias: it is a pure `clap` derive annota
 ### Summary
 
 Plan is minimal and proportional: one clap attribute edit (`short = 'w'` added to the existing `#[arg(long, ...)]`) plus two new unit tests in the same `src/cli.rs` `#[cfg(test)]` block — one for `-w <path>` parsing and one asserting help output surfaces both spellings. Verification is the standard triad (`cargo fmt --check`, `cargo test`, `cargo run -- -w docs/spacetop-dev --help | cat`). No other files are touched; no CLI surface renaming occurs.
+
+## Stage Report: implement
+
+- DONE: `src/cli.rs` has `short = 'w'` added to the existing `#[arg]` on the `workflow_dir` field, with no other CLI changes.
+  Line 13 now reads `#[arg(short = 'w', long, value_name = "PATH", default_value = ".")]`; no other edits to `src/cli.rs` outside the test module.
+- DONE: `cargo test` passes including the two new tests covering `-w <path>` parsing and `-h`/`--help` surfacing both spellings.
+  `cargo test --lib cli::` → 5 passed; 0 failed (includes new `parses_workflow_dir_short_flag` and `help_output_surfaces_both_spellings`). Two pre-existing failures in `app::tests` and `ui::tests` reproduce on untouched main and are out of scope.
+- DONE: `cargo fmt --check` and the smoke command `cargo run -- -w docs/spacetop-dev --help` succeed, with no changes to `docs/spacetop-dev/*.md` beyond the entity's own Stage Report append.
+  `cargo fmt --check` clean; smoke run prints `-w, --workflow-dir <PATH>` on the help line; only this entity's markdown is touched.
+
+### Summary
+
+Added `short = 'w'` to the existing `#[arg(long, ...)]` on `Cli::workflow_dir` in `src/cli.rs` and appended two tests (`parses_workflow_dir_short_flag`, `help_output_surfaces_both_spellings`) to the existing `#[cfg(test)] mod tests` block. All five CLI tests pass; `cargo fmt --check` is clean; the smoke command renders `-w, --workflow-dir <PATH>` on the help line. Two unrelated pre-existing test failures in `app::tests` and `ui::tests` reproduce on untouched main and were not in scope for this stage.

@@ -10,7 +10,7 @@ use clap::Parser;
 )]
 pub struct Cli {
     /// Path to a Spacedock workflow directory.
-    #[arg(long, value_name = "PATH", default_value = ".")]
+    #[arg(short = 'w', long, value_name = "PATH", default_value = ".")]
     pub workflow_dir: PathBuf,
 }
 
@@ -37,5 +37,26 @@ mod tests {
         let cli = Cli::parse_from(["spacetop"]);
 
         assert_eq!(cli.workflow_dir, PathBuf::from("."));
+    }
+
+    #[test]
+    fn parses_workflow_dir_short_flag() {
+        let cli = Cli::parse_from(["spacetop", "-w", "docs/spacetop-dev"]);
+
+        assert_eq!(cli.workflow_dir, PathBuf::from("docs/spacetop-dev"));
+    }
+
+    #[test]
+    fn help_output_surfaces_both_spellings() {
+        let help = Cli::command().render_help().to_string();
+
+        assert!(
+            help.contains("-w"),
+            "help output missing short flag `-w`:\n{help}"
+        );
+        assert!(
+            help.contains("--workflow-dir"),
+            "help output missing long flag `--workflow-dir`:\n{help}"
+        );
     }
 }
