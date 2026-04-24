@@ -3,7 +3,7 @@ id: 005
 title: Auto-discover Spacedock workflows under `docs/`
 status: design
 source: captain feedback after build-initial-tui-overview
-started:
+started: 2026-04-24T16:06:48Z
 completed:
 verdict:
 score:
