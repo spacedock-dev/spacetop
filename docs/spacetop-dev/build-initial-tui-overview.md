@@ -1,7 +1,7 @@
 ---
 id: 003
 title: Build Initial TUI Overview
-status: implement
+status: review
 source: commission seed
 started: 2026-04-24T14:50:32Z
 completed:
@@ -95,3 +95,55 @@ Parser/domain ownership remains with the parser task/worktree: `src/domain/mod.r
 ### Summary
 
 Planned the initial overview as a read-only ratatui layer over parser-owned workflow data. The plan keeps selection and summary logic testable outside a terminal session, limits implementation ownership to app/UI/runtime files, and requires evidence that browsing does not mutate Spacedock markdown state.
+
+## Stage Report: implement
+
+- DONE: DONE/SKIPPED/FAILED accounting must show the TUI renders real workflow state from parser data, including stage counts and task preview content.
+  `cargo test` passed 16/16; render test asserts `implement: 1`, `done: 0`, title, status, score/source, and body excerpt from `docs/spacetop-dev`.
+- DONE: DONE/SKIPPED/FAILED accounting must show navigation/quit behavior is tested without mutating workflow files.
+  App tests cover Down/Up/Home/End clamping plus `q`/Esc quit state, and smoke run left `git diff -- docs/spacetop-dev` empty before this report was appended.
+- DONE: DONE/SKIPPED/FAILED accounting must show fresh `cargo fmt --check`, `cargo test`, and smoke/no-mutation evidence (`git diff -- docs/spacetop-dev`).
+  Ran `cargo fmt --check`, `cargo test`, `expect -c 'spawn cargo run -- --workflow-dir docs/spacetop-dev; ... send "q"'`, and `git diff -- docs/spacetop-dev` with no workflow-state changes before report append.
+
+### Summary
+
+Implemented the initial read-only ratatui overview over parser-owned `WorkflowSnapshot` data. The app now loads workflow state, derives stage counts, tracks in-memory selection and quit state, renders summary/list/preview panes, and runs through a crossterm terminal loop that restores terminal state on exit.
+
+## Stage Report: review
+
+- FAILED: DONE/SKIPPED/FAILED accounting must show whether AC-1 (TUI renders real markdown workflow state) is satisfied with fresh evidence.
+  REJECTED: fresh `cargo test` failed 14/16 because tests still expect `implement: 1`, while the real workflow file is now `status: review` after commit `490bde8`.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-2 (navigation does not mutate workflow files) is satisfied with fresh evidence.
+  `expect -c 'spawn cargo run -- --workflow-dir docs/spacetop-dev; ... send "q"'` exited 0, and `git diff -- docs/spacetop-dev` was empty before this report append.
+- FAILED: DONE/SKIPPED/FAILED accounting must show whether AC-3 (selected task preview exposes useful state) is satisfied with fresh evidence, plus `cargo fmt --check`, `cargo test`, and smoke/no-mutation results.
+  `cargo fmt --check` passed, smoke/no-mutation passed, but `cargo test` failed in `app::tests::loads_real_workflow_state_and_derives_stage_counts` and `ui::tests::renders_real_workflow_summary_task_list_and_preview`.
+
+### Summary
+
+Verdict: REJECTED. The implementation appears scoped to the expected app/UI/runtime files and the PTY smoke run did not mutate workflow files, but the automated evidence is not currently reproducible because the tests are coupled to mutable workflow status in `docs/spacetop-dev`.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: DONE/SKIPPED/FAILED accounting must show the app/UI tests no longer depend on a transient live workflow status like `implement: 1`.
+  Updated app/UI real-workflow tests to derive status/count expectations from the loaded snapshot instead of hard-coding `implement: 1`.
+- DONE: DONE/SKIPPED/FAILED accounting must show the original TUI acceptance coverage remains: real workflow summary, selected task preview, navigation, and read-only behavior.
+  `cargo test` passed 16/16, including real workflow summary/preview render tests plus navigation and quit-state tests.
+- DONE: DONE/SKIPPED/FAILED accounting must show fresh `cargo fmt --check`, `cargo test`, and smoke/no-mutation evidence after the fix.
+  Ran `cargo fmt --check`, `cargo test`, `expect -c 'spawn cargo run -- --workflow-dir docs/spacetop-dev; ...'`, and `git diff -- docs/spacetop-dev` was empty before this report append.
+
+### Summary
+
+Fixed the review rejection by removing exact-count/status assertions tied to mutable Spacedock workflow state. The tests still load and render the real workflow, but expected stage lines and preview status now come from the same snapshot under test, while fixture-based navigation coverage remains unchanged.
+
+## Stage Report: review (cycle 2)
+
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-1 (TUI renders real markdown workflow state) is satisfied with fresh evidence.
+  PASSED: `cargo test` passed 16/16, including real `docs/spacetop-dev` load/render tests whose stage counts are derived from the loaded snapshot.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-2 (navigation does not mutate workflow files) is satisfied with fresh evidence, including no live-status test coupling.
+  PASSED: navigation tests mutate only selection/quit state, `rg` found no stale `implement: 1` or `status: implement` test coupling, smoke exited via `j`, `k`, `q`, and `git diff -- docs/spacetop-dev` was empty before this report append.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-3 (selected task preview exposes useful state) is satisfied with fresh evidence, plus `cargo fmt --check`, `cargo test`, and smoke/no-mutation results.
+  PASSED: render test asserts selected title, status, score, source, and body excerpt; `cargo fmt --check`, `cargo test`, and the `expect` smoke run all exited 0.
+
+### Summary
+
+Verdict: PASSED. The feedback fix addresses the prior rejection by deriving live workflow status/count expectations from parser output, while preserving coverage for summary rendering, selected preview content, navigation behavior, and read-only smoke/no-mutation evidence.
