@@ -7,7 +7,7 @@ started: 2026-04-24T16:09:42Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-add-workflow-graph-view
 issue:
 pr:
 ---
