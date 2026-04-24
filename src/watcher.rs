@@ -193,6 +193,13 @@ fn event_is_relevant(event: &Event) -> bool {
     event.paths.iter().any(|p| is_relevant(p))
 }
 
+/// How often the outer wait wakes up to check for shutdown when no raw
+/// events are arriving. Must stay short enough that `Drop::drop` returns
+/// promptly on a quiet directory; the backend's `_watcher` field is
+/// dropped only AFTER `Drop::drop` returns, so the only way out of an
+/// idle outer wait is a periodic shutdown poll.
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
 fn debounce_loop(
     raw_rx: Receiver<Event>,
     signal_tx: Sender<RefreshSignal>,
@@ -200,10 +207,20 @@ fn debounce_loop(
     debounce: Duration,
 ) {
     loop {
-        // Block until an event arrives (or shutdown).
-        let first = match raw_rx.recv() {
+        // Wait for an event with a bounded timeout so we can poll the
+        // shutdown channel even when the watched tree is quiet. (A naive
+        // `raw_rx.recv()` here would deadlock `Drop::drop` because the
+        // live `raw_tx` clone is held by the backend's event handler,
+        // which is itself dropped only after `Drop::drop` returns.)
+        let first = match raw_rx.recv_timeout(SHUTDOWN_POLL_INTERVAL) {
             Ok(ev) => ev,
-            Err(_) => return,
+            Err(RecvTimeoutError::Timeout) => {
+                if shutdown_rx.try_recv().is_ok() {
+                    return;
+                }
+                continue;
+            }
+            Err(RecvTimeoutError::Disconnected) => return,
         };
         if shutdown_rx.try_recv().is_ok() {
             return;
@@ -394,5 +411,30 @@ mod tests {
             watcher.backend(),
             WatcherBackend::Recommended | WatcherBackend::Poll
         ));
+    }
+
+    /// Regression: dropping `WorkflowWatcher` against a quiet tempdir must
+    /// return within a bounded time. Previously the debounce thread blocked
+    /// on `raw_rx.recv()` and only the backend's event-handler clone held
+    /// the live sender, so `Drop::drop`'s `handle.join()` waited forever
+    /// when no filesystem events were arriving.
+    #[test]
+    fn drop_returns_promptly_on_quiet_tempdir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (watcher, rx) =
+            WorkflowWatcher::start(dir.path(), WatcherConfig::default()).expect("watcher");
+        // Hold the receiver to mirror real callers; drop the watcher in a
+        // helper thread so the test itself can't hang.
+        let (done_tx, done_rx) = mpsc::channel::<()>();
+        let handle = thread::spawn(move || {
+            drop(watcher);
+            let _ = done_tx.send(());
+        });
+        match done_rx.recv_timeout(Duration::from_secs(2)) {
+            Ok(()) => {}
+            Err(_) => panic!("WorkflowWatcher::drop did not complete within 2s (deadlock)"),
+        }
+        let _ = handle.join();
+        drop(rx);
     }
 }
