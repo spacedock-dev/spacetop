@@ -1,16 +1,17 @@
 ---
 id: 002
 title: Parse Spacedock Workflow Files
-status: review
+status: done
 source: commission seed
 started: 2026-04-24T14:30:53Z
-completed:
-verdict:
+completed: 2026-04-24T15:15:30Z
+verdict: PASSED
 score: 1.0
-worktree: .worktrees/spacedock-ensign-parse-spacedock-workflow-files
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-24T15:15:30Z
 ---
 
 Read Spacedock workflow `README.md` metadata and work item markdown frontmatter into a typed model that SpaceTop can use for status summaries and workflow structure views.
