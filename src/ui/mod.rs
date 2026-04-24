@@ -1,3 +1,4 @@
+mod graph;
 mod picker;
 
 use crossterm::event::Event;
@@ -8,6 +9,7 @@ use ratatui::{
 };
 
 use crate::app::{App, AppMode, OverviewState};
+use graph::render_stage_graph;
 
 pub type TerminalEvent = Event;
 
@@ -26,36 +28,18 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 }
 
 fn render_overview(frame: &mut Frame<'_>, state: &OverviewState) {
-    let [summary_area, content_area] = Layout::default()
+    let [graph_area, content_area] = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(10), Constraint::Min(0)])
+        .constraints([Constraint::Length(7), Constraint::Min(0)])
         .areas(frame.area());
     let [list_area, preview_area] = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
         .areas(content_area);
 
-    frame.render_widget(summary(state), summary_area);
+    render_stage_graph(frame, graph_area, state);
     frame.render_widget(task_list(state), list_area);
     frame.render_widget(preview(state), preview_area);
-}
-
-fn summary(app: &OverviewState) -> Paragraph<'_> {
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "SpaceTop",
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
-        Line::from(format!("workflow: {}", app.workflow_dir().display())),
-        Line::from(""),
-    ];
-    lines.extend(
-        app.stage_counts()
-            .into_iter()
-            .map(|count| Line::from(format!("{}: {}", count.name, count.items))),
-    );
-
-    Paragraph::new(lines).block(Block::default().title("Workflow").borders(Borders::ALL))
 }
 
 fn task_list(app: &OverviewState) -> Paragraph<'_> {
@@ -140,25 +124,25 @@ mod tests {
     fn renders_real_workflow_summary_task_list_and_preview() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
         let app = App::load(root).expect("workflow should load");
-        let stage_lines = app
-            .stage_counts()
-            .into_iter()
-            .map(|count| format!("{}: {}", count.name, count.items))
-            .collect::<Vec<_>>();
         let selected = app
             .selected_item()
             .expect("real workflow has a selected item");
         let mut terminal =
-            Terminal::new(TestBackend::new(100, 30)).expect("test terminal should be created");
+            Terminal::new(TestBackend::new(140, 30)).expect("test terminal should be created");
 
         terminal
             .draw(|frame| render(frame, &app))
             .expect("render should succeed");
 
         let rendered = buffer_text(terminal.backend().buffer());
-        assert!(rendered.contains("SpaceTop"));
-        for stage_line in stage_lines {
-            assert!(rendered.contains(&stage_line), "missing {stage_line}");
+        // The graph block carries the Workflow title and each stage name.
+        assert!(rendered.contains("Workflow"));
+        for stage in &app.snapshot().definition.stages {
+            assert!(
+                rendered.contains(stage.name.as_str()),
+                "missing stage name {}",
+                stage.name
+            );
         }
         assert!(rendered.contains(&selected.title));
         assert!(rendered.contains(&format!("status: {}", selected.status)));
