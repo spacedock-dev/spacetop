@@ -1,7 +1,7 @@
 ---
 id: 006
 title: Show completed (archived) tasks in the TUI
-status: implement
+status: review
 source: captain feedback after build-initial-tui-overview
 started: 2026-04-24T15:54:38Z
 completed:
