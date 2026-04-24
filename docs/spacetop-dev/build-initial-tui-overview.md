@@ -24,3 +24,73 @@ Verified by: UI/event tests or a documented manual run confirm navigation change
 
 **AC-3 -- The selected task preview exposes useful state.**
 Verified by: the overview displays the selected task title, status, score/source, and markdown body excerpt.
+
+## Implementation plan
+
+Build this as the first read-only terminal overview on top of the parser task's typed `WorkflowSnapshot`. Do not duplicate markdown/frontmatter parsing in UI code; the overview should consume domain records and keep selection/navigation state testable without a terminal backend.
+
+1. Confirm the parser snapshot has landed or is available in the implementation worktree:
+   - expected load API: `load_workflow_dir(&Path) -> Result<WorkflowSnapshot, _>` or equivalent
+   - expected model data: stage names/metadata, work item `path`, `id`, `title`, `status`, `source`, `score`, and markdown `body`
+   - if names differ, adapt the TUI boundary once in app state rather than throughout rendering code
+2. Expand `src/app.rs` from a path holder into read-only UI state:
+   - `App { workflow_dir, snapshot, selected_index, should_quit }`
+   - `App::load(workflow_dir: PathBuf) -> Result<Self, _>` to call the parser
+   - derived helpers for stage counts, selected item, next/previous selection, and clamped selection after empty/non-empty item lists
+3. Keep navigation logic independent of terminal rendering:
+   - define an app action method such as `handle_key(KeyEvent)` or `dispatch(Action)`
+   - support `Up`/`k`, `Down`/`j`, `Home`, `End`, and `q`/`Esc`
+   - ensure navigation only mutates in-memory selection and quit state
+4. Replace `src/ui/mod.rs` placeholder rendering with a focused ratatui layout:
+   - top or left summary block listing workflow directory and stage counts
+   - task list block showing `id`, `status`, title, and a visible selected row
+   - preview block showing selected item title, status, score/source, path, and a wrapped body excerpt
+   - empty-state rendering for workflows with no work item files
+5. Add the terminal runner at the CLI boundary:
+   - keep `src/lib.rs::run(cli)` responsible for loading `App`, entering raw mode, drawing, polling events, and restoring the terminal
+   - use `crossterm` + `ratatui::Terminal<CrosstermBackend<_>>`
+   - do not add any workflow write paths or file mutation helpers
+6. Handle parser and terminal errors clearly:
+   - parser load failures should return an `anyhow` context naming the workflow directory
+   - terminal setup/restore should avoid leaving the terminal in raw mode on normal errors
+7. Update docs only if needed for an executable smoke command; otherwise keep implementation scoped to source and tests.
+8. Run verification from the implementation worktree:
+   - `cargo fmt --check`
+   - `cargo test`
+   - `cargo run -- --workflow-dir docs/spacetop-dev`
+   - after exiting the TUI, `git diff -- docs/spacetop-dev` must show no changes
+
+## Focused TUI and navigation verification strategy
+
+Unit tests should cover app state and render output without requiring an interactive terminal session.
+
+- App load/summary test: using `docs/spacetop-dev`, assert the app exposes the parser-derived workflow directory, expected stage names, and counts by current task status.
+- Selection navigation tests: construct an app or fixture snapshot with multiple items and assert down/up/home/end behavior, bounds clamping, and empty-list behavior.
+- Quit tests: assert `q` and `Esc` set `should_quit`, while movement keys do not.
+- Render smoke tests: render the overview into a `ratatui::backend::TestBackend` and assert the buffer contains real stage names, task titles, selected status, score/source, and a body excerpt.
+- No-mutation verification: before and after the manual smoke run, check `git diff -- docs/spacetop-dev`; expected result is empty because the overview is read-only.
+
+## File and module ownership for implementation
+
+The later TUI implementation worker should own only the overview/runtime surfaces and consume parser output.
+
+- `src/app.rs`: app state, selection/navigation helpers, summary derivation, and related tests.
+- `src/ui/mod.rs` or new files under `src/ui/`: ratatui layout/rendering and render-buffer tests.
+- `src/lib.rs`: terminal event loop and parser/app wiring from `Cli`.
+- `src/cli.rs`: only if an explicit non-interactive or display flag is required; no CLI change is currently necessary.
+- `README.md`: only if documenting the smoke command becomes part of implementation evidence.
+
+Parser/domain ownership remains with the parser task/worktree: `src/domain/mod.rs`, any `src/parser*` module, parser error types, and parser fixtures/tests. Workflow state files under `docs/spacetop-dev` must not be changed by the TUI implementation except for the assigned entity's own Spacedock stage report when dispatched.
+
+## Stage Report: plan
+
+- DONE: DONE/SKIPPED/FAILED accounting must show a concrete implementation plan for a read-only ratatui overview using the parser snapshot.
+  Added an implementation plan that consumes `WorkflowSnapshot`, defines app state/navigation, replaces placeholder rendering, wires a terminal runner, and includes concrete verification commands.
+- DONE: DONE/SKIPPED/FAILED accounting must show a focused TUI/navigation verification strategy, including no workflow-file mutation.
+  Added unit, render-buffer, manual smoke, and `git diff -- docs/spacetop-dev` checks to prove navigation changes memory only.
+- DONE: DONE/SKIPPED/FAILED accounting must identify file/module ownership for the later implementation stage.
+  Added ownership notes for `src/app.rs`, `src/ui/*`, `src/lib.rs`, optional docs/CLI surfaces, and explicitly left parser/domain files to the parser task.
+
+### Summary
+
+Planned the initial overview as a read-only ratatui layer over parser-owned workflow data. The plan keeps selection and summary logic testable outside a terminal session, limits implementation ownership to app/UI/runtime files, and requires evidence that browsing does not mutate Spacedock markdown state.
