@@ -109,3 +109,174 @@ These pin down how archived state enters the data model and how it flows through
 ### Summary
 
 Locked the archive view as an opt-in scope toggle (`a` key) layered over the existing active-task overview rather than a unified filter list or a new screen — this preserves today's default UX and keeps the parser's active-snapshot contract untouched. Parser work adds a sibling archive loader that reuses `parse_work_item` and existing `WorkItem` fields (`completed`, `verdict`), so domain types do not change. ACs now pin backward compatibility, preview verdict/completed fields, sort-by-completed order, and read-only smoke evidence, which gives the plan stage unambiguous targets.
+
+## Implementation plan
+
+The plan splits into four layers so the implement stage can land them as roughly-sequential commits, each independently verifiable with `cargo test`. No `src/` writes happen in this plan stage.
+
+### Layer 1 — Parser: archive loader (pure logic, no TUI)
+
+Files:
+- `src/parser.rs` — add a sibling loader alongside `load_workflow_dir`.
+- `src/domain/mod.rs` — no field additions. Add one small helper type if needed (see below).
+- `docs/spacetop-dev/_archive/*.md` — fixtures already exist (`scaffold-rust-cli-project.md`, `parse-spacedock-workflow-files.md`, `build-initial-tui-overview.md`). Use them as read-only fixtures.
+
+New parser API (in `src/parser.rs`):
+- `pub fn load_archived_items(workflow_dir: &Path, allowed_statuses: &[String]) -> Result<Vec<WorkItem>, ParseError>`
+  - Reads `workflow_dir/_archive/`. Missing `_archive/` is treated as `Ok(Vec::new())` (not an error) — `_archive` is optional.
+  - For each direct child of `_archive/`:
+    - If it is a `*.md` file, parse via `parse_work_item`.
+    - If it is a directory, parse `<dir>/index.md` via `parse_work_item` (skip silently if `index.md` is missing — folder entities may legitimately be bare).
+  - Ignore nested `_archive/*/*.md` other than `index.md`.
+  - Sort results newest-first by `completed` (string compare on the ISO-8601 timestamp — lexicographic ordering matches chronological for this format). Items with `completed == None` sort last; within that group, fall back to filename ascending so ordering is deterministic.
+  - Reuses `parse_work_item` and therefore the existing `allowed_statuses` validation. No new `ParseError` variant.
+- Keep `load_workflow_dir` untouched. Regression test `loads_workflow_snapshot_from_directory_ignoring_mods_and_archive` must keep passing without edits.
+
+Optional domain helper (only if ergonomic):
+- Add `pub fn archive_dir(workflow_dir: &Path) -> PathBuf { workflow_dir.join("_archive") }` near the other path helpers, to keep the `_archive` literal in one place. Skip if it creates unnecessary churn.
+
+Verification:
+- `cargo fmt --all`
+- `cargo test -p spacetop parser::tests` (or the bin-equivalent — project is a single crate; plain `cargo test` is fine).
+
+### Layer 2 — App state: `ViewScope` and archive slice
+
+Files:
+- `src/app.rs` — add scope enum, archive slice, per-scope selection, toggle handler.
+- `src/domain/mod.rs` — no changes expected.
+
+Additions in `src/app.rs`:
+- `pub enum ViewScope { Active, Archived }` with `#[derive(Debug, Clone, Copy, PartialEq, Eq)]` and `Default = Active` (either `#[derive(Default)]` with `#[default]` on `Active`, or an explicit `Default` impl).
+- Extend `App` with:
+  - `view_scope: ViewScope` (default `Active`).
+  - `archived_items: Vec<WorkItem>` (empty on construction; populated once on demand).
+  - `archive_loaded: bool` — gates the one-time load.
+  - `archive_error: Option<String>` — displayed in the archived scope's list area if loading failed; active view never sees this.
+  - `selected_index_archived: usize` — separate selection state so toggling scope restores the user's place.
+- Rename internal `selected_index` to `selected_index_active` (or keep `selected_index` as the active cursor and add `selected_index_archived` — implement stage picks whichever reads cleaner). The public accessor `selected_index()` returns the one for the current scope.
+- New methods:
+  - `pub fn view_scope(&self) -> ViewScope`
+  - `pub fn visible_items(&self) -> &[WorkItem]` — returns either `&self.snapshot.items` or `&self.archived_items` based on scope.
+  - `pub fn archived_items(&self) -> &[WorkItem]`
+  - `pub fn archived_count(&self) -> Option<usize>` — returns `None` when `!archive_loaded` (UI renders `archived: (press a)`), `Some(n)` after load.
+  - `pub fn archive_error(&self) -> Option<&str>`
+  - `fn ensure_archive_loaded(&mut self)` — calls `load_archived_items(&self.workflow_dir, &allowed)` the first time it is invoked; sets `archive_loaded = true` regardless of outcome so we do not retry on every toggle. Errors go into `archive_error`, not a panic.
+- `selected_item()` now reads from `visible_items()` using the per-scope index.
+- `stage_counts()` stays wired to `self.snapshot.items` only (active counts; archived count is shown separately).
+- `handle_key`:
+  - Add `KeyCode::Char('a') => self.toggle_scope()`. `toggle_scope` flips `view_scope` and calls `ensure_archive_loaded()` on the first transition to `Archived`. It must clamp the per-scope selection if the newly-visible list is empty.
+  - All other keys (`j`/`k`/Up/Down/Home/End/`q`/`Esc`) keep their semantics but operate on the current scope's selection + visible slice (via `visible_items().len()`).
+
+Verification:
+- `cargo test app::tests` — all existing tests pass without semantic changes; the `selected_index`/`snapshot` accessors still return active-scope data by default.
+
+### Layer 3 — UI: summary, list badges, preview fields, help footer
+
+Files:
+- `src/ui/mod.rs` — update `summary`, `task_list`, `preview` functions and their tests.
+
+Summary block changes:
+- Append two lines below the existing `workflow: ...` line: `view: active` | `view: archived` and `archived: N` | `archived: (press a)` (before the archive has been loaded) | `archived: load failed` (when `archive_error` is set).
+- Append a footer hint line at the bottom of the summary block: `keys: j/k nav, a toggle archive, q quit`.
+- The summary block height constraint (`Constraint::Length(10)`) may need to grow (e.g., `Length(12)`). Revisit in implement stage; acceptable to pick a slightly larger length to fit the new lines.
+
+Task list changes (`task_list`):
+- Source items from `app.visible_items()` (not `app.snapshot().items`).
+- When `app.view_scope() == ViewScope::Archived`:
+  - Append a verdict glyph to each row: `[✓]` if `verdict == Some("PASSED")`, `[✗]` if `verdict == Some("REJECTED")` (or any non-PASSED value), `[?]` if `verdict.is_none()`.
+  - Style non-selected rows with `Modifier::DIM` so archived rows look visually muted.
+  - Selected row keeps `Modifier::REVERSED` (takes precedence over DIM) so the cursor remains visible.
+- When the archived scope is empty but `archive_error` is `Some`, render the error string as a single line in place of items (`Line::from(Span::styled(...))`).
+
+Preview changes (`preview`):
+- When `app.view_scope() == ViewScope::Archived`, insert two extra `Line::from(...)` entries between the existing `source:` and `path:` lines:
+  - `verdict: {item.verdict.as_deref().unwrap_or("n/a")}`
+  - `completed: {item.completed.as_deref().unwrap_or("n/a")}`
+- Active scope preview is unchanged.
+
+Verification:
+- `cargo test ui::tests` — existing render tests pass; new render tests (Layer 4) cover the archived-scope branches.
+
+### Layer 4 — Terminal wiring and smoke
+
+Files:
+- `src/lib.rs` — **no structural change required.** `App::load` continues to load only the active snapshot; the archive loader is invoked inside `App::toggle_scope`, not at startup. The event loop already delegates every key to `app.handle_key`, so `a` is handled transparently.
+- Double-check that no new `stdout`/`stderr` writes are introduced in the archive path (read-only contract).
+
+Verification:
+- `cargo fmt --all`
+- `cargo clippy --all-targets -- -D warnings` (if the project already uses clippy CI; otherwise at least `cargo check --all-targets`).
+- `cargo test` — full suite.
+- Manual smoke (AC-5): `cargo run -- --workflow-dir docs/spacetop-dev` → press `a` (should flip to archived, listing the three archive entries newest-first), press `j`/`k` to navigate, `a` again to flip back, `q` to quit. Then `git diff -- docs/spacetop-dev` must be empty.
+
+## Focused test strategy
+
+Tests are grouped by module and named precisely so the implement stage has a drop-in list.
+
+### Parser tests (`src/parser.rs`, `#[cfg(test)] mod tests`)
+
+1. `load_archived_items_returns_entries_from_flat_files` — against the real fixture `docs/spacetop-dev/_archive`. Asserts: count == 3, titles include `Scaffold Rust CLI Project` / `Parse Spacedock Workflow Files` / `Build Initial TUI Overview`, each item has `status == "done"`, each has `Some` `completed` and `Some` `verdict`.
+2. `load_archived_items_sorts_by_completed_desc_with_missing_last` — builds a temp `_archive/` directory with three synthesized items having `completed` timestamps `2026-04-24T14:49:53Z`, `2026-04-24T15:00:00Z`, and none. Asserts the ordering is `[T15:00, T14:49, None]`.
+3. `load_archived_items_reads_folder_entity_index_md` — temp dir containing `_archive/foo/index.md` plus `_archive/foo/notes.md`. Asserts only the `index.md` is surfaced.
+4. `load_archived_items_missing_archive_dir_is_empty_ok` — temp workflow with no `_archive/`. Asserts `Ok(Vec::new())`, no error.
+5. `load_archived_items_propagates_parse_error_with_path` — temp `_archive/broken.md` with bad YAML. Asserts the returned `ParseError` includes the file path.
+6. Regression guard (already present): `loads_workflow_snapshot_from_directory_ignoring_mods_and_archive` must continue to pass unchanged. Do not edit it.
+
+### App-state tests (`src/app.rs`, `#[cfg(test)] mod tests`)
+
+7. `default_view_scope_is_active_and_visible_items_match_snapshot` — `App::from_snapshot(...)` has `view_scope() == ViewScope::Active` and `visible_items()` points to `snapshot.items`.
+8. `toggle_scope_key_a_flips_to_archived_and_loads_lazily` — use `App::load` against the real `docs/spacetop-dev` directory, then send `KeyCode::Char('a')`. Assert `view_scope() == Archived`, `archived_items()` non-empty, `selected_item()` returns an archived entry, and `archived_count() == Some(3)`. A second `a` flips back to `Active` and `visible_items()` again equals `snapshot.items`.
+9. `archived_view_selection_is_independent_of_active_selection` — toggle to archived, press `j` twice, toggle back to active. Assert active `selected_index()` still `0`, then toggle to archived again and assert archived selection is still at index 2.
+10. `navigation_is_clamped_per_scope` — handcrafted `App` with archived slice of length 1: `End` / `Down` never puts selection out of bounds.
+11. `archive_count_hidden_before_first_toggle` — fresh `App`, `archived_count() == None` until the first `a` press.
+
+### UI render tests (`src/ui/mod.rs`, `#[cfg(test)] mod tests`)
+
+12. `active_view_renders_scope_and_archived_placeholder_lines` — build an `App` at default scope. Assert rendered buffer contains `view: active` and `archived: (press a)` (or whichever exact string is chosen in implement — update test to match).
+13. `archived_view_preview_renders_verdict_and_completed` — build an `App`, inject a known `archived_items` slice (e.g., copy a fixture's parsed `WorkItem`), set scope to `Archived`. Assert buffer contains `verdict: PASSED`, `completed: 2026-04-24T14:49:53Z`, and the existing `status: done` / `source: ...` / `path: ...` lines.
+14. `archived_view_list_appends_verdict_glyph_and_dims_rows` — scope=`Archived`, two items with `verdict = Some("PASSED")` and `verdict = None`. Assert list line 1 ends with `[✓]`, line 2 with `[?]`. (Glyph-presence assertion is enough; ratatui `TestBackend` does not expose style flags ergonomically — if an implement-stage reviewer wants a dim-style assertion, they can probe `buffer.get(x, y).modifier`.)
+15. `summary_footer_lists_a_toggle_hint` — assert rendered buffer contains `a toggle archive`.
+
+### Smoke
+
+16. Manual `cargo run -- --workflow-dir docs/spacetop-dev` per Layer 4 above. Record terminal transcript in the implement stage report if the reviewer wants evidence; otherwise `git diff -- docs/spacetop-dev` empty is sufficient evidence of the read-only contract.
+
+## File / module ownership (implement stage)
+
+Worker scope for the implement worktree is confined to the following files. No other source files are expected to change.
+
+| Concern | File(s) | Owner boundary |
+|---|---|---|
+| Archive loader, sort, folder-entity handling | `src/parser.rs` | Parser layer only; no UI/domain knowledge. |
+| Optional `archive_dir(...)` helper | `src/parser.rs` (or `src/domain/mod.rs` if it lives better there) | Prefer co-locating with the loader unless a domain-wide helper already exists. |
+| `ViewScope` enum, archive slice, per-scope selection, `a` key handler | `src/app.rs` | App-state layer; imports `load_archived_items` from `parser`. Must not touch ratatui. |
+| Summary/list/preview scope branching, verdict glyph, footer hint | `src/ui/mod.rs` | Rendering only; reads state via `App` accessors (`view_scope`, `visible_items`, `archived_count`, `archive_error`). |
+| Terminal event loop | `src/lib.rs` | No changes expected. If a change is needed (e.g., to grow summary height), it still lives in `src/ui/mod.rs`, not `lib.rs`. |
+| Domain types | `src/domain/mod.rs` | **No changes** — `WorkItem.completed` and `WorkItem.verdict` already exist. |
+| CLI surface | `src/cli.rs` | **No changes** — no new flags. |
+| Tests | Same-file `#[cfg(test)] mod tests` blocks on the three modules above | Parser tests in `src/parser.rs`; app-state tests in `src/app.rs`; render tests in `src/ui/mod.rs`. |
+| Fixtures | `docs/spacetop-dev/_archive/*.md` | **Read-only** — use as-is. Any temp fixtures go under `std::env::temp_dir()`. |
+
+Out of scope for this task (do not edit): `src/main.rs`, `src/cli.rs`, `src/domain/mod.rs`, any file under `agents/`, `skills/`, `references/`, `plugin.json`, or `docs/spacetop-dev/README.md`.
+
+## Verification commands (copy-paste for the implement stage)
+
+```bash
+cargo fmt --all
+cargo test
+cargo run -- --workflow-dir docs/spacetop-dev   # manual smoke: a, j, k, a, q
+git diff -- docs/spacetop-dev                    # must be empty
+```
+
+## Stage Report: plan
+
+- DONE: Step-by-step implementation plan lists concrete file paths, expected functions/types, and verification commands (cargo fmt, cargo test, cargo run smoke).
+  Four-layer plan above names `src/parser.rs` (`load_archived_items`), `src/app.rs` (`ViewScope`, `visible_items`, `ensure_archive_loaded`, `a` handler), `src/ui/mod.rs` (summary/list/preview branching), and `src/lib.rs` (no change); verification block lists `cargo fmt --all`, `cargo test`, `cargo run -- --workflow-dir docs/spacetop-dev`, and the `git diff` read-only check.
+- DONE: Focused test strategy names the specific parser, app-state, and render tests to add — separating parser/_archive/ loading, scope-toggle app-state, and preview render assertions.
+  Test strategy enumerates 5 parser tests (flat-file load, sort-by-completed, folder-entity index.md, missing-dir OK, malformed propagation), 5 app-state tests (default scope, `a` toggle + lazy load, per-scope selection, clamp, count-hidden-until-toggle), and 4 UI render tests (scope+placeholder lines, verdict/completed preview, verdict glyphs, footer hint).
+- DONE: File/module ownership for the implement stage is explicit (parser loader lives under src/parser*/src/domain, App state and ViewScope in src/app.rs, render changes in src/ui/*, terminal wiring in src/lib.rs if needed).
+  Ownership table pins parser loader to `src/parser.rs`, `ViewScope`/archive slice/`a` handler to `src/app.rs`, all rendering to `src/ui/mod.rs`, explicitly marks `src/domain/mod.rs` and `src/lib.rs` as "no changes expected", and lists out-of-scope files.
+
+### Summary
+
+Implementation is sliced into four layers the implement stage can land as sequential commits: (1) a read-only `load_archived_items` in `src/parser.rs` that reuses `parse_work_item`, skips missing `_archive/` silently, and sorts newest-first by `completed`; (2) `ViewScope { Active, Archived }` plus a lazy `ensure_archive_loaded` + per-scope selection on `App` in `src/app.rs`; (3) summary/list/preview branching in `src/ui/mod.rs` that adds `view:`/`archived:` lines, verdict glyphs with `Modifier::DIM`, and `verdict:`/`completed:` preview fields; (4) no terminal-loop edits — the existing event loop handles the new `a` key for free. Domain types, CLI, and fixtures are unchanged, preserving the active-snapshot regression test verbatim.
