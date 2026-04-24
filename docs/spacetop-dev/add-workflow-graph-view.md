@@ -171,3 +171,92 @@ Verified by: `grep -n 'fn render_stage_graph' src/ui/graph.rs` finds the functio
 ### Summary
 
 Locked the workflow-graph view as a horizontal stage ribbon that replaces the existing summary pane, with Unicode-default / ASCII-fallback glyphs encoding initial / terminal / gate / worktree on the node and a dedicated feedback-arc row for `feedback-to` edges. Per-stage counts render on a row aligned under each node column, pulling from the existing `App::stage_counts()` so task 008's auto-refresh redraw stays O(stages). No new domain types are needed; all required fields are already on `StageDefinition`, and the graph integrates with task 006 via the block's header row + counts row without coupling to 006's type names.
+
+## Implementation plan
+
+### File / module ownership
+
+- **New: `src/ui/graph.rs`** — owns all ribbon rendering logic. Public surface is a single entry point plus helpers kept private:
+  - `pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, app: &App)` — the sole entry. Reads `app.snapshot().definition.stages`, `app.stage_counts()`, `app.selected_item()`, `app.workflow_dir()`, and (when 006 lands) `app.scope_label()`. Chooses the width tier based on `area.width` and dispatches to one of three private renderers. Reads `SPACETOP_ASCII` via `std::env::var` once at function entry to pick the glyph set.
+  - Private helpers: `fn pick_width_tier(area_width: u16, stages: &[StageDefinition]) -> WidthTier`, `fn layout_columns(stages: &[StageDefinition], glyphs: &GlyphSet) -> Vec<ColumnLayout>`, `fn render_wide(...)`, `fn render_narrow(...)`, `fn render_very_narrow(...)`, `fn render_feedback_rows(...)`, and `fn glyphs_for(ascii: bool) -> GlyphSet`.
+  - Private types (inside `graph.rs` only, not re-exported): `enum WidthTier { Wide, Narrow, VeryNarrow }`, `struct GlyphSet { initial, terminal, gate, worktree, feedback, forward_arrow, arc_vert, arc_left, arc_right }`, `struct ColumnLayout { node_text: String, column_center: u16, count: usize }`.
+  - No `pub mod` re-exports from the module; only `render_stage_graph` is visible to `ui::mod`.
+
+- **Modified: `src/ui/mod.rs`** — becomes a thin composer:
+  - Add `mod graph;` and `use graph::render_stage_graph;`.
+  - In `render`, change the top-area constraint from `Constraint::Length(10)` to `Constraint::Length(7)` (per locked layout), then call `render_stage_graph(frame, summary_area, app)` in place of `frame.render_widget(summary(app), summary_area)`.
+  - Delete the `summary` helper entirely (AC-7 requires `grep 'fn summary' src/ui/mod.rs` to return nothing).
+  - Keep `task_list` and `preview` unchanged.
+  - Update the existing `renders_real_workflow_summary_task_list_and_preview` test: relax its `contains(&stage_line)` assertion (which depends on the `design: 2` textual form that no longer appears) to instead assert each stage name is present, since stage counts now live on a separate row. Move the detailed stage-count alignment and glyph assertions into the new `graph.rs` test module.
+
+- **Not modified in this task: `src/app.rs`** — the graph pulls only from existing `App` accessors. Task 006 owns adding `scope_label()` (or equivalent). If 006 has not landed yet, the header row shows `active` as a hard-coded default string inside `render_stage_graph`, guarded behind a `// TODO(task-006): replace with app.scope_label()` comment so task 006's worker only touches `src/app.rs` and a single header-row line in `graph.rs`. No `pub` surface in `App` is added or removed by this task.
+
+- **Not modified in this task: `src/domain/mod.rs`, `src/parser.rs`** — entity explicitly states no new domain types are required.
+
+### Step-by-step
+
+1. Add `mod graph;` to `src/ui/mod.rs` and create an empty `src/ui/graph.rs` exposing a stub `pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, app: &App)` that delegates to the old `summary` path inside a `#[cfg(test)] use` bridge. Confirm `cargo check` passes.
+2. In `graph.rs`, implement `glyphs_for(ascii: bool) -> GlyphSet` with both glyph sets from the entity (Unicode: `⚑ ⎇ ▶ ■ ↶ ──► │ └ ┘`; ASCII: `! @ > # < -> | + +`). Add unit test `glyphs_for_respects_ascii_flag`.
+3. Implement `layout_columns` — for each `StageDefinition`, build `node_text` as `{leading_markers}{space}{name}{trailing_markers}` following the locked ordering rule `⚑ ⎇ ▶ name ■`. Separators are `forward_arrow` padded with single spaces. Returns column metadata including each node's center column (for aligning counts and feedback arc endpoints). Unit tests: `layout_columns_places_initial_marker_on_first_stage`, `layout_columns_places_terminal_marker_on_last_stage`, `layout_columns_marker_ordering_is_gate_worktree_initial_name_terminal`.
+4. Implement `pick_width_tier`:
+   - `Wide` if the assembled ribbon string fits inside `area.width - 2` (border budget).
+   - `Narrow` if the compact `name(count) -> name(count) -> ...` form fits on one line inside `area.width - 2` but the wide form does not.
+   - `VeryNarrow` otherwise — one stage per line.
+   Unit test: `pick_width_tier_returns_expected_tier_for_sample_widths` exercising 120, 40, and 24 column widths against the `docs/spacetop-dev` stage set.
+5. Implement `render_wide`: write four lines into the block body using `Paragraph::new(Vec<Line>)` inside a `Block::default().title(title_line).borders(Borders::ALL)`. Title line carries the scope label on the left and `workflow: <path>` on the right (ratatui `Line::from(vec![Span, Span])` with right-alignment style on the second span; if right-alignment is awkward, fall back to title = `"Workflow — [active] — <path>"` single-span form; the test asserts presence of each token, not placement). Lines: ribbon, counts, feedback arcs (conditional). Active-stage count cell uses `Style::default().add_modifier(Modifier::REVERSED)`.
+6. Implement `render_feedback_rows`: for each stage with `feedback_to == Some(target)` where `target` matches a stage name, emit one line containing `│` at the source column center, `└` at the leftmost endpoint, `┘` at the rightmost endpoint, horizontal `─` fills between, and the annotation `↶ feedback-to` appended at the rightmost unused position (truncated if the terminal is tight). Cap at two feedback rows; overflow becomes a final text line `+N more feedback edges`. Unit test: `render_feedback_rows_draws_arc_between_source_and_target_columns` using a stubbed pair of `review -> implement` columns.
+7. Implement `render_narrow`: single-line `design(2) → plan(1) → ⎇ implement(1) → ⚑ review(0) → ■ done(3)` textual summary. Keep per-stage markers inline as a prefix where present. No feedback arc in this tier; append `↶ feedback-to: review→implement` on the counts line if space remains.
+8. Implement `render_very_narrow`: stacked one-stage-per-line form `{marker} {name} ({count})`, one line per stage. If the stack overflows vertical area, truncate and append `+N more`.
+9. Wire `src/ui/mod.rs::render` to call `render_stage_graph` for the top area; drop `summary`; reduce the top constraint to `Constraint::Length(7)`.
+10. Update the existing integration test in `src/ui/mod.rs` per the ownership note above, then add the render-test suite described below inside `src/ui/graph.rs`.
+11. Run `cargo fmt`, `cargo clippy --all-targets -- -D warnings`, `cargo test`.
+
+### Width-tier fallback strategy
+
+| Tier | Trigger | Output |
+|------|---------|--------|
+| `Wide` | full ribbon (`Σ node_widths + (N-1) × 5`) fits in `area.width - 2` | header + ribbon row + counts row + feedback row(s) |
+| `Narrow` | wide form overflows but compact `name(count) → ...` fits | header + single compact line (no feedback arc; textual feedback annotation instead) |
+| `VeryNarrow` | narrow form overflows | header + stacked one-stage-per-line list |
+
+Tier is recomputed each frame from `area.width`; no state carried across frames. O(stages) work per tier.
+
+### Verification commands
+
+- `cargo fmt --check`
+- `cargo clippy --all-targets -- -D warnings`
+- `cargo test -p spacetop --lib ui::graph` (new module's tests)
+- `cargo test -p spacetop` (full suite — proves no regression in existing `ui::tests::renders_real_workflow_summary_task_list_and_preview` and `app::tests`)
+- `grep -n 'fn render_stage_graph' src/ui/graph.rs` (must match)
+- `grep -n 'fn summary' src/ui/mod.rs` (must return nothing)
+
+## Test strategy
+
+All tests live in `#[cfg(test)] mod tests` inside `src/ui/graph.rs`, plus one touch-up in `src/ui/mod.rs::tests`. Each uses `ratatui::backend::TestBackend` and a `buffer_text` helper identical to the existing one. Fixture workflow: `docs/spacetop-dev` (provides all four marker kinds and a `review -> implement` feedback edge). Second fixture: an in-test `WorkflowSnapshot` built via `App::from_snapshot` with three plain stages `alpha -> beta -> gamma` and no feedback edges.
+
+Named tests:
+
+1. `renders_wide_ribbon_with_unicode_glyphs_for_real_workflow` — `TestBackend::new(120, 20)`, real `docs/spacetop-dev`. Asserts: buffer contains each stage name in declaration order (via `find` indices being monotonic); `▶ design` substring; `■` near `done`; `⚑ review` substring; `⎇ implement` substring. Covers AC-1.
+2. `renders_feedback_arc_with_annotation` — same fixture/width. Asserts buffer contains `↶ feedback-to`. Asserts the column index of `review` in the ribbon row equals the column index of the `│` cell in the feedback row (source alignment), and column index of `implement` equals the `└` endpoint column (target alignment). Covers AC-2.
+3. `reflects_different_workflow_topology` — build the alpha/beta/gamma in-memory snapshot via `App::from_snapshot`. Render at `TestBackend::new(120, 20)`. Assert buffer contains `alpha`, `beta`, `gamma`; does NOT contain any of `design`, `review`, or `↶ feedback-to`. Covers AC-3.
+4. `narrow_tier_renders_compact_textual_summary` — `TestBackend::new(40, 20)`. Assert buffer contains every stage name in declaration order, contains at least one `→` (or `->` in ASCII mode), and does NOT panic. Contains each stage count substring from `stage_counts()`. Covers AC-4 (narrow tier).
+5. `very_narrow_tier_stacks_one_stage_per_line` — `TestBackend::new(24, 20)`. Assert buffer contains every stage name on separate lines (each name's row index is strictly increasing). Covers AC-4 (very-narrow tier).
+6. `counts_row_aligns_under_nodes_and_marks_active_stage` — `TestBackend::new(120, 20)` with the real fixture. For each stage, assert the stage's count string appears directly under the stage name column (column center ± stage-name half-width). Assert the count cell for the stage containing `App::selected_item()`'s status has `Modifier::REVERSED` set (inspected via `buffer.cell((x, y)).style()`). Covers AC-5.
+7. `header_row_contains_scope_label_and_workflow_path` — real fixture, 120×20. Assert rendered title/header contains the default scope label `active` (or whatever `app.scope_label()` returns after 006 lands) and contains the workflow path string. Covers AC-6.
+8. `ascii_fallback_swaps_glyphs_when_env_set` — set `SPACETOP_ASCII=1` via a scoped env guard helper (`fn with_env(key, val, f)` using `std::env::set_var`/`remove_var`; run serially via `#[serial_test]` or a local mutex to avoid cross-test races). Render real fixture at 120×20. Assert buffer contains `>` (initial), `#` (terminal), `!` (gate), `@` (worktree), `<` (feedback), `->` (forward). Assert buffer does NOT contain `▶`, `■`, `⚑`, `⎇`, `↶`, `──►`. Covers the ASCII fallback requirement.
+9. `module_surface_is_minimal` — compile-time check: `let _: fn(&mut Frame<'_>, Rect, &App) = crate::ui::graph::render_stage_graph;` inside a `#[test]` confirming the public signature doesn't regress.
+
+The existing `src/ui/mod.rs::tests::renders_real_workflow_summary_task_list_and_preview` is updated to drop its `{name}: {count}` substring assertion (that form no longer exists) and keep the selected-item, preview, and stage-name presence assertions.
+
+## Stage Report: plan
+
+- DONE: Step-by-step plan enumerates the files to add/change (`src/ui/graph.rs`, `src/ui/mod.rs`, possibly `src/app.rs` for scope indicator plumbing), the width-tier fallback strategy, and verification commands.
+  See "Implementation plan" section above — 11 numbered steps, width-tier table, and verification command list.
+- DONE: Test strategy names specific render tests: wide-terminal unicode render, narrow-tier degraded render, very-narrow textual summary, feedback arc present, counts row aligned, `SPACETOP_ASCII=1` fallback.
+  See "Test strategy" section — nine named tests explicitly covering each AC; ASCII fallback is test 8; narrow and very-narrow are tests 4 and 5; feedback arc is test 2; counts alignment is test 6.
+- DONE: File/module ownership — explicit map of who owns the graph rendering (new module), what stays in `src/ui/mod.rs`, and what the interface looks like (`fn render_graph(frame, area, snapshot, counts, scope_indicator)` or similar).
+  See "File / module ownership" subsection — `graph.rs` owns everything via `pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, app: &App)`; `ui/mod.rs` keeps `task_list`/`preview` and the top-level `render` composer only; `src/app.rs` is untouched by this task and left to task 006.
+
+### Summary
+
+Produced a step-by-step implementation plan that confines new rendering logic to `src/ui/graph.rs` behind a single `render_stage_graph(frame, area, &App)` entry point, leaves `src/app.rs` to task 006, and shrinks the top pane to `Constraint::Length(7)`. Width-tier fallback is a three-way split (`Wide` / `Narrow` / `VeryNarrow`) recomputed each frame from `area.width` so task 008's auto-refresh stays O(stages). Test strategy names nine render tests in `graph.rs` that each map to a specific acceptance criterion, including a `SPACETOP_ASCII=1` guard for the ASCII fallback and a column-alignment assertion for both the counts row and the feedback arc endpoints.
