@@ -10,6 +10,7 @@ score: 0.8
 worktree: .worktrees/spacedock-ensign-build-initial-tui-overview
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Build the first read-only `ratatui` overview that shows workflow stages, work item counts, and a selectable task list for a chosen Spacedock workflow directory.
