@@ -94,3 +94,16 @@ Parser/domain ownership remains with the parser task/worktree: `src/domain/mod.r
 ### Summary
 
 Planned the initial overview as a read-only ratatui layer over parser-owned workflow data. The plan keeps selection and summary logic testable outside a terminal session, limits implementation ownership to app/UI/runtime files, and requires evidence that browsing does not mutate Spacedock markdown state.
+
+## Stage Report: implement
+
+- DONE: DONE/SKIPPED/FAILED accounting must show the TUI renders real workflow state from parser data, including stage counts and task preview content.
+  `cargo test` passed 16/16; render test asserts `implement: 1`, `done: 0`, title, status, score/source, and body excerpt from `docs/spacetop-dev`.
+- DONE: DONE/SKIPPED/FAILED accounting must show navigation/quit behavior is tested without mutating workflow files.
+  App tests cover Down/Up/Home/End clamping plus `q`/Esc quit state, and smoke run left `git diff -- docs/spacetop-dev` empty before this report was appended.
+- DONE: DONE/SKIPPED/FAILED accounting must show fresh `cargo fmt --check`, `cargo test`, and smoke/no-mutation evidence (`git diff -- docs/spacetop-dev`).
+  Ran `cargo fmt --check`, `cargo test`, `expect -c 'spawn cargo run -- --workflow-dir docs/spacetop-dev; ... send "q"'`, and `git diff -- docs/spacetop-dev` with no workflow-state changes before report append.
+
+### Summary
+
+Implemented the initial read-only ratatui overview over parser-owned `WorkflowSnapshot` data. The app now loads workflow state, derives stage counts, tracks in-memory selection and quit state, renders summary/list/preview panes, and runs through a crossterm terminal loop that restores terminal state on exit.
