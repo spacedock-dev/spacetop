@@ -1,13 +1,13 @@
 ---
 id: 003
 title: Build Initial TUI Overview
-status: plan
+status: implement
 source: commission seed
 started: 2026-04-24T14:50:32Z
 completed:
 verdict:
 score: 0.8
-worktree:
+worktree: .worktrees/spacedock-ensign-build-initial-tui-overview
 issue:
 pr:
 ---
