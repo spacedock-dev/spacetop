@@ -1,16 +1,17 @@
 ---
 id: 003
 title: Build Initial TUI Overview
-status: review
+status: done
 source: commission seed
 started: 2026-04-24T14:50:32Z
-completed:
-verdict:
+completed: 2026-04-24T15:44:35Z
+verdict: PASSED
 score: 0.8
-worktree: .worktrees/spacedock-ensign-build-initial-tui-overview
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-24T15:44:43Z
 ---
 
 Build the first read-only `ratatui` overview that shows workflow stages, work item counts, and a selectable task list for a chosen Spacedock workflow directory.
