@@ -201,13 +201,10 @@ pub(crate) enum SplitFrontmatter<'a> {
 /// Split a markdown file's text into its YAML frontmatter block (sans `---` fences)
 /// and the body. Returns `None` when no opening `---` fence is present on the first line.
 pub(crate) fn split_frontmatter(contents: &str) -> Option<SplitFrontmatter<'_>> {
-    let body_start = if let Some(rest) = contents.strip_prefix("---\r\n") {
-        contents.len() - rest.len()
-    } else if let Some(rest) = contents.strip_prefix("---\n") {
-        contents.len() - rest.len()
-    } else {
-        return None;
-    };
+    let rest = contents
+        .strip_prefix("---\r\n")
+        .or_else(|| contents.strip_prefix("---\n"))?;
+    let body_start = contents.len() - rest.len();
 
     let remaining = &contents[body_start..];
     let Some(relative_end) = remaining.find("\n---") else {
