@@ -281,3 +281,255 @@ from a placeholder to six verifiable AC-N bullets, including an explicit
 deterministic test seam (`App::reload_from_snapshot`) so AC-2 doesn't
 depend on real filesystem events. No code, no dependencies added — the
 `notify` dep will be introduced in `implement`.
+
+## Implementation plan
+
+Ownership boundaries (enforced across the plan):
+
+- `src/watcher.rs` (new) owns FS event subscription, path filtering, and
+  the 250 ms trailing-edge debounce. It knows nothing about `App`,
+  `WorkflowSnapshot`, or UI.
+- `src/app.rs` owns state-reload semantics: selection-by-slug preservation,
+  clamped-index fallback, `last_refresh_error` bookkeeping, and the
+  deterministic `reload_from_snapshot` seam.
+- `src/lib.rs::run_terminal` owns the event loop: construct the watcher,
+  hold the receiver, drain `RefreshSignal`s with `try_recv` per tick, call
+  `App::reload` (the FS-touching variant) when signaled.
+- `src/ui/` stays ignorant of refresh. Any status-line rendering of
+  `App::last_refresh_error()` is a read-only call — no new refresh logic.
+
+### Step 1 — `Cargo.toml` dependency
+
+- File: `/Users/kent/Dev/InfuseAI/GitHub/spacetop/Cargo.toml`
+- Add `notify = "8"` to `[dependencies]`. Default features only; do NOT
+  depend on `notify-debouncer-*` crates.
+- Verify: `cargo metadata --format-version 1 | rg '"name": "notify"'` shows
+  v8 resolved; `cargo tree -p spacetop --prefix none | rg notify` lists
+  exactly one `notify` crate.
+
+### Step 2 — `src/app.rs`: reload seam, error state, selection policy
+
+Extend `App` with:
+
+```rust
+pub struct App {
+    workflow_dir: PathBuf,
+    snapshot: WorkflowSnapshot,
+    selected_index: usize,
+    should_quit: bool,
+    last_refresh_error: Option<String>,   // new
+}
+```
+
+New/changed methods (exact public API):
+
+- `pub fn last_refresh_error(&self) -> Option<&str>` — read-only accessor
+  for UI/status-line consumption.
+- `pub fn reload_from_snapshot(&mut self, snapshot: WorkflowSnapshot)` —
+  deterministic seam. Pure function of current state + new snapshot; no
+  filesystem access. Algorithm:
+    1. Capture prior slug: `self.selected_item().map(|it| slug_of(&it.path))`
+       where `slug_of` is `path.file_stem().to_string_lossy().into_owned()`
+       (or for folder-form `{slug}/index.md`, the parent dir name — pick
+       once and document as a `slug_of` helper inside `app.rs`).
+    2. Swap `self.snapshot = snapshot;`.
+    3. If new `items` is empty, set `selected_index = 0` and return.
+    4. If prior slug exists and matches some new item, set
+       `selected_index = that position`.
+    5. Else clamp prior `selected_index` to `new_items.len() - 1`.
+    6. Clear `self.last_refresh_error = None;`.
+- `pub fn reload(&mut self) -> Result<(), ()>` — FS-touching wrapper. Calls
+  `parser::load_workflow_dir(&self.workflow_dir)`:
+    - On `Ok(snapshot)`: delegate to `self.reload_from_snapshot(snapshot)`.
+    - On `Err(e)`: retain prior snapshot, set
+      `self.last_refresh_error = Some(e.to_string())`, return `Err(())`
+      (caller in `lib.rs` doesn't act on the error beyond it already being
+      surfaced through `last_refresh_error`).
+- Update `App::new` and `App::from_snapshot` to initialize
+  `last_refresh_error: None`. Update the existing `PartialEq` derive — it
+  still holds; the new field is `Option<String>` which is `PartialEq`.
+
+No change to `load`, `snapshot`, `selected_item`, `stage_counts`,
+`handle_key`, or any existing test — the new field defaults to `None`.
+
+### Step 3 — `src/watcher.rs` (new module)
+
+Public surface (exact shape):
+
+```rust
+pub struct WorkflowWatcher {
+    _watcher: Box<dyn notify::Watcher + Send>,   // kept alive; dropped at end
+    _thread: Option<std::thread::JoinHandle<()>>,
+    shutdown: std::sync::mpsc::Sender<()>,       // signals debounce thread to exit
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RefreshSignal;
+
+pub struct WatcherConfig {
+    pub debounce: std::time::Duration,   // default 250 ms; tests override to 0
+}
+
+impl Default for WatcherConfig { /* 250 ms */ }
+
+impl WorkflowWatcher {
+    /// Start watching `root` recursively. Returns the watcher plus the
+    /// receiver the main loop drains. On backend init failure, falls back
+    /// to `notify::PollWatcher` at 1 s; if that also fails, returns Err.
+    pub fn start(
+        root: &std::path::Path,
+        config: WatcherConfig,
+    ) -> Result<(Self, std::sync::mpsc::Receiver<RefreshSignal>), WatcherError>;
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WatcherError { /* BackendInit, Watch, ... */ }
+
+impl Drop for WorkflowWatcher {
+    fn drop(&mut self) {
+        let _ = self.shutdown.send(());
+        if let Some(h) = self._thread.take() { let _ = h.join(); }
+    }
+}
+```
+
+Internals:
+
+- Spawn one background thread. It owns the raw `notify` event receiver
+  plus the outbound `Sender<RefreshSignal>`.
+- Path filter: accept event if any affected path (`event.paths`) satisfies
+  `is_relevant(path)`:
+    - ends in `.md`, OR
+    - is a directory create/remove whose final component matches
+      `^[A-Za-z0-9._-]+$`.
+  Reject `.DS_Store`, `*.swp`, `*.swx`, `4913` (vim sentinel),
+  `*~` backups explicitly.
+- Debounce: on first relevant event, record `deadline = now + config.debounce`.
+  While more relevant events arrive, extend `deadline = now + debounce`.
+  When `recv_timeout(remaining)` returns `Err(Timeout)` with no further
+  events, send one `RefreshSignal` and reset.
+- Shutdown: the thread selects between the `notify` channel and the
+  shutdown channel; on shutdown signal (or either channel disconnect), it
+  exits cleanly.
+- Zero-debounce (`Duration::ZERO`): bypass timing and send one
+  `RefreshSignal` per filtered event — used in debounce unit tests to
+  remove timing flakiness.
+- Backend fallback: `RecommendedWatcher::new(...)` → on `Err`, try
+  `PollWatcher::new(..., notify::Config::default().with_poll_interval(Duration::from_secs(1)))`.
+
+### Step 4 — `src/lib.rs::run_terminal` wiring
+
+Changes (concentrated; existing structure preserved):
+
+- Before the main loop, construct:
+  `let (watcher, refresh_rx) = WorkflowWatcher::start(app.workflow_dir(), WatcherConfig::default())` 
+  and tolerate `Err` by continuing without a watcher (log one line into
+  `app.last_refresh_error` via a setter or a new
+  `App::set_refresh_error(&mut self, msg: String)` helper — prefer adding
+  the setter to avoid leaking `notify` types into `app.rs`).
+- Replace the current `event::poll(Duration::from_millis(250))` block with:
+
+  ```rust
+  // 1. Drain any pending refresh signals.
+  loop {
+      match refresh_rx.try_recv() {
+          Ok(RefreshSignal) => { let _ = app.reload(); }
+          Err(TryRecvError::Empty) => break,
+          Err(TryRecvError::Disconnected) => {
+              app.set_refresh_error("watcher: disconnected".into());
+              break;
+          }
+      }
+  }
+  // 2. Short crossterm poll.
+  if event::poll(Duration::from_millis(100))? {
+      if let Event::Key(key) = event::read()? {
+          app.handle_key(key);
+      }
+  }
+  ```
+
+- `watcher` is held in a local binding for the lifetime of `run_terminal`
+  so its `Drop` impl joins the thread before the function returns.
+
+### Step 5 — Tests
+
+Added in `src/app.rs` `#[cfg(test)]`:
+
+1. `reload_from_snapshot_preserves_selection_by_slug`: build snapshot A
+   with items `[alpha, beta, gamma]`, select index 1 (beta), apply
+   snapshot B with `[gamma, beta, delta]` — assert
+   `selected_item().title == "Beta"` and index is 1.
+2. `reload_from_snapshot_clamps_when_slug_missing`: select index 2 in a
+   3-item snapshot; reload with a 2-item snapshot that drops that slug —
+   assert `selected_index == 1`.
+3. `reload_from_snapshot_empties_selection`: reload with an empty
+   snapshot — assert `selected_index == 0` and `selected_item().is_none()`.
+4. `reload_from_snapshot_clears_prior_error`: seed
+   `last_refresh_error = Some(...)` via a test-only constructor/setter;
+   after a successful `reload_from_snapshot`, assert it is `None`.
+5. `reload_retains_prior_snapshot_on_parse_error`: use a `tempfile::tempdir`
+   (add `tempfile` as `[dev-dependencies]`) to create a minimally valid
+   workflow dir, load it into `App`, then overwrite one `.md` with junk
+   (no frontmatter), call `App::reload()`, assert it returns `Err(())`, the
+   snapshot is pointer/value-equal to the pre-corruption snapshot, and
+   `last_refresh_error().is_some()`.
+
+Added in `src/watcher.rs` `#[cfg(test)]`:
+
+6. `debounce_coalesces_burst`: using `WatcherConfig { debounce: Duration::ZERO }`
+   avoids timing; using `Duration::from_millis(50)` for a real burst test,
+   inject events via an internal `pub(crate)` hook that bypasses `notify`
+   and pushes into the same filtered-event channel the debounce thread
+   reads — send 5 events spaced 10 ms apart, assert exactly one
+   `RefreshSignal` arrives within 200 ms.
+7. `path_filter_rejects_non_markdown_and_editor_backups`: pure function
+   test over `is_relevant(&Path)` with `.md`, `.swp`, `.DS_Store`,
+   `foo~`, directory paths.
+
+Added as an opt-in integration test at `tests/watcher_fs.rs`:
+
+8. `#[ignore]` by default (run locally with `cargo test -- --ignored`):
+   exercises the real `notify` backend end-to-end — create a tempdir,
+   start `WorkflowWatcher`, write a `task.md`, assert a `RefreshSignal`
+   arrives within 750 ms. Feature gate unnecessary; `#[ignore]` is
+   lighter-weight and keeps CI deterministic.
+
+### Step 6 — Verification commands
+
+Run from repo root (`/Users/kent/Dev/InfuseAI/GitHub/spacetop`):
+
+- `cargo fmt --all`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test` (fast suite; excludes `#[ignore]`)
+- `cargo test -- --ignored` (local only; exercises real `notify` backend)
+- `cargo run -- docs/spacetop-dev` then, from another shell, `touch
+  docs/spacetop-dev/*.md` and visually confirm refresh within ~500 ms.
+
+### Risk and mitigation notes
+
+- **macOS FSEvents coalescing** can delay single-file events beyond 250 ms
+  under heavy disk churn. Acceptable: AC-1 allows 750 ms total budget.
+- **Renames on Linux** arrive as `remove` + `create`; both are `.md`
+  paths so both pass the filter and get coalesced by debounce — one
+  reload covers the rename.
+- **`serde_yaml` is unmaintained** (already an existing concern, not
+  introduced here). Parse errors returned from `load_workflow_dir` are
+  surfaced verbatim in `last_refresh_error`; no new exposure.
+- **Thread-join on Drop** could block if the `notify` backend holds the
+  event channel open. Mitigation: the debounce thread selects on both
+  the shutdown channel and the event channel with a bounded
+  `recv_timeout`, so shutdown always wins within one debounce window.
+
+## Stage Report: plan
+
+- DONE: Step-by-step plan enumerates files changed (`Cargo.toml` for `notify = "8"`, new `src/watcher.rs`, `src/app.rs` for `reload_from_snapshot` + `last_refresh_error`, `src/lib.rs` for event loop drain), the exact public API shape of the watcher module, and verification commands.
+  Steps 1-6 above spell out each file, show the exact `WorkflowWatcher` / `RefreshSignal` / `WatcherConfig` / `WatcherError` surface and the new `App::reload_from_snapshot` / `App::reload` / `App::last_refresh_error` / `App::set_refresh_error` signatures, and list `cargo fmt`, `cargo clippy -D warnings`, `cargo test`, `cargo test -- --ignored`, and a manual `cargo run` smoke as verification commands.
+- DONE: Test strategy names specific tests: deterministic `App::reload_from_snapshot` selection-preservation (by slug; fallback to clamped index; selection clears on empty), parse-error retention, debounce unit test (0 ms override), and an opt-in integration test exercising the real `notify` backend (feature-gated or `#[ignore]`'d).
+  Tests 1-3 cover slug-preserve / clamp-fallback / empty-selection against `reload_from_snapshot`; test 5 covers parse-error retention via a `tempfile` corruption round-trip; test 6 covers debounce with both the zero-duration deterministic path and a 50 ms burst; test 8 is `#[ignore]`'d in `tests/watcher_fs.rs` for real-backend coverage.
+- DONE: File/module ownership is explicit — watcher owns FS events + debounce; `App` owns state-reload semantics; `lib.rs` owns event-loop drain; UI stays ignorant of refresh.
+  Ownership boundaries listed at the top of the implementation plan and reinforced by the step-by-step file scoping; `src/ui/` is explicitly called out as untouched beyond read-only access to `App::last_refresh_error()`.
+
+### Summary
+
+Produced a concrete implementation path that leaves parser, UI, and watcher cleanly separable: `Cargo.toml` gains `notify = "8"`, `src/watcher.rs` owns a `RecommendedWatcher` plus a background debounce thread with a testable zero-duration mode, `src/app.rs` gains `reload_from_snapshot` (pure, deterministic) and `reload` (FS-touching wrapper) with `last_refresh_error` bookkeeping, and `src/lib.rs` drains `try_recv` refresh signals between 100 ms crossterm polls. Test plan pins five `App`-level unit tests, two watcher unit tests, and one `#[ignore]`'d real-backend integration test under `tests/watcher_fs.rs`. No source code was modified.
