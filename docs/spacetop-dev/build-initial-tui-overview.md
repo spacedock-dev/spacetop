@@ -1,7 +1,7 @@
 ---
 id: 003
 title: Build Initial TUI Overview
-status: review
+status: implement
 source: commission seed
 started: 2026-04-24T14:50:32Z
 completed:
