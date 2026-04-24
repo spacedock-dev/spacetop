@@ -1,16 +1,17 @@
 ---
 id: 001
 title: Scaffold Rust CLI Project
-status: review
+status: done
 source: commission seed
 started: 2026-04-24T14:30:53Z
-completed:
-verdict:
+completed: 2026-04-24T14:49:53Z
+verdict: PASSED
 score: 0.9
-worktree: .worktrees/spacedock-ensign-scaffold-rust-cli-project
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-24T14:49:53Z
 ---
 
 Create the initial Rust crate, command entrypoint, dependency baseline, and basic executable structure for SpaceTop. The scaffold should establish a clean place for CLI argument parsing, domain parsing, application state, and terminal UI code.
