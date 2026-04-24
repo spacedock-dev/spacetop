@@ -1,9 +1,9 @@
 ---
 id: 001
 title: Scaffold Rust CLI Project
-status: design
+status: plan
 source: commission seed
-started:
+started: 2026-04-24T14:30:53Z
 completed:
 verdict:
 score: 0.9
