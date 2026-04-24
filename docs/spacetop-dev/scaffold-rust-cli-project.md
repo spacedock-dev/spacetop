@@ -1,13 +1,13 @@
 ---
 id: 001
 title: Scaffold Rust CLI Project
-status: plan
+status: implement
 source: commission seed
 started: 2026-04-24T14:30:53Z
 completed:
 verdict:
 score: 0.9
-worktree:
+worktree: .worktrees/spacedock-ensign-scaffold-rust-cli-project
 issue:
 pr:
 ---
