@@ -424,19 +424,24 @@ Body text should be preserved without frontmatter.
         let snapshot = load_workflow_dir(&root).expect("workflow directory should load");
 
         assert_eq!(snapshot.definition.stages.len(), 5);
-        assert_eq!(snapshot.items.len(), 2);
+        assert!(!snapshot.items.is_empty());
+        assert!(snapshot
+            .items
+            .iter()
+            .all(|item| !item.path.components().any(|component| {
+                let value = component.as_os_str();
+                value == "_mods" || value == "_archive"
+            })));
         let allowed_statuses = snapshot
             .definition
             .stages
             .iter()
             .map(|stage| stage.name.as_str())
             .collect::<Vec<_>>();
-        let parsed_task = snapshot
+        assert!(snapshot
             .items
             .iter()
-            .find(|item| item.id == "002")
-            .expect("task 002 should be loaded");
-        assert!(allowed_statuses.contains(&parsed_task.status.as_str()));
+            .all(|item| allowed_statuses.contains(&item.status.as_str())));
     }
 
     #[test]
