@@ -142,3 +142,16 @@ Plan is minimal and proportional: one clap attribute edit (`short = 'w'` added t
 ### Summary
 
 Added `short = 'w'` to the existing `#[arg(long, ...)]` on `Cli::workflow_dir` in `src/cli.rs` and appended two tests (`parses_workflow_dir_short_flag`, `help_output_surfaces_both_spellings`) to the existing `#[cfg(test)] mod tests` block. All five CLI tests pass; `cargo fmt --check` is clean; the smoke command renders `-w, --workflow-dir <PATH>` on the help line. Two unrelated pre-existing test failures in `app::tests` and `ui::tests` reproduce on untouched main and were not in scope for this stage.
+
+## Stage Report: review
+
+- DONE: AC-1..AC-5 each have explicit verification evidence (tests rerun, help output captured, fmt/test results) and pass.
+  Reran `cargo test --lib cli::` in worktree → 5 passed; 0 failed (covers AC-1 `parses_workflow_dir_short_flag`, AC-2 `parses_workflow_dir`, AC-3 `defaults_workflow_dir_to_current_directory`, AC-4 `help_output_surfaces_both_spellings`, AC-5 `clap_definition_is_valid`). `cargo fmt --check` clean. `cargo run -- -w docs/spacetop-dev --help` renders `-w, --workflow-dir <PATH>` on the flag line (AC-4 manual spot-check).
+- DONE: The diff is confined to `src/cli.rs` + the entity's own Stage Report — no drive-by changes to parser, app, UI, Cargo.toml, or docs.
+  `git diff main...HEAD --stat` shows only `src/cli.rs` (+22/-1) and `docs/spacetop-dev/add-workflow-dir-short-flag.md`. Confirmed no edits to `main.rs`, `app.rs`, `ui.rs`, `workflow/*`, `Cargo.toml`, or other docs. Field name, long flag, default, and help text preserved.
+- DONE: Recommend a verdict (PASSED or REJECTED) in the stage-report summary, with specific defects if rejected.
+  Verdict: PASSED (see Summary).
+
+### Summary
+
+Verdict: PASSED. Diff is exactly what the plan promised: a single `short = 'w'` addition to the clap attribute on `Cli::workflow_dir` plus two tightly scoped tests. All five CLI tests pass; `cargo fmt --check` is clean; the `cargo run -- -w ... --help` smoke output shows `-w, --workflow-dir <PATH>` — the alias is discoverable. The two pre-existing `app::tests` / `ui::tests` failures flagged by the implementer reproduce on untouched main (unrelated, out of scope). No collateral edits. Ready to move to done.
