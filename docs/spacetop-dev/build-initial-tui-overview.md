@@ -133,3 +133,16 @@ Verdict: REJECTED. The implementation appears scoped to the expected app/UI/runt
 ### Summary
 
 Fixed the review rejection by removing exact-count/status assertions tied to mutable Spacedock workflow state. The tests still load and render the real workflow, but expected stage lines and preview status now come from the same snapshot under test, while fixture-based navigation coverage remains unchanged.
+
+## Stage Report: review (cycle 2)
+
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-1 (TUI renders real markdown workflow state) is satisfied with fresh evidence.
+  PASSED: `cargo test` passed 16/16, including real `docs/spacetop-dev` load/render tests whose stage counts are derived from the loaded snapshot.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-2 (navigation does not mutate workflow files) is satisfied with fresh evidence, including no live-status test coupling.
+  PASSED: navigation tests mutate only selection/quit state, `rg` found no stale `implement: 1` or `status: implement` test coupling, smoke exited via `j`, `k`, `q`, and `git diff -- docs/spacetop-dev` was empty before this report append.
+- DONE: DONE/SKIPPED/FAILED accounting must show whether AC-3 (selected task preview exposes useful state) is satisfied with fresh evidence, plus `cargo fmt --check`, `cargo test`, and smoke/no-mutation results.
+  PASSED: render test asserts selected title, status, score, source, and body excerpt; `cargo fmt --check`, `cargo test`, and the `expect` smoke run all exited 0.
+
+### Summary
+
+Verdict: PASSED. The feedback fix addresses the prior rejection by deriving live workflow status/count expectations from parser output, while preserving coverage for summary rendering, selected preview content, navigation behavior, and read-only smoke/no-mutation evidence.
