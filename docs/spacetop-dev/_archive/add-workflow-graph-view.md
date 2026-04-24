@@ -1,16 +1,17 @@
 ---
 id: 007
 title: Render the workflow stage graph on the main TUI page
-status: review
+status: done
 source: captain feedback after build-initial-tui-overview
 started: 2026-04-24T16:09:42Z
-completed:
-verdict:
+completed: 2026-04-24T17:17:13Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-add-workflow-graph-view
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-24T17:17:13Z
 ---
 
 The main TUI page should visually present the workflow's stage graph — nodes for each stage with its defaults/properties (initial, terminal, gate, worktree, feedback-to), forward edges between stages, and a distinct edge style for feedback loops (e.g., `review --feedback-to--> implement`). The graph is derived from the parsed `WorkflowSnapshot`, not hard-coded, so it reflects whatever workflow is loaded.
