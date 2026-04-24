@@ -182,21 +182,33 @@ fn extract_frontmatter<'a>(
     contents: &'a str,
     path: &str,
 ) -> Result<(&'a str, &'a str), ParseError> {
-    let body_start = if let Some(rest) = contents.strip_prefix("---\r\n") {
-        contents.len() - rest.len()
-    } else if let Some(rest) = contents.strip_prefix("---\n") {
-        contents.len() - rest.len()
-    } else {
-        return Err(ParseError::MissingFrontmatter {
+    match split_frontmatter(contents) {
+        Some(SplitFrontmatter::Ok { frontmatter, body }) => Ok((frontmatter, body)),
+        Some(SplitFrontmatter::Unterminated) => Err(ParseError::UnterminatedFrontmatter {
             path: path.to_string(),
-        });
-    };
+        }),
+        None => Err(ParseError::MissingFrontmatter {
+            path: path.to_string(),
+        }),
+    }
+}
+
+pub(crate) enum SplitFrontmatter<'a> {
+    Ok { frontmatter: &'a str, body: &'a str },
+    Unterminated,
+}
+
+/// Split a markdown file's text into its YAML frontmatter block (sans `---` fences)
+/// and the body. Returns `None` when no opening `---` fence is present on the first line.
+pub(crate) fn split_frontmatter(contents: &str) -> Option<SplitFrontmatter<'_>> {
+    let rest = contents
+        .strip_prefix("---\r\n")
+        .or_else(|| contents.strip_prefix("---\n"))?;
+    let body_start = contents.len() - rest.len();
 
     let remaining = &contents[body_start..];
     let Some(relative_end) = remaining.find("\n---") else {
-        return Err(ParseError::UnterminatedFrontmatter {
-            path: path.to_string(),
-        });
+        return Some(SplitFrontmatter::Unterminated);
     };
     let closing_start = body_start + relative_end + 1;
     let after_marker = closing_start + 3;
@@ -212,7 +224,10 @@ fn extract_frontmatter<'a>(
         .or_else(|| contents[after_marker..].strip_prefix('\n'))
         .unwrap_or(&contents[after_marker..]);
 
-    Ok((&contents[body_start..closing_start], body))
+    Some(SplitFrontmatter::Ok {
+        frontmatter: &contents[body_start..closing_start],
+        body,
+    })
 }
 
 fn required(value: Option<String>, path: &Path, field: &'static str) -> Result<String, ParseError> {

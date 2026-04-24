@@ -1,3 +1,5 @@
+mod picker;
+
 use crossterm::event::Event;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -5,7 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
 };
 
-use crate::app::App;
+use crate::app::{App, AppMode, OverviewState};
 
 pub type TerminalEvent = Event;
 
@@ -17,6 +19,13 @@ pub fn render_placeholder(frame: &mut Frame<'_>) {
 }
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
+    match app.mode() {
+        AppMode::Picker(state) => picker::render(frame, state),
+        AppMode::Overview(state) => render_overview(frame, state),
+    }
+}
+
+fn render_overview(frame: &mut Frame<'_>, state: &OverviewState) {
     let [summary_area, content_area] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(10), Constraint::Min(0)])
@@ -26,12 +35,12 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
         .areas(content_area);
 
-    frame.render_widget(summary(app), summary_area);
-    frame.render_widget(task_list(app), list_area);
-    frame.render_widget(preview(app), preview_area);
+    frame.render_widget(summary(state), summary_area);
+    frame.render_widget(task_list(state), list_area);
+    frame.render_widget(preview(state), preview_area);
 }
 
-fn summary(app: &App) -> Paragraph<'_> {
+fn summary(app: &OverviewState) -> Paragraph<'_> {
     let mut lines = vec![
         Line::from(Span::styled(
             "SpaceTop",
@@ -49,7 +58,7 @@ fn summary(app: &App) -> Paragraph<'_> {
     Paragraph::new(lines).block(Block::default().title("Workflow").borders(Borders::ALL))
 }
 
-fn task_list(app: &App) -> Paragraph<'_> {
+fn task_list(app: &OverviewState) -> Paragraph<'_> {
     let lines = if app.snapshot().items.is_empty() {
         vec![Line::from("No work items found.")]
     } else {
@@ -81,7 +90,7 @@ fn task_list(app: &App) -> Paragraph<'_> {
         .wrap(Wrap { trim: true })
 }
 
-fn preview(app: &App) -> Paragraph<'_> {
+fn preview(app: &OverviewState) -> Paragraph<'_> {
     let Some(item) = app.selected_item() else {
         return Paragraph::new("Select a work item to inspect it.")
             .block(Block::default().title("Preview").borders(Borders::ALL));

@@ -9,9 +9,10 @@ use clap::Parser;
     long_about = "SpaceTop is a read-only terminal UI for browsing Spacedock workflow state files."
 )]
 pub struct Cli {
-    /// Path to a Spacedock workflow directory.
-    #[arg(short = 'w', long, value_name = "PATH", default_value = ".")]
-    pub workflow_dir: PathBuf,
+    /// Path to a Spacedock workflow directory. When omitted, SpaceTop
+    /// discovers workflows under the current git root.
+    #[arg(short = 'w', long, value_name = "PATH")]
+    pub workflow_dir: Option<PathBuf>,
 }
 
 #[cfg(test)]
@@ -29,21 +30,21 @@ mod tests {
     fn parses_workflow_dir() {
         let cli = Cli::parse_from(["spacetop", "--workflow-dir", "docs/spacetop-dev"]);
 
-        assert_eq!(cli.workflow_dir, PathBuf::from("docs/spacetop-dev"));
+        assert_eq!(cli.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
     }
 
     #[test]
-    fn defaults_workflow_dir_to_current_directory() {
+    fn defaults_workflow_dir_to_none() {
         let cli = Cli::parse_from(["spacetop"]);
 
-        assert_eq!(cli.workflow_dir, PathBuf::from("."));
+        assert!(cli.workflow_dir.is_none());
     }
 
     #[test]
-    fn parses_workflow_dir_short_flag() {
+    fn parses_short_w_alias() {
         let cli = Cli::parse_from(["spacetop", "-w", "docs/spacetop-dev"]);
 
-        assert_eq!(cli.workflow_dir, PathBuf::from("docs/spacetop-dev"));
+        assert_eq!(cli.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
     }
 
     #[test]
