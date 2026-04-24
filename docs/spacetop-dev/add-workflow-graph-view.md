@@ -3,7 +3,7 @@ id: 007
 title: Render the workflow stage graph on the main TUI page
 status: design
 source: captain feedback after build-initial-tui-overview
-started:
+started: 2026-04-24T16:09:42Z
 completed:
 verdict:
 score:
