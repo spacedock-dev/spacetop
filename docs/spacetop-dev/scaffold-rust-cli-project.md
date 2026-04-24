@@ -10,7 +10,7 @@ score: 0.9
 worktree: .worktrees/spacedock-ensign-scaffold-rust-cli-project
 issue:
 pr:
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Create the initial Rust crate, command entrypoint, dependency baseline, and basic executable structure for SpaceTop. The scaffold should establish a clean place for CLI argument parsing, domain parsing, application state, and terminal UI code.
