@@ -131,6 +131,14 @@ mod tests {
     fn renders_real_workflow_summary_task_list_and_preview() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
         let app = App::load(root).expect("workflow should load");
+        let stage_lines = app
+            .stage_counts()
+            .into_iter()
+            .map(|count| format!("{}: {}", count.name, count.items))
+            .collect::<Vec<_>>();
+        let selected = app
+            .selected_item()
+            .expect("real workflow has a selected item");
         let mut terminal =
             Terminal::new(TestBackend::new(100, 30)).expect("test terminal should be created");
 
@@ -140,12 +148,22 @@ mod tests {
 
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("SpaceTop"));
-        assert!(rendered.contains("implement: 1"));
-        assert!(rendered.contains("done: 0"));
-        assert!(rendered.contains("Build Initial TUI Overview"));
-        assert!(rendered.contains("status: implement"));
-        assert!(rendered.contains("score: 0.80"));
-        assert!(rendered.contains("source: commission seed"));
+        for stage_line in stage_lines {
+            assert!(rendered.contains(&stage_line), "missing {stage_line}");
+        }
+        assert!(rendered.contains(&selected.title));
+        assert!(rendered.contains(&format!("status: {}", selected.status)));
+        assert!(rendered.contains(&format!(
+            "score: {}",
+            selected
+                .score
+                .map(|score| format!("{score:.2}"))
+                .unwrap_or_else(|| "n/a".to_string())
+        )));
+        assert!(rendered.contains(&format!(
+            "source: {}",
+            selected.source.as_deref().unwrap_or("n/a")
+        )));
         assert!(rendered.contains("Build the first read-only"));
     }
 

@@ -120,3 +120,16 @@ Implemented the initial read-only ratatui overview over parser-owned `WorkflowSn
 ### Summary
 
 Verdict: REJECTED. The implementation appears scoped to the expected app/UI/runtime files and the PTY smoke run did not mutate workflow files, but the automated evidence is not currently reproducible because the tests are coupled to mutable workflow status in `docs/spacetop-dev`.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: DONE/SKIPPED/FAILED accounting must show the app/UI tests no longer depend on a transient live workflow status like `implement: 1`.
+  Updated app/UI real-workflow tests to derive status/count expectations from the loaded snapshot instead of hard-coding `implement: 1`.
+- DONE: DONE/SKIPPED/FAILED accounting must show the original TUI acceptance coverage remains: real workflow summary, selected task preview, navigation, and read-only behavior.
+  `cargo test` passed 16/16, including real workflow summary/preview render tests plus navigation and quit-state tests.
+- DONE: DONE/SKIPPED/FAILED accounting must show fresh `cargo fmt --check`, `cargo test`, and smoke/no-mutation evidence after the fix.
+  Ran `cargo fmt --check`, `cargo test`, `expect -c 'spawn cargo run -- --workflow-dir docs/spacetop-dev; ...'`, and `git diff -- docs/spacetop-dev` was empty before this report append.
+
+### Summary
+
+Fixed the review rejection by removing exact-count/status assertions tied to mutable Spacedock workflow state. The tests still load and render the real workflow, but expected stage lines and preview status now come from the same snapshot under test, while fixture-based navigation coverage remains unchanged.

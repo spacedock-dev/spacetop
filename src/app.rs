@@ -138,6 +138,22 @@ mod tests {
     fn loads_real_workflow_state_and_derives_stage_counts() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
         let app = App::load(root.clone()).expect("workflow should load");
+        let expected_stage_counts = app
+            .snapshot()
+            .definition
+            .stages
+            .iter()
+            .map(|stage| {
+                (
+                    stage.name.as_str(),
+                    app.snapshot()
+                        .items
+                        .iter()
+                        .filter(|item| item.status == stage.name)
+                        .count(),
+                )
+            })
+            .collect::<Vec<_>>();
 
         assert_eq!(app.workflow_dir(), root.as_path());
         assert_eq!(
@@ -145,17 +161,18 @@ mod tests {
                 .iter()
                 .map(|count| (count.name.as_str(), count.items))
                 .collect::<Vec<_>>(),
-            [
-                ("design", 0),
-                ("plan", 0),
-                ("implement", 1),
-                ("review", 0),
-                ("done", 0)
-            ]
+            expected_stage_counts
         );
         assert_eq!(
             app.selected_item().map(|item| item.title.as_str()),
             Some("Build Initial TUI Overview")
+        );
+        assert_eq!(
+            app.selected_item().map(|item| item.status.as_str()),
+            app.snapshot()
+                .items
+                .first()
+                .map(|item| item.status.as_str())
         );
     }
 
