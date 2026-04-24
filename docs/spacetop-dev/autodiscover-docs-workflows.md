@@ -14,6 +14,10 @@ pr:
 
 When `spacetop` is launched without an explicit `--workflow-dir` / `-w`, it should discover Spacedock workflow directories in the current repository and present them to the user. A single repository can host multiple workflows (for example `docs/spacetop-dev/` today, plus future product or research workflows), and the TUI must let the user pick which to open when more than one is found. When exactly one workflow is found, it opens automatically so routine single-workflow repos feel like "just run `spacetop`".
 
+### Feedback Cycles
+
+- **cycle 1 (2026-04-24, review → implement):** `cargo clippy --all-targets -- -D warnings` fails with a new `clippy::question_mark` error at `src/parser.rs:206` introduced by the `split_frontmatter` refactor (switched early-return from `Err(...)` to `None`). One-line fix: rewrite the else-arm to `let rest = contents.strip_prefix("---\n")?;`. Reviewer's implement stage report mis-attributed this as pre-existing.
+
 ## Problem statement
 
 Today `spacetop` defaults `--workflow-dir` to `.`, which only works when the user runs it from inside a workflow directory. Users at the repo root see a parser error (no `README.md` frontmatter with `stages:`) instead of their workflows. This is the first UX friction a new SpaceTop user hits.
