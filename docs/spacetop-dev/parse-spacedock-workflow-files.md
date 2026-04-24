@@ -10,7 +10,7 @@ score: 1.0
 worktree: .worktrees/spacedock-ensign-parse-spacedock-workflow-files
 issue:
 pr:
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Read Spacedock workflow `README.md` metadata and work item markdown frontmatter into a typed model that SpaceTop can use for status summaries and workflow structure views.
