@@ -7,7 +7,7 @@ started: 2026-04-24T15:54:38Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-add-archived-tasks-view
 issue:
 pr:
 ---
