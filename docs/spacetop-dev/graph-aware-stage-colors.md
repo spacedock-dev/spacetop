@@ -250,3 +250,51 @@ This test documents that the preferred-color hint mechanism preserves the famili
 ### Summary
 
 The plan identifies `assign_stage_colors(&[StageDefinition]) -> Vec<Color>` in `src/ui/mod.rs` as the core new function, `WorkflowDefinition.stage_colors: Vec<Color>` and `stage_color_for(&str) -> Color` as the domain additions, and `load_workflow_dir` in `src/parser.rs` as the population site. The test strategy provides concrete assertion patterns for all three acceptance criteria (AC-1 through AC-3) with exact stage fixture configurations. AC-4 regression coverage is provided by the existing test suite; no new tests are needed for it beyond verifying `cargo test` passes.
+
+## Stage Report: implement
+
+- DONE: assign_stage_colors() function implemented; stage_colors field on WorkflowDefinition populated at parse time.
+  Added `assign_stage_colors` in `src/ui/mod.rs`, `stage_colors: Vec<Color>` field in `src/domain/mod.rs`, populated in `src/parser.rs::parse_workflow_readme`. Commit 088815c.
+- DONE: All call sites in ui/mod.rs and ui/graph.rs use stage_color_for() lookup; fallback to name-based function preserved.
+  `build_task_list_items` and `build_preview_header_lines` in ui/mod.rs use `state.snapshot().definition.stage_color_for()`; `render_wide` in ui/graph.rs uses `definition.stage_color_for()`. Fallback to `stage_color()` is preserved in `stage_color_for()` via `unwrap_or_else`.
+- DONE: cargo test exits 0; preferred colors (Blue/Cyan/Yellow/Magenta/Green) preserved for standard stages.
+  115/115 tests pass. New tests `graph_coloring_no_adjacent_same_color`, `graph_coloring_linear_path_uses_at_most_two_colors`, and `graph_coloring_preserves_preferred_colors_for_standard_workflow` all pass.
+
+### Summary
+
+Implemented greedy graph-aware stage coloring: `assign_stage_colors` builds adjacency from linear and feedback edges, then assigns colors in definition order using preferred-color hints for known stage names, falling back to the first conflict-free GRAPH_PALETTE entry. `WorkflowDefinition` gains a `stage_colors` field populated at parse time and a `stage_color_for` lookup method. All render call sites in ui/mod.rs and ui/graph.rs updated to use graph-aware colors; the existing name-based `stage_color` function is preserved as a last-resort fallback. All 115 tests pass including three new AC tests.
+
+## Stage Report: review
+
+- DONE: AC-1 (adjacent differ) — `graph_coloring_no_adjacent_same_color` passes; tests all adjacent pairs including the feedback edge (gamma→alpha).
+  `cargo test graph_coloring_no_adjacent_same_color` — 1 passed.
+- DONE: AC-2 (≤2 colors linear) — `graph_coloring_linear_path_uses_at_most_two_colors` passes; 5-stage path uses exactly 2 distinct colors.
+  `cargo test graph_coloring_linear_path_uses_at_most_two_colors` — 1 passed.
+- DONE: AC-3 (preferred colors) — `graph_coloring_preserves_preferred_colors_for_standard_workflow` passes; design=Blue, plan=Cyan, implement=Yellow, review=Magenta, done=Green.
+  `cargo test graph_coloring_preserves_preferred_colors_for_standard_workflow` — 1 passed.
+- DONE: AC-4 (regressions none) — `cargo test` exits 0; `graph_ribbon_uses_stage_colors_per_stage` and `stage_color_assigns_distinct_colors_for_known_stages` both pass.
+  115/115 tests pass across all test suites.
+- DONE: Diff is clean — `assign_stage_colors()` in ui/mod.rs, `stage_colors` field on WorkflowDefinition in domain/mod.rs, `stage_color_for()` replacing `stage_color()` at all 3 call sites; no unrelated changes.
+  Changed files: src/domain/mod.rs, src/ui/mod.rs, src/ui/graph.rs, src/parser.rs, src/app.rs (struct literal updates), docs entity file.
+
+### Summary
+
+The implementation passes all four acceptance criteria. The greedy coloring algorithm correctly enforces no same-color constraint on adjacent stages (linear and feedback edges), uses at most 2 colors for a linear path, and preserves preferred colors for the standard 5-stage workflow. The diff is scoped to the planned files with no unrelated changes. Verdict: PASSED.
+
+## PR Fix Note
+
+Addressed 5 Copilot review comments in commit a1995f3:
+
+1. **parser→UI coupling** (comment 1): Moved `assign_stage_colors`, `GRAPH_PALETTE`, and `preferred_color` from `src/ui/mod.rs` into `src/domain/mod.rs`. Parser now calls `crate::domain::assign_stage_colors`, eliminating the parser→UI dependency.
+
+2. **domain→UI coupling** (comment 2): Moved `stage_color` into `src/domain/mod.rs`. `stage_color_for` fallback now calls `domain::stage_color` instead of `crate::ui::stage_color`. Thin `#[cfg(test)]` re-exports remain in `src/ui/mod.rs` so existing test call-sites compile unchanged.
+
+3. **Incorrect max-degree comment** (comment 3): Updated the `GRAPH_PALETTE` doc comment to use the suggested text acknowledging that feedback edges make the graph's maximum degree unbounded.
+
+4. **Palette exhaustion fallback** (comment 4): Replaced `unwrap_or(&Color::White)` with a `pick_color` helper that cycles through an extended 15-color set using hash-based indexing until a non-conflicting color is found, guaranteeing correctness even when all 8 palette slots are taken by neighbors.
+
+5. **O(1) lookup** (comment 5): Changed `stage_colors` from `Vec<Color>` (indexed by position, O(n) name search) to `HashMap<String, Color>` (indexed by name, O(1)). `stage_color_for` is now a single `.get()` call. Updated all struct literal sites in `app.rs`, `ui/mod.rs`, and `ui/graph.rs` from `Vec::new()` to `HashMap::new()`. Updated tests in `ui/mod.rs` to use HashMap key access instead of Vec indexing.
+
+All 119 tests pass with no compiler warnings after these changes.
+
+Rebased onto origin/main first to resolve a merge conflict in `src/ui/mod.rs` where PR #3's new scrollbar tests were added; both the scrollbar tests and the graph-coloring tests are preserved in the resolved file.

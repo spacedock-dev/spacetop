@@ -85,35 +85,20 @@ fn stage_tag(stage: &str) -> &str {
     }
 }
 
-/// Map a stage name to a stable color. Recognises the conventional Spacedock
-/// stage names; falls back to a deterministic palette index for anything else
-/// so unknown workflows still get distinct colors per stage.
+/// Map a stage name to a stable color. Thin re-export of `domain::stage_color`
+/// so existing direct callers in tests keep compiling without path changes.
+#[cfg(test)]
 pub(crate) fn stage_color(stage_name: &str) -> Color {
-    match stage_name {
-        "design" => Color::Blue,
-        "plan" => Color::Cyan,
-        "implement" => Color::Yellow,
-        "review" | "feedback" => Color::Magenta,
-        "done" | "complete" | "completed" | "shipped" => Color::Green,
-        "blocked" | "rejected" | "failed" => Color::Red,
-        other => {
-            // Deterministic fallback — sum bytes mod palette length.
-            const PALETTE: &[Color] = &[
-                Color::Blue,
-                Color::Cyan,
-                Color::Yellow,
-                Color::Magenta,
-                Color::Green,
-                Color::LightBlue,
-                Color::LightMagenta,
-            ];
-            let idx = other
-                .bytes()
-                .fold(0usize, |a, b| a.wrapping_add(b as usize))
-                % PALETTE.len();
-            PALETTE[idx]
-        }
-    }
+    crate::domain::stage_color(stage_name)
+}
+
+/// Assign graph-aware colors to stages. Thin re-export of
+/// `domain::assign_stage_colors` for use from tests and legacy callers.
+#[cfg(test)]
+pub(crate) fn assign_stage_colors(
+    stages: &[crate::domain::StageDefinition],
+) -> std::collections::HashMap<String, Color> {
+    crate::domain::assign_stage_colors(stages)
 }
 
 fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
@@ -408,7 +393,7 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
 
             let id_style = Style::default().add_modifier(Modifier::DIM);
             let stage_style = Style::default()
-                .fg(stage_color(&item.status))
+                .fg(state.snapshot().definition.stage_color_for(&item.status))
                 .add_modifier(Modifier::BOLD);
             let title_style = if scope == ViewScope::Archived {
                 Style::default().add_modifier(Modifier::DIM)
@@ -576,7 +561,7 @@ fn build_preview_header_lines<'a>(
     // row. Labels keep "label: " format (with single space after colon) so
     // that existing test assertions on "status: {value}", "score: {value}",
     // and "source: {value}" substrings continue to match.
-    let status_color = stage_color(&item.status);
+    let status_color = state.snapshot().definition.stage_color_for(&item.status);
     lines.push(Line::from(vec![
         Span::styled("\u{25CF} ", Style::default().fg(status_color)),
         Span::styled("status: ", dim),
@@ -1052,6 +1037,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
+                stage_colors: std::collections::HashMap::new(),
             },
             items,
         };
@@ -1534,6 +1520,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
+                stage_colors: std::collections::HashMap::new(),
             },
             items: Vec::new(),
         };
@@ -1889,5 +1876,107 @@ mod tests {
             first_thumb_row < height / 2,
             "at scroll=0, thumb must sit in the upper half of the track (got row {first_thumb_row})"
         );
+    }
+
+    // --- Graph-aware coloring tests (AC-1, AC-2, AC-3) ---
+
+    fn make_stage(name: &str, feedback_to: Option<&str>) -> crate::domain::StageDefinition {
+        crate::domain::StageDefinition {
+            name: name.to_string(),
+            initial: false,
+            terminal: false,
+            gate: false,
+            fresh: false,
+            feedback_to: feedback_to.map(|s| s.to_string()),
+            worktree: false,
+            concurrency: None,
+        }
+    }
+
+    #[test]
+    fn graph_coloring_no_adjacent_same_color() {
+        // 4-stage workflow: alpha → beta → gamma → delta
+        // with gamma feedback_to: alpha
+        // Adjacent pairs: (0,1), (1,2), (2,3), (2,0) via feedback
+        let stages = vec![
+            make_stage("alpha", None),
+            make_stage("beta", None),
+            make_stage("gamma", Some("alpha")),
+            make_stage("delta", None),
+        ];
+        let colors = super::assign_stage_colors(&stages);
+        assert_eq!(colors.len(), 4);
+        let c = |name: &str| *colors.get(name).unwrap();
+        assert_ne!(c("alpha"), c("beta"), "alpha vs beta must differ");
+        assert_ne!(c("beta"), c("gamma"), "beta vs gamma must differ");
+        assert_ne!(c("gamma"), c("delta"), "gamma vs delta must differ");
+        assert_ne!(c("gamma"), c("alpha"), "gamma vs alpha (feedback edge) must differ");
+    }
+
+    #[test]
+    fn graph_coloring_linear_path_uses_at_most_two_colors() {
+        // A path graph has max degree 2; greedy coloring alternates 2 colors.
+        let stages = vec![
+            make_stage("a", None),
+            make_stage("b", None),
+            make_stage("c", None),
+            make_stage("d", None),
+            make_stage("e", None),
+        ];
+        let colors = super::assign_stage_colors(&stages);
+        let distinct: std::collections::HashSet<Color> = colors.values().copied().collect();
+        assert!(
+            distinct.len() <= 2,
+            "linear path needs at most 2 colors, got {} distinct: {:?}",
+            distinct.len(),
+            distinct
+        );
+        // Adjacent constraint still holds.
+        for i in 0..stages.len() - 1 {
+            let ca = colors[&stages[i].name];
+            let cb = colors[&stages[i + 1].name];
+            assert_ne!(
+                ca,
+                cb,
+                "adjacent stages {} and {} must differ",
+                stages[i].name,
+                stages[i + 1].name
+            );
+        }
+    }
+
+    #[test]
+    fn graph_coloring_preserves_preferred_colors_for_standard_workflow() {
+        // Standard spacetop-dev 5-stage workflow.
+        // review feedback_to: implement
+        let stages = vec![
+            {
+                let mut s = make_stage("design", None);
+                s.initial = true;
+                s
+            },
+            make_stage("plan", None),
+            {
+                let mut s = make_stage("implement", None);
+                s.worktree = true;
+                s
+            },
+            {
+                let mut s = make_stage("review", Some("implement"));
+                s.gate = true;
+                s
+            },
+            {
+                let mut s = make_stage("done", None);
+                s.terminal = true;
+                s
+            },
+        ];
+        let colors = super::assign_stage_colors(&stages);
+        assert_eq!(colors["design"], Color::Blue, "design should be Blue");
+        assert_eq!(colors["plan"], Color::Cyan, "plan should be Cyan");
+        assert_eq!(colors["implement"], Color::Yellow, "implement should be Yellow");
+        assert_eq!(colors["review"], Color::Magenta, "review should be Magenta");
+        assert_eq!(colors["done"], Color::Green, "done should be Green");
     }
 }
