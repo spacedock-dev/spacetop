@@ -10,6 +10,7 @@ score: 0.7
 worktree: .worktrees/spacedock-ensign-exclude-worktrees-from-discovery
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 When Spacetop auto-discovers workflow directories (via `--discover` or directory scanning), it may walk into `.worktrees/` subdirectories and treat each worktree clone as an independent workflow. Each active Spacedock task checked out into a git worktree contains a full copy of the project including `docs/` — which means the same workflow directory appears N+1 times (once on main, once per active worktree). This causes duplicated workflow entries in the picker and graph view, and confuses the overview state.
