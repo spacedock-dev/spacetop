@@ -78,3 +78,18 @@ Verified by: buffer at the midpoint column (width/2) has `│` glyph for several
 
 **AC-4 — All existing `cargo test` assertions pass (adjust any that check box-border glyphs if necessary).**
 Verified by: `cargo test` exits 0.
+
+## Stage Report: implement
+
+- DONE: Borders::ALL removed from task list and preview blocks; single │ separator via Borders::LEFT on preview.
+  `render_task_list` uses `Block::default()`; `render_preview` uses `Block::default().borders(Borders::LEFT)`. Commit 8e35bb5.
+- DONE: Graph block uses Borders::TOP | Borders::BOTTOM only (no left/right).
+  Both the empty-stages and normal paths in `render_stage_graph` updated. Commit 8e35bb5.
+- DONE: Pane split changed to 50/50.
+  `Constraint::Percentage(42)` / `Constraint::Percentage(58)` → both `Constraint::Percentage(50)`. Commit 8e35bb5.
+- DONE: cargo test exits 0; fix any assertions broken by border removal.
+  Three test thresholds adjusted: `narrow_tier` width 58→56, `preview_draws_scrollbar` right_edge width-2→width-1, `task_list_uses_full_pane` threshold 74→60. Also added "Preview" section header to empty-item fallback so multi-session test finds the label. 110/110 passed.
+
+### Summary
+
+All four checklist items completed in a single commit (8e35bb5). Border changes in `src/ui/mod.rs` and `src/ui/graph.rs` matched the design spec exactly. Three existing tests had numeric thresholds that depended on the old border geometry; updated each with a comment explaining the new value. The `narrow_tier_renders_compact_textual_summary` test needed a 2-column width reduction because removing left/right border columns widened the effective graph inner area, changing the tier boundary from 58 to 56.
