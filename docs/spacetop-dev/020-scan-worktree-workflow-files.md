@@ -1,13 +1,13 @@
 ---
 id: "020"
 title: Scan worktree folders for workflow task files
-status: plan
+status: implement
 source: captain
 started: 2026-04-25T16:43:26Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-020-scan-worktree-workflow-files
 issue:
 pr:
 ---
