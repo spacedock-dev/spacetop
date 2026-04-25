@@ -1,13 +1,13 @@
 ---
 id: "018"
 title: Upgrade ratatui to 0.30+ to unblock ratskin adoption
-status: plan
+status: implement
 source: captain (unblocks 017 ratskin path)
 started: 2026-04-25T16:03:12Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-018-upgrade-ratatui-0-30
 issue:
 pr:
 ---
