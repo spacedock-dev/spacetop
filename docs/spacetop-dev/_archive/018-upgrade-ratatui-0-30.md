@@ -1,16 +1,17 @@
 ---
 id: "018"
 title: Upgrade ratatui to 0.30+ and fix multi-line code block rendering
-status: review
+status: done
 source: captain (unblocks 017 ratskin path)
 started: 2026-04-25T16:03:12Z
-completed:
-verdict:
+completed: 2026-04-25T16:35:01Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-018-upgrade-ratatui-0-30
+worktree: 
 issue:
 pr: #8
 mod-block: 
+archived: 2026-04-25T16:35:01Z
 ---
 
 Task 017 surveyed termimad as a markdown renderer and found that `ratskin` 0.3.1 — a crate that bridges termimad's `MadSkin` styling to Ratatui `Vec<Line>` — is the right integration path. The blocker is that `ratskin` requires `ratatui ^0.30.0` and SpaceTop currently uses `0.29`. This task upgrades ratatui and all affected dependencies so that task 019 (ratskin adoption) can proceed.
