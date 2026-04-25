@@ -1,13 +1,13 @@
 ---
 id: "014"
 title: Fix preview pane scrollbar — unbounded offset drift and thumb not reaching bottom
-status: plan
+status: implement
 source: bug report — captain feedback 2026-04-25
 started: 2026-04-25T10:37:39Z
 completed:
 verdict:
 score: 0.9
-worktree:
+worktree: .worktrees/spacedock-ensign-fix-preview-scrollbar-bugs
 issue:
 pr:
 ---
