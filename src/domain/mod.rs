@@ -13,8 +13,13 @@ const GRAPH_PALETTE: &[Color] = &[
     Color::Magenta,
     Color::Green,
     Color::LightBlue,
+    Color::LightCyan,
+    Color::LightYellow,
     Color::LightMagenta,
+    Color::LightGreen,
     Color::Red,
+    Color::LightRed,
+    Color::White,
 ];
 
 /// Return the preferred color for a well-known stage name, or `None` for
@@ -31,15 +36,17 @@ fn preferred_color(stage_name: &str) -> Option<Color> {
     }
 }
 
-/// Assign a color to each stage using greedy graph coloring.
+/// Assign a color to each stage using a graph-aware, palette-spreading pass.
 ///
 /// Algorithm:
 /// 1. Build an undirected adjacency set from linear edges (i → i+1) and
 ///    feedback edges (stage with `feedback_to` → named target, both directions).
 /// 2. For each stage in definition order, pick the preferred color (from
-///    `preferred_color`) if it does not conflict with any neighbor's color;
-///    otherwise fall back to the first `GRAPH_PALETTE` entry not used by any
-///    neighbor. When the palette is exhausted, cycle via deterministic hash
+///    `preferred_color`) if it does not conflict with any neighbor's color.
+/// 3. For unknown names, start from a stage-specific palette offset so a
+///    typical 5-stage linear workflow uses a broader set of colors instead
+///    of collapsing to a 2-color alternation.
+/// 4. When the primary palette is exhausted, cycle via deterministic hash
 ///    until a non-conflicting color is found.
 ///
 /// The returned `HashMap<String, Color>` maps stage name → assigned color.
@@ -97,7 +104,8 @@ pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color>
 ///
 /// Priority:
 /// 1. Preferred color if not in `neighbor_colors`.
-/// 2. First palette entry not in `neighbor_colors`.
+/// 2. First non-conflicting palette entry, starting from a stage-specific
+///    offset to spread sequential stages across the palette.
 /// 3. Hash-based deterministic fallback cycling through extended colors until
 ///    a non-conflicting one is found (rare path for high-degree stages).
 fn pick_color(
@@ -112,9 +120,19 @@ fn pick_color(
         }
     }
 
-    // Try palette in order.
-    if let Some(&c) = GRAPH_PALETTE.iter().find(|c| !neighbor_colors.contains(c)) {
-        return c;
+    // Spread unknown stages across the palette instead of minimizing to a
+    // tiny repeating set on simple linear workflows.
+    if !GRAPH_PALETTE.is_empty() {
+        let name_hash = stage_name
+            .bytes()
+            .fold(0usize, |a, b| a.wrapping_mul(33).wrapping_add(b as usize));
+        let start = (stage_index + name_hash) % GRAPH_PALETTE.len();
+        for offset in 0..GRAPH_PALETTE.len() {
+            let candidate = GRAPH_PALETTE[(start + offset) % GRAPH_PALETTE.len()];
+            if !neighbor_colors.contains(&candidate) {
+                return candidate;
+            }
+        }
     }
 
     // Palette exhausted: hash-based cycle until we find a non-conflicting color.
@@ -126,12 +144,12 @@ fn pick_color(
         Color::Magenta,
         Color::Green,
         Color::LightBlue,
-        Color::LightMagenta,
-        Color::Red,
-        Color::LightGreen,
-        Color::LightRed,
         Color::LightCyan,
         Color::LightYellow,
+        Color::LightMagenta,
+        Color::LightGreen,
+        Color::Red,
+        Color::LightRed,
         Color::White,
         Color::Gray,
         Color::DarkGray,
@@ -158,7 +176,7 @@ pub fn stage_color(stage_name: &str) -> Color {
         "done" | "complete" | "completed" | "shipped" => Color::Green,
         "blocked" | "rejected" | "failed" => Color::Red,
         other => {
-            // Deterministic fallback — sum bytes mod palette length.
+            // Deterministic fallback over an expanded palette for unknown stages.
             const PALETTE: &[Color] = &[
                 Color::Blue,
                 Color::Cyan,
@@ -166,11 +184,17 @@ pub fn stage_color(stage_name: &str) -> Color {
                 Color::Magenta,
                 Color::Green,
                 Color::LightBlue,
+                Color::LightCyan,
+                Color::LightYellow,
                 Color::LightMagenta,
+                Color::LightGreen,
+                Color::Red,
+                Color::LightRed,
+                Color::White,
             ];
             let idx = other
                 .bytes()
-                .fold(0usize, |a, b| a.wrapping_add(b as usize))
+                .fold(0usize, |a, b| a.wrapping_mul(33).wrapping_add(b as usize))
                 % PALETTE.len();
             PALETTE[idx]
         }

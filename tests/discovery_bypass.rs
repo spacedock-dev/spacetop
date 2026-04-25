@@ -136,3 +136,46 @@ fn explicit_w_bypasses_discovery_even_when_other_workflows_exist() {
         other => panic!("expected Overview from explicit -w, got {other:?}"),
     }
 }
+
+#[test]
+fn explicit_w_repo_root_falls_back_to_discovery_within_that_root() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::write(root.join("README.md"), "# Plain repo root\n").unwrap();
+    write_workflow(&root.join("docs/alpha"));
+    write_workflow(&root.join("docs/beta"));
+
+    let outcome = decide_app(&cli_with(Some(root.to_path_buf())), root).unwrap();
+    match outcome {
+        DecideOutcome::Overview(app) => {
+            let session = app.as_session().expect("overview session");
+            assert_eq!(session.len(), 2);
+            assert_eq!(
+                app.workflow_dir(),
+                fs::canonicalize(root.join("docs/alpha")).unwrap().as_path()
+            );
+        }
+        other => panic!("expected discovered overview from explicit repo root, got {other:?}"),
+    }
+}
+
+#[test]
+fn explicit_w_repo_root_single_workflow_opens_that_workflow() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::write(root.join("README.md"), "# Plain repo root\n").unwrap();
+    write_workflow(&root.join("docs/only"));
+
+    let outcome = decide_app(&cli_with(Some(root.to_path_buf())), root).unwrap();
+    match outcome {
+        DecideOutcome::Overview(app) => {
+            assert_eq!(
+                app.workflow_dir(),
+                fs::canonicalize(root.join("docs/only")).unwrap().as_path()
+            );
+        }
+        other => panic!("expected single discovered workflow from explicit repo root, got {other:?}"),
+    }
+}

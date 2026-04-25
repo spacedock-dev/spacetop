@@ -46,16 +46,12 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
         Some(n) => format!("archived: {n}"),
         None => "archived: (press a)".to_string(),
     };
-    let workflow_path = state.workflow_dir().display().to_string();
-
     let active_stage = match state.view_scope() {
         ViewScope::Active => state.selected_item().map(|item| item.status.clone()),
         ViewScope::Archived => None,
     };
 
-    let title = format!(
-        "Workflow \u{2014} [{scope_label}] \u{2014} {archived_label} \u{2014} {workflow_path}"
-    );
+    let title = format!("Workflow \u{2014} [{scope_label}] \u{2014} {archived_label}");
 
     if stages.is_empty() {
         let paragraph = Paragraph::new(Line::from("(no stages defined)"))
@@ -844,30 +840,16 @@ mod tests {
     }
 
     #[test]
-    fn header_row_contains_scope_label_and_workflow_path() {
+    fn header_row_contains_scope_label_and_archived_count_only() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(ASCII_ENV_VAR);
         let app = real_workflow();
-        // Render at a width comfortably wider than the workflow path so the
-        // header doesn't get truncated by the block title; otherwise this
-        // assertion is really testing terminal width, not header content.
-        let path_len = app.workflow_dir().display().to_string().chars().count() as u16;
-        // Reserve generous slack for the block borders and the title prefix
-        // ("Workflow — [active] — archived: ... — ") so the header doesn't get
-        // truncated by the block title renderer.
-        let width = path_len.saturating_add(80).max(200);
+        let width: u16 = 160;
         let rendered = render_to_string(&app, width, 10);
         assert!(rendered.contains("active"), "missing scope label");
-        let p = app.workflow_dir().display().to_string();
-        // Path is derived from the snapshot's workflow_dir — check the last
-        // path component, not a hard-coded fixture name.
-        let last = std::path::Path::new(&p)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(&p);
         assert!(
-            rendered.contains(last),
-            "missing workflow path component {last}"
+            rendered.contains("archived:"),
+            "missing archived count/status component"
         );
     }
 

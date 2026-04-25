@@ -38,9 +38,41 @@ pub enum DecideOutcome {
 
 pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
     if let Some(explicit) = cli.workflow_dir.clone() {
-        let app = App::load(explicit.clone())
-            .with_context(|| format!("failed to load workflow directory {}", explicit.display()))?;
-        return Ok(DecideOutcome::Overview(app));
+        if let Ok(app) = App::load(explicit.clone()) {
+            return Ok(DecideOutcome::Overview(app));
+        }
+
+        let workflows = discovery::discover_workflows(&explicit)
+            .with_context(|| format!("failed to scan {}", explicit.display()))?;
+        return match workflows.len() {
+            0 => {
+                let app = App::load(explicit.clone()).with_context(|| {
+                    format!("failed to load workflow directory {}", explicit.display())
+                })?;
+                Ok(DecideOutcome::Overview(app))
+            }
+            1 => {
+                let only = workflows.into_iter().next().unwrap();
+                let state = app::OverviewState::load(only.root.clone()).with_context(|| {
+                    format!("failed to load workflow directory {}", only.root.display())
+                })?;
+                let session = app::OverviewSession::single(state, false);
+                Ok(DecideOutcome::Overview(App::from_session(session)))
+            }
+            _ => {
+                let first = workflows
+                    .first()
+                    .expect("non-empty workflow list")
+                    .root
+                    .clone();
+                let state = app::OverviewState::load(first.clone()).with_context(|| {
+                    format!("failed to load workflow directory {}", first.display())
+                })?;
+                let session =
+                    app::OverviewSession::from_discovery(explicit, workflows, 0, state);
+                Ok(DecideOutcome::Overview(App::from_session(session)))
+            }
+        };
     }
 
     let scan_root = discovery::resolve_scan_root(cwd);

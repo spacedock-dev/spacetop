@@ -32,8 +32,12 @@ pub struct OverviewState {
     pub archive_error: Option<String>,
     pub selected_index_archived: usize,
     pub last_refresh_error: Option<String>,
+    pub preview_open: bool,
     pub preview_scroll: usize,
     pub max_preview_scroll: Cell<usize>,
+    pub preview_scroll_x: usize,
+    pub max_preview_scroll_x: Cell<usize>,
+    pub task_page_size: Cell<usize>,
 }
 
 /// Derive a stable slug from a work-item path. Prefer the file stem; when the
@@ -76,8 +80,12 @@ impl OverviewState {
             archive_error: None,
             selected_index_archived: 0,
             last_refresh_error: None,
+            preview_open: false,
             preview_scroll: 0,
             max_preview_scroll: Cell::new(usize::MAX),
+            preview_scroll_x: 0,
+            max_preview_scroll_x: Cell::new(usize::MAX),
+            task_page_size: Cell::new(10),
         }
     }
 
@@ -97,8 +105,12 @@ impl OverviewState {
             archive_error: None,
             selected_index_archived: 0,
             last_refresh_error: None,
+            preview_open: false,
             preview_scroll: 0,
             max_preview_scroll: Cell::new(usize::MAX),
+            preview_scroll_x: 0,
+            max_preview_scroll_x: Cell::new(usize::MAX),
+            task_page_size: Cell::new(10),
         }
     }
 
@@ -143,10 +155,11 @@ impl OverviewState {
         // Clamp archived selection too (archived list is now empty).
         if self.view_scope == ViewScope::Archived {
             self.selected_index_archived = 0;
+            self.ensure_archive_loaded();
+            self.clamp_selection();
         }
 
-        self.preview_scroll = 0;
-        self.max_preview_scroll.set(usize::MAX);
+        self.reset_preview_scroll();
         self.last_refresh_error = None;
     }
 
@@ -254,8 +267,7 @@ impl OverviewState {
             ViewScope::Archived => ViewScope::Active,
         };
         self.clamp_selection();
-        self.preview_scroll = 0;
-        self.max_preview_scroll.set(usize::MAX);
+        self.reset_preview_scroll();
     }
 
     fn clamp_selection(&mut self) {
@@ -321,8 +333,7 @@ impl OverviewState {
 
     fn set_scope_index(&mut self, value: usize) {
         if self.selected_index() != value {
-            self.preview_scroll = 0;
-            self.max_preview_scroll.set(usize::MAX);
+            self.reset_preview_scroll();
         }
         match self.view_scope {
             ViewScope::Active => self.selected_index = value,
@@ -330,17 +341,75 @@ impl OverviewState {
         }
     }
 
+    pub fn preview_open(&self) -> bool {
+        self.preview_open
+    }
+
+    pub fn toggle_preview(&mut self) {
+        self.preview_open = !self.preview_open;
+        self.reset_preview_scroll();
+    }
+
     pub fn preview_scroll(&self) -> usize {
         self.preview_scroll
     }
 
+    pub fn preview_scroll_x(&self) -> usize {
+        self.preview_scroll_x
+    }
+
     fn scroll_preview_down(&mut self) {
+        if !self.preview_open {
+            return;
+        }
         let max = self.max_preview_scroll.get();
         self.preview_scroll = self.preview_scroll.saturating_add(6).min(max);
     }
 
     fn scroll_preview_up(&mut self) {
+        if !self.preview_open {
+            return;
+        }
         self.preview_scroll = self.preview_scroll.saturating_sub(6);
+    }
+
+    fn scroll_preview_right(&mut self) {
+        if !self.preview_open {
+            return;
+        }
+        let max = self.max_preview_scroll_x.get();
+        self.preview_scroll_x = self.preview_scroll_x.saturating_add(8).min(max);
+    }
+
+    fn scroll_preview_left(&mut self) {
+        if !self.preview_open {
+            return;
+        }
+        self.preview_scroll_x = self.preview_scroll_x.saturating_sub(8);
+    }
+
+    fn page_selection_down(&mut self) {
+        let len = self.visible_items().len();
+        if len == 0 {
+            self.set_scope_index(0);
+            return;
+        }
+        let step = self.task_page_size.get().max(1);
+        let next = self.selected_index().saturating_add(step).min(len - 1);
+        self.set_scope_index(next);
+    }
+
+    fn page_selection_up(&mut self) {
+        let step = self.task_page_size.get().max(1);
+        let prev = self.selected_index().saturating_sub(step);
+        self.set_scope_index(prev);
+    }
+
+    fn reset_preview_scroll(&mut self) {
+        self.preview_scroll = 0;
+        self.max_preview_scroll.set(usize::MAX);
+        self.preview_scroll_x = 0;
+        self.max_preview_scroll_x.set(usize::MAX);
     }
 }
 
@@ -909,14 +978,20 @@ impl App {
                 let state = session.active_state_mut();
                 match key.code {
                     KeyCode::Char('?') => self.help_open = true,
+                    KeyCode::Char('q') if state.preview_open() => state.toggle_preview(),
                     KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                     KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                     KeyCode::Up | KeyCode::Char('k') => state.select_previous(),
-                    KeyCode::PageDown => state.scroll_preview_down(),
-                    KeyCode::PageUp => state.scroll_preview_up(),
+                    KeyCode::Enter => state.toggle_preview(),
+                    KeyCode::PageDown if state.preview_open() => state.scroll_preview_down(),
+                    KeyCode::PageUp if state.preview_open() => state.scroll_preview_up(),
+                    KeyCode::PageDown => state.page_selection_down(),
+                    KeyCode::PageUp => state.page_selection_up(),
                     KeyCode::Home => state.select_first(),
                     KeyCode::End => state.select_last(),
                     KeyCode::Char('a') => state.toggle_scope(),
+                    KeyCode::Right if state.preview_open() => state.scroll_preview_right(),
+                    KeyCode::Left if state.preview_open() => state.scroll_preview_left(),
                     KeyCode::Right if is_multi => {
                         let switch = session.cycle_next();
                         self.pending_switch = Some(switch);
@@ -968,7 +1043,7 @@ impl App {
             },
             AppMode::PickerOverlay { underlying, picker } => match key.code {
                 KeyCode::Char('?') => self.help_open = true,
-                KeyCode::Esc => {
+                KeyCode::Esc | KeyCode::Char('q') => {
                     // Restore the underlying session — discard the picker.
                     let restored = std::mem::replace(
                         underlying,
@@ -976,7 +1051,6 @@ impl App {
                     );
                     self.mode = AppMode::Overview(restored);
                 }
-                KeyCode::Char('q') => self.should_quit = true,
                 KeyCode::Down | KeyCode::Char('j') => picker.select_next(),
                 KeyCode::Up | KeyCode::Char('k') => picker.select_previous(),
                 KeyCode::Home => picker.select_first(),
@@ -1106,6 +1180,7 @@ mod tests {
     fn page_keys_scroll_preview_without_changing_selection() {
         let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
 
+        app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::PageDown));
         assert_eq!(app.selected_index(), 0);
         assert_eq!(app.as_overview().unwrap().preview_scroll(), 6);
@@ -1123,12 +1198,55 @@ mod tests {
     fn changing_selection_resets_preview_scroll() {
         let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
 
+        app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::PageDown));
         assert_eq!(app.as_overview().unwrap().preview_scroll(), 6);
 
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.selected_index(), 1);
         assert_eq!(app.as_overview().unwrap().preview_scroll(), 0);
+        assert_eq!(app.as_overview().unwrap().preview_scroll_x(), 0);
+    }
+
+    #[test]
+    fn preview_mode_is_closed_by_default_and_enter_toggles_it() {
+        let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+
+        assert!(!app.as_overview().unwrap().preview_open());
+
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.as_overview().unwrap().preview_open());
+
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.as_overview().unwrap().preview_open());
+    }
+
+    #[test]
+    fn preview_scroll_keys_are_ignored_until_preview_mode_is_open() {
+        let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+        app.as_overview().unwrap().task_page_size.set(1);
+
+        app.handle_key(key(KeyCode::PageDown));
+        app.handle_key(key(KeyCode::Right));
+
+        assert_eq!(app.selected_index(), 1);
+        assert_eq!(app.as_overview().unwrap().preview_scroll(), 0);
+        assert_eq!(app.as_overview().unwrap().preview_scroll_x(), 0);
+    }
+
+    #[test]
+    fn page_keys_move_task_selection_when_preview_is_closed() {
+        let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(6));
+        app.as_overview().unwrap().task_page_size.set(2);
+
+        app.handle_key(key(KeyCode::PageDown));
+        assert_eq!(app.selected_index(), 2);
+
+        app.handle_key(key(KeyCode::PageDown));
+        assert_eq!(app.selected_index(), 4);
+
+        app.handle_key(key(KeyCode::PageUp));
+        assert_eq!(app.selected_index(), 2);
     }
 
     #[test]
@@ -1137,6 +1255,7 @@ mod tests {
             PathBuf::from("workflow"),
             snapshot_with_items(1),
         );
+        state.preview_open = true;
         // Simulate render having set max_scroll = 10.
         state.max_preview_scroll.set(10);
 
@@ -1156,6 +1275,7 @@ mod tests {
             PathBuf::from("workflow"),
             snapshot_with_items(1),
         );
+        state.preview_open = true;
         state.max_preview_scroll.set(10);
 
         // Press down many times (capped at 10).
@@ -1195,6 +1315,21 @@ mod tests {
 
         let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
         app.handle_key(key(KeyCode::Esc));
+        assert!(app.should_quit());
+    }
+
+    #[test]
+    fn q_closes_preview_before_quitting_overview() {
+        let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.as_overview().unwrap().preview_open());
+
+        app.handle_key(key(KeyCode::Char('q')));
+        assert!(!app.as_overview().unwrap().preview_open());
+        assert!(!app.should_quit());
+
+        app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit());
     }
 
@@ -1566,11 +1701,12 @@ mod tests {
             "workflow/beta.md",
         ]));
 
-        // View scope preserved; archived cache invalidated so the next
-        // toggle will rescan.
+        // View scope preserved; when already in archived mode, the archive
+        // cache is immediately reloaded so the view does not go empty after
+        // a reload or workflow switch.
         assert_eq!(overview.view_scope, ViewScope::Archived);
-        assert!(!overview.archive_loaded);
-        assert!(overview.archived_items.is_empty());
+        assert!(overview.archive_loaded);
+        assert!(overview.archive_error.is_none());
     }
 
     #[test]
@@ -1694,6 +1830,26 @@ mod tests {
     }
 
     #[test]
+    fn preview_mode_consumes_left_right_for_horizontal_scroll_in_multi() {
+        let (session, _holder, _roots) = multi_session(3);
+        let mut app = App::from_session(session);
+        let state = match &mut app.mode {
+            AppMode::Overview(session) => session.active_state_mut(),
+            _ => panic!("expected overview"),
+        };
+        state.toggle_preview();
+        state.max_preview_scroll_x.set(24);
+
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.as_overview().unwrap().preview_scroll_x(), 8);
+        assert!(app.take_pending_switch().is_none());
+
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.as_overview().unwrap().preview_scroll_x(), 0);
+        assert!(app.take_pending_switch().is_none());
+    }
+
+    #[test]
     fn picker_overlay_open_close_preserves_session() {
         let (session, _holder, _roots) = multi_session(2);
         let mut app = App::from_session(session);
@@ -1712,6 +1868,21 @@ mod tests {
         assert!(!app.is_overlay());
         assert!(app.as_session().is_some());
         assert_eq!(app.as_session().unwrap().active_index(), original_active);
+    }
+
+    #[test]
+    fn picker_overlay_q_closes_popup_without_quitting() {
+        let (session, _holder, _roots) = multi_session(2);
+        let mut app = App::from_session(session);
+        app.handle_key(key(KeyCode::Char('P')));
+        assert!(app.take_pending_overlay_open());
+        app.open_picker_overlay_with(Ok(app.as_session().unwrap().discovery().to_vec()));
+        assert!(app.is_overlay());
+
+        app.handle_key(key(KeyCode::Char('q')));
+        assert!(!app.is_overlay());
+        assert!(!app.should_quit());
+        assert!(matches!(app.mode(), AppMode::Overview(_)));
     }
 
     #[test]
@@ -1782,6 +1953,10 @@ mod tests {
         // w0 state preserved: still in Archived view, archive cache loaded.
         assert_eq!(app.view_scope(), ViewScope::Archived);
         assert!(app.as_overview().unwrap().archive_loaded);
+        assert!(
+            !app.archived_items().is_empty(),
+            "archived cache should be reloaded when returning to an archived workflow"
+        );
     }
 
     #[test]
