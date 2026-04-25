@@ -540,7 +540,7 @@ fn render_preview(
             .height
             .saturating_sub(metadata_height + divider_area.height),
     };
-    let body_lines = render_markdown_lines(&item.body, usize::MAX);
+    let body_lines = render_markdown_lines(&item.body, usize::MAX, body_inner.width as usize);
     let content_height = body_lines.len() as u16;
     let show_scrollbar = content_height > body_inner.height && body_inner.width > 1;
     let body_area = if show_scrollbar {
@@ -700,7 +700,7 @@ fn build_preview_header_lines<'a>(
     lines
 }
 
-fn render_markdown_lines(markdown: &str, max_lines: usize) -> Vec<Line<'static>> {
+fn render_markdown_lines(markdown: &str, max_lines: usize, pane_width: usize) -> Vec<Line<'static>> {
     let mut blocks: Vec<Vec<Line<'static>>> = Vec::new();
     let mut text_lines = Vec::new();
     let mut spans: Vec<Span<'static>> = Vec::new();
@@ -788,12 +788,17 @@ fn render_markdown_lines(markdown: &str, max_lines: usize) -> Vec<Line<'static>>
                     continue;
                 }
                 if in_code_block {
-                    let content = text.trim_end_matches('\n').to_string();
-                    if text_lines.len() < max_lines {
-                        text_lines.push(Line::from(Span::styled(
-                            content,
-                            Style::default().fg(Color::Cyan).bg(Color::DarkGray),
-                        )));
+                    for source_line in text.split('\n') {
+                        if source_line.is_empty() {
+                            continue;
+                        }
+                        if text_lines.len() < max_lines {
+                            let padded = format!("{:<width$}", source_line, width = pane_width);
+                            text_lines.push(Line::from(Span::styled(
+                                padded,
+                                Style::default().fg(Color::Cyan).bg(Color::DarkGray),
+                            )));
+                        }
                     }
                     continue;
                 }
@@ -2271,6 +2276,105 @@ mod tests {
                 style.fg == Some(Color::Cyan) || style.bg == Some(Color::DarkGray)
             }),
             "code block text must have distinct style"
+        );
+    }
+
+    #[test]
+    fn render_markdown_lines_multiline_code_block_emits_one_line_per_source_line() {
+        let pane_width: usize = 40;
+        let markdown = "```rust\nlet x = 1;\nlet y = 2;\nlet z = 3;\n```";
+        let lines = super::render_markdown_lines(markdown, usize::MAX, pane_width);
+
+        // Each non-empty source line inside the fenced block must produce a distinct Line.
+        let code_spans: Vec<&str> = lines
+            .iter()
+            .filter_map(|line| {
+                // A code line has exactly one span styled Cyan/DarkGray.
+                if line.spans.len() == 1 {
+                    let span = &line.spans[0];
+                    if span.style.fg == Some(Color::Cyan) || span.style.bg == Some(Color::DarkGray)
+                    {
+                        return Some(span.content.as_ref());
+                    }
+                }
+                None
+            })
+            .collect();
+
+        // There must be exactly 3 code lines.
+        assert_eq!(
+            code_spans.len(),
+            3,
+            "each source line in a multi-line code block must produce a separate styled Line"
+        );
+
+        // Each span must be padded to pane_width so the DarkGray background extends edge-to-edge.
+        for span_content in &code_spans {
+            assert_eq!(
+                span_content.len(),
+                pane_width,
+                "code line span must be padded to pane_width ({pane_width}), got len {}",
+                span_content.len()
+            );
+        }
+
+        // Source text must be preserved at the start of the padded span.
+        assert!(code_spans[0].starts_with("let x = 1;"), "first code line content must be preserved");
+        assert!(code_spans[1].starts_with("let y = 2;"), "second code line content must be preserved");
+        assert!(code_spans[2].starts_with("let z = 3;"), "third code line content must be preserved");
+    }
+
+    #[test]
+    fn preview_renders_multiline_code_block_on_distinct_rows() {
+        // This test renders a 3-line fenced code block through the full TUI
+        // pipeline (render_markdown_lines -> Paragraph widget -> TestBackend)
+        // and asserts that each code line appears at a different Y coordinate
+        // in the terminal buffer.  A regression where all code lines collapse
+        // to a single row would fail this assertion even if the unit test for
+        // render_markdown_lines passes.
+        let body = "```rust\nlet x = 1;\nlet y = 2;\nlet z = 3;\n```";
+        let app = app_with_items(vec![item("001", "Multi-line Code Block", body)]);
+        let mut terminal = Terminal::new(TestBackend::new(120, 30)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = buffer_text(buffer);
+
+        // All three code lines must appear somewhere in the rendered output.
+        assert!(rendered.contains("let x = 1;"), "first code line must appear");
+        assert!(rendered.contains("let y = 2;"), "second code line must appear");
+        assert!(rendered.contains("let z = 3;"), "third code line must appear");
+
+        // Each code line must be on a distinct row in the buffer.
+        let y_x = find_text(buffer, "let x = 1;");
+        let y_y = find_text(buffer, "let y = 2;");
+        let y_z = find_text(buffer, "let z = 3;");
+
+        assert!(!y_x.is_empty(), "let x = 1; not found in buffer");
+        assert!(!y_y.is_empty(), "let y = 2; not found in buffer");
+        assert!(!y_z.is_empty(), "let z = 3; not found in buffer");
+
+        let row_x = y_x[0].1;
+        let row_y = y_y[0].1;
+        let row_z = y_z[0].1;
+
+        assert_ne!(
+            row_x, row_y,
+            "first and second code lines must render on different rows (got row {row_x})"
+        );
+        assert_ne!(
+            row_y, row_z,
+            "second and third code lines must render on different rows (got row {row_y})"
+        );
+        assert!(
+            row_y > row_x,
+            "second code line (row {row_y}) must be below first (row {row_x})"
+        );
+        assert!(
+            row_z > row_y,
+            "third code line (row {row_z}) must be below second (row {row_y})"
         );
     }
 }
