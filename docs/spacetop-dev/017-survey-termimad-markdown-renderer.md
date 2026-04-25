@@ -129,3 +129,14 @@ All three hybrid angles were researched. `ratskin` 0.3.1 is a real, working term
 ### Summary
 
 This survey task is complete as a documentation artifact. The design stage produced a full comparison of termimad vs. pulldown-cmark, evaluated three hybrid integration paths, and concluded that the existing `render_markdown_lines` implementation should be retained. The only forward action is optional: if ratskin adoption is desired after task 018 upgrades ratatui to 0.30+, the path is documented in the `## Decision` section. No code changes are required in this task.
+
+## Stage Report: implement
+
+- DONE: No source code changes are made — this is a survey task; all deliverables are in the entity body.
+  No Rust source files were modified; the entity body is the sole deliverable.
+- DONE: A ## Decision section is present in the entity body recording the ratskin path and its dependency on task 018.
+  `## Decision` section is present at line 83; it names all three hybrid paths and explicitly documents that ratskin requires ratatui ≥ 0.30.0, with task 018 as the upgrade dependency.
+
+### Summary
+
+No implementation work was required. The survey deliverable was fully produced in the design stage: the `## Decision` section records the keep-pulldown-cmark verdict, documents the ratskin hybrid path (viable but gated on a ratatui upgrade), and names task 018 as the precondition for any future ratskin adoption.
