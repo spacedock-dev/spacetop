@@ -14,6 +14,10 @@ pr:
 
 Combined polish + cleanup task. Captain asked to skip design/plan and implement directly.
 
+### Feedback Cycles
+
+- **cycle 1 (2026-04-25, review → implement):** `cargo test` fails 1 test on the worktree branch — `ui::tests::preview_status_value_is_stage_colored` panics at `src/ui/mod.rs:617` with "expected status value in preview to use stage color Magenta". Self-authored AC-3 test. Tally was 84 passed / 1 failed (implementer claimed 85/0). Fix: either correct the column-walk in the test or ensure the cell immediately following the literal `"status: "` carries the stage `fg`. No need to re-verify other ACs.
+
 ## Scope
 
 ### UX additions
