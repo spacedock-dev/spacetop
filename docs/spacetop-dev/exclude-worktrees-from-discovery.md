@@ -1,13 +1,13 @@
 ---
 id: "012"
 title: Exclude .worktrees/ directories from workflow auto-discovery
-status: plan
+status: implement
 source: feature request — first-officer session 2026-04-25
 started: 2026-04-25T09:57:56Z
 completed:
 verdict:
 score: 0.7
-worktree:
+worktree: .worktrees/spacedock-ensign-exclude-worktrees-from-discovery
 issue:
 pr:
 ---
