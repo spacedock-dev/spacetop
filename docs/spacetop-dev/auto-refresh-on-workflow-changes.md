@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-auto-refresh-on-workflow-changes
 issue:
 pr:
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 ### Feedback Cycles
