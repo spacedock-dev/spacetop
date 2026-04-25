@@ -14,35 +14,127 @@ pr:
 
 When a repo contains multiple Spacedock workflows (e.g. `docs/spacetop-dev/`, plus future product or research workflows), the TUI should let the user move between them without quitting and relaunching. The autodiscovery picker (task 005) handles the initial selection at startup; this task adds the in-session switch.
 
-Captain's working hypothesis: a tab strip across the top, one tab per discovered workflow. Design should validate or reject that — alternatives include a workflow chooser overlay (a sibling to the help popup), a persistent picker key (re-open the existing picker mid-session), or a status-line breadcrumb with hotkey navigation.
+## Problem statement
 
-Open design questions to resolve in the `design` stage:
+Today, switching workflows requires `q` → relaunch (or `q` → relaunch with a different `-w`). For a repo with even two workflows this is friction-heavy; for repos that grow to three or more (the realistic SpaceTop end state) it forces the user to memorize paths and re-warm the watcher every time. The TUI should let an operator inspecting one workflow flip to another and back without losing the visual state they had — selected entity, scope, scroll position — and without paying any UI cost when there is only one workflow.
 
-- Multi-tab UI vs. modal chooser vs. keybinding-only switch — which best fits the current dashboard density (graph ribbon + task list + preview, plus task 009's centered column and help popup)?
-- Where does the active-tab indicator live? On top of the ribbon? Under the title row? Replacing part of the header?
-- Keybindings: `Tab` / `Shift+Tab` to cycle, numeric (`1`..`9`) for direct selection, or both? Conflicts with existing keys (`a`, `?`, `j`/`k`, picker keys)?
-- Per-tab state: does each workflow keep its own selection, scope (`Active`/`Archived`), and watcher (task 008), or do we tear down on switch and reload? Memory cost vs. switch latency.
-- Discovery refresh: when a tab is created, deleted, or renamed on disk between sessions, how does the tab strip notice? (Task 008's watcher only watches the *current* workflow dir.)
-- Single-workflow case: tab strip hidden entirely, or shown with one tab? (Pick a default that doesn't waste a row.)
-- Picker entry point in the multi-tab model: does the startup picker still exist, or does the TUI always open with all discovered tabs? If the user passed `-w/--workflow-dir`, that becomes a single-tab session — should `+` open the discovery list to add another tab, or is single-tab a strict mode?
-- Re-discovery: after the TUI is open, does the user have a key to re-scan for newly added workflows (e.g. the user just commissioned one in another shell)?
-- Watcher fan-out: do we run one watcher per tab (parallel `notify` watchers, more file handles) or only watch the active tab and rescan on tab focus?
+## Target user flow
+
+1. User launches `spacetop` in a repo with N >= 2 discovered workflows.
+2. Startup picker (task 005) shows the discovered list. User picks one and lands in Overview.
+3. From Overview, user presses `]` to cycle to the next discovered workflow, or `[` to go back. The whole frame re-renders against the new workflow's snapshot in well under a frame.
+4. State that belongs to the **prior** workflow (selected entity slug, view scope, archive-load cache, last-refresh-error) is retained in memory so a return cycle restores it verbatim.
+5. From Overview, user presses `P` (capital P) to re-open the discovery picker overlay — used to (a) jump directly to a workflow more than one cycle away in a large list and (b) trigger a fresh disk re-discovery.
+6. Single-workflow case: no breadcrumb, no cycle keys (they become inert), no picker overlay key. The user sees the same UI they have today.
+
+## Chosen UX: status-line breadcrumb + cycle keys, with picker-revisit overlay
+
+**Decision: status-line breadcrumb with `[`/`]` cycle and `P` picker-overlay revisit. Reject the captain's working tabs hypothesis.**
+
+Comparison against alternatives:
+
+- **Tab strip across the top (captain's hypothesis):** Costs a permanent terminal row. The current dashboard already burns rows on the stage ribbon (task 006/007 header), the centered list+preview column (task 009), and a help affordance hint. Two- or three-workflow repos do not justify a dedicated row, and a five-workflow repo would force horizontal scrolling logic inside the strip — net negative density. Also bakes a numeric-direct-select keymap (`1`..`9`) that collides with future filter shortcuts.
+- **Modal chooser overlay (sibling to help popup):** Workable but adds modal cognitive load — every switch becomes "open overlay → arrow → enter," which is heavier than a single keystroke for the common 2–3-workflow case. Kept as a *secondary* path via `P` so users with many workflows still have a direct selector and a re-discovery trigger.
+- **Persistent picker key only:** Same heaviness as the modal-only proposal; no fast-cycle path.
+- **Status-line breadcrumb + cycle keys (chosen):** Reuses the existing graph header's bottom-of-block area (task 006/007 already renders a workflow path there; we extend it to "[2/3] docs/spacetop-dev"). Zero new rows, one keystroke per switch, with `P` as the escape hatch for direct selection and re-discovery. Hidden entirely when only one workflow is discovered.
+
+The chosen UX subsumes the captain's intent (in-session switching) while spending no vertical real estate. Tabs would have been the right call if the dashboard had idle horizontal space at the top; it does not.
+
+## Keymap
+
+| Key            | Mode                          | Action                                                  |
+|----------------|-------------------------------|---------------------------------------------------------|
+| `]`            | Overview, multi-workflow only | Cycle to next discovered workflow (wraps).              |
+| `[`            | Overview, multi-workflow only | Cycle to previous discovered workflow (wraps).          |
+| `P` (Shift+p)  | Overview, multi-workflow only | Open picker overlay (fresh re-discovery), reuses task 005 picker UI as a popup; `Enter` selects, `Esc` dismisses without changing workflow. |
+| `]` / `[` / `P`| Overview, single-workflow     | Inert (no-op, no help-line entry).                      |
+| `]` / `[` / `P`| Picker (startup) and help-open| Inert.                                                  |
+
+Collision audit against existing bindings (`a`, `?`, `j`/`k`, `↑`/`↓`, `Home`/`End`, `Enter`, `q`, `Esc`, picker `Enter`):
+
+- `]` and `[` are unused everywhere in the existing key handler (`src/app.rs` lines 555–593). No collision.
+- Capital `P` is unused; lowercase `p` is also unused but reserved for a future "preview toggle" / "pin" that has come up in captain feedback — using `P` keeps the lowercase namespace open.
+- No conflict with `?` (help), `a` (scope), navigation, or quit keys.
+
+`Tab` / `Shift+Tab` were considered and rejected: terminal emulators inconsistently deliver `Shift+Tab` (some send `BackTab`, some send raw `Tab` with shift modifier), and `Tab` itself is plausibly desired later for focus-cycling between the list pane and the preview pane. Bracket keys are mnemonic ("next/prev section"), unambiguous, and free.
+
+## Per-workflow state semantics on switch
+
+Each discovered workflow gets its own `OverviewState` instance, kept in a `Vec<OverviewState>` indexed alongside the discovery list. The `App` holds:
+
+- `workflows: Vec<OverviewState>` — one per discovered workflow, lazily materialized.
+- `active_workflow: usize` — index into both the discovery list and `workflows`.
+- `discovery: Vec<DiscoveredWorkflow>` — the resolved list from `discover_workflows`.
+
+On switch (`]`/`[`/picker-confirm), the active index changes; **no `OverviewState` is dropped, no snapshot is reloaded from disk, no archive cache is invalidated.** The newly active state's existing `selected_index`, `view_scope`, `archived_items`, `archive_loaded`, and `last_refresh_error` render verbatim.
+
+Lazy materialization rule: a workflow's `OverviewState` is only `load()`-ed (FS-touching) on its first activation. Cycling past a workflow does not pre-load it; only landing on it does. Switching back is therefore O(1) memory access and zero IO.
+
+A switch failure (parse error during first-time load) leaves `active_workflow` pointing at the failing slot but populates a synthetic empty `OverviewState` with `last_refresh_error` set, so the user sees the breadcrumb and the error rather than a hang or a silent revert.
+
+## Watcher fan-out
+
+**Decision: one watcher for the active workflow only; tear down and re-start on switch.**
+
+Rationale:
+
+- N parallel watchers means N `notify::RecommendedWatcher` instances, N debounce threads, and N sets of file handles. On macOS FSEvents this is cheap-ish; on Linux inotify it consumes user-watch quota; on the `PollWatcher` fallback it multiplies the polling cost linearly. SpaceTop's sweet spot is 2–5 workflows in a repo, but we should not bake a per-workflow watcher cost when only one is on screen.
+- Cross-workflow drift while a tab is inactive is acceptable. The user-perceived contract is "the workflow I'm looking at is live." When they switch back, the new active state's first action is a synchronous `reload()` (cheap — one `load_workflow_dir` call) before the watcher restarts. This converges the in-memory state to disk on focus.
+- Discovery refresh is *not* coupled to the per-workflow watcher. A new workflow appearing on disk while the TUI is open is not auto-detected; the user triggers re-discovery explicitly via `P` (which re-runs `discover_workflows` from the resolved scan root before showing the picker overlay). This matches the user's mental model: "a tab list that updates when I ask it to."
+
+Switch sequence:
+
+1. Drop current `WorkflowWatcher` (its `Drop` joins the debounce thread; bounded by `SHUTDOWN_POLL_INTERVAL`).
+2. Mutate `active_workflow`.
+3. If the new active state has never been loaded, call `OverviewState::load`; otherwise call `reload()` to converge.
+4. Start a fresh `WorkflowWatcher` rooted at the new active workflow's dir.
+
+This sequence is sub-frame on the recommended backend; on the poll-fallback backend it is bounded by `POLL_FALLBACK_INTERVAL` (1 s) for the new watcher's first event but the synchronous reload in step 3 already shows current state.
+
+## Resolved design questions
+
+1. **UI shape.** Status-line breadcrumb + bracket cycle keys + `P` overlay. Justification: zero vertical cost, one-keystroke common case, escape hatch for large lists. (See "Chosen UX" above.)
+2. **Active indicator location.** Extend the existing graph-header workflow-path line (task 006/007) with a `[i/N]` prefix, e.g. `[2/3] docs/spacetop-dev`. Justification: reuses an already-allocated row; the path is what the user thinks of as "which workflow am I on."
+3. **Keybindings.** `]` next, `[` prev, `P` picker overlay. Justification: bracket pair is mnemonic and collision-free; `P` keeps lowercase `p` open for future use; rejected `Tab`/`Shift+Tab` due to terminal inconsistency and likely future focus-cycle use.
+4. **Per-workflow state.** Keep one `OverviewState` per discovered workflow, lazily materialized, never dropped during the session. Justification: switch latency dominates user perception; memory is bounded by N (≤10 in practice) snapshots — cheap.
+5. **Discovery refresh trigger.** User-initiated only, via `P`. Justification: auto-watching the scan root would multiply file handles and produce surprises; the user already expects a "refresh" gesture for this kind of change.
+6. **Single-workflow case.** Breadcrumb hidden; cycle and `P` keys inert and absent from help popup. Justification: zero UI cost when there is nothing to switch to.
+7. **Picker entry point in multi-tab model.** Startup picker (task 005) is unchanged for the discovery-flow launch. When the user passed `-w/--workflow-dir`, that becomes a strict single-workflow session — `P` is *not* exposed. Justification: `-w` is an explicit "this dir only" contract; surprising the user with a picker would violate it. Users who want multi-workflow should launch without `-w`.
+8. **Re-discovery key.** `P` triggers a fresh `discover_workflows(scan_root)` and opens the picker overlay against the result. Newly added workflows show up; deleted ones disappear; the previously active workflow stays active if still present, otherwise the picker pre-selects index 0.
+9. **Watcher fan-out.** One watcher, follows the active workflow; teardown + restart on switch; synchronous `reload()` on switch covers the brief observation gap. Justification: bounds resource usage and matches the "the on-screen workflow is live" contract.
 
 ## Acceptance criteria
 
-_To be firmed up during design. Expected shape:_
+**AC-1 — From Overview with 2+ discovered workflows, `]` and `[` cycle the active workflow without restarting the process.**
+Verified by: integration test against a fixture repo with three workflow dirs. Press `]`; assert the breadcrumb index increments, the visible items match the next workflow's snapshot, and `App::workflow_dir()` (active) reports the new path. Press `[` twice; assert wrap-around to the last workflow.
 
-**AC-1 -- When the repo contains 2+ workflows, the user can switch between them inside the TUI without restarting.**
-Verified by: integration test against a fixture repo with two workflow dirs; assert the visible workflow changes after the switch keybinding.
+**AC-2 — In single-workflow sessions, no breadcrumb is rendered and `]`/`[`/`P` are inert.**
+Verified by: render test on a single-workflow fixture asserts the breadcrumb element is absent (no `[1/1]` prefix). Key-handler test feeds `]`, `[`, `P` and asserts `App` state is byte-identical before and after. Help popup render test on the same fixture asserts cycle/picker hints are absent.
 
-**AC-2 -- Single-workflow repos do not pay a UI cost (no empty tab row, no extra keybind noise).**
-Verified by: render test on a single-workflow fixture asserts the chosen UI element is hidden.
+**AC-3 — Switching workflows preserves per-workflow `selected_index`, `view_scope`, and archive-load cache for return visits.**
+Verified by: app-state test seeds workflow A with selection at index 2 and scope=Archived, switches to B (default state), switches back to A; asserts `selected_index == 2`, `view_scope == Archived`, and `archive_loaded == true` (no re-IO). A second test asserts B's first activation triggers exactly one `load_workflow_dir` call (via a counting fake or test seam) and that subsequent switches back to B do not re-IO.
 
-**AC-3 -- Switching workflows preserves per-workflow state to a documented degree (selection, scope) so the user can flip back without losing context.**
-Verified by: app-state test simulates select → switch → switch back, asserts selection/scope intact.
+**AC-4 — One watcher exists at any time and follows the active workflow.**
+Verified by: watcher-lifecycle test with an instrumented `WorkflowWatcher` factory counts `start` and `drop` events across a switch. Assert exactly one watcher alive after each switch and that its watched root equals the active workflow's `workflow_dir`. A second assertion: a refresh signal arriving for the *prior* workflow's root after a switch is dropped (channel closed) without panicking the main loop.
 
-**AC-4 -- Tab/chooser keybindings do not collide with existing bindings (`a`, `?`, `j`/`k`, `↑`/`↓`, `Home`/`End`, `Enter`, `q`, `Esc`).**
-Verified by: keymap audit in the help popup and a unit test enumerating bindings.
+**AC-5 — `P` re-runs discovery and updates the available workflow list mid-session.**
+Verified by: integration test with a fixture where a third workflow dir is created on disk *after* the TUI opens. Press `P`; assert the picker overlay's listed workflows now includes the newly created dir. Select it, press `Enter`; assert the active workflow becomes the new one and the breadcrumb shows `[3/3]`.
 
-**AC-5 -- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean on the implement branch.**
+**AC-6 — New keybindings do not collide with existing bindings (`a`, `?`, `j`/`k`, `↑`/`↓`, `Home`/`End`, `Enter`, `q`, `Esc`).**
+Verified by: a unit test that enumerates the help popup's listed bindings and asserts the union of (existing-set) and (new-set: `]`, `[`, `P`) is disjoint and matches the actual key handler's recognized keys. Help popup render test asserts the new entries appear only when N >= 2.
+
+**AC-7 — `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean on the implement branch.**
 Verified by: command output cited in the implement stage report.
+
+## Stage Report: design
+
+- DONE: The 9 open design questions in the seed are each resolved with a chosen answer + one-line justification (not "TBD").
+  See "Resolved design questions" section — all 9 numbered with chosen answer and justification.
+- DONE: The chosen UX (tabs vs. chooser vs. picker-revisit vs. status-line) is named explicitly with a brief comparison against the alternatives, and the keymap is laid out with no collision against existing bindings.
+  See "Chosen UX" and "Keymap" sections — chose status-line breadcrumb + `]`/`[` cycle + `P` overlay; rejected tabs with reasoning; collision audit against `src/app.rs:555-593` confirms `]`, `[`, `P` are unused.
+- DONE: Acceptance criteria replace the placeholder section with concrete verifiable AC-N bullets covering: the switch UX, single-workflow no-cost rule, per-workflow state preservation, watcher fan-out behavior, and re-discovery refresh.
+  AC-1..AC-7 each name a verification approach with concrete fixtures and assertions.
+
+### Summary
+
+Locked the in-session workflow switch to a status-line breadcrumb (`[i/N] path` extended onto the existing graph header), `]`/`[` cycle keys, and a `P` picker-overlay re-discovery escape hatch — explicitly rejecting the captain's tabs hypothesis on grounds of vertical density and keymap budget. Per-workflow state is retained in a `Vec<OverviewState>` with lazy first-load and never-drop semantics so return cycles are O(1) IO-free. The watcher is single-instance and follows the active workflow with teardown/restart on switch plus synchronous reload to cover the gap; re-discovery is user-initiated via `P` to avoid file-handle multiplication. Single-workflow sessions and `-w/--workflow-dir`-pinned sessions pay zero UI or keymap cost.
