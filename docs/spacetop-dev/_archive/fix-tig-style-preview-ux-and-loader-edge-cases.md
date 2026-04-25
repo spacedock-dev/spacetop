@@ -9,7 +9,7 @@ verdict: PASSED
 score: 0.9
 worktree: 
 issue:
-pr:
+pr: "#5"
 mod-block: 
 archived: 2026-04-25T14:37:52Z
 ---
