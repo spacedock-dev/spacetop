@@ -1,15 +1,16 @@
 ---
 id: "004"
 title: Fix borderless pane layout to match classic refined design
-status: implement
+status: done
 source: captain feedback 2026-04-25
 started: 2026-04-25T10:05:53Z
-completed:
-verdict:
+completed: 2026-04-25T10:13:12Z
+verdict: PASSED
 score: 0.95
-worktree: .worktrees/spacedock-ensign-fix-borderless-layout
+worktree: 
 issue:
 pr:
+archived: 2026-04-25T10:13:12Z
 ---
 
 The current dashboard wraps both the task list and preview pane in `Block::default().borders(Borders::ALL)` which draws box-drawing borders that the classic refined design does not have. The design (dir1-classic.jsx) uses borderless flex panels separated only by a single vertical rule `│` between the two panes. Additionally the pane split is 42%/58% but the design shows 50%/50%. The `── body ───` divider in the preview header is clipped because the box border shrinks the inner area.
