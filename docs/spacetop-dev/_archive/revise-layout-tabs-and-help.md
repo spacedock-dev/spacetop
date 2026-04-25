@@ -1,16 +1,17 @@
 ---
 id: 011
 title: Revise dashboard layout (responsive width, pane-centered content), tab bar for workflow switcher, surface help affordance
-status: review
+status: done
 source: captain feedback after 010 ship
 started: 2026-04-25T06:18:08Z
-completed:
-verdict:
+completed: 2026-04-25T06:29:23Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-revise-layout-tabs-and-help
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-25T06:29:23Z
 ---
 
 Combined UI/UX revision task. Captain asked to skip design/plan and implement directly.
