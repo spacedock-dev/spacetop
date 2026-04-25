@@ -1,9 +1,9 @@
 ---
 id: "012"
 title: Exclude .worktrees/ directories from workflow auto-discovery
-status: design
+status: plan
 source: feature request — first-officer session 2026-04-25
-started:
+started: 2026-04-25T09:57:56Z
 completed:
 verdict:
 score: 0.7
