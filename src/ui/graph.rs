@@ -290,7 +290,7 @@ fn render_wide<'a>(
     // Feedback arcs.
     let arcs = collect_feedback_arcs(stages, &cols);
     let capped: Vec<_> = arcs.iter().take(MAX_FEEDBACK_ROWS).collect();
-    let arc_strings: Vec<String> = capped
+    let arc_pairs: Vec<(String, String)> = capped
         .iter()
         .map(|arc| {
             render_feedback_row(
@@ -304,10 +304,10 @@ fn render_wide<'a>(
         .collect();
 
     // All lines must share the same width so the Paragraph's centred alignment
-    // keeps ribbon, counts, and arc rows aligned with each other.
-    let uniform_width = arc_strings
+    // keeps ribbon, counts, arc, and annotation rows aligned with each other.
+    let uniform_width = arc_pairs
         .iter()
-        .map(|s| visible_width(s))
+        .map(|(arc, ann)| visible_width(arc).max(visible_width(ann)))
         .max()
         .unwrap_or(0)
         .max(max_width);
@@ -323,8 +323,9 @@ fn render_wide<'a>(
     lines.push(Line::from(ribbon_spans));
     lines.push(Line::from(counts_spans));
 
-    for s in arc_strings {
-        lines.push(Line::from(s));
+    for (arc_line, ann_line) in arc_pairs {
+        lines.push(Line::from(arc_line));
+        lines.push(Line::from(ann_line));
     }
     if arcs.len() > MAX_FEEDBACK_ROWS {
         let overflow = arcs.len() - MAX_FEEDBACK_ROWS;
@@ -418,47 +419,47 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
     arcs
 }
 
+/// Returns `(arc_line, annotation_line)`.  Both strings have the same length
+/// so the caller can use a single uniform width for all lines, keeping the
+/// Paragraph's centred alignment consistent across ribbon, counts, arc, and
+/// annotation rows.
 fn render_feedback_row(
     source_col: usize,
     target_col: usize,
     source_stage: &str,
     target_stage: &str,
     g: &GlyphSet,
-) -> String {
-    // The arc spans from left to right with corner glyphs at each end.
-    // The annotation is placed two cells after the right corner so it reads
-    // naturally connected to the arc.  The caller pads all lines to the same
-    // width so that the Paragraph's centred alignment keeps every row aligned.
+) -> (String, String) {
     let (left, right) = if source_col <= target_col {
         (source_col, target_col)
     } else {
         (target_col, source_col)
     };
-    let annotation = format!(
-        "  {} {} {} {}",
-        g.feedback, source_stage, g.narrow_arrow, target_stage
-    );
-    let ann_w = visible_width(&annotation);
-    let buf_w = right + 1 + ann_w;
-    let mut buf: Vec<String> = vec![" ".to_string(); buf_w];
 
+    // Arc line: corner glyphs at left/right with horizontal fill between.
+    let arc_width = right + 1;
+    let mut arc_buf: Vec<String> = vec![" ".to_string(); arc_width];
     if right > left + 1 {
-        for cell in buf.iter_mut().take(right).skip(left + 1) {
+        for cell in arc_buf.iter_mut().take(right).skip(left + 1) {
             *cell = g.arc_horizontal.to_string();
         }
     }
-    if left < buf.len() {
-        buf[left] = g.arc_down_right.to_string();
+    arc_buf[left] = g.arc_down_right.to_string();
+    arc_buf[right] = g.arc_down_left.to_string();
+
+    // Annotation line: indented to start under └ (left corner).
+    let annotation = format!("{} {} {} {}", g.feedback, source_stage, g.narrow_arrow, target_stage);
+    let ann_w = visible_width(&annotation);
+    let total_w = (left + ann_w).max(arc_width);
+
+    // Pad arc line to total_w.
+    while arc_buf.len() < total_w {
+        arc_buf.push(" ".to_string());
     }
-    if right < buf.len() {
-        buf[right] = g.arc_down_left.to_string();
-    }
-    for (i, ch) in annotation.chars().enumerate() {
-        if let Some(cell) = buf.get_mut(right + i) {
-            *cell = ch.to_string();
-        }
-    }
-    buf.join("")
+    let ann_line = format!("{}{}", " ".repeat(left), annotation);
+    let ann_line = format!("{ann_line}{}", " ".repeat(total_w.saturating_sub(left + ann_w)));
+
+    (arc_buf.join(""), ann_line)
 }
 
 fn render_narrow<'a>(
