@@ -3,7 +3,7 @@ id: "020"
 title: Scan worktree folders for workflow task files
 status: design
 source: captain
-started:
+started: 2026-04-25T16:43:26Z
 completed:
 verdict:
 score:
