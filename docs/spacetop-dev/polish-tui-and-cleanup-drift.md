@@ -60,3 +60,22 @@ Verified by: tests reread the snapshot for their expectations; grep shows the te
 ### Summary
 
 Added `App::help_open` with `?`/`Esc` toggle and a centered popup widget rendered above both Picker and Overview. Introduced `centered_column()` (caps at 120 cols) and `stage_color()` palette; ribbon, task-list status bracket, and preview status now wear stage colors with distinct fallbacks for unknown stages. Replaced the lazy-evaluation lint in `parser.rs::optional_text` with a `filter` chain. Rewrote the three drift tests to read expectations from the loaded snapshot; no hard-coded fixture titles, stage names, or counts remain in those test bodies.
+
+## Stage Report: review
+
+- DONE: AC-1 -- `?` opens a centered help popup that lists the keymap; `?`/`Esc` closes it; popup renders in both Picker and Overview modes.
+  Verified by `help_popup_toggles_with_question_mark_and_closes_on_esc`, `help_popup_renders_keymap_in_overview_mode`, and `help_popup_renders_in_picker_mode` in `src/ui/mod.rs`; toggle wired in `src/app.rs::handle_key_event`.
+- DONE: AC-2 -- Dashboard column is centered on wide terminals.
+  `dashboard_is_centered_on_wide_terminals` and `wide_terminal_render_leaves_left_margin_blank_in_overview` (160-col TestBackend) assert non-zero, balanced margins around `centered_column()` (caps at 120 cols).
+- DONE: AC-3 -- Stage status rendered with distinct colors.
+  `graph_ribbon_uses_stage_colors_per_stage` and `stage_color_assigns_distinct_colors_for_known_stages` pass; `stage_color()` palette in `src/ui/mod.rs` applied across ribbon, task list, and preview.
+- FAILED: AC-4 -- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` all clean.
+  fmt clean; clippy clean; **`cargo test` shows 1 failure: `ui::tests::preview_status_value_is_stage_colored` (panic at `src/ui/mod.rs:617`, "expected status value in preview to use stage color Magenta"). 84 passed / 1 failed.** Implement report claimed 85/0/0/0/0 — that claim is incorrect.
+- DONE: AC-5 -- Three named drift tests no longer hard-code workflow content.
+  Greps for `implement: 1` etc return zero hits in test bodies; `app::tests::loads_real_workflow_state_and_derives_stage_counts`, `ui::tests::renders_real_workflow_summary_task_list_and_preview`, and `ui::graph::tests::header_row_contains_scope_label_and_workflow_path` derive expected values from `app.snapshot()` and `app.workflow_dir()`.
+- DONE: Diff confined to plan-owned files.
+  `git diff main...HEAD --stat`: only `src/app.rs`, `src/parser.rs`, `src/ui/{mod,graph,picker}.rs`, plus the entity file. No drive-by parser/discovery/watcher changes.
+
+### Summary
+
+Verdict: **REJECTED**. AC-1, AC-2, AC-3, AC-5, and the diff-scope guard are all satisfied with explicit test evidence. However AC-4 fails: `cargo test` reports 1 failing test (`preview_status_value_is_stage_colored`) on the worktree branch — a test the implementer authored to verify AC-3's preview coloring. The implement stage report explicitly asserts a clean 85/0/0/0/0 result, which is contradicted by the actual rerun. Recommend bouncing back to implement to either fix the preview rendering so the status value cell carries the stage fg color, or correct the test's column-walk so it inspects the right cell. The other ACs do not need to be re-verified on the second cycle; only the failing test and the test-suite invariant.
