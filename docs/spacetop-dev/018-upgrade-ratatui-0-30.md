@@ -75,3 +75,68 @@ The following changes from the ratatui BREAKING-CHANGES.md are relevant to Space
 ### Summary
 
 SpaceTop currently uses `ratatui = "0.29"` in `Cargo.toml`. ratskin 0.3.1 requires `ratatui ^0.30.0`. The ratatui 0.29 → 0.30 breaking changes were reviewed against all ratatui call sites in `src/`; none of the breaking changes affect SpaceTop's code because the project uses string literals where signatures changed to `Into<Line>`, does not implement a custom backend, and does not use removed types (`block::Title`, `Flex::SpaceAround`, exhaustive `Marker` matching, or `Layout::init_cache`). The `Alignment` rename has a compatibility alias. The plan stage needs only a single Cargo.toml version bump with no source edits.
+
+## Implementation plan
+
+### Step 1 — Bump ratatui in Cargo.toml
+
+File: `/Users/kent/Dev/InfuseAI/GitHub/spacetop/Cargo.toml`
+
+Change:
+```
+ratatui = "0.29"
+```
+to:
+```
+ratatui = "0.30"
+```
+
+No other source files need editing (see breaking changes inventory in the design stage report).
+
+### Step 2 — Verify the project compiles
+
+```
+cargo check
+```
+
+Expected: exit 0 with no errors. This satisfies AC-2 and AC-4.
+
+### Step 3 — Verify all existing tests pass
+
+```
+cargo test --lib
+```
+
+Expected: exit 0 with no failures. This satisfies AC-3.
+
+### Step 4 — Verify ratskin 0.3.1 compatibility (AC-5)
+
+Add ratskin temporarily to check for version conflicts:
+
+```
+cargo add ratskin
+cargo check
+```
+
+Expected: exit 0. Then remove ratskin from `Cargo.toml` (and `Cargo.lock` via `cargo rm ratskin` or manual edit) since wiring it up is out of scope for this task — that is task 019's job.
+
+Alternatively, manually add `ratskin = "0.3"` to `[dependencies]` in `Cargo.toml`, run `cargo check`, then revert the addition.
+
+### File ownership
+
+- `/Users/kent/Dev/InfuseAI/GitHub/spacetop/Cargo.toml` — single line edit, owned by this task
+- `/Users/kent/Dev/InfuseAI/GitHub/spacetop/Cargo.lock` — updated automatically by cargo, no manual edit needed
+- No source files under `src/` require changes
+
+## Stage Report: plan
+
+- DONE: Plan is a single concrete step: bump ratatui in Cargo.toml to 0.30, run cargo check, run cargo test --lib.
+  Four-step plan above; Step 1 is the single Cargo.toml change, Steps 2-3 are the two verification commands.
+- DONE: Plan notes how to verify ratskin compatibility (AC-5) without wiring it up yet.
+  Step 4 uses `cargo add ratskin && cargo check` then removes it; explicitly notes ratskin wiring is task 019's scope.
+- DONE: File ownership is clear so the implement stage can start immediately.
+  Only `Cargo.toml` needs editing; `Cargo.lock` updates automatically; no `src/` changes required.
+
+### Summary
+
+The plan distills to a single line change in `Cargo.toml` (`ratatui = "0.29"` → `ratatui = "0.30"`) followed by `cargo check` and `cargo test --lib`. The design stage's breaking-changes inventory confirmed no source edits are needed. AC-5 ratskin compatibility is verified by temporarily adding `ratskin` via `cargo add`, confirming `cargo check` exits 0, then removing it — ratskin wiring remains task 019's responsibility. File ownership is unambiguous: only `Cargo.toml` is modified.
