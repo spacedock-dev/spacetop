@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-016-fix-preview-markdown-code-blocks
 issue:
-pr:
+pr: #6
 mod-block: merge:pr-merge
 ---
 
