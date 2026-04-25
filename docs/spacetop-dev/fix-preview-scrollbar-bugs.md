@@ -333,3 +333,16 @@ All existing tests plus the four new tests must pass. Specifically confirm:
 ### Summary
 
 The plan addresses Bug A by adding `max_preview_scroll: Cell<usize>` to `OverviewState`, writing the clamped max from `render_preview` via `Cell::set`, and reading it in `scroll_preview_down` to cap the counter. Bug B is fixed by replacing the three-parameter `ScrollbarState` construction with `ScrollbarState::new(max_scroll + 1).position(scroll_position)`, which gives ratatui a linear thumb placement that lands exactly at the track extremes. The test strategy covers unit-level offset-cap assertions (no render needed) plus render-level thumb-position checks using a render+scroll interleave to ensure the Cell is populated before assertions run.
+
+## Stage Report: implement
+
+- DONE: Bug A fixed: max_preview_scroll Cell added to OverviewState; render_preview writes it; scroll_preview_down caps against it.
+  Added `pub max_preview_scroll: Cell<usize>` to `OverviewState`; initialized to `usize::MAX` in `empty`, `from_snapshot`; reset in `reload_from_snapshot`, `toggle_scope`, `set_scope_index`; `render_preview` calls `state.max_preview_scroll.set(max_scroll)` after computing `max_scroll`; `scroll_preview_down` caps with `.min(max)`. Commit: 8cee5c4.
+- DONE: Bug B fixed: ScrollbarState new(max_scroll+1).position(scroll_position) replaces old construction.
+  Replaced three-parameter `ScrollbarState::new(content_height).viewport_content_length(...).position(...)` with `ScrollbarState::new(max_scroll + 1).position(scroll_position)` in the `if show_scrollbar` block. Commit: 8cee5c4.
+- DONE: cargo test exits 0.
+  116/116 tests passed including 4 new tests: `scroll_preview_down_is_capped_at_max_scroll`, `scroll_preview_up_responds_immediately_after_capped_down`, `preview_scrollbar_thumb_reaches_bottom_at_max_scroll`, `preview_scrollbar_thumb_starts_at_top_at_zero_scroll`.
+
+### Summary
+
+Both scrollbar bugs are fixed. Bug A is resolved by threading `max_preview_scroll: Cell<usize>` from `render_preview` (which computes the real cap) back into `scroll_preview_down` (which now enforces it), eliminating the phantom drift. Bug B is resolved by switching `ScrollbarState` to `new(max_scroll + 1).position(scroll_position)` which gives ratatui a linear position mapping that lands the thumb exactly at track top and bottom. All existing tests continue to pass; four new tests covering the AC-1 and AC-2/AC-3 criteria were added and pass.
