@@ -68,6 +68,23 @@ fn picker_centered(area: Rect) -> Rect {
     }
 }
 
+/// Map a stage name to a 3-character uppercase tag for display in the task list.
+fn stage_tag(stage: &str) -> &str {
+    match stage {
+        "design" => "DES",
+        "plan" => "PLN",
+        "implement" => "IMP",
+        "review" => "REV",
+        "done" => "DON",
+        "pending" => "PEN",
+        "analyze" => "ANA",
+        "smoke" => "SMK",
+        "run" => "RUN",
+        "holdout" => "HLD",
+        _ => "···",
+    }
+}
+
 /// Map a stage name to a stable color. Recognises the conventional Spacedock
 /// stage names; falls back to a deterministic palette index for anything else
 /// so unknown workflows still get distinct colors per stage.
@@ -108,9 +125,10 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession)
         area
     };
 
-    // Vertical layout inside the active workflow panel: graph ribbon (7),
-    // main content fills the rest, status footer (1 line).
+    // Vertical layout inside the active workflow panel: header bar (1),
+    // graph ribbon (7), main content fills the rest, status footer (1 line).
     let constraints = vec![
+        Constraint::Length(1),
         Constraint::Length(7),
         Constraint::Min(0),
         Constraint::Length(1),
@@ -120,9 +138,11 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession)
         .constraints(constraints)
         .split(dashboard_area);
 
-    let graph_area = chunks[0];
-    let content_area = chunks[1];
-    let footer_area = chunks[2];
+    let header_area = chunks[0];
+    let graph_area = chunks[1];
+    let content_area = chunks[2];
+    let footer_area = chunks[3];
+    render_header_bar(frame, header_area, state);
     render_stage_graph(frame, graph_area, state);
 
     let [list_area, preview_area] = Layout::default()
@@ -134,6 +154,57 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession)
     render_preview(frame, preview_area, state);
 
     render_status_footer(frame, footer_area, session);
+}
+
+/// Single-line header bar above the stage graph ribbon.
+/// Shows: muted "Workflow" label, scope badge [active]/[archived], archived
+/// count hint, and the workflow directory path (dim). The line is padded to
+/// fill the full area width so the top-left and top-right cells are non-blank.
+fn render_header_bar(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
+    use crate::app::ViewScope;
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let scope = state.view_scope();
+    let (badge_text, badge_style) = match scope {
+        ViewScope::Active => (
+            "[active]",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        ViewScope::Archived => (
+            "[archived]",
+            Style::default().add_modifier(Modifier::DIM | Modifier::BOLD),
+        ),
+    };
+    let archived_hint = match state.archived_count() {
+        Some(n) => format!("archived: {n}  (press a)"),
+        None => "(press a)".to_string(),
+    };
+    let path_str = state.workflow_dir().display().to_string();
+
+    // Compute the visible length of all text to pad the remainder with dim
+    // separator characters (─) so the row spans the full terminal width and
+    // both the left and right edges are non-blank (a ratatui buffer cell that
+    // contains " " is considered blank by layout tests).
+    let content_len = "Workflow ".len()
+        + badge_text.len()
+        + 2
+        + archived_hint.len()
+        + 2
+        + path_str.len();
+    let sep_len = (area.width as usize).saturating_sub(content_len);
+    let separator = "\u{2500}".repeat(sep_len); // "─" repeated
+
+    let line = Line::from(vec![
+        Span::styled("Workflow ", dim),
+        Span::styled(badge_text, badge_style),
+        Span::raw("  "),
+        Span::styled(archived_hint, dim),
+        Span::raw("  "),
+        Span::styled(path_str, dim),
+        Span::styled(separator, dim),
+    ]);
+    frame.render_widget(Paragraph::new(line), area);
 }
 
 /// Render the workflow tabs as the outer dashboard panel. The active tab
@@ -268,7 +339,41 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     let block = Block::default().title(title).borders(Borders::ALL);
     let inner = block.inner(area);
     frame.render_widget(block, area);
+
     let items = build_task_list_items(state);
+    let item_count = state.visible_items().len();
+
+    // Section header: "Tasks  ·  N" (or "Archived  ·  N") above the list.
+    let section_header_text = format!(
+        "{}  \u{00B7}  {}",
+        title, item_count
+    );
+    let section_header = Line::from(Span::styled(
+        section_header_text,
+        Style::default().add_modifier(Modifier::DIM),
+    ));
+    if inner.height > 0 {
+        let header_area = Rect {
+            x: inner.x,
+            y: inner.y,
+            width: inner.width,
+            height: 1,
+        };
+        frame.render_widget(Paragraph::new(section_header), header_area);
+    }
+
+    // Shift list down by 1 row for the section header.
+    let list_area = if inner.height > 1 {
+        Rect {
+            x: inner.x,
+            y: inner.y + 1,
+            width: inner.width,
+            height: inner.height - 1,
+        }
+    } else {
+        return;
+    };
+
     let mut list_state = ListState::default().with_selected(if items.is_empty() {
         None
     } else {
@@ -277,7 +382,7 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     let list = List::new(items)
         .highlight_symbol("> ")
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD));
-    frame.render_stateful_widget(list, inner, &mut list_state);
+    frame.render_stateful_widget(list, list_area, &mut list_state);
 }
 
 fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
@@ -295,39 +400,40 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
         .iter()
         .enumerate()
         .map(|(_index, item)| {
-            let prefix = format!("{} ", item.id);
-            let bracket = format!("[{}]", item.status);
-            let suffix = match scope {
-                ViewScope::Archived => {
-                    let glyph = match item.verdict.as_deref() {
-                        Some("PASSED") => "[\u{2713}]",
-                        Some(_) => "[\u{2717}]",
-                        None => "[?]",
-                    };
-                    format!(" {} {glyph}", item.title)
-                }
-                ViewScope::Active => format!(" {}", item.title),
-            };
+            // Row format: "{id:>3}  {tag:3}  {title}" with optional verdict glyph for archived.
+            // The ratatui highlight_symbol "> " is prepended for the selected row, so the
+            // rendered text starts with "> {id}" for the selected item (keeping "> 001" visible).
+            let id_str = format!("{:>3}", item.id);
+            let tag = stage_tag(&item.status);
 
-            let prefix_style = if scope == ViewScope::Archived {
-                Style::default().add_modifier(Modifier::DIM)
-            } else {
-                Style::default()
-            };
+            let id_style = Style::default().add_modifier(Modifier::DIM);
+            let stage_style = Style::default()
+                .fg(stage_color(&item.status))
+                .add_modifier(Modifier::BOLD);
             let title_style = if scope == ViewScope::Archived {
                 Style::default().add_modifier(Modifier::DIM)
             } else {
                 Style::default()
             };
-            let stage_style = Style::default()
-                .fg(stage_color(&item.status))
-                .add_modifier(Modifier::BOLD);
 
-            ListItem::new(Line::from(vec![
-                Span::styled(prefix, prefix_style),
-                Span::styled(bracket, stage_style),
-                Span::styled(suffix, title_style),
-            ]))
+            let mut spans: Vec<Span<'_>> = vec![
+                Span::styled(id_str, id_style),
+                Span::raw("  "),
+                Span::styled(tag, stage_style),
+                Span::raw("   "),
+                Span::styled(item.title.clone(), title_style),
+            ];
+
+            if scope == ViewScope::Archived {
+                let glyph = match item.verdict.as_deref() {
+                    Some("PASSED") => " [\u{2713}]",
+                    Some(_) => " [\u{2717}]",
+                    None => " [?]",
+                };
+                spans.push(Span::styled(glyph, title_style));
+            }
+
+            ListItem::new(Line::from(spans))
         })
         .collect()
 }
@@ -342,7 +448,7 @@ fn render_preview(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
         return;
     };
 
-    let header_lines = build_preview_header_lines(item, state);
+    let header_lines = build_preview_header_lines(item, state, inner.width);
     let header_height = (header_lines.len() as u16).min(inner.height);
     let header_area = Rect {
         x: inner.x,
@@ -437,20 +543,38 @@ fn render_preview(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
 fn build_preview_header_lines<'a>(
     item: &'a crate::domain::WorkItem,
     state: &OverviewState,
+    inner_width: u16,
 ) -> Vec<Line<'a>> {
+    let dim = Style::default().add_modifier(Modifier::DIM);
     let score = item
         .score
         .map(|score| format!("{score:.2}"))
         .unwrap_or_else(|| "n/a".to_string());
     let source = item.source.as_deref().unwrap_or("n/a");
     let mut lines: Vec<Line<'_>> = Vec::new();
-    lines.push(Line::from(Span::styled(
-        item.title.as_str(),
-        Style::default().add_modifier(Modifier::BOLD),
-    )));
+
+    // Combined section header + title: "Preview  ·  #id  Title" so that both
+    // "Preview" and the task title appear without consuming an extra row.
+    // The section marker is dim, the title is bold.
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("Preview  \u{00B7}  #{}  ", item.id),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+        Span::styled(
+            item.title.as_str(),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    // Key-value metadata grid. The colored dot glyph ● precedes the status
+    // row. Labels keep "label: " format (with single space after colon) so
+    // that existing test assertions on "status: {value}", "score: {value}",
+    // and "source: {value}" substrings continue to match.
     let status_color = stage_color(&item.status);
     lines.push(Line::from(vec![
-        Span::raw("status: "),
+        Span::styled("\u{25CF} ", Style::default().fg(status_color)),
+        Span::styled("status: ", dim),
         Span::styled(
             item.status.clone(),
             Style::default()
@@ -477,7 +601,15 @@ fn build_preview_header_lines<'a>(
         lines.push(Line::from(format!("completed: {completed}")));
     }
     lines.push(Line::from(format!("path: {}", item.path.display())));
-    lines.push(Line::from(""));
+
+    // Body divider: "── body " + "─" repeated to fill pane width.
+    // This replaces the previous blank separator line (same line count, but
+    // now visually marks the boundary between metadata and body content).
+    let prefix = "\u{2500}\u{2500} body "; // "── body " = 8 chars
+    let fill_len = (inner_width as usize).saturating_sub(prefix.chars().count());
+    let divider = format!("{}{}", prefix, "\u{2500}".repeat(fill_len));
+    lines.push(Line::from(Span::styled(divider, dim)));
+
     lines
 }
 
