@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-polish-tui-and-cleanup-drift
 issue:
 pr:
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Combined polish + cleanup task. Captain asked to skip design/plan and implement directly.
