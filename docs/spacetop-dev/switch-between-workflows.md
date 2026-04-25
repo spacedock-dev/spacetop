@@ -1,13 +1,13 @@
 ---
 id: 010
 title: Switch between multiple discovered workflows from inside the TUI
-status: plan
+status: implement
 source: captain feedback after 009 ship
 started: 2026-04-25T04:13:38Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-switch-between-workflows
 issue:
 pr:
 ---
