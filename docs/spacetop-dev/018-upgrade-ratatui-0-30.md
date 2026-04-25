@@ -146,3 +146,7 @@ The plan distills to a single line change in `Cargo.toml` (`ratatui = "0.29"` �
 **Cycle 1 — review → implement**
 Reviewer: captain. Stage: review. Verdict: REJECTED.
 Reason: Multi-line code block rendering is broken — pulldown-cmark delivers an entire code block body as a single `Text` event with embedded `\n` characters, but the current `render_markdown_lines` emits it as one `Line` instead of splitting on newlines. Fix required in this task's implement stage alongside the ratatui upgrade.
+
+**Cycle 2 — review → implement**
+Reviewer: captain. Stage: review. Verdict: REJECTED.
+Reason: The `text.split('\n')` fix in `render_markdown_lines` passes the unit test but the multi-line code block still does not appear as multiple lines in the TUI. The root cause is deeper — the issue may be in how the `Vec<Line>` output is passed to the Paragraph widget, how the preview area is sized/scrolled, or whether `render_markdown_lines` is the actual function rendering the preview. Must trace the full path from markdown input to on-screen output and fix the real cause.
