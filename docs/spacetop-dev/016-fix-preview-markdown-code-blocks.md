@@ -3,7 +3,7 @@ id: "016"
 title: Fix preview pane markdown code block rendering
 status: design
 source: captain
-started:
+started: 2026-04-25T15:19:40Z
 completed:
 verdict:
 score:
