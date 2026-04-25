@@ -74,3 +74,94 @@ Verified by: review of an entity body with mixed content in the preview pane.
 **AC-4 -- No TUI layout breakage.**
 The preview pane does not overflow or misalign when displaying code blocks of varying line lengths.
 Verified by: test with a code block containing a long line (80+ chars).
+
+## Parser and TUI constraints
+
+### Markdown crate
+
+The project uses `pulldown-cmark = "0.13"` (currently resolved to 0.13.3). The
+existing `render_markdown_lines` function in `src/ui/mod.rs` already imports
+and uses `Parser`, `Tag`, and `TagEnd` from this crate. The fix must stay
+within the same function.
+
+### Relevant pulldown-cmark event sequence for fenced code blocks
+
+```
+Start(Tag::CodeBlock(CodeBlockKind::Fenced(info_string)))
+Text("line one\n")
+Text("line two\n")
+End(TagEnd::CodeBlock)
+```
+
+Key facts:
+- `CodeBlockKind::Fenced(info)` carries the language hint (e.g. `"rust"`,
+  `"bash"`, or `""` for unlabeled blocks). The info string is available but
+  syntax highlighting is out of scope for this fix.
+- `CodeBlockKind::Indented` covers four-space-indented code blocks; the fix
+  should treat these the same as fenced blocks.
+- Text events inside a code block arrive as raw source lines including their
+  trailing `\n`. The `\n` must be stripped and each newline must become a
+  separate `Line` rather than appended to the current spans accumulator.
+- The existing `MarkdownEvent::Code(text)` arm handles *inline* code spans
+  (single backticks); that arm already applies `Color::Yellow` and should be
+  left intact (AC-2 is already passing; the fix must not regress it).
+
+### State variable
+
+A boolean `in_code_block: bool` should be added to the local state variables
+in `render_markdown_lines`. It is set to `true` on
+`Start(Tag::CodeBlock(_))` and reset to `false` on `End(TagEnd::CodeBlock)`.
+
+### Styling approach
+
+Each line of a fenced code block should be emitted as a `Line` whose single
+`Span` carries a distinct style. The recommended style is
+`Style::default().fg(Color::Cyan).bg(Color::DarkGray)` (or similar — exact
+colors are an implementation choice as long as they are visually distinct from
+plain prose and pass the AC-1 inspection check). The language hint line (e.g.
+` rust` in ```` ```rust ````) is not rendered; only the body text lines are
+emitted.
+
+### Block spacing
+
+The code block should be treated as its own block for the purposes of
+`add_markdown_block_spacing`. Calling `flush_text_block` before
+`Start(Tag::CodeBlock(_))` and after `End(TagEnd::CodeBlock)` ensures a blank
+separator row appears between the code block and adjacent content, consistent
+with how paragraphs and headings are separated today.
+
+### Horizontal scroll
+
+The existing horizontal scroll implementation (`preview_scroll_x`,
+`max_preview_scroll_x`) already tracks `line_width` across all `body_lines`.
+Long code lines (AC-4) will automatically participate in horizontal scrolling
+without any additional changes to scroll logic.
+
+### Ratatui `Paragraph` widget
+
+The body is rendered via `Paragraph::new(body_lines).scroll(...)` with no
+wrapping. This is correct for code blocks: code lines should not word-wrap.
+No change to the widget configuration is needed.
+
+### Unit test surface
+
+New tests should be added in the `#[cfg(test)] mod tests` block in
+`src/ui/mod.rs`, following the pattern of `preview_renders_markdown_body_instead_of_raw_markers`.
+Tests should use `app_with_items(vec![item(...)])` and `TestBackend` renders.
+Two tests are expected:
+1. Fenced code block text appears without backtick fences; lines use a
+   visually distinct style (check `fg` or `bg` color on rendered cells).
+2. Inline code (already tested) is unaffected — existing test passes unchanged.
+
+## Stage Report: design
+
+- DONE: Problem statement and target user flow are clearly articulated in the entity body.
+  Entity body opens with a clear problem statement (backtick fences rendered as plain text) and includes an example content section usable during implementation.
+- DONE: Acceptance criteria cover all rendering cases and each has a concrete verification method.
+  Four AC items covering fenced code blocks, inline code, non-code content, and layout breakage; each states a manual or test-based verification method.
+- DONE: Parser/TUI constraints relevant to the implementation are named (e.g. which markdown crate, how styled lines map to Ratatui widgets).
+  "Parser and TUI constraints" section added: pulldown-cmark 0.13 event sequence for CodeBlock, required state variable, styling approach, block spacing, horizontal scroll, Paragraph widget config, and unit test surface.
+
+### Summary
+
+The entity body already contained a solid problem statement, example content, and four AC items. The design stage added a "Parser and TUI constraints" section that maps the pulldown-cmark 0.13 event API to concrete implementation steps: a boolean `in_code_block` guard, per-line `Line` emission with distinct style, `flush_text_block` calls for block spacing, and two new unit tests. The existing horizontal scroll and `Paragraph` widget setup require no changes. The task is ready for the implement stage.
