@@ -10,6 +10,7 @@ score: 0.8
 worktree:
 issue:
 pr:
+archived: 2026-04-25T09:51:19Z
 ---
 
 The current preview pane header stacks plain key-value lines with no structure. The "classic refined" design (Direction 1) gives the pane a `Preview  ·  #id` section header, arranges metadata as a 2-column grid (label | value), and adds a `── body ─────` horizontal rule between the metadata block and the markdown body.

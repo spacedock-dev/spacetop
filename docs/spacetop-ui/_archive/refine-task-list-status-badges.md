@@ -10,6 +10,7 @@ score: 0.85
 worktree:
 issue:
 pr:
+archived: 2026-04-25T09:51:19Z
 ---
 
 The "classic refined" design (Direction 1) replaces the current `[design]`-bracket status in task rows with a 3-char uppercase tag (bold, phase-colored), adds a section header showing the task count, and uses a left-border + `▸` glyph for the selected row instead of the ratatui `>` highlight prefix.

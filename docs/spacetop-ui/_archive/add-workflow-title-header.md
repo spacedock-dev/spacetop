@@ -10,6 +10,7 @@ score: 0.9
 worktree:
 issue:
 pr:
+archived: 2026-04-25T09:51:19Z
 ---
 
 The current dashboard has no standalone title bar. The "classic refined" design (Direction 1) adds a single-line header row **above the stage graph** showing: a muted `Workflow` label, an `[active]`/`[archived]` scope badge, an `archived: N (press a)` hint, and the workflow directory path dimmed.
