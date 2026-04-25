@@ -346,3 +346,16 @@ The plan addresses Bug A by adding `max_preview_scroll: Cell<usize>` to `Overvie
 ### Summary
 
 Both scrollbar bugs are fixed. Bug A is resolved by threading `max_preview_scroll: Cell<usize>` from `render_preview` (which computes the real cap) back into `scroll_preview_down` (which now enforces it), eliminating the phantom drift. Bug B is resolved by switching `ScrollbarState` to `new(max_scroll + 1).position(scroll_position)` which gives ratatui a linear position mapping that lands the thumb exactly at track top and bottom. All existing tests continue to pass; four new tests covering the AC-1 and AC-2/AC-3 criteria were added and pass.
+
+## Stage Report: review
+
+- DONE: All 4 ACs have test evidence from the implement stage report — verify each is named and evidenced.
+  AC-1 covered by `scroll_preview_down_is_capped_at_max_scroll` (no drift past max) and `scroll_preview_up_responds_immediately_after_capped_down` (immediate PageUp response); AC-2 by `preview_scrollbar_thumb_reaches_bottom_at_max_scroll`; AC-3 by `preview_scrollbar_thumb_starts_at_top_at_zero_scroll`; AC-4 by "116/116 tests passed" confirming existing tests pass.
+- DONE: Diff is clean: Cell<usize> on OverviewState, ScrollbarState::new(max_scroll+1) in render, no unrelated changes.
+  `pub max_preview_scroll: Cell<usize>` added to `OverviewState`; `ScrollbarState::new(max_scroll + 1).position(scroll_position)` replaces old three-param construction; diff touches only `src/app.rs`, `src/ui/mod.rs`, and entity doc — no unrelated files.
+
+### Summary
+
+Implementation is complete and correct. Both bugs are addressed exactly as specified: `Cell<usize>` threads the computed max back to the scroll handler without requiring `&mut` on the render signature, and the `ScrollbarState::new(max_scroll+1)` parameterisation gives ratatui a linear thumb mapping with clean top/bottom alignment. All four ACs are evidenced by named tests passing in a 116/116 test run. The diff is minimal and confined to the two source files and the entity doc.
+
+Verdict: PASSED
