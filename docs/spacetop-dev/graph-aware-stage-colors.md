@@ -280,3 +280,21 @@ Implemented greedy graph-aware stage coloring: `assign_stage_colors` builds adja
 ### Summary
 
 The implementation passes all four acceptance criteria. The greedy coloring algorithm correctly enforces no same-color constraint on adjacent stages (linear and feedback edges), uses at most 2 colors for a linear path, and preserves preferred colors for the standard 5-stage workflow. The diff is scoped to the planned files with no unrelated changes. Verdict: PASSED.
+
+## PR Fix Note
+
+Addressed 5 Copilot review comments in commit a1995f3:
+
+1. **parser→UI coupling** (comment 1): Moved `assign_stage_colors`, `GRAPH_PALETTE`, and `preferred_color` from `src/ui/mod.rs` into `src/domain/mod.rs`. Parser now calls `crate::domain::assign_stage_colors`, eliminating the parser→UI dependency.
+
+2. **domain→UI coupling** (comment 2): Moved `stage_color` into `src/domain/mod.rs`. `stage_color_for` fallback now calls `domain::stage_color` instead of `crate::ui::stage_color`. Thin `#[cfg(test)]` re-exports remain in `src/ui/mod.rs` so existing test call-sites compile unchanged.
+
+3. **Incorrect max-degree comment** (comment 3): Updated the `GRAPH_PALETTE` doc comment to use the suggested text acknowledging that feedback edges make the graph's maximum degree unbounded.
+
+4. **Palette exhaustion fallback** (comment 4): Replaced `unwrap_or(&Color::White)` with a `pick_color` helper that cycles through an extended 15-color set using hash-based indexing until a non-conflicting color is found, guaranteeing correctness even when all 8 palette slots are taken by neighbors.
+
+5. **O(1) lookup** (comment 5): Changed `stage_colors` from `Vec<Color>` (indexed by position, O(n) name search) to `HashMap<String, Color>` (indexed by name, O(1)). `stage_color_for` is now a single `.get()` call. Updated all struct literal sites in `app.rs`, `ui/mod.rs`, and `ui/graph.rs` from `Vec::new()` to `HashMap::new()`. Updated tests in `ui/mod.rs` to use HashMap key access instead of Vec indexing.
+
+All 119 tests pass with no compiler warnings after these changes.
+
+Rebased onto origin/main first to resolve a merge conflict in `src/ui/mod.rs` where PR #3's new scrollbar tests were added; both the scrollbar tests and the graph-coloring tests are preserved in the resolved file.
