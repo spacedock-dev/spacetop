@@ -584,7 +584,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
-                stage_colors: Vec::new(),
+                stage_colors: std::collections::HashMap::new(),
             },
             items: vec![make_item("001", "plan", "Plan task")],
         };
@@ -742,7 +742,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
-                stage_colors: Vec::new(),
+                stage_colors: std::collections::HashMap::new(),
             },
             items: Vec::new(),
         };

@@ -85,137 +85,20 @@ fn stage_tag(stage: &str) -> &str {
     }
 }
 
-/// Ordered palette for graph-aware coloring. 8 entries is more than enough
-/// for any practical workflow (max degree in a linear+feedback graph is 3).
-const GRAPH_PALETTE: &[Color] = &[
-    Color::Blue,
-    Color::Cyan,
-    Color::Yellow,
-    Color::Magenta,
-    Color::Green,
-    Color::LightBlue,
-    Color::LightMagenta,
-    Color::Red,
-];
-
-/// Assign a color to each stage using greedy graph coloring.
-///
-/// Algorithm:
-/// 1. Build an undirected adjacency set from linear edges (i → i+1) and
-///    feedback edges (stage with `feedback_to` → named target, both directions).
-/// 2. For each stage in definition order, pick the preferred color (from
-///    `preferred_color`) if it does not conflict with any neighbor's color;
-///    otherwise fall back to the first `GRAPH_PALETTE` entry not used by any
-///    neighbor.
-///
-/// The returned `Vec<Color>` has the same length as `stages`.
-pub(crate) fn assign_stage_colors(stages: &[crate::domain::StageDefinition]) -> Vec<Color> {
-    let n = stages.len();
-    if n == 0 {
-        return Vec::new();
-    }
-
-    // Build undirected adjacency: for each stage, the set of adjacent indices.
-    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for i in 0..n {
-        // Linear forward edge: i → i+1
-        if i + 1 < n {
-            adj[i].push(i + 1);
-            adj[i + 1].push(i);
-        }
-        // Feedback edge: stage[i].feedback_to → some stage j
-        if let Some(target_name) = &stages[i].feedback_to {
-            if let Some(j) = stages.iter().position(|s| &s.name == target_name) {
-                if j != i {
-                    if !adj[i].contains(&j) {
-                        adj[i].push(j);
-                    }
-                    if !adj[j].contains(&i) {
-                        adj[j].push(i);
-                    }
-                }
-            }
-        }
-    }
-
-    let mut assigned: Vec<Option<Color>> = vec![None; n];
-
-    for i in 0..n {
-        // Collect colors already used by neighbors.
-        let neighbor_colors: std::collections::HashSet<Color> = adj[i]
-            .iter()
-            .filter_map(|&j| assigned[j])
-            .collect();
-
-        // Try preferred color first.
-        let preferred = preferred_color(&stages[i].name);
-        let chosen = if let Some(pref) = preferred {
-            if !neighbor_colors.contains(&pref) {
-                pref
-            } else {
-                // Fall back to first palette entry not used by neighbors.
-                *GRAPH_PALETTE
-                    .iter()
-                    .find(|c| !neighbor_colors.contains(c))
-                    .unwrap_or(&Color::White)
-            }
-        } else {
-            // No preferred color; pick first palette entry not used by neighbors.
-            *GRAPH_PALETTE
-                .iter()
-                .find(|c| !neighbor_colors.contains(c))
-                .unwrap_or(&Color::White)
-        };
-
-        assigned[i] = Some(chosen);
-    }
-
-    assigned.into_iter().map(|c| c.unwrap_or(Color::White)).collect()
-}
-
-/// Return the preferred color for a well-known stage name, or `None` for
-/// unknown stage names. Used as a hint by `assign_stage_colors`.
-fn preferred_color(stage_name: &str) -> Option<Color> {
-    match stage_name {
-        "design" => Some(Color::Blue),
-        "plan" => Some(Color::Cyan),
-        "implement" => Some(Color::Yellow),
-        "review" | "feedback" => Some(Color::Magenta),
-        "done" | "complete" | "completed" | "shipped" => Some(Color::Green),
-        "blocked" | "rejected" | "failed" => Some(Color::Red),
-        _ => None,
-    }
-}
-
-/// Map a stage name to a stable color. Recognises the conventional Spacedock
-/// stage names; falls back to a deterministic palette index for anything else
-/// so unknown workflows still get distinct colors per stage.
+/// Map a stage name to a stable color. Thin re-export of `domain::stage_color`
+/// so existing direct callers in tests keep compiling without path changes.
+#[cfg(test)]
 pub(crate) fn stage_color(stage_name: &str) -> Color {
-    match stage_name {
-        "design" => Color::Blue,
-        "plan" => Color::Cyan,
-        "implement" => Color::Yellow,
-        "review" | "feedback" => Color::Magenta,
-        "done" | "complete" | "completed" | "shipped" => Color::Green,
-        "blocked" | "rejected" | "failed" => Color::Red,
-        other => {
-            // Deterministic fallback — sum bytes mod palette length.
-            const PALETTE: &[Color] = &[
-                Color::Blue,
-                Color::Cyan,
-                Color::Yellow,
-                Color::Magenta,
-                Color::Green,
-                Color::LightBlue,
-                Color::LightMagenta,
-            ];
-            let idx = other
-                .bytes()
-                .fold(0usize, |a, b| a.wrapping_add(b as usize))
-                % PALETTE.len();
-            PALETTE[idx]
-        }
-    }
+    crate::domain::stage_color(stage_name)
+}
+
+/// Assign graph-aware colors to stages. Thin re-export of
+/// `domain::assign_stage_colors` for use from tests and legacy callers.
+#[cfg(test)]
+pub(crate) fn assign_stage_colors(
+    stages: &[crate::domain::StageDefinition],
+) -> std::collections::HashMap<String, Color> {
+    crate::domain::assign_stage_colors(stages)
 }
 
 fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
@@ -1154,7 +1037,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
-                stage_colors: Vec::new(),
+                stage_colors: std::collections::HashMap::new(),
             },
             items,
         };
@@ -1637,7 +1520,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
-                stage_colors: Vec::new(),
+                stage_colors: std::collections::HashMap::new(),
             },
             items: Vec::new(),
         };
@@ -2023,10 +1906,11 @@ mod tests {
         ];
         let colors = super::assign_stage_colors(&stages);
         assert_eq!(colors.len(), 4);
-        assert_ne!(colors[0], colors[1], "alpha vs beta must differ");
-        assert_ne!(colors[1], colors[2], "beta vs gamma must differ");
-        assert_ne!(colors[2], colors[3], "gamma vs delta must differ");
-        assert_ne!(colors[2], colors[0], "gamma vs alpha (feedback edge) must differ");
+        let c = |name: &str| *colors.get(name).unwrap();
+        assert_ne!(c("alpha"), c("beta"), "alpha vs beta must differ");
+        assert_ne!(c("beta"), c("gamma"), "beta vs gamma must differ");
+        assert_ne!(c("gamma"), c("delta"), "gamma vs delta must differ");
+        assert_ne!(c("gamma"), c("alpha"), "gamma vs alpha (feedback edge) must differ");
     }
 
     #[test]
@@ -2040,7 +1924,7 @@ mod tests {
             make_stage("e", None),
         ];
         let colors = super::assign_stage_colors(&stages);
-        let distinct: std::collections::HashSet<Color> = colors.iter().copied().collect();
+        let distinct: std::collections::HashSet<Color> = colors.values().copied().collect();
         assert!(
             distinct.len() <= 2,
             "linear path needs at most 2 colors, got {} distinct: {:?}",
@@ -2049,9 +1933,11 @@ mod tests {
         );
         // Adjacent constraint still holds.
         for i in 0..stages.len() - 1 {
+            let ca = colors[&stages[i].name];
+            let cb = colors[&stages[i + 1].name];
             assert_ne!(
-                colors[i],
-                colors[i + 1],
+                ca,
+                cb,
                 "adjacent stages {} and {} must differ",
                 stages[i].name,
                 stages[i + 1].name
@@ -2087,10 +1973,10 @@ mod tests {
             },
         ];
         let colors = super::assign_stage_colors(&stages);
-        assert_eq!(colors[0], Color::Blue, "design should be Blue");
-        assert_eq!(colors[1], Color::Cyan, "plan should be Cyan");
-        assert_eq!(colors[2], Color::Yellow, "implement should be Yellow");
-        assert_eq!(colors[3], Color::Magenta, "review should be Magenta");
-        assert_eq!(colors[4], Color::Green, "done should be Green");
+        assert_eq!(colors["design"], Color::Blue, "design should be Blue");
+        assert_eq!(colors["plan"], Color::Cyan, "plan should be Cyan");
+        assert_eq!(colors["implement"], Color::Yellow, "implement should be Yellow");
+        assert_eq!(colors["review"], Color::Magenta, "review should be Magenta");
+        assert_eq!(colors["done"], Color::Green, "done should be Green");
     }
 }

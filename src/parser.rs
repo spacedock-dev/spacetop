@@ -79,7 +79,7 @@ pub fn parse_workflow_readme(path: &Path) -> Result<WorkflowDefinition, ParseErr
         });
     }
 
-    let stage_colors = crate::ui::assign_stage_colors(&stages);
+    let stage_colors = crate::domain::assign_stage_colors(&stages);
     Ok(WorkflowDefinition {
         root: path.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
         stages,

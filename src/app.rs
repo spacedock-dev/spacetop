@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -61,7 +62,7 @@ impl OverviewState {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
-                stage_colors: Vec::new(),
+                stage_colors: HashMap::new(),
             },
             items: Vec::new(),
         };
@@ -1018,6 +1019,7 @@ impl App {
 mod tests {
     use super::{App, AppMode, ViewScope};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::collections::HashMap;
     use std::path::{Path, PathBuf};
 
     use crate::discovery::DiscoveredWorkflow;
@@ -1382,7 +1384,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
-                stage_colors: Vec::new(),
+                stage_colors: HashMap::new(),
             },
             items: (0..count)
                 .map(|index| WorkItem {
@@ -1422,7 +1424,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
-                stage_colors: Vec::new(),
+                stage_colors: HashMap::new(),
             },
             items: paths
                 .iter()

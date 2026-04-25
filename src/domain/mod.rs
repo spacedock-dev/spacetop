@@ -1,6 +1,181 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use ratatui::style::Color;
+
+/// Ordered palette for graph-aware coloring. This fixed set is chosen to give
+/// distinct colors for typical workflows; feedback edges can fan into a stage,
+/// so the graph's maximum degree is not bounded by 3.
+const GRAPH_PALETTE: &[Color] = &[
+    Color::Blue,
+    Color::Cyan,
+    Color::Yellow,
+    Color::Magenta,
+    Color::Green,
+    Color::LightBlue,
+    Color::LightMagenta,
+    Color::Red,
+];
+
+/// Return the preferred color for a well-known stage name, or `None` for
+/// unknown stage names. Used as a hint by `assign_stage_colors`.
+fn preferred_color(stage_name: &str) -> Option<Color> {
+    match stage_name {
+        "design" => Some(Color::Blue),
+        "plan" => Some(Color::Cyan),
+        "implement" => Some(Color::Yellow),
+        "review" | "feedback" => Some(Color::Magenta),
+        "done" | "complete" | "completed" | "shipped" => Some(Color::Green),
+        "blocked" | "rejected" | "failed" => Some(Color::Red),
+        _ => None,
+    }
+}
+
+/// Assign a color to each stage using greedy graph coloring.
+///
+/// Algorithm:
+/// 1. Build an undirected adjacency set from linear edges (i → i+1) and
+///    feedback edges (stage with `feedback_to` → named target, both directions).
+/// 2. For each stage in definition order, pick the preferred color (from
+///    `preferred_color`) if it does not conflict with any neighbor's color;
+///    otherwise fall back to the first `GRAPH_PALETTE` entry not used by any
+///    neighbor. When the palette is exhausted, cycle via deterministic hash
+///    until a non-conflicting color is found.
+///
+/// The returned `HashMap<String, Color>` maps stage name → assigned color.
+pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color> {
+    let n = stages.len();
+    if n == 0 {
+        return HashMap::new();
+    }
+
+    // Build undirected adjacency: for each stage, the set of adjacent indices.
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for i in 0..n {
+        // Linear forward edge: i → i+1
+        if i + 1 < n {
+            adj[i].push(i + 1);
+            adj[i + 1].push(i);
+        }
+        // Feedback edge: stage[i].feedback_to → some stage j
+        if let Some(target_name) = &stages[i].feedback_to {
+            if let Some(j) = stages.iter().position(|s| &s.name == target_name) {
+                if j != i {
+                    if !adj[i].contains(&j) {
+                        adj[i].push(j);
+                    }
+                    if !adj[j].contains(&i) {
+                        adj[j].push(i);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut assigned: Vec<Option<Color>> = vec![None; n];
+
+    for i in 0..n {
+        // Collect colors already used by neighbors.
+        let neighbor_colors: std::collections::HashSet<Color> = adj[i]
+            .iter()
+            .filter_map(|&j| assigned[j])
+            .collect();
+
+        // Try preferred color first, then palette, then hash fallback.
+        let chosen = pick_color(i, &stages[i].name, &neighbor_colors);
+        assigned[i] = Some(chosen);
+    }
+
+    stages
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.name.clone(), assigned[i].unwrap_or(Color::White)))
+        .collect()
+}
+
+/// Pick a non-conflicting color for stage `i` with name `stage_name`.
+///
+/// Priority:
+/// 1. Preferred color if not in `neighbor_colors`.
+/// 2. First palette entry not in `neighbor_colors`.
+/// 3. Hash-based deterministic fallback cycling through extended colors until
+///    a non-conflicting one is found (rare path for high-degree stages).
+fn pick_color(
+    stage_index: usize,
+    stage_name: &str,
+    neighbor_colors: &std::collections::HashSet<Color>,
+) -> Color {
+    // Try preferred first.
+    if let Some(pref) = preferred_color(stage_name) {
+        if !neighbor_colors.contains(&pref) {
+            return pref;
+        }
+    }
+
+    // Try palette in order.
+    if let Some(&c) = GRAPH_PALETTE.iter().find(|c| !neighbor_colors.contains(c)) {
+        return c;
+    }
+
+    // Palette exhausted: hash-based cycle until we find a non-conflicting color.
+    // Uses the same deterministic approach as `stage_color` fallback.
+    const EXTENDED: &[Color] = &[
+        Color::Blue,
+        Color::Cyan,
+        Color::Yellow,
+        Color::Magenta,
+        Color::Green,
+        Color::LightBlue,
+        Color::LightMagenta,
+        Color::Red,
+        Color::LightGreen,
+        Color::LightRed,
+        Color::LightCyan,
+        Color::LightYellow,
+        Color::White,
+        Color::Gray,
+        Color::DarkGray,
+    ];
+    let mut attempt = stage_index;
+    loop {
+        let candidate = EXTENDED[attempt % EXTENDED.len()];
+        if !neighbor_colors.contains(&candidate) {
+            return candidate;
+        }
+        attempt += 1;
+    }
+}
+
+/// Map a stage name to a stable color. Recognises the conventional Spacedock
+/// stage names; falls back to a deterministic palette index for anything else
+/// so unknown workflows still get distinct colors per stage.
+pub fn stage_color(stage_name: &str) -> Color {
+    match stage_name {
+        "design" => Color::Blue,
+        "plan" => Color::Cyan,
+        "implement" => Color::Yellow,
+        "review" | "feedback" => Color::Magenta,
+        "done" | "complete" | "completed" | "shipped" => Color::Green,
+        "blocked" | "rejected" | "failed" => Color::Red,
+        other => {
+            // Deterministic fallback — sum bytes mod palette length.
+            const PALETTE: &[Color] = &[
+                Color::Blue,
+                Color::Cyan,
+                Color::Yellow,
+                Color::Magenta,
+                Color::Green,
+                Color::LightBlue,
+                Color::LightMagenta,
+            ];
+            let idx = other
+                .bytes()
+                .fold(0usize, |a, b| a.wrapping_add(b as usize))
+                % PALETTE.len();
+            PALETTE[idx]
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorkflowDefinition {
@@ -10,22 +185,20 @@ pub struct WorkflowDefinition {
     pub entity_type: Option<String>,
     pub entity_label: Option<String>,
     pub entity_label_plural: Option<String>,
-    /// Graph-aware color assignment for each stage (indexed by stage position).
+    /// Graph-aware color assignment: stage name → color.
     /// Populated at parse time by `assign_stage_colors`. Empty until populated.
-    pub stage_colors: Vec<Color>,
+    pub stage_colors: HashMap<String, Color>,
 }
 
 impl WorkflowDefinition {
-    /// Look up the graph-aware color for a stage by name.
+    /// Look up the graph-aware color for a stage by name (O(1) HashMap lookup).
     /// Falls back to the name-based `stage_color()` function when the stage
-    /// is not found in the current definition (e.g. archived items from an
-    /// older workflow version).
+    /// is not found in the map (e.g. archived items from an older workflow version).
     pub fn stage_color_for(&self, stage_name: &str) -> Color {
-        self.stages
-            .iter()
-            .position(|s| s.name == stage_name)
-            .and_then(|i| self.stage_colors.get(i).copied())
-            .unwrap_or_else(|| crate::ui::stage_color(stage_name))
+        self.stage_colors
+            .get(stage_name)
+            .copied()
+            .unwrap_or_else(|| stage_color(stage_name))
     }
 }
 
