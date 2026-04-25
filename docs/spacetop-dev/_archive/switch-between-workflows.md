@@ -1,16 +1,17 @@
 ---
 id: 010
 title: Switch between multiple discovered workflows from inside the TUI
-status: review
+status: done
 source: captain feedback after 009 ship
 started: 2026-04-25T04:13:38Z
-completed:
-verdict:
+completed: 2026-04-25T04:49:24Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-switch-between-workflows
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-25T04:49:24Z
 ---
 
 When a repo contains multiple Spacedock workflows (e.g. `docs/spacetop-dev/`, plus future product or research workflows), the TUI should let the user move between them without quitting and relaunching. The autodiscovery picker (task 005) handles the initial selection at startup; this task adds the in-session switch.
