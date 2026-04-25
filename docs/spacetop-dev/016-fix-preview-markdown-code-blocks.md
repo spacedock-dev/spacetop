@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-016-fix-preview-markdown-code-blocks
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 The preview pane currently renders markdown code blocks (fenced with triple backticks) as plain text instead of styled code blocks. Users inspecting workflow entity bodies and stage reports see raw backtick fences rather than properly highlighted or visually distinct code sections.
