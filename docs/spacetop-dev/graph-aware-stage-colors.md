@@ -9,7 +9,7 @@ verdict:
 score: 0.8
 worktree: .worktrees/spacedock-ensign-graph-aware-stage-colors
 issue:
-pr:
+pr: #4
 mod-block: merge:pr-merge
 ---
 

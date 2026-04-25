@@ -9,7 +9,7 @@ verdict:
 score: 0.9
 worktree: .worktrees/spacedock-ensign-fix-preview-scrollbar-bugs
 issue:
-pr:
+pr: #3
 mod-block: merge:pr-merge
 ---
 
