@@ -292,15 +292,7 @@ fn render_wide<'a>(
     let capped: Vec<_> = arcs.iter().take(MAX_FEEDBACK_ROWS).collect();
     let arc_pairs: Vec<(String, String)> = capped
         .iter()
-        .map(|arc| {
-            render_feedback_row(
-                arc.source_col,
-                arc.target_col,
-                &arc.source_stage,
-                &arc.target_stage,
-                g,
-            )
-        })
+        .map(|arc| render_feedback_row(arc.source_col, arc.target_col, g))
         .collect();
 
     // All lines must share the same width so the Paragraph's centred alignment
@@ -324,8 +316,10 @@ fn render_wide<'a>(
     lines.push(Line::from(counts_spans));
 
     for (arc_line, ann_line) in arc_pairs {
-        lines.push(Line::from(arc_line));
-        lines.push(Line::from(ann_line));
+        let arc_pad = uniform_width.saturating_sub(visible_width(&arc_line));
+        let ann_pad = uniform_width.saturating_sub(visible_width(&ann_line));
+        lines.push(Line::from(format!("{arc_line}{}", " ".repeat(arc_pad))));
+        lines.push(Line::from(format!("{ann_line}{}", " ".repeat(ann_pad))));
     }
     if arcs.len() > MAX_FEEDBACK_ROWS {
         let overflow = arcs.len() - MAX_FEEDBACK_ROWS;
@@ -395,8 +389,6 @@ fn style_counts_spans<'a>(cols: &[ColumnLayout], counts_line: &str) -> Vec<Span<
 struct FeedbackArc {
     source_col: usize,
     target_col: usize,
-    source_stage: String,
-    target_stage: String,
 }
 
 fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> Vec<FeedbackArc> {
@@ -407,12 +399,7 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
             if let Some(t) = target_idx {
                 let source_col = cols[i].name_center;
                 let target_col = cols[t].name_center;
-                arcs.push(FeedbackArc {
-                    source_col,
-                    target_col,
-                    source_stage: stage.name.clone(),
-                    target_stage: stages[t].name.clone(),
-                });
+                arcs.push(FeedbackArc { source_col, target_col });
             }
         }
     }
@@ -426,8 +413,6 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
 fn render_feedback_row(
     source_col: usize,
     target_col: usize,
-    source_stage: &str,
-    target_stage: &str,
     g: &GlyphSet,
 ) -> (String, String) {
     let (left, right) = if source_col <= target_col {
@@ -448,7 +433,7 @@ fn render_feedback_row(
     arc_buf[right] = g.arc_down_left.to_string();
 
     // Annotation line: indented to start under └ (left corner).
-    let annotation = format!("{} {} {} {}", g.feedback, source_stage, g.narrow_arrow, target_stage);
+    let annotation = format!("{} reject", g.feedback);
     let ann_w = visible_width(&annotation);
     let total_w = (left + ann_w).max(arc_width);
 
@@ -696,8 +681,8 @@ mod tests {
             "missing arc corner glyphs (└ ┘)"
         );
         assert!(
-            rendered.contains("\u{21B6} review \u{2192} implement"),
-            "missing rollback annotation with stage names"
+            rendered.contains("\u{21B6} reject"),
+            "missing rollback annotation"
         );
         assert!(
             !rendered.contains("feedback-to"),
