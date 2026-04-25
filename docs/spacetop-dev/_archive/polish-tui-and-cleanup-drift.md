@@ -1,16 +1,17 @@
 ---
 id: 009
 title: Polish TUI (help popup, center alignment, colors) and clean up pre-existing test/lint drift
-status: review
+status: done
 source: captain feedback after 008 ship
 started: 2026-04-25T00:31:23Z
-completed:
-verdict:
+completed: 2026-04-25T04:04:03Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-polish-tui-and-cleanup-drift
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-25T04:04:03Z
 ---
 
 Combined polish + cleanup task. Captain asked to skip design/plan and implement directly.
