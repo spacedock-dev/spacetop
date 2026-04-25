@@ -1,7 +1,7 @@
 ---
 id: "016"
 title: Fix preview pane markdown code block rendering
-status: design
+status: plan
 source: captain
 started: 2026-04-25T15:19:40Z
 completed:
