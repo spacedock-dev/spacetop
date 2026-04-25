@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-017-survey-termimad-markdown-renderer
 issue:
 pr: #7
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Task 016 fixed code block rendering by extending the existing `pulldown-cmark` event loop in `src/ui/mod.rs`. During review it was noted that `termimad` — a crate designed specifically for terminal markdown rendering — was not surveyed before committing to that approach. This task surveys `termimad`, decides whether it is a better fit, and either replaces the renderer or documents why `pulldown-cmark` should be kept.
