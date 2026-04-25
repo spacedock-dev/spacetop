@@ -99,10 +99,11 @@ struct GlyphSet {
     feedback: &'static str,
     forward_arrow: &'static str,
     narrow_arrow: &'static str,
-    arc_down_right: &'static str,
-    arc_down_left: &'static str,
     arc_horizontal: &'static str,
+    arc_vert: &'static str,
     arc_up_arrow: &'static str,
+    arc_corner_up_right: &'static str,
+    arc_corner_up_left: &'static str,
 }
 
 fn glyphs_for(ascii: bool) -> GlyphSet {
@@ -115,10 +116,11 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             feedback: "<",
             forward_arrow: "->",
             narrow_arrow: "->",
-            arc_down_right: "+",
-            arc_down_left: "+",
             arc_horizontal: "-",
+            arc_vert: "|",
             arc_up_arrow: "^",
+            arc_corner_up_right: "\\",
+            arc_corner_up_left: "/",
         }
     } else {
         GlyphSet {
@@ -129,10 +131,11 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             feedback: "\u{21B6}",                      // ↶
             forward_arrow: "\u{2500}\u{2500}\u{25BA}", // ──►
             narrow_arrow: "\u{2192}",                  // →
-            arc_down_right: "\u{2514}",                // └
-            arc_down_left: "\u{2518}",                 // ┘
             arc_horizontal: "\u{2500}",                // ─
+            arc_vert: "\u{2502}",                      // │
             arc_up_arrow: "\u{2191}",                  // ↑
+            arc_corner_up_right: "\u{2570}",           // ╰
+            arc_corner_up_left: "\u{256F}",            // ╯
         }
     }
 }
@@ -409,56 +412,58 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
     arcs
 }
 
-/// Returns `(arc_line, annotation_line)`.  Both strings have the same length
-/// so the caller can use a single uniform width for all lines, keeping the
-/// Paragraph's centred alignment consistent across ribbon, counts, arc, and
-/// annotation rows.
+/// Returns `(top_line, bottom_line)` for a feedback edge.  The top line
+/// carries the vertical markers and the centred `reject` label; the bottom
+/// line draws the rounded arc.  Both strings have the same width so the
+/// caller can pad them to a uniform width for centred alignment.
 fn render_feedback_row(
     source_col: usize,
     target_col: usize,
     g: &GlyphSet,
 ) -> (String, String) {
-    // ↑ at the target end (points up toward the stage it rolls back to);
-    // corner at the source end.
+    // Two-line feedback rendering:
+    //   line 1:  ↑   reject   │     (↑ at target, │ at source, label centred)
+    //   line 2:  ╰────────────╯     (rounded corners with horizontal fill)
     let (left, right, target_is_left) = if source_col > target_col {
         (target_col, source_col, true)
     } else {
         (source_col, target_col, false)
     };
 
-    let arc_width = right + 1;
-    let mut arc_buf: Vec<String> = vec![" ".to_string(); arc_width];
+    let label = "reject";
+    let label_w = visible_width(label);
+    let total_w = right + 1;
+
+    // Line 1: vertical markers at both columns + centred label.
+    let mut top: Vec<String> = vec![" ".to_string(); total_w];
+    if target_is_left {
+        top[left] = g.arc_up_arrow.to_string();
+        top[right] = g.arc_vert.to_string();
+    } else {
+        top[left] = g.arc_vert.to_string();
+        top[right] = g.arc_up_arrow.to_string();
+    }
+    if right > left + 1 + label_w {
+        let arc_center = (left + right) / 2;
+        let label_start = arc_center.saturating_sub(label_w / 2);
+        for (i, ch) in label.chars().enumerate() {
+            if let Some(cell) = top.get_mut(label_start + i) {
+                *cell = ch.to_string();
+            }
+        }
+    }
+
+    // Line 2: rounded corners + horizontal fill.
+    let mut bottom: Vec<String> = vec![" ".to_string(); total_w];
     if right > left + 1 {
-        for cell in arc_buf.iter_mut().take(right).skip(left + 1) {
+        for cell in bottom.iter_mut().take(right).skip(left + 1) {
             *cell = g.arc_horizontal.to_string();
         }
     }
-    if target_is_left {
-        arc_buf[left] = g.arc_up_arrow.to_string();
-        arc_buf[right] = g.arc_down_left.to_string();
-    } else {
-        arc_buf[left] = g.arc_down_right.to_string();
-        arc_buf[right] = g.arc_up_arrow.to_string();
-    }
+    bottom[left] = g.arc_corner_up_right.to_string();
+    bottom[right] = g.arc_corner_up_left.to_string();
 
-    // Annotation centered between the two arc endpoints.
-    let annotation = format!("{} reject", g.feedback);
-    let ann_w = visible_width(&annotation);
-    let arc_center = (left + right) / 2;
-    let ann_start = arc_center.saturating_sub(ann_w / 2);
-    let total_w = (ann_start + ann_w).max(arc_width);
-
-    while arc_buf.len() < total_w {
-        arc_buf.push(" ".to_string());
-    }
-    let mut ann_buf = vec![" ".to_string(); total_w];
-    for (i, ch) in annotation.chars().enumerate() {
-        if let Some(cell) = ann_buf.get_mut(ann_start + i) {
-            *cell = ch.to_string();
-        }
-    }
-
-    (arc_buf.join(""), ann_buf.join(""))
+    (top.join(""), bottom.join(""))
 }
 
 fn render_narrow<'a>(
@@ -691,13 +696,18 @@ mod tests {
         let app = real_workflow();
         let rendered = render_to_string(&app, 120, 12);
         assert!(
-            rendered.contains("\u{2514}") && rendered.contains("\u{2518}"),
-            "missing arc corner glyphs (└ ┘)"
+            rendered.contains("\u{2570}") && rendered.contains("\u{256F}"),
+            "missing arc corner glyphs (╰ ╯)"
         );
         assert!(
-            rendered.contains("\u{21B6} reject"),
-            "missing rollback annotation"
+            rendered.contains("\u{2191}"),
+            "missing upward arrow at target column"
         );
+        assert!(
+            rendered.contains("\u{2502}"),
+            "missing vertical bar at source column"
+        );
+        assert!(rendered.contains("reject"), "missing 'reject' label");
         assert!(
             !rendered.contains("feedback-to"),
             "workflow graph should not expose raw workflow schema terminology"
@@ -730,7 +740,8 @@ mod tests {
         assert!(rendered.contains("gamma"));
         assert!(!rendered.contains("design"));
         assert!(!rendered.contains("review"));
-        assert!(!rendered.contains("\u{21B6}"), "no feedback glyph for topology without feedback edges");
+        assert!(!rendered.contains("\u{2570}"), "no arc corner for topology without feedback edges");
+        assert!(!rendered.contains("reject"), "no reject label for topology without feedback edges");
     }
 
     #[test]
@@ -857,13 +868,17 @@ mod tests {
         assert!(rendered.contains('#'), "missing ASCII terminal '#'");
         assert!(rendered.contains('!'), "missing ASCII gate '!'");
         assert!(rendered.contains('@'), "missing ASCII worktree '@'");
-        assert!(rendered.contains('<'), "missing ASCII feedback '<'");
+        assert!(rendered.contains('^'), "missing ASCII arc up-arrow '^'");
+        assert!(rendered.contains('|'), "missing ASCII arc vertical '|'");
         assert!(rendered.contains("->"), "missing ASCII forward arrow");
         assert!(!rendered.contains('\u{25B6}'), "Unicode initial leaked");
         assert!(!rendered.contains('\u{25A0}'), "Unicode terminal leaked");
         assert!(!rendered.contains('\u{2691}'), "Unicode gate leaked");
         assert!(!rendered.contains('\u{2387}'), "Unicode worktree leaked");
-        assert!(!rendered.contains('\u{21B6}'), "Unicode feedback leaked");
+        assert!(!rendered.contains('\u{2191}'), "Unicode arc up-arrow leaked");
+        assert!(!rendered.contains('\u{2570}'), "Unicode arc corner leaked");
+        // Note: ratatui's block borders use │ and ─ regardless of mode, so we
+        // don't assert their absence here.
     }
 
     #[test]
