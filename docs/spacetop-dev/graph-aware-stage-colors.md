@@ -10,6 +10,7 @@ score: 0.8
 worktree: .worktrees/spacedock-ensign-graph-aware-stage-colors
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 The current `stage_color()` function in `src/ui/mod.rs` maps stage names to colors by name (hardcoded for known Spacedock names, deterministic hash fallback for unknowns). It does not consider the workflow graph structure at all. This means two stages that are directly connected by an edge — and therefore rendered side-by-side in the graph ribbon — can end up with the same color.
