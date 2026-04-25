@@ -47,3 +47,16 @@ Verified by: command output cited in the implement stage report.
 
 **AC-5 -- The three named fixture-drift tests pass without hard-coding workflow-content expectations.**
 Verified by: tests reread the snapshot for their expectations; grep shows the test bodies no longer contain hard-coded stage names like `implement: 1` or specific archived task titles.
+
+## Stage Report: implement
+
+- DONE: `?` help popup, centered dashboard column on wide terminals, and colorful styling all land — with at least one render test per AC asserting the visible behavior.
+  Help popup state on `App` with `?`/`Esc` toggle; render tests `help_popup_*`, `dashboard_is_centered_on_wide_terminals`, `wide_terminal_render_leaves_left_margin_blank_in_overview`, `graph_ribbon_uses_stage_colors_per_stage`, `preview_status_value_is_stage_colored`, `stage_color_assigns_distinct_colors_for_known_stages`.
+- DONE: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all clean on the worktree branch — no "pre-existing on main" carve-outs surviving in the report.
+  `cargo fmt --check` clean, clippy clean, test totals 85/0/0/0/0 across the five suites.
+- DONE: The three named fixture-drift tests now derive their expectations from the loaded snapshot instead of hard-coding workflow content; grep shows no `implement: 1`-style absolute hardcoding in those test bodies.
+  `app::tests::loads_real_workflow_state_and_derives_stage_counts` now asserts against `app.snapshot().items.first()`; `ui::tests::renders_real_workflow_summary_task_list_and_preview` checks `selected.id` plus a snapshot-derived body prefix; `ui::graph::tests::header_row_contains_scope_label_and_workflow_path` sizes the test backend to fit the actual `workflow_dir` and checks its real last component.
+
+### Summary
+
+Added `App::help_open` with `?`/`Esc` toggle and a centered popup widget rendered above both Picker and Overview. Introduced `centered_column()` (caps at 120 cols) and `stage_color()` palette; ribbon, task-list status bracket, and preview status now wear stage colors with distinct fallbacks for unknown stages. Replaced the lazy-evaluation lint in `parser.rs::optional_text` with a `filter` chain. Rewrote the three drift tests to read expectations from the loaded snapshot; no hard-coded fixture titles, stage names, or counts remain in those test bodies.

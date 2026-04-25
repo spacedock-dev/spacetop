@@ -8,11 +8,13 @@
 use ratatui::{
     layout::Rect,
     prelude::{Frame, Line, Modifier, Span, Style},
+    style::Color,
     widgets::{Block, Borders, Paragraph},
 };
 
 use crate::app::{OverviewState, ViewScope};
 use crate::domain::StageDefinition;
+use crate::ui::stage_color;
 
 const ASCII_ENV_VAR: &str = "SPACETOP_ASCII";
 const MAX_FEEDBACK_ROWS: usize = 2;
@@ -131,7 +133,6 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
 
 #[derive(Debug, Clone)]
 struct ColumnLayout {
-    #[allow(dead_code)]
     stage_name: String,
     node_text: String,
     /// Byte column where the node text starts in the ribbon line.
@@ -256,14 +257,23 @@ fn render_wide<'a>(
 ) -> Vec<Line<'a>> {
     let cols = layout_columns(stages, counts, active, g);
 
-    // Ribbon line
+    // Ribbon line — color each node by its stage; arrows stay neutral.
     let separator = format!(" {} ", g.forward_arrow);
-    let mut ribbon = String::new();
+    let mut ribbon_spans: Vec<Span<'a>> = Vec::new();
     for (i, col) in cols.iter().enumerate() {
         if i > 0 {
-            ribbon.push_str(&separator);
+            ribbon_spans.push(Span::styled(
+                separator.clone(),
+                Style::default().fg(Color::DarkGray),
+            ));
         }
-        ribbon.push_str(&col.node_text);
+        let mut style = Style::default()
+            .fg(stage_color(&col.stage_name))
+            .add_modifier(Modifier::BOLD);
+        if col.is_active {
+            style = style.add_modifier(Modifier::REVERSED);
+        }
+        ribbon_spans.push(Span::styled(col.node_text.clone(), style));
     }
 
     // Counts line: place count string centered under each node's name_center.
@@ -274,7 +284,7 @@ fn render_wide<'a>(
     let arcs = collect_feedback_arcs(stages, &cols);
 
     let mut lines: Vec<Line<'a>> = Vec::new();
-    lines.push(Line::from(ribbon));
+    lines.push(Line::from(ribbon_spans));
     lines.push(Line::from(counts_spans));
 
     let max_width = cols
@@ -761,10 +771,19 @@ mod tests {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(ASCII_ENV_VAR);
         let app = real_workflow();
-        let rendered = render_to_string(&app, 160, 10);
+        // Render at a width comfortably wider than the workflow path so the
+        // header doesn't get truncated by the block title; otherwise this
+        // assertion is really testing terminal width, not header content.
+        let path_len = app.workflow_dir().display().to_string().chars().count() as u16;
+        // Reserve generous slack for the block borders and the title prefix
+        // ("Workflow — [active] — archived: ... — ") so the header doesn't get
+        // truncated by the block title renderer.
+        let width = path_len.saturating_add(80).max(200);
+        let rendered = render_to_string(&app, width, 10);
         assert!(rendered.contains("active"), "missing scope label");
         let p = app.workflow_dir().display().to_string();
-        // Path may be very long; check the last path component at minimum.
+        // Path is derived from the snapshot's workflow_dir — check the last
+        // path component, not a hard-coded fixture name.
         let last = std::path::Path::new(&p)
             .file_name()
             .and_then(|s| s.to_str())

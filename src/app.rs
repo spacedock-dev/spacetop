@@ -392,6 +392,7 @@ pub enum AppMode {
 pub struct App {
     mode: AppMode,
     should_quit: bool,
+    help_open: bool,
 }
 
 impl App {
@@ -399,6 +400,7 @@ impl App {
         Self {
             mode: AppMode::Overview(OverviewState::empty(workflow_dir.into())),
             should_quit: false,
+            help_open: false,
         }
     }
 
@@ -406,6 +408,7 @@ impl App {
         Ok(Self {
             mode: AppMode::Overview(OverviewState::load(workflow_dir)?),
             should_quit: false,
+            help_open: false,
         })
     }
 
@@ -413,6 +416,7 @@ impl App {
         Self {
             mode: AppMode::Overview(OverviewState::from_snapshot(workflow_dir, snapshot)),
             should_quit: false,
+            help_open: false,
         }
     }
 
@@ -424,7 +428,20 @@ impl App {
         Self {
             mode: AppMode::Picker(PickerState::new(scan_root, workflows)),
             should_quit: false,
+            help_open: false,
         }
+    }
+
+    pub fn help_open(&self) -> bool {
+        self.help_open
+    }
+
+    pub fn toggle_help(&mut self) {
+        self.help_open = !self.help_open;
+    }
+
+    pub fn close_help(&mut self) {
+        self.help_open = false;
     }
 
     pub fn mode(&self) -> &AppMode {
@@ -525,8 +542,19 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // Help popup intercepts input regardless of underlying mode. `?` and
+        // `Esc` close it; any other key is consumed too so the help stays
+        // modal.
+        if self.help_open {
+            match key.code {
+                KeyCode::Char('?') | KeyCode::Esc => self.help_open = false,
+                _ => {}
+            }
+            return;
+        }
         match &mut self.mode {
             AppMode::Overview(state) => match key.code {
+                KeyCode::Char('?') => self.help_open = true,
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                 KeyCode::Up | KeyCode::Char('k') => state.select_previous(),
@@ -536,6 +564,7 @@ impl App {
                 _ => {}
             },
             AppMode::Picker(state) => match key.code {
+                KeyCode::Char('?') => self.help_open = true,
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                 KeyCode::Up | KeyCode::Char('k') => state.select_previous(),
@@ -609,9 +638,11 @@ mod tests {
                 .collect::<Vec<_>>(),
             expected_stage_counts
         );
+        // Selection defaults to the first item; assert against the snapshot
+        // rather than hard-coding a title that drifts as tasks ship.
         assert_eq!(
             app.selected_item().map(|item| item.title.as_str()),
-            Some("Build Initial TUI Overview")
+            app.snapshot().items.first().map(|item| item.title.as_str())
         );
         assert_eq!(
             app.selected_item().map(|item| item.status.as_str()),
@@ -620,6 +651,10 @@ mod tests {
                 .first()
                 .map(|item| item.status.as_str())
         );
+        // The workflow has at least one stage and at least one item — these
+        // are intrinsic invariants of the loaded fixture, not specific titles.
+        assert!(!app.snapshot().definition.stages.is_empty());
+        assert!(!app.snapshot().items.is_empty());
     }
 
     #[test]
