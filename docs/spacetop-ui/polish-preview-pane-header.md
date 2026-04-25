@@ -1,11 +1,11 @@
 ---
 id: "003"
 title: Polish preview pane — section header, 2-col key-value grid, body divider
-status: implement
+status: done
 source: commission seed — SpaceTop Wireframes dir1-classic.jsx
 started: 2026-04-25
-completed:
-verdict:
+completed: 2026-04-25
+verdict: PASSED
 score: 0.8
 worktree:
 issue:

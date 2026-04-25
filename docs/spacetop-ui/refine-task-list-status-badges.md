@@ -1,11 +1,11 @@
 ---
 id: "002"
 title: Refine task list — section header, 3-char tags, left-border selection
-status: implement
+status: done
 source: commission seed — SpaceTop Wireframes dir1-classic.jsx
 started: 2026-04-25
-completed:
-verdict:
+completed: 2026-04-25
+verdict: PASSED
 score: 0.85
 worktree:
 issue:

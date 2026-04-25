@@ -1,11 +1,11 @@
 ---
 id: "001"
 title: Add workflow title header bar
-status: implement
+status: done
 source: commission seed — SpaceTop Wireframes dir1-classic.jsx
 started: 2026-04-25
-completed:
-verdict:
+completed: 2026-04-25
+verdict: PASSED
 score: 0.9
 worktree:
 issue:
