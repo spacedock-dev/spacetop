@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     prelude::{Frame, Line, Modifier, Span, Style},
     style::Color,
     widgets::{Block, Borders, Paragraph},
@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::app::PickerState;
 
-pub fn render(frame: &mut Frame<'_>, state: &PickerState) {
+pub fn render_in(frame: &mut Frame<'_>, area: Rect, state: &PickerState) {
     let has_error = state.error().is_some();
     let mut constraints = vec![Constraint::Length(3), Constraint::Min(1)];
     if has_error {
@@ -18,7 +18,7 @@ pub fn render(frame: &mut Frame<'_>, state: &PickerState) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
-        .split(frame.area());
+        .split(area);
     let title_area = areas[0];
     let list_area = areas[1];
     let (error_area, footer_area) = if has_error {
@@ -129,7 +129,9 @@ mod tests {
     fn renders_workflow_rows_and_title() {
         let state = state_with(3);
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
-        terminal.draw(|frame| render(frame, &state)).unwrap();
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
 
         assert!(rendered.contains("pick a workflow"));
@@ -146,7 +148,9 @@ mod tests {
         let mut state = state_with(3);
         state.selected_index = 1;
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
-        terminal.draw(|frame| render(frame, &state)).unwrap();
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
         let buffer = terminal.backend().buffer();
 
         let rows: Vec<u16> = (0..buffer.area.height)
@@ -181,7 +185,9 @@ mod tests {
         let mut state = state_with(2);
         state.set_error("failed to load /nonexistent: boom".to_string());
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
-        terminal.draw(|frame| render(frame, &state)).unwrap();
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("failed to load /nonexistent: boom"));
     }

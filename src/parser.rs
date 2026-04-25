@@ -314,10 +314,7 @@ fn required(value: Option<String>, path: &Path, field: &'static str) -> Result<S
 }
 
 fn optional_text(value: Option<String>) -> Option<String> {
-    value.and_then(|text| {
-        let trimmed = text.trim();
-        (!trimmed.is_empty()).then(|| text)
-    })
+    value.filter(|text| !text.trim().is_empty())
 }
 
 fn display_path(path: &Path) -> String {
