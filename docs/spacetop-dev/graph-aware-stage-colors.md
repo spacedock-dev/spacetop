@@ -250,3 +250,16 @@ This test documents that the preferred-color hint mechanism preserves the famili
 ### Summary
 
 The plan identifies `assign_stage_colors(&[StageDefinition]) -> Vec<Color>` in `src/ui/mod.rs` as the core new function, `WorkflowDefinition.stage_colors: Vec<Color>` and `stage_color_for(&str) -> Color` as the domain additions, and `load_workflow_dir` in `src/parser.rs` as the population site. The test strategy provides concrete assertion patterns for all three acceptance criteria (AC-1 through AC-3) with exact stage fixture configurations. AC-4 regression coverage is provided by the existing test suite; no new tests are needed for it beyond verifying `cargo test` passes.
+
+## Stage Report: implement
+
+- DONE: assign_stage_colors() function implemented; stage_colors field on WorkflowDefinition populated at parse time.
+  Added `assign_stage_colors` in `src/ui/mod.rs`, `stage_colors: Vec<Color>` field in `src/domain/mod.rs`, populated in `src/parser.rs::parse_workflow_readme`. Commit 088815c.
+- DONE: All call sites in ui/mod.rs and ui/graph.rs use stage_color_for() lookup; fallback to name-based function preserved.
+  `build_task_list_items` and `build_preview_header_lines` in ui/mod.rs use `state.snapshot().definition.stage_color_for()`; `render_wide` in ui/graph.rs uses `definition.stage_color_for()`. Fallback to `stage_color()` is preserved in `stage_color_for()` via `unwrap_or_else`.
+- DONE: cargo test exits 0; preferred colors (Blue/Cyan/Yellow/Magenta/Green) preserved for standard stages.
+  115/115 tests pass. New tests `graph_coloring_no_adjacent_same_color`, `graph_coloring_linear_path_uses_at_most_two_colors`, and `graph_coloring_preserves_preferred_colors_for_standard_workflow` all pass.
+
+### Summary
+
+Implemented greedy graph-aware stage coloring: `assign_stage_colors` builds adjacency from linear and feedback edges, then assigns colors in definition order using preferred-color hints for known stage names, falling back to the first conflict-free GRAPH_PALETTE entry. `WorkflowDefinition` gains a `stage_colors` field populated at parse time and a `stage_color_for` lookup method. All render call sites in ui/mod.rs and ui/graph.rs updated to use graph-aware colors; the existing name-based `stage_color` function is preserved as a last-resort fallback. All 115 tests pass including three new AC tests.
