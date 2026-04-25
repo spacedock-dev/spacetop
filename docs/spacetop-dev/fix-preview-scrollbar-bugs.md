@@ -1,7 +1,7 @@
 ---
 id: "014"
 title: Fix preview pane scrollbar — unbounded offset drift and thumb not reaching bottom
-status: implement
+status: review
 source: bug report — captain feedback 2026-04-25
 started: 2026-04-25T10:37:39Z
 completed:
