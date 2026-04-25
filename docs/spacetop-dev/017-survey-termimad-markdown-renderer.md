@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-017-survey-termimad-markdown-renderer
 issue:
-pr:
+pr: #7
 mod-block: merge:pr-merge
 ---
 
