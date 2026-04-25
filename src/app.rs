@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::discovery::DiscoveredWorkflow;
+use crate::discovery::{resolve_scan_root, DiscoveredWorkflow};
 use crate::domain::{WorkItem, WorkflowSnapshot};
 use crate::parser::{load_archived_items, load_workflow_dir, ParseError};
 
@@ -24,6 +24,7 @@ pub struct StageCount {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverviewState {
     pub workflow_dir: PathBuf,
+    pub repo_root: PathBuf,
     pub snapshot: WorkflowSnapshot,
     pub selected_index: usize,
     pub view_scope: ViewScope,
@@ -58,6 +59,7 @@ fn slug_of(path: &Path) -> Option<String> {
 
 impl OverviewState {
     pub fn empty(workflow_dir: PathBuf) -> Self {
+        let repo_root = resolve_scan_root(&workflow_dir);
         let snapshot = WorkflowSnapshot {
             definition: crate::domain::WorkflowDefinition {
                 root: workflow_dir.clone(),
@@ -72,6 +74,7 @@ impl OverviewState {
         };
         Self {
             workflow_dir,
+            repo_root,
             snapshot,
             selected_index: 0,
             view_scope: ViewScope::Active,
@@ -90,13 +93,24 @@ impl OverviewState {
     }
 
     pub fn load(workflow_dir: PathBuf) -> Result<Self, ParseError> {
-        let snapshot = load_workflow_dir(&workflow_dir)?;
-        Ok(Self::from_snapshot(workflow_dir, snapshot))
+        let repo_root = resolve_scan_root(&workflow_dir);
+        let snapshot = load_workflow_dir(&workflow_dir, &repo_root)?;
+        Ok(Self::from_snapshot_with_root(workflow_dir, repo_root, snapshot))
     }
 
     pub fn from_snapshot(workflow_dir: PathBuf, snapshot: WorkflowSnapshot) -> Self {
+        let repo_root = resolve_scan_root(&workflow_dir);
+        Self::from_snapshot_with_root(workflow_dir, repo_root, snapshot)
+    }
+
+    fn from_snapshot_with_root(
+        workflow_dir: PathBuf,
+        repo_root: PathBuf,
+        snapshot: WorkflowSnapshot,
+    ) -> Self {
         Self {
             workflow_dir,
+            repo_root,
             snapshot,
             selected_index: 0,
             view_scope: ViewScope::Active,
@@ -167,7 +181,7 @@ impl OverviewState {
     /// `reload_from_snapshot`. On parse error, retains the prior snapshot
     /// and records the error in `last_refresh_error`.
     pub fn reload(&mut self) -> Result<(), ParseError> {
-        match load_workflow_dir(&self.workflow_dir) {
+        match load_workflow_dir(&self.workflow_dir, &self.repo_root) {
             Ok(snapshot) => {
                 self.reload_from_snapshot(snapshot);
                 Ok(())
