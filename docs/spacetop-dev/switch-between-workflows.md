@@ -3,7 +3,7 @@ id: 010
 title: Switch between multiple discovered workflows from inside the TUI
 status: design
 source: captain feedback after 009 ship
-started:
+started: 2026-04-25T04:13:38Z
 completed:
 verdict:
 score:
