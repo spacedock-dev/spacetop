@@ -1,16 +1,17 @@
 ---
 id: "013"
 title: Assign stage colors using graph-aware coloring — no same color on adjacent stages
-status: review
+status: done
 source: captain feedback 2026-04-25
 started: 2026-04-25T10:37:39Z
-completed:
-verdict:
+completed: 2026-04-25T12:58:20Z
+verdict: PASSED
 score: 0.8
-worktree: .worktrees/spacedock-ensign-graph-aware-stage-colors
+worktree: 
 issue:
-pr: #4
+pr: 
 mod-block: 
+archived: 2026-04-25T12:58:20Z
 ---
 
 The current `stage_color()` function in `src/ui/mod.rs` maps stage names to colors by name (hardcoded for known Spacedock names, deterministic hash fallback for unknowns). It does not consider the workflow graph structure at all. This means two stages that are directly connected by an edge — and therefore rendered side-by-side in the graph ribbon — can end up with the same color.
