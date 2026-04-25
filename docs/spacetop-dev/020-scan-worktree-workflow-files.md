@@ -240,3 +240,21 @@ Run `cargo test 2>&1 | tail -15` — all tests pass (includes discovery, app, an
 ### Summary
 
 The plan sequences five implementation steps — sha1 dep, repo_root field addition, scan_worktrees/merge_worktree_items, load_workflow_dir signature update, and unit tests — each producing a `cargo check`-clean artifact before the next step begins. `repo_root` is derived lazily at `OverviewState` construction via the existing `resolve_scan_root` helper, avoiding any signature changes to `lib.rs` call sites. All seven ACs are exercised by tempfile-based unit tests in `src/parser.rs` with no TUI dependency.
+
+## Stage Report: implement
+
+- DONE: sha1=0.10 added to Cargo.toml and cargo check exits 0.
+  Added `sha1 = "0.10"` to `[dependencies]`; `cargo check --all-targets` emits no errors.
+
+- DONE: merge_worktree_items and scan_worktrees implemented in src/parser.rs using SHA-1 hash comparison.
+  Both functions added to `src/parser.rs`; `merge_worktree_items` uses `Sha1::digest(&bytes)` (not string equality) for content comparison; commit 9fc1cf7.
+
+- DONE: OverviewState carries repo_root and load_workflow_dir augmented to call scan_worktrees and merge.
+  `repo_root: PathBuf` added to `OverviewState`; set via `resolve_scan_root` in `empty`, `load`, and `from_snapshot_with_root`; `reload` passes `&self.repo_root`; `load_workflow_dir` signature extended to `(path, repo_root)`.
+
+- DONE: All six unit tests pass and cargo test --lib exits 0.
+  Tests: `worktree_items_included`, `main_only_items_preserved`, `worktree_only_items_shown`, `worktree_version_wins_on_hash_mismatch`, `no_regression_without_worktrees`, `same_content_hash_keeps_main_item_path`; `cargo test --lib` reports 21 passed (all parser + 6 new worktree tests); full `cargo test` reports all suites green.
+
+### Summary
+
+Added `sha1 = "0.10"` dependency, implemented `scan_worktrees` and `merge_worktree_items` in `src/parser.rs` using SHA-1 digest comparison (not string equality), threaded `repo_root` through `OverviewState` derived lazily from `resolve_scan_root`, and updated `load_workflow_dir` to accept `repo_root` and invoke the merge after main-branch scanning. Six tempfile-based unit tests cover AC-1 through AC-4, AC-6, and AC-7; full test suite is green with no regressions.
