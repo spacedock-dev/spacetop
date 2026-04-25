@@ -33,6 +33,29 @@ cargo test
 cargo run -- --workflow-dir /path/to/workflow
 ```
 
+### Install Local Build
+
+Use the provided Makefile targets to build and install a local release binary:
+
+```bash
+make build
+make install
+```
+
+By default, install places the binary at `~/.cargo/bin/spacetop`.
+
+To install to a different location, override `PREFIX`:
+
+```bash
+make install PREFIX=/usr/local/bin
+```
+
+To remove the installed binary:
+
+```bash
+make uninstall
+```
+
 ## Safety
 
 Spacetop should be read-only by default. Future write features should make state changes explicit and easy to audit through git.
