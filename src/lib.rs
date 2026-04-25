@@ -51,10 +51,14 @@ pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
         0 => Ok(DecideOutcome::ZeroWorkflows { scan_root }),
         1 => {
             let only = workflows.into_iter().next().unwrap();
-            let app = App::load(only.root.clone()).with_context(|| {
+            let state = app::OverviewState::load(only.root.clone()).with_context(|| {
                 format!("failed to load workflow directory {}", only.root.display())
             })?;
-            Ok(DecideOutcome::Overview(app))
+            // Discovery path with exactly one workflow: not `-w` pinned, but
+            // is_multi() is false because len() == 1, so cycle/P keys stay
+            // inert per the design.
+            let session = app::OverviewSession::single(state, false);
+            Ok(DecideOutcome::Overview(App::from_session(session)))
         }
         _ => Ok(DecideOutcome::Picker(App::from_picker(
             scan_root, workflows,
@@ -133,6 +137,37 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
         if prior_mode_was_picker && matches!(app.mode(), AppMode::Overview(_)) {
             watcher_state = start_watcher_for(&mut app);
         }
+
+        // 3. Drain pending picker-overlay open request: re-run discovery
+        // against the session's scan root, then transition into overlay
+        // mode. Sequenced before the switch drain so an overlay-confirm in
+        // the same frame still triggers a switch on the next frame.
+        if app.take_pending_overlay_open() {
+            let result = match app.as_session().and_then(|s| s.scan_root()) {
+                Some(root) => {
+                    let scan_root = root.to_path_buf();
+                    discovery::discover_workflows(&scan_root)
+                        .map_err(|e| format!("re-discovery failed: {e}"))
+                }
+                None => Err("re-discovery unavailable: no scan root".to_string()),
+            };
+            app.open_picker_overlay_with(result);
+        }
+
+        // 4. Drain pending workflow switch (from `]`/`[` cycle or from
+        // picker-overlay confirm). Tear down the prior watcher, materialize
+        // or reload the active state, then start a fresh watcher.
+        if let Some(switch) = app.take_pending_switch() {
+            // Drop the prior watcher + receiver before re-starting so the
+            // debounce thread joins cleanly.
+            drop(watcher_state.take());
+            if switch.needs_first_load {
+                app.materialize_active();
+            } else {
+                let _ = app.reload();
+            }
+            watcher_state = start_watcher_for(&mut app);
+        }
     }
 
     drop(watcher_state);
@@ -180,6 +215,79 @@ impl Drop for TerminalRestore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::{App, OverviewSession, OverviewState};
+    use crate::discovery::DiscoveredWorkflow;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn write_minimal_workflow(dir: &std::path::Path, slug: &str) {
+        std::fs::write(
+            dir.join("README.md"),
+            "---\nstages:\n  states:\n    - name: plan\n      initial: true\n---\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join(format!("task-{slug}.md")),
+            format!("---\nid: {slug}\ntitle: T{slug}\nstatus: plan\n---\n\nbody\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn watcher_restarts_on_switch() {
+        // Build a 2-workflow session; press `]`; tear down + restart the
+        // watcher via `start_watcher_for` and assert it now follows the new
+        // active dir. This is the smallest real-watcher lifecycle assertion
+        // that the event-loop fragment in `run_terminal` performs.
+        let holder = tempfile::tempdir().expect("tempdir");
+        let w0 = holder.path().join("w0");
+        let w1 = holder.path().join("w1");
+        std::fs::create_dir_all(&w0).unwrap();
+        std::fs::create_dir_all(&w1).unwrap();
+        write_minimal_workflow(&w0, "000");
+        write_minimal_workflow(&w1, "001");
+
+        let discovery = vec![
+            DiscoveredWorkflow {
+                root: w0.clone(),
+                title: None,
+            },
+            DiscoveredWorkflow {
+                root: w1.clone(),
+                title: None,
+            },
+        ];
+        let initial = OverviewState::load(w0.clone()).expect("load w0");
+        let session =
+            OverviewSession::from_discovery(holder.path().to_path_buf(), discovery, 0, initial);
+        let mut app = App::from_session(session);
+
+        // Pre-switch: watcher follows w0.
+        let watcher_state = start_watcher_for(&mut app);
+        assert!(watcher_state.is_some(), "watcher should start on w0");
+        assert_eq!(app.workflow_dir(), w0.as_path());
+
+        // Press `]` → switch pending.
+        app.handle_key(key(KeyCode::Char(']')));
+        let switch = app.take_pending_switch().expect("cycle emits switch");
+        assert_eq!(switch.target_index, 1);
+        assert!(switch.needs_first_load);
+        // Drop prior watcher first (mirrors event-loop ordering); join is
+        // bounded by debounce thread shutdown.
+        drop(watcher_state);
+        app.materialize_active();
+        let new_watcher_state = start_watcher_for(&mut app);
+        assert!(new_watcher_state.is_some(), "watcher should restart on w1");
+        assert_eq!(app.workflow_dir(), w1.as_path());
+        // Stale refresh signal handling: dropping the old receiver means
+        // the main loop reads only the new one — the channel is closed
+        // without panicking the loop. We verified that by `drop` above
+        // returning cleanly.
+        drop(new_watcher_state);
+    }
 
     #[test]
     fn zero_workflow_eprintln_prefix_is_stable() {

@@ -9,8 +9,8 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
-use crate::app::{App, AppMode, OverviewState, ViewScope};
-use graph::render_stage_graph;
+use crate::app::{App, AppMode, OverviewSession, OverviewState, ViewScope};
+use graph::render_stage_graph_with_breadcrumb;
 
 pub type TerminalEvent = Event;
 
@@ -31,14 +31,22 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             let inner = centered_column(frame.area());
             picker::render_in(frame, inner, state);
         }
-        AppMode::Overview(state) => {
+        AppMode::Overview(session) => {
             let inner = centered_column(frame.area());
-            render_overview(frame, inner, state);
+            render_overview(frame, inner, session);
+        }
+        AppMode::PickerOverlay { underlying, picker } => {
+            // Draw the underlying overview first, then overlay the picker
+            // atop a `Clear` widget over the same centered column.
+            let inner = centered_column(frame.area());
+            render_overview(frame, inner, underlying);
+            frame.render_widget(Clear, inner);
+            picker::render_in(frame, inner, picker);
         }
     }
 
     if app.help_open() {
-        render_help_popup(frame, frame.area());
+        render_help_popup(frame, frame.area(), app);
     }
 }
 
@@ -89,7 +97,8 @@ pub(crate) fn stage_color(stage_name: &str) -> Color {
     }
 }
 
-fn render_overview(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
+fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
+    let state = session.active_state();
     let [graph_area, content_area] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(7), Constraint::Min(0)])
@@ -99,15 +108,18 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
         .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
         .areas(content_area);
 
-    render_stage_graph(frame, graph_area, state);
+    let breadcrumb = session.breadcrumb_label();
+    render_stage_graph_with_breadcrumb(frame, graph_area, state, breadcrumb.as_deref());
     frame.render_widget(task_list(state), list_area);
     frame.render_widget(preview(state), preview_area);
 }
 
-fn render_help_popup(frame: &mut Frame<'_>, area: Rect) {
-    // Center a 60×16 popup (or smaller for tiny terminals).
+fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let is_multi = app.as_session().map(|s| s.is_multi()).unwrap_or(false);
+    // Center a 60×N popup (or smaller for tiny terminals). Grow for the
+    // multi-workflow extra entries.
     let popup_w = area.width.min(60);
-    let popup_h = area.height.min(16);
+    let popup_h = area.height.min(if is_multi { 19 } else { 16 });
     let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
     let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
     let popup = Rect {
@@ -117,7 +129,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect) {
         height: popup_h,
     };
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(Span::styled(
             "Spacetop keymap",
             Style::default().add_modifier(Modifier::BOLD),
@@ -131,12 +143,17 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect) {
         Line::from("  a              toggle active / archived view"),
         Line::from("  ?              toggle this help popup"),
         Line::from("  Esc / q        quit (or close help)"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "press ? or Esc to close",
-            Style::default().add_modifier(Modifier::DIM),
-        )),
     ];
+    if is_multi {
+        lines.push(Line::from("  ]              cycle to next workflow"));
+        lines.push(Line::from("  [              cycle to previous workflow"));
+        lines.push(Line::from("  P              re-discover & pick workflow"));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "press ? or Esc to close",
+        Style::default().add_modifier(Modifier::DIM),
+    )));
 
     let paragraph = Paragraph::new(lines)
         .block(
@@ -640,6 +657,83 @@ mod tests {
         assert!(
             found,
             "expected status value `{status_value}` in preview to use stage color {expected:?}"
+        );
+    }
+
+    #[test]
+    fn help_popup_shows_cycle_hints_only_in_multi() {
+        use crate::app::{OverviewSession, OverviewState};
+        use crate::discovery::DiscoveredWorkflow;
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        // Multi-workflow session: build two synthetic single-workflow
+        // states wrapped in a session via `from_discovery`. The discovery
+        // path values aren't dereferenced for help rendering.
+        let snap = {
+            use crate::domain::{StageDefinition, WorkflowDefinition, WorkflowSnapshot};
+            WorkflowSnapshot {
+                definition: WorkflowDefinition {
+                    root: PathBuf::from("/x/a"),
+                    stages: vec![StageDefinition {
+                        name: "plan".to_string(),
+                        initial: true,
+                        terminal: false,
+                        gate: false,
+                        fresh: false,
+                        feedback_to: None,
+                        worktree: false,
+                        concurrency: None,
+                    }],
+                    id_style: None,
+                    entity_type: None,
+                    entity_label: None,
+                    entity_label_plural: None,
+                },
+                items: Vec::new(),
+            }
+        };
+        let initial = OverviewState::from_snapshot(PathBuf::from("/x/a"), snap);
+        let discovery = vec![
+            DiscoveredWorkflow {
+                root: PathBuf::from("/x/a"),
+                title: Some("A".into()),
+            },
+            DiscoveredWorkflow {
+                root: PathBuf::from("/x/b"),
+                title: Some("B".into()),
+            },
+        ];
+        let session = OverviewSession::from_discovery(PathBuf::from("/x"), discovery, 0, initial);
+        let mut app = App::from_session(session);
+        app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            rendered.contains("cycle to next workflow"),
+            "multi help should include cycle hint"
+        );
+        assert!(
+            rendered.contains("re-discover"),
+            "multi help should mention re-discover"
+        );
+
+        // Single-workflow session: the existing `App::load` path produces
+        // a pinned single session whose help omits cycle hints.
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let mut app = App::load(root).expect("workflow should load");
+        app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            !rendered.contains("cycle to next workflow"),
+            "single help must not include cycle hint"
         );
     }
 

@@ -25,7 +25,24 @@ const MAX_FEEDBACK_ROWS: usize = 2;
 /// counts, and the currently selected item, then picks a width tier based on
 /// `area.width` and emits the ribbon, counts row, and optional feedback arc
 /// row(s).
+/// Back-compat wrapper kept so the existing graph-render tests don't have
+/// to thread a breadcrumb argument through every call site. Production
+/// callers go through [`render_stage_graph_with_breadcrumb`] directly.
+#[cfg(test)]
 pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
+    render_stage_graph_with_breadcrumb(frame, area, state, None);
+}
+
+/// Sibling renderer that injects an optional breadcrumb prefix (e.g.
+/// `"[2/3]"`) into the block title between the archived label and the
+/// workflow path. Single-workflow callers pass `None` and the title is
+/// byte-identical to the original `render_stage_graph`.
+pub fn render_stage_graph_with_breadcrumb(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &OverviewState,
+    breadcrumb: Option<&str>,
+) {
     let ascii = std::env::var(ASCII_ENV_VAR)
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
@@ -50,8 +67,12 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
         ViewScope::Archived => None,
     };
 
+    let breadcrumb_prefix = match breadcrumb {
+        Some(b) => format!("{b} "),
+        None => String::new(),
+    };
     let title = format!(
-        "Workflow \u{2014} [{scope_label}] \u{2014} {archived_label} \u{2014} {workflow_path}"
+        "Workflow \u{2014} [{scope_label}] \u{2014} {archived_label} \u{2014} {breadcrumb_prefix}{workflow_path}"
     );
 
     if stages.is_empty() {
@@ -818,6 +839,58 @@ mod tests {
     #[test]
     fn module_surface_is_minimal() {
         let _f: fn(&mut ratatui::prelude::Frame<'_>, Rect, &OverviewState) = render_stage_graph;
+    }
+
+    #[test]
+    fn breadcrumb_appears_in_header_when_multi() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(ASCII_ENV_VAR);
+        let app = real_workflow();
+        let path_len = app.workflow_dir().display().to_string().chars().count() as u16;
+        let width = path_len.saturating_add(80).max(200);
+        let height: u16 = 10;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_stage_graph_with_breadcrumb(
+                    frame,
+                    Rect::new(0, 0, width, height),
+                    state_of(&app),
+                    Some("[2/3]"),
+                );
+            })
+            .expect("draw");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            rendered.contains("[2/3]"),
+            "expected breadcrumb prefix in header"
+        );
+    }
+
+    #[test]
+    fn no_breadcrumb_in_single_workflow() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(ASCII_ENV_VAR);
+        let app = real_workflow();
+        let path_len = app.workflow_dir().display().to_string().chars().count() as u16;
+        let width = path_len.saturating_add(80).max(200);
+        let height: u16 = 10;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_stage_graph_with_breadcrumb(
+                    frame,
+                    Rect::new(0, 0, width, height),
+                    state_of(&app),
+                    None,
+                );
+            })
+            .expect("draw");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            !rendered.contains("[1/1]"),
+            "single-workflow header should not include any [i/N] prefix"
+        );
     }
 
     // --- helpers ---
