@@ -279,32 +279,52 @@ fn render_wide<'a>(
         ribbon_spans.push(Span::styled(col.node_text.clone(), style));
     }
 
-    // Counts line: place count string centered under each node's name_center.
-    let counts_line = build_counts_line(&cols);
-    let counts_spans = style_counts_spans(&cols, &counts_line);
-
-    // Feedback arcs: collect (source_col, target_col) pairs whose targets exist.
-    let arcs = collect_feedback_arcs(stages, &cols);
-
-    let mut lines: Vec<Line<'a>> = Vec::new();
-    lines.push(Line::from(ribbon_spans));
-    lines.push(Line::from(counts_spans));
-
     let max_width = cols
         .last()
         .map(|c| c.start_col + visible_width(&c.node_text))
         .unwrap_or(0);
 
+    // Counts line: place count string centered under each node's name_center.
+    let counts_line = build_counts_line(&cols);
+
+    // Feedback arcs.
+    let arcs = collect_feedback_arcs(stages, &cols);
     let capped: Vec<_> = arcs.iter().take(MAX_FEEDBACK_ROWS).collect();
-    for arc in &capped {
-        lines.push(Line::from(render_feedback_row(
-            arc.source_col,
-            arc.target_col,
-            max_width,
-            &arc.source_stage,
-            &arc.target_stage,
-            g,
-        )));
+    let arc_strings: Vec<String> = capped
+        .iter()
+        .map(|arc| {
+            render_feedback_row(
+                arc.source_col,
+                arc.target_col,
+                &arc.source_stage,
+                &arc.target_stage,
+                g,
+            )
+        })
+        .collect();
+
+    // All lines must share the same width so the Paragraph's centred alignment
+    // keeps ribbon, counts, and arc rows aligned with each other.
+    let uniform_width = arc_strings
+        .iter()
+        .map(|s| visible_width(s))
+        .max()
+        .unwrap_or(0)
+        .max(max_width);
+
+    let pad_len = uniform_width.saturating_sub(max_width);
+    if pad_len > 0 {
+        ribbon_spans.push(Span::raw(" ".repeat(pad_len)));
+    }
+    let padded_counts = format!("{counts_line}{}", " ".repeat(pad_len));
+    let counts_spans = style_counts_spans(&cols, &padded_counts);
+
+    let mut lines: Vec<Line<'a>> = Vec::new();
+    lines.push(Line::from(ribbon_spans));
+    lines.push(Line::from(counts_spans));
+
+    for s in arc_strings {
+        lines.push(Line::from(s));
     }
     if arcs.len() > MAX_FEEDBACK_ROWS {
         let overflow = arcs.len() - MAX_FEEDBACK_ROWS;
@@ -401,24 +421,27 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
 fn render_feedback_row(
     source_col: usize,
     target_col: usize,
-    total_width: usize,
     source_stage: &str,
     target_stage: &str,
     g: &GlyphSet,
 ) -> String {
-    let annotation = format!(
-        " {} {} {} {}",
-        g.feedback, source_stage, g.narrow_arrow, target_stage
-    );
-    let ann_w = visible_width(&annotation);
-    let min_row = total_width.max(source_col + 1).max(target_col + 1) + ann_w + 1;
-    let mut buf: Vec<String> = (0..min_row).map(|_| " ".to_string()).collect();
-
+    // The arc spans from left to right with corner glyphs at each end.
+    // The annotation is placed two cells after the right corner so it reads
+    // naturally connected to the arc.  The caller pads all lines to the same
+    // width so that the Paragraph's centred alignment keeps every row aligned.
     let (left, right) = if source_col <= target_col {
         (source_col, target_col)
     } else {
         (target_col, source_col)
     };
+    let annotation = format!(
+        "  {} {} {} {}",
+        g.feedback, source_stage, g.narrow_arrow, target_stage
+    );
+    let ann_w = visible_width(&annotation);
+    let buf_w = right + 1 + ann_w;
+    let mut buf: Vec<String> = vec![" ".to_string(); buf_w];
+
     if right > left + 1 {
         for cell in buf.iter_mut().take(right).skip(left + 1) {
             *cell = g.arc_horizontal.to_string();
@@ -430,11 +453,9 @@ fn render_feedback_row(
     if right < buf.len() {
         buf[right] = g.arc_down_left.to_string();
     }
-    let ann_start = buf.len().saturating_sub(ann_w);
     for (i, ch) in annotation.chars().enumerate() {
-        let idx = ann_start + i;
-        if idx < buf.len() {
-            buf[idx] = ch.to_string();
+        if let Some(cell) = buf.get_mut(right + i) {
+            *cell = ch.to_string();
         }
     }
     buf.join("")
