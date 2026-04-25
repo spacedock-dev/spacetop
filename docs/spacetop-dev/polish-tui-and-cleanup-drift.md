@@ -1,7 +1,7 @@
 ---
 id: 009
 title: Polish TUI (help popup, center alignment, colors) and clean up pre-existing test/lint drift
-status: review
+status: implement
 source: captain feedback after 008 ship
 started: 2026-04-25T00:31:23Z
 completed:
