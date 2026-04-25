@@ -1,7 +1,7 @@
 ---
 id: 011
 title: Revise dashboard layout (responsive width, pane-centered content), tab bar for workflow switcher, surface help affordance
-status: implement
+status: review
 source: captain feedback after 010 ship
 started: 2026-04-25T06:18:08Z
 completed:
