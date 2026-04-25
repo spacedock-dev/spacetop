@@ -99,10 +99,6 @@ struct GlyphSet {
     feedback: &'static str,
     forward_arrow: &'static str,
     narrow_arrow: &'static str,
-    arc_vert: &'static str,
-    arc_down_right: &'static str,
-    arc_down_left: &'static str,
-    arc_horizontal: &'static str,
 }
 
 fn glyphs_for(ascii: bool) -> GlyphSet {
@@ -115,10 +111,6 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             feedback: "<",
             forward_arrow: "->",
             narrow_arrow: "->",
-            arc_vert: "|",
-            arc_down_right: "+",
-            arc_down_left: "+",
-            arc_horizontal: "-",
         }
     } else {
         GlyphSet {
@@ -129,10 +121,6 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             feedback: "\u{21B6}",                      // ↶
             forward_arrow: "\u{2500}\u{2500}\u{25BA}", // ──►
             narrow_arrow: "\u{2192}",                  // →
-            arc_vert: "\u{2502}",                      // │
-            arc_down_right: "\u{2514}",                // └
-            arc_down_left: "\u{2518}",                 // ┘
-            arc_horizontal: "\u{2500}",                // ─
         }
     }
 }
@@ -304,6 +292,8 @@ fn render_wide<'a>(
             arc.source_col,
             arc.target_col,
             max_width,
+            &arc.source_stage,
+            &arc.target_stage,
             g,
         )));
     }
@@ -375,6 +365,8 @@ fn style_counts_spans<'a>(cols: &[ColumnLayout], counts_line: &str) -> Vec<Span<
 struct FeedbackArc {
     source_col: usize,
     target_col: usize,
+    source_stage: String,
+    target_stage: String,
 }
 
 fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> Vec<FeedbackArc> {
@@ -388,6 +380,8 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
                 arcs.push(FeedbackArc {
                     source_col,
                     target_col,
+                    source_stage: stage.name.clone(),
+                    target_stage: stages[t].name.clone(),
                 });
             }
         }
@@ -396,48 +390,18 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
 }
 
 fn render_feedback_row(
-    source_col: usize,
-    target_col: usize,
-    total_width: usize,
+    _source_col: usize,
+    _target_col: usize,
+    _total_width: usize,
+    source_stage: &str,
+    target_stage: &str,
     g: &GlyphSet,
 ) -> String {
-    let annotation = format!(" {} feedback-to", g.feedback);
-    let ann_w = visible_width(&annotation);
-    let min_row = total_width.max(source_col + 1).max(target_col + 1) + ann_w + 1;
-    let mut buf: Vec<String> = (0..min_row).map(|_| " ".to_string()).collect();
-
-    let (left, right) = if source_col <= target_col {
-        (source_col, target_col)
-    } else {
-        (target_col, source_col)
-    };
-    // Draw horizontal line from left+1 to right-1.
-    if right > left + 1 {
-        for cell in buf.iter_mut().take(right).skip(left + 1) {
-            *cell = g.arc_horizontal.to_string();
-        }
-    }
-    // Corners / endpoints.
-    if left < buf.len() {
-        buf[left] = g.arc_down_right.to_string();
-    }
-    if right < buf.len() {
-        buf[right] = g.arc_down_left.to_string();
-    }
-    // Vertical marker at source column (mark which node feeds back).
-    if source_col < buf.len() {
-        buf[source_col] = g.arc_vert.to_string();
-    }
-
-    // Append annotation at the right edge.
-    let ann_start = buf.len().saturating_sub(ann_w);
-    for (i, ch) in annotation.chars().enumerate() {
-        let idx = ann_start + i;
-        if idx < buf.len() {
-            buf[idx] = ch.to_string();
-        }
-    }
-    buf.join("")
+    format!(
+        "{feedback} rollback on reject: {source_stage} {arrow} {target_stage}",
+        feedback = g.feedback,
+        arrow = g.narrow_arrow,
+    )
 }
 
 fn render_narrow<'a>(
@@ -453,18 +417,14 @@ fn render_narrow<'a>(
         if let Some(target) = &stage.feedback_to {
             if stages.iter().any(|s| &s.name == target) {
                 fb_parts.push(format!(
-                    "{} {}{}{}",
+                    "{} rollback on reject: {} {} {}",
                     g.feedback, stage.name, g.narrow_arrow, target
                 ));
             }
         }
     }
     if !fb_parts.is_empty() {
-        lines.push(Line::from(format!(
-            "{} feedback-to: {}",
-            g.feedback,
-            fb_parts.join(", ")
-        )));
+        lines.push(Line::from(fb_parts.join(", ")));
     }
     lines
 }
@@ -668,14 +628,18 @@ mod tests {
     }
 
     #[test]
-    fn renders_feedback_arc_with_annotation() {
+    fn renders_rollback_annotation_for_review_feedback_path() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(ASCII_ENV_VAR);
         let app = real_workflow();
         let rendered = render_to_string(&app, 120, 12);
         assert!(
-            rendered.contains("\u{21B6} feedback-to"),
-            "missing feedback annotation"
+            rendered.contains("\u{21B6} rollback on reject: review \u{2192} implement"),
+            "missing rollback annotation"
+        );
+        assert!(
+            !rendered.contains("feedback-to"),
+            "workflow graph should not expose raw workflow schema terminology"
         );
     }
 
@@ -705,7 +669,7 @@ mod tests {
         assert!(rendered.contains("gamma"));
         assert!(!rendered.contains("design"));
         assert!(!rendered.contains("review"));
-        assert!(!rendered.contains("\u{21B6} feedback-to"));
+        assert!(!rendered.contains("\u{21B6} rollback"));
     }
 
     #[test]

@@ -144,29 +144,35 @@ fn render_workflow_tabs_panel(
     session: &OverviewSession,
 ) -> Rect {
     let active = session.active_index();
-    let total = session.len();
-    let tabs = session.discovery().iter().map(|disc| match &disc.title {
-        Some(t) if !t.trim().is_empty() => Line::from(t.clone()),
-        _ => Line::from(
-            disc.root
+    let tabs = session.discovery().iter().enumerate().map(|(index, disc)| {
+        let label = match &disc.title {
+            Some(t) if !t.trim().is_empty() => t.clone(),
+            _ => disc
+                .root
                 .file_name()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| disc.root.display().to_string()),
-        ),
+        };
+        let style = if index == active {
+            Style::default()
+        } else {
+            Style::default().add_modifier(Modifier::DIM)
+        };
+        Line::from(Span::styled(label, style))
     });
-    let title = format!("Workflows ({}/{})", active + 1, total);
-    let block = Block::default().title(title).borders(Borders::ALL);
-    let inner = block.inner(area);
+    let inner = area;
     let widget = Tabs::new(tabs)
         .select(active)
-        .block(block)
         .highlight_style(
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )
-        .style(Style::default().add_modifier(Modifier::DIM));
+        .divider(Span::styled(
+            "|",
+            Style::default().add_modifier(Modifier::DIM),
+        ));
     frame.render_widget(widget, area);
     Rect {
         x: inner.x,
@@ -757,7 +763,11 @@ fn flush_line(lines: &mut Vec<Line<'static>>, spans: &mut Vec<Span<'static>>, ma
 mod tests {
     use std::path::PathBuf;
 
-    use ratatui::{backend::TestBackend, style::Color, Terminal};
+    use ratatui::{
+        backend::TestBackend,
+        style::{Color, Modifier},
+        Terminal,
+    };
 
     use super::render;
     use crate::app::App;
@@ -1403,8 +1413,8 @@ mod tests {
             .expect("render should succeed");
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(
-            rendered.contains("Workflows (1/3)"),
-            "tab strip must show count, got render snippet:\n{rendered}"
+            rendered.contains("Workflow0 | Workflow1 | Workflow2"),
+            "tab strip must show ratatui tabs, got render snippet:\n{rendered}"
         );
         for i in 0..3 {
             assert!(
@@ -1441,15 +1451,33 @@ mod tests {
             tasks_y > workflow_graph_y && preview_y > workflow_graph_y,
             "task list and preview should render inside the selected workflow tab panel"
         );
-        assert_ne!(
-            buffer[(0, 29)].symbol(),
+    }
+
+    #[test]
+    fn multi_session_tabs_are_borderless_and_do_not_dim_dashboard_content() {
+        let session = synthetic_session(2);
+        let app = App::from_session(session);
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let buffer = terminal.backend().buffer();
+
+        assert_eq!(
+            buffer[(0, 0)].symbol(),
             " ",
-            "workflow tab panel should enclose the dashboard down to the bottom edge"
+            "workflow tabs should not draw an outer border"
         );
-        assert_ne!(
-            buffer[(159, 29)].symbol(),
-            " ",
-            "workflow tab panel should enclose the dashboard down to the right edge"
+        let plan_pos = find_text(buffer, "plan")
+            .into_iter()
+            .find(|(_, y)| *y > 1)
+            .expect("workflow graph plan label should render");
+        assert!(
+            !buffer[plan_pos]
+                .style()
+                .add_modifier
+                .contains(Modifier::DIM),
+            "dashboard content inside workflow tabs should not inherit dim tab styling"
         );
     }
 
