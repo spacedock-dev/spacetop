@@ -1,16 +1,17 @@
 ---
 id: "020"
 title: Scan worktree folders for workflow task files
-status: review
+status: done
 source: captain
 started: 2026-04-25T16:43:26Z
-completed:
-verdict:
+completed: 2026-04-25T17:09:59Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-020-scan-worktree-workflow-files
+worktree: 
 issue:
 pr: #9
 mod-block: 
+archived: 2026-04-25T17:09:59Z
 ---
 
 SpaceTop currently skips `.worktrees/` when scanning for workflow task files. When a Spacedock implement agent is active, all task file writes land in the worktree branch — the main branch entity file is not updated until the PR merges. This means the TUI shows stale task state during active development.
