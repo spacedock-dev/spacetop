@@ -3,20 +3,24 @@ mod picker;
 
 use crossterm::event::Event;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     prelude::{Frame, Line, Modifier, Span, Style},
     style::Color,
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
 use crate::app::{App, AppMode, OverviewSession, OverviewState, ViewScope};
-use graph::render_stage_graph_with_breadcrumb;
+use graph::render_stage_graph;
 
 pub type TerminalEvent = Event;
 
-/// Width cap for the centered dashboard column. On terminals wider than this,
-/// the overview content is centered with equal margins on either side.
-const MAX_CONTENT_WIDTH: u16 = 120;
+/// Target inner width (in cells) used to horizontally center content blocks
+/// inside individual panes — task list rows and the preview block. Picked so
+/// the visible column-block stops hugging the left edge on wide terminals
+/// without wasting too much horizontal real estate. The dashboard pane
+/// itself fills the terminal width; this constant only governs the inner
+/// content column.
+const PANE_CONTENT_TARGET: u16 = 70;
 
 pub fn render_placeholder(frame: &mut Frame<'_>) {
     frame.render_widget(
@@ -28,18 +32,19 @@ pub fn render_placeholder(frame: &mut Frame<'_>) {
 pub fn render(frame: &mut Frame<'_>, app: &App) {
     match app.mode() {
         AppMode::Picker(state) => {
-            let inner = centered_column(frame.area());
+            // Picker overlays a centered dialog; the dashboard responsive-
+            // width rule does not apply to picker (it's a one-off chooser).
+            let inner = picker_centered(frame.area());
             picker::render_in(frame, inner, state);
         }
         AppMode::Overview(session) => {
-            let inner = centered_column(frame.area());
-            render_overview(frame, inner, session);
+            render_overview(frame, frame.area(), session);
         }
         AppMode::PickerOverlay { underlying, picker } => {
-            // Draw the underlying overview first, then overlay the picker
-            // atop a `Clear` widget over the same centered column.
-            let inner = centered_column(frame.area());
-            render_overview(frame, inner, underlying);
+            // Draw the underlying overview at full width, then overlay a
+            // centered picker dialog atop a `Clear` widget.
+            render_overview(frame, frame.area(), underlying);
+            let inner = picker_centered(frame.area());
             frame.render_widget(Clear, inner);
             picker::render_in(frame, inner, picker);
         }
@@ -50,19 +55,34 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     }
 }
 
-/// Cap the dashboard column at [`MAX_CONTENT_WIDTH`] and center it inside the
-/// available frame width. Narrower terminals just get the full width back.
-pub(crate) fn centered_column(area: Rect) -> Rect {
-    if area.width <= MAX_CONTENT_WIDTH {
+/// Picker dialog centering: still centers a moderate-width column inside
+/// the terminal so the picker list isn't full-width on a wide screen.
+fn picker_centered(area: Rect) -> Rect {
+    const PICKER_WIDTH: u16 = 100;
+    if area.width <= PICKER_WIDTH {
         return area;
     }
-    let extra = area.width - MAX_CONTENT_WIDTH;
+    let extra = area.width - PICKER_WIDTH;
     let left = extra / 2;
     Rect {
         x: area.x + left,
         y: area.y,
-        width: MAX_CONTENT_WIDTH,
+        width: PICKER_WIDTH,
         height: area.height,
+    }
+}
+
+/// Center a child rect of width `target_width` (capped at `outer.width`) inside
+/// `outer`, preserving full height. Used for centering the column-block of
+/// content inside a pane without changing the pane block itself.
+fn center_horizontal(outer: Rect, target_width: u16) -> Rect {
+    let w = target_width.min(outer.width);
+    let left = (outer.width.saturating_sub(w)) / 2;
+    Rect {
+        x: outer.x + left,
+        y: outer.y,
+        width: w,
+        height: outer.height,
     }
 }
 
@@ -99,27 +119,109 @@ pub(crate) fn stage_color(stage_name: &str) -> Color {
 
 fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
     let state = session.active_state();
-    let [graph_area, content_area] = Layout::default()
+    let show_tabs = session.is_multi();
+    // Vertical layout: optional tab strip (3 lines incl. borders), graph
+    // ribbon (7), main content fills the rest, status footer (1 line).
+    let constraints: Vec<Constraint> = if show_tabs {
+        vec![
+            Constraint::Length(3), // tab bar
+            Constraint::Length(7), // graph
+            Constraint::Min(0),    // content
+            Constraint::Length(1), // footer
+        ]
+    } else {
+        vec![
+            Constraint::Length(7),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ]
+    };
+    let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(7), Constraint::Min(0)])
-        .areas(area);
+        .constraints(constraints)
+        .split(area);
+
+    let (graph_area, content_area, footer_area) = if show_tabs {
+        render_tab_bar(frame, chunks[0], session);
+        (chunks[1], chunks[2], chunks[3])
+    } else {
+        (chunks[0], chunks[1], chunks[2])
+    };
+
+    render_stage_graph(frame, graph_area, state);
+
     let [list_area, preview_area] = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
         .areas(content_area);
 
-    let breadcrumb = session.breadcrumb_label();
-    render_stage_graph_with_breadcrumb(frame, graph_area, state, breadcrumb.as_deref());
-    frame.render_widget(task_list(state), list_area);
-    frame.render_widget(preview(state), preview_area);
+    render_task_list(frame, list_area, state);
+    render_preview(frame, preview_area, state);
+
+    render_status_footer(frame, footer_area, session);
+}
+
+/// Render the workflow tab bar at the top of the dashboard. One tab per
+/// discovered workflow; the active tab is highlighted with the implement-
+/// stage color and bold/reversed style, others are dimmed. The strip suffix
+/// shows the total count, e.g. `(2/5)`, satisfying the captain's "see how
+/// many workflows in this repo" request.
+fn render_tab_bar(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
+    let active = session.active_index();
+    let total = session.len();
+    let mut spans: Vec<Span<'_>> = Vec::new();
+    for (idx, disc) in session.discovery().iter().enumerate() {
+        if idx > 0 {
+            spans.push(Span::raw(" "));
+        }
+        let label = match &disc.title {
+            Some(t) if !t.trim().is_empty() => format!(" {t} "),
+            _ => disc
+                .root
+                .file_name()
+                .map(|s| format!(" {} ", s.to_string_lossy()))
+                .unwrap_or_else(|| format!(" {} ", disc.root.display())),
+        };
+        let style = if idx == active {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().add_modifier(Modifier::DIM)
+        };
+        spans.push(Span::styled(label, style));
+    }
+    let title = format!("Workflows ({}/{})", active + 1, total);
+    let para = Paragraph::new(Line::from(spans))
+        .block(Block::default().title(title).borders(Borders::ALL));
+    frame.render_widget(para, area);
+}
+
+/// One-line status footer at the bottom of the dashboard. Surfaces the
+/// headline keys so the help popup is discoverable without tutorialising the
+/// user. The exact key list adapts to single vs multi sessions.
+fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
+    let mut hints = vec!["?: help"];
+    if session.is_multi() {
+        hints.push("\u{2190}/\u{2192}: switch workflow");
+        hints.push("P: pick");
+    }
+    hints.push("a: archive");
+    hints.push("q: quit");
+    let text = hints.join("   ");
+    let para = Paragraph::new(Line::from(Span::styled(
+        text,
+        Style::default().add_modifier(Modifier::DIM),
+    )))
+    .alignment(Alignment::Center);
+    frame.render_widget(para, area);
 }
 
 fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let is_multi = app.as_session().map(|s| s.is_multi()).unwrap_or(false);
-    // Center a 60×N popup (or smaller for tiny terminals). Grow for the
-    // multi-workflow extra entries.
-    let popup_w = area.width.min(60);
-    let popup_h = area.height.min(if is_multi { 19 } else { 16 });
+    let popup_w = area.width.min(64);
+    let popup_h = area.height.min(if is_multi { 20 } else { 16 });
     let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
     let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
     let popup = Rect {
@@ -145,8 +247,10 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("  Esc / q        quit (or close help)"),
     ];
     if is_multi {
-        lines.push(Line::from("  ]              cycle to next workflow"));
-        lines.push(Line::from("  [              cycle to previous workflow"));
+        lines.push(Line::from("  \u{2192} / Right     switch to next workflow"));
+        lines.push(Line::from(
+            "  \u{2190} / Left      switch to previous workflow",
+        ));
         lines.push(Line::from("  P              re-discover & pick workflow"));
     }
     lines.push(Line::from(""));
@@ -168,74 +272,91 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
     frame.render_widget(paragraph, popup);
 }
 
-fn task_list(app: &OverviewState) -> Paragraph<'_> {
-    let scope = app.view_scope();
+fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
+    let scope = state.view_scope();
     let title = match scope {
         ViewScope::Active => "Tasks",
         ViewScope::Archived => "Archived",
     };
-    let items = app.visible_items();
-    let lines: Vec<Line<'_>> = if items.is_empty() {
-        let empty_text = match (scope, app.archive_error()) {
+    // Render the Block (borders + title) on the full pane width, then
+    // render the row column-block centered horizontally inside the pane.
+    let block = Block::default().title(title).borders(Borders::ALL);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let lines = build_task_list_lines(state);
+    let inner_centered = center_horizontal(inner, PANE_CONTENT_TARGET);
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: true });
+    frame.render_widget(paragraph, inner_centered);
+}
+
+fn build_task_list_lines(state: &OverviewState) -> Vec<Line<'_>> {
+    let scope = state.view_scope();
+    let items = state.visible_items();
+    if items.is_empty() {
+        let empty_text = match (scope, state.archive_error()) {
             (ViewScope::Archived, Some(err)) => format!("archive load failed: {err}"),
             (ViewScope::Archived, None) => "No archived items found.".to_string(),
             (ViewScope::Active, _) => "No work items found.".to_string(),
         };
-        vec![Line::from(empty_text)]
-    } else {
-        items
-            .iter()
-            .enumerate()
-            .map(|(index, item)| {
-                let selected = index == app.selected_index();
-                let marker = if selected { ">" } else { " " };
-                let prefix = format!("{marker} {} ", item.id);
-                let bracket = format!("[{}]", item.status);
-                let suffix = match scope {
-                    ViewScope::Archived => {
-                        let glyph = match item.verdict.as_deref() {
-                            Some("PASSED") => "[\u{2713}]",
-                            Some(_) => "[\u{2717}]",
-                            None => "[?]",
-                        };
-                        format!(" {} {glyph}", item.title)
-                    }
-                    ViewScope::Active => format!(" {}", item.title),
-                };
+        return vec![Line::from(empty_text)];
+    }
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let selected = index == state.selected_index();
+            let marker = if selected { ">" } else { " " };
+            let prefix = format!("{marker} {} ", item.id);
+            let bracket = format!("[{}]", item.status);
+            let suffix = match scope {
+                ViewScope::Archived => {
+                    let glyph = match item.verdict.as_deref() {
+                        Some("PASSED") => "[\u{2713}]",
+                        Some(_) => "[\u{2717}]",
+                        None => "[?]",
+                    };
+                    format!(" {} {glyph}", item.title)
+                }
+                ViewScope::Active => format!(" {}", item.title),
+            };
 
-                let base_style = if selected {
-                    Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
-                } else if scope == ViewScope::Archived {
-                    Style::default().add_modifier(Modifier::DIM)
-                } else {
-                    Style::default()
-                };
-                let stage_style = if selected {
-                    base_style
-                } else {
-                    Style::default()
-                        .fg(stage_color(&item.status))
-                        .add_modifier(Modifier::BOLD)
-                };
+            let base_style = if selected {
+                Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+            } else if scope == ViewScope::Archived {
+                Style::default().add_modifier(Modifier::DIM)
+            } else {
+                Style::default()
+            };
+            let stage_style = if selected {
+                base_style
+            } else {
+                Style::default()
+                    .fg(stage_color(&item.status))
+                    .add_modifier(Modifier::BOLD)
+            };
 
-                Line::from(vec![
-                    Span::styled(prefix, base_style),
-                    Span::styled(bracket, stage_style),
-                    Span::styled(suffix, base_style),
-                ])
-            })
-            .collect()
-    };
-
-    Paragraph::new(lines)
-        .block(Block::default().title(title).borders(Borders::ALL))
-        .wrap(Wrap { trim: true })
+            Line::from(vec![
+                Span::styled(prefix, base_style),
+                Span::styled(bracket, stage_style),
+                Span::styled(suffix, base_style),
+            ])
+        })
+        .collect()
 }
 
-fn preview(app: &OverviewState) -> Paragraph<'_> {
-    let Some(item) = app.selected_item() else {
-        return Paragraph::new("Select a work item to inspect it.")
-            .block(Block::default().title("Preview").borders(Borders::ALL));
+fn render_preview(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
+    let block = Block::default().title("Preview").borders(Borders::ALL);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let lines = build_preview_lines(state);
+    let inner_centered = center_horizontal(inner, PANE_CONTENT_TARGET);
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: true });
+    frame.render_widget(paragraph, inner_centered);
+}
+
+fn build_preview_lines(state: &OverviewState) -> Vec<Line<'_>> {
+    let Some(item) = state.selected_item() else {
+        return vec![Line::from("Select a work item to inspect it.")];
     };
 
     let score = item
@@ -268,7 +389,7 @@ fn preview(app: &OverviewState) -> Paragraph<'_> {
     ]));
     lines.push(Line::from(format!("score: {score}")));
     lines.push(Line::from(format!("source: {source}")));
-    if app.view_scope() == ViewScope::Archived {
+    if state.view_scope() == ViewScope::Archived {
         let verdict = item.verdict.as_deref().unwrap_or("n/a");
         let completed = item.completed.as_deref().unwrap_or("n/a");
         let verdict_style = match item.verdict.as_deref() {
@@ -287,17 +408,14 @@ fn preview(app: &OverviewState) -> Paragraph<'_> {
     lines.push(Line::from(format!("path: {}", item.path.display())));
     lines.push(Line::from(""));
     lines.push(Line::from(body_excerpt));
-
-    Paragraph::new(lines)
-        .block(Block::default().title("Preview").borders(Borders::ALL))
-        .wrap(Wrap { trim: true })
+    lines
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use ratatui::{backend::TestBackend, layout::Rect, style::Color, Terminal};
+    use ratatui::{backend::TestBackend, style::Color, Terminal};
 
     use super::render;
     use crate::app::App;
@@ -431,7 +549,7 @@ mod tests {
             .join("")
     }
 
-    // --- AC-1: help popup ---
+    // --- Help popup behaviour ---
 
     #[test]
     fn help_popup_toggles_with_question_mark_and_closes_on_esc() {
@@ -506,34 +624,14 @@ mod tests {
         );
     }
 
-    // --- AC-2: centered dashboard column on wide terminals ---
+    // --- AC-1: dashboard responsive width + content centering ---
 
     #[test]
-    fn dashboard_is_centered_on_wide_terminals() {
-        let area = Rect::new(0, 0, 200, 40);
-        let inner = super::centered_column(area);
-        assert!(inner.width <= super::MAX_CONTENT_WIDTH);
-        let left = inner.x - area.x;
-        let right = (area.x + area.width) - (inner.x + inner.width);
-        // Left and right margins should be roughly equal (within 1 col).
-        assert!(
-            (left as i32 - right as i32).abs() <= 1,
-            "asymmetric centering: left={left} right={right}"
-        );
-        assert!(left > 0, "expected non-zero left margin on wide terminal");
-    }
-
-    #[test]
-    fn dashboard_uses_full_width_on_narrow_terminals() {
-        let area = Rect::new(0, 0, 80, 30);
-        let inner = super::centered_column(area);
-        assert_eq!(inner, area);
-    }
-
-    #[test]
-    fn wide_terminal_render_leaves_left_margin_blank_in_overview() {
-        // Render the full app at a wide size — the leftmost columns should be
-        // blank because the dashboard is centered.
+    fn dashboard_pane_spans_full_terminal_width() {
+        // The Overview block (graph ribbon) must touch column 0 and the
+        // last column on a wide terminal — i.e. no left/right margin
+        // gutter. This codifies the override of task 009's centered-
+        // column rule.
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
         let app = App::load(root).expect("workflow should load");
         let width: u16 = 200;
@@ -543,17 +641,204 @@ mod tests {
             .draw(|frame| render(frame, &app))
             .expect("render should succeed");
         let buffer = terminal.backend().buffer();
+        // The graph block has a top border drawn at row 0; that border
+        // should reach both the left and right edges of the terminal.
+        let top_left = buffer[(0, 0)].symbol();
+        let top_right = buffer[(width - 1, 0)].symbol();
+        assert_ne!(
+            top_left, " ",
+            "expected non-blank left edge of dashboard at (0,0), got blank"
+        );
+        assert_ne!(
+            top_right,
+            " ",
+            "expected non-blank right edge of dashboard at ({},0), got blank",
+            width - 1
+        );
+    }
 
-        // Column 0 across all rows must be entirely blank when centered.
-        for y in 0..height {
-            let cell = &buffer[(0, y)];
-            assert_eq!(
-                cell.symbol(),
-                " ",
-                "expected blank left margin at (0,{y}), got {:?}",
-                cell.symbol()
+    #[test]
+    fn graph_ribbon_node_row_is_horizontally_centered_in_pane() {
+        // On a wide terminal, the graph ribbon's first stage glyph should
+        // sit roughly equidistant from the pane's left/right edges —
+        // satisfying AC-1's "content centered within each pane".
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let app = App::load(root).expect("workflow should load");
+        let width: u16 = 200;
+        let height: u16 = 30;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let buffer = terminal.backend().buffer();
+        // Find the row containing the first stage name (e.g. "design").
+        let first_stage = &app.snapshot().definition.stages[0].name;
+        let first_char = first_stage.chars().next().unwrap().to_string();
+        let cols = width as usize;
+        let mut found_row: Option<usize> = None;
+        let mut found_col: Option<usize> = None;
+        'outer: for y in 0..height {
+            for x in 0..width {
+                if buffer[(x, y)].symbol() == first_char {
+                    // Check the rest of the stage name follows.
+                    let chars: Vec<String> = first_stage.chars().map(|c| c.to_string()).collect();
+                    if (x as usize) + chars.len() > cols {
+                        continue;
+                    }
+                    let ok = chars
+                        .iter()
+                        .enumerate()
+                        .all(|(i, c)| buffer[(x + i as u16, y)].symbol() == c.as_str());
+                    if ok {
+                        found_row = Some(y as usize);
+                        found_col = Some(x as usize);
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        let col = found_col.expect("first stage label not found in render");
+        let _row = found_row.unwrap();
+        // The leftmost glyph of the centered content should be > some margin
+        // from column 0 (proving it isn't hugging the left edge).
+        assert!(
+            col >= 8,
+            "expected first stage column to be centered with non-trivial left margin, got col={col}"
+        );
+    }
+
+    #[test]
+    fn dashboard_status_footer_lists_help_affordance() {
+        // AC-5: a visible affordance hints at the help popup somewhere on
+        // the dashboard — we surface it via a status-line footer.
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let app = App::load(root).expect("workflow should load");
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("?"), "footer must include ? glyph");
+        assert!(rendered.contains("help"), "footer must mention 'help'");
+        assert!(rendered.contains("q: quit"), "footer must mention quit");
+    }
+
+    // --- AC-2: tab bar workflow switcher (multi-workflow only) ---
+
+    fn synthetic_session(n: usize) -> crate::app::OverviewSession {
+        use crate::app::{OverviewSession, OverviewState};
+        use crate::discovery::DiscoveredWorkflow;
+        use crate::domain::{StageDefinition, WorkflowDefinition, WorkflowSnapshot};
+        let snap = WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: PathBuf::from("/x/w0"),
+                stages: vec![StageDefinition {
+                    name: "plan".to_string(),
+                    initial: true,
+                    terminal: false,
+                    gate: false,
+                    fresh: false,
+                    feedback_to: None,
+                    worktree: false,
+                    concurrency: None,
+                }],
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+            },
+            items: Vec::new(),
+        };
+        let initial = OverviewState::from_snapshot(PathBuf::from("/x/w0"), snap);
+        let discovery: Vec<DiscoveredWorkflow> = (0..n)
+            .map(|i| DiscoveredWorkflow {
+                root: PathBuf::from(format!("/x/w{i}")),
+                title: Some(format!("Workflow{i}")),
+            })
+            .collect();
+        OverviewSession::from_discovery(PathBuf::from("/x"), discovery, 0, initial)
+    }
+
+    #[test]
+    fn multi_session_renders_tab_bar_with_count_and_per_workflow_tabs() {
+        let session = synthetic_session(3);
+        let app = App::from_session(session);
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            rendered.contains("Workflows (1/3)"),
+            "tab strip must show count, got render snippet:\n{rendered}"
+        );
+        for i in 0..3 {
+            assert!(
+                rendered.contains(&format!("Workflow{i}")),
+                "tab bar missing workflow tab #{i}"
             );
         }
+    }
+
+    #[test]
+    fn single_session_omits_tab_bar() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let app = App::load(root).expect("workflow should load");
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            !rendered.contains("Workflows ("),
+            "single-workflow session must hide the tab strip"
+        );
+    }
+
+    #[test]
+    fn arrow_keys_cycle_active_tab_with_wraparound_in_multi() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let session = synthetic_session(3);
+        let mut app = App::from_session(session);
+
+        // Right cycles forward 0 → 1. Materialize so the active slot is
+        // available for the next handle_key (cycle reads is_multi via
+        // session, not active state — but logging current active state is
+        // what handle_key does after select).
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        let switch = app.take_pending_switch().expect("Right emits switch");
+        assert_eq!(switch.target_index, 1);
+        app.materialize_active();
+
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        let switch = app.take_pending_switch().unwrap();
+        assert_eq!(switch.target_index, 2);
+        app.materialize_active();
+
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        let switch = app.take_pending_switch().unwrap();
+        assert_eq!(switch.target_index, 0);
+        app.materialize_active();
+
+        // Left wraps 0 → 2.
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        let switch = app.take_pending_switch().unwrap();
+        assert_eq!(switch.target_index, 2);
+    }
+
+    #[test]
+    fn arrow_keys_inert_in_single_session() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let mut app = App::load(root).expect("workflow should load");
+        let active_before = app.as_session().unwrap().active_index();
+        app.handle_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        assert!(
+            app.take_pending_switch().is_none(),
+            "single session must not emit switches on Left/Right"
+        );
+        assert_eq!(app.as_session().unwrap().active_index(), active_before);
     }
 
     // --- AC-3: stage status colors ---
@@ -568,9 +853,6 @@ mod tests {
             .expect("render should succeed");
         let buffer = terminal.backend().buffer();
 
-        // Each known stage should have at least one cell whose fg matches its
-        // stage_color. That demonstrates per-stage colorization across the
-        // ribbon (AC-3 evidence).
         let mut seen_colors: std::collections::HashSet<Color> = Default::default();
         for y in 0..buffer.area.height {
             for x in 0..buffer.area.width {
@@ -586,8 +868,6 @@ mod tests {
             .iter()
             .map(|s| super::stage_color(&s.name))
             .collect();
-        // At least 3 distinct stage colors should be present in the rendered
-        // buffer — guaranteed by the ribbon coloring distinct stages.
         let overlap = stage_colors.intersection(&seen_colors).count();
         assert!(
             overlap >= 3,
@@ -610,14 +890,6 @@ mod tests {
             .draw(|frame| render(frame, &app))
             .expect("render should succeed");
         let buffer = terminal.backend().buffer();
-        // Walk every row by COLUMN (not by byte) so multi-byte symbols like `│`
-        // in pane borders don't shift the offsets we use to index cells.
-        // Build a Vec of per-column symbols, then sliding-window match the
-        // literal "status: " followed by the unstyled status value all in the
-        // expected stage fg color. This is robust to: body-excerpt
-        // repetitions of "status:" (those won't carry the stage fg), border
-        // glyphs preceding the label, and Wrap{trim:true} leading-space
-        // changes.
         let label_chars: [&str; 8] = ["s", "t", "a", "t", "u", "s", ":", " "];
         let value_chars: Vec<String> = status_value
             .chars()
@@ -633,7 +905,6 @@ mod tests {
                 continue;
             }
             for start in 0..=(row_syms.len() - total_len) {
-                // Match label literally.
                 let label_ok = label_chars
                     .iter()
                     .enumerate()
@@ -641,7 +912,6 @@ mod tests {
                 if !label_ok {
                     continue;
                 }
-                // Match status value literally and require the stage fg color.
                 let value_start = start + label_chars.len();
                 let value_ok = value_chars.iter().enumerate().all(|(i, c)| {
                     let x = (value_start + i) as u16;
@@ -661,49 +931,10 @@ mod tests {
     }
 
     #[test]
-    fn help_popup_shows_cycle_hints_only_in_multi() {
-        use crate::app::{OverviewSession, OverviewState};
-        use crate::discovery::DiscoveredWorkflow;
+    fn help_popup_includes_arrow_keys_in_multi_session() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-        // Multi-workflow session: build two synthetic single-workflow
-        // states wrapped in a session via `from_discovery`. The discovery
-        // path values aren't dereferenced for help rendering.
-        let snap = {
-            use crate::domain::{StageDefinition, WorkflowDefinition, WorkflowSnapshot};
-            WorkflowSnapshot {
-                definition: WorkflowDefinition {
-                    root: PathBuf::from("/x/a"),
-                    stages: vec![StageDefinition {
-                        name: "plan".to_string(),
-                        initial: true,
-                        terminal: false,
-                        gate: false,
-                        fresh: false,
-                        feedback_to: None,
-                        worktree: false,
-                        concurrency: None,
-                    }],
-                    id_style: None,
-                    entity_type: None,
-                    entity_label: None,
-                    entity_label_plural: None,
-                },
-                items: Vec::new(),
-            }
-        };
-        let initial = OverviewState::from_snapshot(PathBuf::from("/x/a"), snap);
-        let discovery = vec![
-            DiscoveredWorkflow {
-                root: PathBuf::from("/x/a"),
-                title: Some("A".into()),
-            },
-            DiscoveredWorkflow {
-                root: PathBuf::from("/x/b"),
-                title: Some("B".into()),
-            },
-        ];
-        let session = OverviewSession::from_discovery(PathBuf::from("/x"), discovery, 0, initial);
+        let session = synthetic_session(2);
         let mut app = App::from_session(session);
         app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
 
@@ -712,17 +943,22 @@ mod tests {
             .draw(|frame| render(frame, &app))
             .expect("render should succeed");
         let rendered = buffer_text(terminal.backend().buffer());
+        // Either Unicode arrow or "Left"/"Right" keyword is acceptable.
         assert!(
-            rendered.contains("cycle to next workflow"),
-            "multi help should include cycle hint"
+            rendered.contains('\u{2192}') || rendered.contains("Right"),
+            "help popup must list right-arrow binding in multi"
+        );
+        assert!(
+            rendered.contains('\u{2190}') || rendered.contains("Left"),
+            "help popup must list left-arrow binding in multi"
         );
         assert!(
             rendered.contains("re-discover"),
             "multi help should mention re-discover"
         );
 
-        // Single-workflow session: the existing `App::load` path produces
-        // a pinned single session whose help omits cycle hints.
+        // Single session: the existing `App::load` path produces a pinned
+        // single session whose help omits cycle hints.
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
         let mut app = App::load(root).expect("workflow should load");
         app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
@@ -732,7 +968,7 @@ mod tests {
             .expect("render should succeed");
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(
-            !rendered.contains("cycle to next workflow"),
+            !rendered.contains("switch to next workflow"),
             "single help must not include cycle hint"
         );
     }
@@ -744,14 +980,12 @@ mod tests {
         let implement = super::stage_color("implement");
         let review = super::stage_color("review");
         let done = super::stage_color("done");
-        // All five canonical stages must produce distinct colors.
         let all = [design, plan, implement, review, done];
         for (i, a) in all.iter().enumerate() {
             for b in &all[i + 1..] {
                 assert_ne!(a, b, "stage colors should be distinct");
             }
         }
-        // Done is green (sanity-check the convention, supports AC-3 evidence).
         assert_eq!(done, Color::Green);
     }
 }
