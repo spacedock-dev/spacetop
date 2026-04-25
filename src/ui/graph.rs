@@ -99,6 +99,9 @@ struct GlyphSet {
     feedback: &'static str,
     forward_arrow: &'static str,
     narrow_arrow: &'static str,
+    arc_down_right: &'static str,
+    arc_down_left: &'static str,
+    arc_horizontal: &'static str,
 }
 
 fn glyphs_for(ascii: bool) -> GlyphSet {
@@ -111,6 +114,9 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             feedback: "<",
             forward_arrow: "->",
             narrow_arrow: "->",
+            arc_down_right: "+",
+            arc_down_left: "+",
+            arc_horizontal: "-",
         }
     } else {
         GlyphSet {
@@ -121,6 +127,9 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             feedback: "\u{21B6}",                      // ↶
             forward_arrow: "\u{2500}\u{2500}\u{25BA}", // ──►
             narrow_arrow: "\u{2192}",                  // →
+            arc_down_right: "\u{2514}",                // └
+            arc_down_left: "\u{2518}",                 // ┘
+            arc_horizontal: "\u{2500}",                // ─
         }
     }
 }
@@ -390,18 +399,45 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
 }
 
 fn render_feedback_row(
-    _source_col: usize,
-    _target_col: usize,
-    _total_width: usize,
+    source_col: usize,
+    target_col: usize,
+    total_width: usize,
     source_stage: &str,
     target_stage: &str,
     g: &GlyphSet,
 ) -> String {
-    format!(
-        "{feedback} rollback on reject: {source_stage} {arrow} {target_stage}",
-        feedback = g.feedback,
-        arrow = g.narrow_arrow,
-    )
+    let annotation = format!(
+        " {} {} {} {}",
+        g.feedback, source_stage, g.narrow_arrow, target_stage
+    );
+    let ann_w = visible_width(&annotation);
+    let min_row = total_width.max(source_col + 1).max(target_col + 1) + ann_w + 1;
+    let mut buf: Vec<String> = (0..min_row).map(|_| " ".to_string()).collect();
+
+    let (left, right) = if source_col <= target_col {
+        (source_col, target_col)
+    } else {
+        (target_col, source_col)
+    };
+    if right > left + 1 {
+        for cell in buf.iter_mut().take(right).skip(left + 1) {
+            *cell = g.arc_horizontal.to_string();
+        }
+    }
+    if left < buf.len() {
+        buf[left] = g.arc_down_right.to_string();
+    }
+    if right < buf.len() {
+        buf[right] = g.arc_down_left.to_string();
+    }
+    let ann_start = buf.len().saturating_sub(ann_w);
+    for (i, ch) in annotation.chars().enumerate() {
+        let idx = ann_start + i;
+        if idx < buf.len() {
+            buf[idx] = ch.to_string();
+        }
+    }
+    buf.join("")
 }
 
 fn render_narrow<'a>(
@@ -634,8 +670,12 @@ mod tests {
         let app = real_workflow();
         let rendered = render_to_string(&app, 120, 12);
         assert!(
-            rendered.contains("\u{21B6} rollback on reject: review \u{2192} implement"),
-            "missing rollback annotation"
+            rendered.contains("\u{2514}") && rendered.contains("\u{2518}"),
+            "missing arc corner glyphs (└ ┘)"
+        );
+        assert!(
+            rendered.contains("\u{21B6} review \u{2192} implement"),
+            "missing rollback annotation with stage names"
         );
         assert!(
             !rendered.contains("feedback-to"),
@@ -669,7 +709,7 @@ mod tests {
         assert!(rendered.contains("gamma"));
         assert!(!rendered.contains("design"));
         assert!(!rendered.contains("review"));
-        assert!(!rendered.contains("\u{21B6} rollback"));
+        assert!(!rendered.contains("\u{21B6}"), "no feedback glyph for topology without feedback edges");
     }
 
     #[test]
