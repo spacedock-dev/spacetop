@@ -1,16 +1,17 @@
 ---
 id: "017"
 title: Survey termimad as markdown renderer for the preview pane
-status: review
+status: done
 source: captain (follow-up from 016)
 started: 2026-04-25T15:38:17Z
-completed:
-verdict:
+completed: 2026-04-25T16:02:55Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-017-survey-termimad-markdown-renderer
+worktree: 
 issue:
 pr: #7
 mod-block: 
+archived: 2026-04-25T16:02:55Z
 ---
 
 Task 016 fixed code block rendering by extending the existing `pulldown-cmark` event loop in `src/ui/mod.rs`. During review it was noted that `termimad` — a crate designed specifically for terminal markdown rendering — was not surveyed before committing to that approach. This task surveys `termimad`, decides whether it is a better fit, and either replaces the renderer or documents why `pulldown-cmark` should be kept.
