@@ -1,16 +1,17 @@
 ---
 id: "012"
 title: Exclude .worktrees/ directories from workflow auto-discovery
-status: review
+status: done
 source: feature request — first-officer session 2026-04-25
 started: 2026-04-25T09:57:56Z
-completed:
-verdict:
+completed: 2026-04-25T10:21:15Z
+verdict: PASSED
 score: 0.7
-worktree: .worktrees/spacedock-ensign-exclude-worktrees-from-discovery
+worktree: 
 issue:
-pr: #1
+pr: 
 mod-block: 
+archived: 2026-04-25T10:21:16Z
 ---
 
 When Spacetop auto-discovers workflow directories (via `--discover` or directory scanning), it may walk into `.worktrees/` subdirectories and treat each worktree clone as an independent workflow. Each active Spacedock task checked out into a git worktree contains a full copy of the project including `docs/` — which means the same workflow directory appears N+1 times (once on main, once per active worktree). This causes duplicated workflow entries in the picker and graph view, and confuses the overview state.
