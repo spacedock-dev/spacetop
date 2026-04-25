@@ -138,3 +138,160 @@ Verified by: command output cited in the implement stage report.
 ### Summary
 
 Locked the in-session workflow switch to a status-line breadcrumb (`[i/N] path` extended onto the existing graph header), `]`/`[` cycle keys, and a `P` picker-overlay re-discovery escape hatch — explicitly rejecting the captain's tabs hypothesis on grounds of vertical density and keymap budget. Per-workflow state is retained in a `Vec<OverviewState>` with lazy first-load and never-drop semantics so return cycles are O(1) IO-free. The watcher is single-instance and follows the active workflow with teardown/restart on switch plus synchronous reload to cover the gap; re-discovery is user-initiated via `P` to avoid file-handle multiplication. Single-workflow sessions and `-w/--workflow-dir`-pinned sessions pay zero UI or keymap cost.
+
+## Implementation plan
+
+### Step 1 — Refactor `App` to own `Vec<OverviewState>` (file: `src/app.rs`)
+
+Make the active workflow index addressable while keeping single-workflow callers byte-compatible.
+
+1. Add a new struct alongside `AppMode`:
+   ```
+   #[derive(Debug, Clone, PartialEq)]
+   pub struct OverviewSession {
+       scan_root: Option<PathBuf>,        // None for `-w` single-workflow mode
+       discovery: Vec<DiscoveredWorkflow>, // len() == 1 in single mode; >=2 in multi
+       workflows: Vec<Option<OverviewState>>, // lazy: None until first activation
+       active: usize,
+       pinned_single: bool,               // true when `-w` was used; suppresses cycle/P
+   }
+   ```
+2. Replace `AppMode::Overview(OverviewState)` with `AppMode::Overview(OverviewSession)`. Internal accessors (`overview()`, `workflow_dir()`, `snapshot()`, `selected_index()`, `view_scope()`, etc.) delegate to `session.workflows[session.active].as_ref().unwrap()` for the active state.
+3. Add `OverviewSession` API (private to crate):
+   - `single(state: OverviewState, pinned: bool) -> Self` — builds a 1-element session from a pre-loaded state. `pinned == true` for the `-w` path.
+   - `from_discovery(scan_root: PathBuf, discovery: Vec<DiscoveredWorkflow>, initial_active: usize, initial_state: OverviewState) -> Self` — multi-workflow constructor, marks `workflows[initial_active] = Some(initial_state)`, others `None`.
+   - `active_state(&self) -> &OverviewState` / `_mut` (panics on `None` — invariant: active slot is always materialized).
+   - `discovery(&self) -> &[DiscoveredWorkflow]`, `active_index() -> usize`, `len() -> usize`, `is_multi() -> bool` (i.e. `discovery.len() >= 2 && !pinned_single`).
+   - `cycle_next(&mut self) -> WorkflowSwitch` / `cycle_prev(&mut self) -> WorkflowSwitch`. Returns a struct describing what the event loop must do (see Step 4).
+   - `select(&mut self, target_index: usize) -> WorkflowSwitch`.
+   - `replace_discovery(&mut self, new_discovery: Vec<DiscoveredWorkflow>)` — used by `P` re-discovery. Preserves active workflow by canonical-path match; if the active workflow is gone, leaves `active` clamped to 0 and the materialized state for the prior path discarded; mismatched indices in `workflows` are remapped by canonical path so previously-loaded states aren't dropped on re-discovery.
+4. Add `WorkflowSwitch { dropped_prior: bool, target_index: usize, needs_first_load: bool }` enum/struct. The event loop uses this to (a) drop the watcher, (b) call `OverviewState::load` if `needs_first_load`, (c) call `reload()` otherwise, (d) start a new watcher.
+5. Update existing constructors:
+   - `App::new(workflow_dir)` — single empty session, `pinned_single = true`.
+   - `App::load(workflow_dir)` — single materialized session, `pinned_single = true`.
+   - `App::from_snapshot(workflow_dir, snapshot)` — single session, `pinned_single = true`. (Preserves test seam.)
+   - Add `App::from_overview_session(session)` so `decide_app` can build either single or multi sessions.
+6. Update `App::handle_key`'s overview arm to gate `]`, `[`, `P` on `session.is_multi()`. New behavior:
+   - `]` → emit `cycle_next` switch request via a new `pending_switch: Option<WorkflowSwitch>` field on `App`, or alternatively expose a `take_pending_switch()` method that the event loop polls each frame. (Pure-state design: handlers do not touch FS — they only mutate the active index and mark the prior watcher dead.)
+   - `[` → cycle_prev.
+   - `P` → set `app.mode` to a new `AppMode::PickerOverlay(PickerState)` built from current `session.discovery` (no re-discovery yet — discovery is re-run lazily when overlay opens; see Step 2 for the variant decision).
+7. **Picker-overlay variant decision:** add a third mode `AppMode::PickerOverlay { underlying: OverviewSession, picker: PickerState }`. This keeps the existing `AppMode::Picker` reserved for the startup/zero-overview flow and lets the overlay carry the prior session unchanged so `Esc` restores it. Rendering reuses `picker::render_in` over the same centered column and over a `Clear` overlay.
+8. Picker-overlay key handling: `Enter` confirms — if the chosen workflow's canonical path matches an existing `discovery[i]`, set `active = i` (with a `WorkflowSwitch`); if not, push it into `discovery` and `workflows` with `None`. `Esc` discards picker, restores `AppMode::Overview(underlying)`.
+
+Files touched in this step: `src/app.rs` only. Tests in the existing `tests` mod stay green because single-workflow constructors keep their semantics; the back-compat accessors `workflow_dir()`, `snapshot()`, `selected_index()` etc. continue to delegate to the active overview state.
+
+### Step 2 — Re-discovery seam (file: `src/app.rs` + `src/lib.rs`)
+
+`P` needs a way to re-run `discover_workflows` without baking FS calls into `App`. Two options:
+
+- **Chosen:** expose a closure-shaped seam. Add `App::open_picker_overlay<F>(&mut self, discover: F) where F: FnOnce(&Path) -> Result<Vec<DiscoveredWorkflow>, DiscoveryError>`. The event loop in `lib.rs` passes the real `discovery::discover_workflows`; tests pass a fake. On error, the picker overlay opens with the prior `discovery` list and the `error` field set to the discovery error string (reusing `PickerState::set_error`).
+- Rejected: directly calling `discovery::discover_workflows` from `handle_key`. This couples `App` tests to the FS and forces tempdirs everywhere.
+
+Add a `scan_root: Option<PathBuf>` to `OverviewSession` so the closure has a root to scan. When `pinned_single` is true, `P` is inert and the closure is never called.
+
+### Step 3 — Breadcrumb in graph header (file: `src/ui/graph.rs`)
+
+Extend the existing block title in `render_stage_graph`:
+
+1. Add a parameter or read from a new method `OverviewSession::breadcrumb_label()` that returns `Some("[2/3]")` when `is_multi()`, else `None`. Since `render_stage_graph` currently takes `&OverviewState`, plumb the breadcrumb through by either:
+   - **Chosen:** add a sibling `pub fn render_stage_graph_with_breadcrumb(frame, area, state, breadcrumb: Option<&str>)`, keep the old `render_stage_graph` as a thin wrapper that passes `None`. Caller in `src/ui/mod.rs::render_overview` is updated to pass the breadcrumb derived from the session.
+   - Rejected: changing `render_stage_graph` to take the whole session — the function is unit-tested with bare `OverviewState` fixtures and we should not break those.
+2. Update the `title` format string from `"Workflow — [active] — archived: ... — {path}"` to `"Workflow — [active] — archived: ... — {breadcrumb_prefix}{path}"` where `breadcrumb_prefix` is `"[2/3] "` or empty.
+3. The breadcrumb is *also* emitted when `pinned_single` is true and `discovery.len() == 1` from the auto-discovery path? **No** — the spec says the breadcrumb is only rendered when `is_multi()`. Single-workflow case (whether via `-w` or via discovery returning 1 result) shows nothing. This is the same predicate that gates the keys.
+
+### Step 4 — Event-loop wiring (file: `src/lib.rs`)
+
+Replace the picker-to-overview transition heuristic with an explicit pending-switch drain. Sequence per frame:
+
+1. `terminal.draw(...)`.
+2. If `app.should_quit()`, break.
+3. Drain refresh signals (existing logic — unchanged).
+4. Poll terminal events; on key, `app.handle_key(key)`.
+5. **New:** call `app.take_pending_switch()`. If `Some(switch)`:
+   - Drop the current `watcher_state` (its `Drop` joins the debounce thread).
+   - If `switch.needs_first_load`: call `app.materialize_active()` which under the hood does `OverviewState::load(active_dir)`; on parse failure, install a synthetic empty `OverviewState` with `last_refresh_error` set.
+   - Else: call `app.reload()` for the synchronous-converge contract.
+   - Call `start_watcher_for(&mut app)` to install a fresh watcher rooted at the new active dir.
+6. **New:** if a picker-overlay open was requested (signalled by `app.take_pending_overlay_open()` returning `Some(())`), call `discovery::discover_workflows(scan_root)`, then `app.apply_picker_overlay(result_or_err)`. This step is sequenced *before* the switch drain so an overlay-confirm in the same frame still triggers the switch drain on the next frame.
+7. Existing prior-mode-was-picker block goes away — its job is now done by step 5 (the startup picker-confirm path also produces a `WorkflowSwitch`).
+
+Add `start_watcher_for` adjustments: it already guards on `AppMode::Overview`; no change needed except that `app.workflow_dir()` now returns the active workflow's dir.
+
+### Step 5 — `decide_app` update (file: `src/lib.rs`)
+
+The current decision tree returns either an empty `App` for the `-w` single path, an `App::load` for discovery-len==1, or an `App::from_picker` for >=2. New behavior:
+
+1. `-w` path: build a single-workflow session with `pinned_single = true`. The session's `discovery` is a 1-element vec containing the loaded dir; `scan_root = None`. `decide_app` returns `DecideOutcome::Overview(app)` as before — semantics unchanged.
+2. Discovery path with 1 workflow: build a single-workflow session with `pinned_single = false` (so future `P` could in principle re-discover, but per the design — task 6 — single-workflow sessions hide `P` regardless; gate stays on `is_multi()`).
+3. Discovery path with N>=2 workflows: still return `DecideOutcome::Picker(App::from_picker(...))`. The startup picker now confirms by building an `OverviewSession::from_discovery` keyed on the chosen index and producing a `WorkflowSwitch` for the event loop's first frame. Existing `App::from_picker` builds a `PickerState`; the change is in what `App::handle_key` does on `Enter` in picker mode — it must now build the multi-workflow session, not a single-workflow overview.
+
+### Step 6 — Help popup updates (file: `src/ui/mod.rs::render_help_popup`)
+
+1. Pass `App` (not nothing) into `render_help_popup` so it can branch on `app.as_overview().map(|s| s.is_multi()).unwrap_or(false)` (reaching through a session accessor to be added).
+2. When `is_multi()` is true, append three lines to the help text:
+   ```
+   ]              cycle to next workflow
+   [              cycle to previous workflow
+   P              re-discover & pick workflow
+   ```
+3. When false (single workflow or picker mode): help stays as-is.
+
+### Step 7 — Tests
+
+All new tests live in their natural module: state tests in `src/app.rs`, header rendering tests in `src/ui/graph.rs`, help tests in `src/ui/mod.rs`, lifecycle tests in `src/lib.rs` (or a new `src/tests/` integration target if cleaner). Concrete tests:
+
+- `app::tests::cycle_keys_advance_active_index_in_multi_session` — build a 3-workflow session via fake discovery + 3 tempdir fixtures; press `]` → assert `active_index() == 1`; press `]` twice more → wrap to 0; press `[` → wrap to 2.
+- `app::tests::cycle_keys_inert_in_single_session` — build a 1-workflow session; press `]`, `[`, `P`; assert `App` state byte-identical (use `assert_eq!(app, original)` since `PartialEq` already derived).
+- `app::tests::picker_overlay_open_close_preserves_session` — open `P` (with a stub discover closure returning the same list), assert mode is `PickerOverlay`; press `Esc`; assert mode reverted to `Overview` and active index unchanged.
+- `app::tests::picker_overlay_pickup_adds_new_workflow` — discover closure returns `[w0, w1, w2_new]` where `w2_new` was not previously in `discovery`; press `Enter` on row 2; assert `discovery.len() == 3`, `active_index() == 2`, and `WorkflowSwitch::needs_first_load == true`.
+- `app::tests::switch_preserves_per_workflow_state` — fixture: two real workflow tempdirs each with >=3 entities. Activate A, press Down twice (selected_index == 2), press `a` to flip to Archived. Cycle to B. Cycle back to A. Assert `selected_index == 2`, `view_scope == Archived`, `archive_loaded == true`.
+- `app::tests::first_activation_loads_exactly_once` — instrument by counting calls to a fake `OverviewState::load`-like seam. Cycle A → B → A → B; assert each workflow's load count == 1. (Implemented by injecting a `LoadFn` trait at the session boundary, or by using `tempfile`-backed real workflows and checking `archive_loaded` plus `last_refresh_error` rather than direct call counts; choose whichever lands cleanest.)
+- `app::tests::keymap_audit_is_disjoint` — enumerate the keys recognized by `handle_key` (via static const list constructed in the same module) and assert `']', '[', 'P'` are not in the existing-binding set `{ 'a', '?', 'j', 'k', 'q' }` plus the special-key set `{ Down, Up, Home, End, Enter, Esc }`.
+- `app::tests::switch_failure_records_refresh_error_synthetic_state` — point one slot at a malformed workflow dir; cycle into it; assert active state is empty and `last_refresh_error()` is Some.
+- `ui::graph::tests::breadcrumb_appears_in_header_when_multi` — render the header with breadcrumb `Some("[2/3]")`; assert rendered text contains `"[2/3]"`.
+- `ui::graph::tests::no_breadcrumb_in_single_workflow` — render with `None`; assert rendered text does *not* contain `"[1/1]"`.
+- `ui::tests::help_popup_shows_cycle_hints_only_in_multi` — multi session: assert rendered help contains `"cycle to next workflow"`. Single session: assert it does not.
+- `lib::tests::watcher_restarts_on_switch` — spin up two tempdirs, decide_app into a multi session, press `]`, assert via probe that the new watcher is rooted at the new dir. (Concretely: instrument `start_watcher_for` to record `(start_count, last_root)` in a test harness, or — simpler — dispatch `]` against a 2-workflow `App`, take a `WorkflowSwitch`, drop watcher, start watcher, and assert `WorkflowWatcher::start` was called with the new dir. A `factory` parameter on `start_watcher_for` keeps this testable without a real `notify` backend.)
+- `lib::tests::stale_refresh_signal_after_switch_is_dropped` — feed a `RefreshSignal` on the prior receiver after the switch; assert main loop does not panic and active state does not reload from the wrong dir. (The natural way: drop the receiver as part of `watcher_state = None` before installing the new one, and add an assertion that no `app.reload()` runs against a dropped channel.)
+
+### Step 8 — Verification commands
+
+Run before commit:
+
+- `cargo fmt --check` (zero output).
+- `cargo clippy --all-targets -- -D warnings` (zero warnings).
+- `cargo test` (all green, including the new tests above).
+- Optional smoke: `cargo run -- --help` to confirm `-w/--workflow-dir` still parses.
+
+### File ownership summary
+
+| File | Edits |
+|------|-------|
+| `src/app.rs` | New `OverviewSession` struct, new `WorkflowSwitch`, new `AppMode::PickerOverlay` variant, key handler updates for `]`/`[`/`P`, `take_pending_switch`/`take_pending_overlay_open` accessors, all `App::*` constructors updated, new tests. |
+| `src/lib.rs` | `decide_app` builds sessions instead of bare overviews; `run_terminal` drains pending switches and overlay-open requests; calls real `discover_workflows` for re-discovery; existing picker-to-overview transition heuristic removed. |
+| `src/ui/mod.rs` | `render_overview` passes breadcrumb to graph; `render_help_popup` accepts `&App` and conditionally shows cycle/picker hints; new mode `AppMode::PickerOverlay` rendered via `Clear` + `picker::render_in` over the centered column atop the prior frame. |
+| `src/ui/graph.rs` | New `render_stage_graph_with_breadcrumb`; existing `render_stage_graph` kept as a thin wrapper; breadcrumb prefix injected into block title. |
+| `src/ui/picker.rs` | No structural change. The footer hint may be tweaked to mention `Esc: cancel` so the overlay reuse reads cleanly, but no new module. |
+| `src/watcher.rs` | No change. Existing `start` / `Drop` contract is sufficient for teardown+restart. |
+| `src/discovery.rs` | No change. Re-uses `discover_workflows` from the closure passed by `lib.rs`. |
+| `src/cli.rs` | No change. `-w` continues to mean "single-workflow pinned session." |
+
+### Scope-defense notes
+
+- No new module split is introduced; all new types fit naturally next to their existing siblings (`OverviewSession` next to `OverviewState`; `WorkflowSwitch` next to `AppMode`). A future split into `src/app/state.rs` + `src/app/mode.rs` is *not* part of this task — it would balloon the diff for marginal organizational gain.
+- The picker overlay reuses `src/ui/picker.rs::render_in` verbatim. We do not duplicate the picker UI code.
+- The existing `AppMode::Picker` variant for the startup discovery flow is kept distinct from `AppMode::PickerOverlay` so that `Esc` semantics differ correctly: startup picker `Esc` quits; overlay `Esc` returns to the prior session.
+- Cycle keys are pure index mutations; they never touch the filesystem. The event loop is the only place that performs IO on switch (load-or-reload + watcher restart). This keeps `App::handle_key` synchronously testable without tempdirs in the cycle/overlay tests.
+
+## Stage Report: plan
+
+- DONE: Step-by-step plan enumerates each file change in order (state types, app refactor to hold `Vec<OverviewState>`, watcher restart wiring in `lib.rs`, breadcrumb rendering in graph header, key handling, picker-overlay variant or reuse) plus verification commands.
+  Steps 1–8 above cover state, app refactor, lib.rs wiring, graph header, key handling, picker overlay reuse via `Clear`+`render_in`, and a verification-commands subsection.
+- DONE: Test strategy names specific tests: `]`/`[` cycle in multi-workflow fixture, `P` overlay open/close + add/remove flow, single-workflow no-op, per-workflow state preservation across switches, watcher restart correctness, keymap audit unit test.
+  See Step 7 — names ten specific tests across `app`, `ui::graph`, `ui` (help), and `lib` modules; cycle/overlay/single/preserve/watcher-restart/keymap-audit are each present.
+- DONE: File/module ownership is explicit: which files each step touches, whether new modules (e.g. `src/app/state.rs` or similar split) are introduced, and how the existing picker is extended vs. wrapped.
+  See "File ownership summary" table and "Scope-defense notes" — explicitly chose no new module split, picker reused via new `AppMode::PickerOverlay` variant rendering the existing `picker::render_in` under `Clear`, with `src/ui/graph.rs` kept testable by adding a sibling renderer rather than mutating `render_stage_graph`'s signature.
+
+### Summary
+
+Decomposed the multi-workflow switch into eight ordered steps centered on a new `OverviewSession` in `src/app.rs` that owns `Vec<Option<OverviewState>>` plus an `active` index, lazy materialization, and a `WorkflowSwitch` value the event loop drains each frame to teardown/restart the watcher and call `load`-or-`reload`. The picker overlay is realized as a new `AppMode::PickerOverlay { underlying, picker }` variant rendered via `Clear` + the existing `picker::render_in`, with re-discovery driven by a closure seam so `App` tests stay FS-free. Breadcrumb rendering is added through a sibling `render_stage_graph_with_breadcrumb` to keep the existing graph tests untouched, and a precise ten-test plan covers cycle, overlay, single-workflow inertness, state preservation, lazy first-load, watcher restart, keymap collision, and switch-failure semantics.
