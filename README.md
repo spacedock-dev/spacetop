@@ -25,6 +25,21 @@ This repository is being initialized. The first implementation target is a read-
 - `crossterm` for terminal backend and input events
 - `serde` and `serde_yaml` for structured metadata parsing
 
+## Prerequisites
+
+Install Rust (which includes the Rust toolchain and Cargo) using `rustup`:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+After installation, verify both tools are available:
+
+```bash
+rustc --version
+cargo --version
+```
+
 ## Development
 
 The Rust crate has not been scaffolded yet. Once it exists, the expected local workflow will be:
