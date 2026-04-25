@@ -165,3 +165,177 @@ Two tests are expected:
 ### Summary
 
 The entity body already contained a solid problem statement, example content, and four AC items. The design stage added a "Parser and TUI constraints" section that maps the pulldown-cmark 0.13 event API to concrete implementation steps: a boolean `in_code_block` guard, per-line `Line` emission with distinct style, `flush_text_block` calls for block spacing, and two new unit tests. The existing horizontal scroll and `Paragraph` widget setup require no changes. The task is ready for the implement stage.
+
+## Implementation Plan
+
+### File and module ownership
+
+All changes are confined to one file: `src/ui/mod.rs`.
+
+- Function under change: `render_markdown_lines` (line 703)
+- Test module under change: `#[cfg(test)] mod tests` at the bottom of the same file
+- No new files, no new modules, no Cargo.toml changes
+
+### Ordered steps
+
+**Step 1 — Add `in_code_block` state variable to `render_markdown_lines`**
+
+Inside `render_markdown_lines`, add `let mut in_code_block: bool = false;` alongside
+the existing local state variables (`strong`, `heading_depth`, `in_item`, etc.).
+
+Verification: `cargo check` passes.
+
+**Step 2 — Handle `Start(Tag::CodeBlock(_))`**
+
+Add a new match arm before the catch-all `_ => {}`:
+
+```rust
+MarkdownEvent::Start(Tag::CodeBlock(_)) => {
+    flush_line(&mut text_lines, &mut spans, max_lines);
+    flush_text_block(&mut blocks, &mut text_lines);
+    in_code_block = true;
+}
+```
+
+The `flush_line` + `flush_text_block` pair closes any open paragraph/item block
+so `add_markdown_block_spacing` inserts the blank separator row between preceding
+prose and the code block (matching how headings and paragraphs are already spaced).
+
+Verification: `cargo check` passes.
+
+**Step 3 — Handle `End(TagEnd::CodeBlock)`**
+
+Add a new match arm:
+
+```rust
+MarkdownEvent::End(TagEnd::CodeBlock) => {
+    flush_text_block(&mut blocks, &mut text_lines);
+    in_code_block = false;
+}
+```
+
+The `flush_text_block` call closes the code block so the blank separator row
+appears between the code block and any following content.
+
+Verification: `cargo check` passes.
+
+**Step 4 — Emit styled lines for code block `Text` events**
+
+Modify the existing `MarkdownEvent::Text(text)` arm to branch on `in_code_block`.
+When inside a code block each `Text` event is a raw source line including a
+trailing `\n`. Strip the newline and push a complete styled `Line` directly
+into `text_lines` (bypassing the `spans` accumulator):
+
+```rust
+MarkdownEvent::Text(text) => {
+    if in_code_block {
+        let content = text.trim_end_matches('\n').to_string();
+        if text_lines.len() < max_lines {
+            text_lines.push(Line::from(Span::styled(
+                content,
+                Style::default().fg(Color::Cyan).bg(Color::DarkGray),
+            )));
+        }
+        continue;
+    }
+    // ... existing prose handling unchanged ...
+}
+```
+
+The `in_table_cell` guard that already appears at the top of the `Text` arm
+remains intact; `in_code_block` is checked after that guard.
+
+Verification: `cargo check` passes.
+
+**Step 5 — Write unit test: fenced code block renders without backtick fences**
+
+Add the following test in the `#[cfg(test)] mod tests` block, following the
+pattern of `preview_renders_markdown_body_instead_of_raw_markers`:
+
+```rust
+#[test]
+fn preview_renders_fenced_code_block_without_backtick_fences() {
+    let body = "Some prose.\n\n```rust\nlet x = 1;\n```\n\nAfter block.";
+    let app = app_with_items(vec![item("001", "Code Block Preview", body)]);
+    let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+
+    let buffer = terminal.backend().buffer();
+    let rendered = buffer_text(buffer);
+
+    // Backtick fences must not appear
+    assert!(!rendered.contains("```"), "backtick fences should not be visible");
+
+    // Code body text must appear
+    assert!(rendered.contains("let x = 1;"), "code body text must be rendered");
+
+    // Code text must carry distinct styling (Cyan fg or DarkGray bg)
+    assert!(
+        find_styled_text(buffer, "let x = 1;", |style| {
+            style.fg == Some(Color::Cyan) || style.bg == Some(Color::DarkGray)
+        }),
+        "code block text must have distinct style"
+    );
+}
+```
+
+Verification: `cargo test --lib -- ui::tests::preview_renders_fenced_code_block_without_backtick_fences` passes.
+
+**Step 6 — Confirm existing inline-code test is unaffected (AC-2)**
+
+Run the existing inline-code test (if present) or verify the `Code` arm in the
+function is untouched. The `MarkdownEvent::Code(text)` arm applies `Color::Yellow`
+and must not be modified.
+
+Verification: `cargo test --lib -- ui::tests` — all existing tests pass alongside
+the new test.
+
+**Step 7 — Full test suite green-check**
+
+```
+cargo test --lib
+```
+
+All tests pass. No regressions.
+
+### Test strategy summary
+
+- New test (`preview_renders_fenced_code_block_without_backtick_fences`): checks
+  that backtick fences are absent, code body text is present, and at least one
+  distinct style attribute (`fg` or `bg`) is applied to the code text.
+- Existing tests: unchanged; running the full `cargo test --lib` suite confirms
+  no regressions in heading, bold, inline-code, table, list, rule, or scroll
+  rendering.
+- No live TUI session required: `TestBackend` renders to an in-memory buffer that
+  can be inspected programmatically.
+
+### Verification commands
+
+```bash
+# Step-by-step compile check after each edit
+cargo check
+
+# Run only the new test
+cargo test --lib -- ui::tests::preview_renders_fenced_code_block_without_backtick_fences
+
+# Run full unit test suite (no TUI session required)
+cargo test --lib
+
+# Optional: smoke-test against the real workflow directory to visually confirm AC-1–4
+cargo run -- --workflow-dir docs/spacetop-dev
+```
+
+## Stage Report: plan
+
+- DONE: Step-by-step implementation plan covers the pulldown-cmark event loop changes and the Ratatui styling changes as separate, ordered steps.
+  Seven numbered steps: Step 1 adds state variable, Steps 2-3 add CodeBlock start/end arms, Step 4 emits styled lines, Steps 5-6 add/verify tests, Step 7 runs full suite.
+- DONE: Verification commands are named so the implementer can confirm correctness without a live TUI session.
+  Four commands listed: `cargo check`, targeted `cargo test --lib` with exact test name, full `cargo test --lib`, and optional `cargo run` smoke-test.
+- DONE: File and module ownership is identified so the worktree stage can start immediately.
+  Single file: `src/ui/mod.rs`; function: `render_markdown_lines`; test module: `#[cfg(test)] mod tests`.
+
+### Summary
+
+The plan translates the design's parser/TUI constraints into seven concrete, ordered steps with inline code sketches, a clear state-variable addition, and two explicit test commands that require only `TestBackend` (no live TUI). All work is confined to `src/ui/mod.rs`. The implementer can begin at Step 1 and verify progress at each step with `cargo check`; Steps 5-7 confirm correctness without any manual inspection session.
