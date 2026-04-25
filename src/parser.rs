@@ -226,8 +226,10 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
         items.push(parse_work_item(&item_path, &allowed_statuses)?);
     }
 
-    let workflow_rel = path.strip_prefix(repo_root).unwrap_or(path);
-    let worktree_items = scan_worktrees(repo_root, workflow_rel, &allowed_statuses);
+    let worktree_items = match path.strip_prefix(repo_root) {
+        Ok(workflow_rel) => scan_worktrees(repo_root, workflow_rel, &allowed_statuses)?,
+        Err(_) => Vec::new(),
+    };
     let items = merge_worktree_items(items, worktree_items);
 
     Ok(WorkflowSnapshot { definition, items })
@@ -236,18 +238,19 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
 /// Scan `.worktrees/*/` subdirectories under `repo_root` for workflow entity
 /// files at `workflow_rel`. Returns all successfully parsed items from all
 /// worktrees; silently skips worktrees that do not contain the workflow dir.
+/// Returns an error if any entity file fails to parse (consistent with main-branch behavior).
 fn scan_worktrees(
     repo_root: &Path,
     workflow_rel: &Path,
     allowed_statuses: &[String],
-) -> Vec<crate::domain::WorkItem> {
+) -> Result<Vec<crate::domain::WorkItem>, ParseError> {
     let wt_dir = repo_root.join(".worktrees");
     if !wt_dir.exists() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let entries = match fs::read_dir(&wt_dir) {
         Ok(e) => e,
-        Err(_) => return Vec::new(),
+        Err(_) => return Ok(Vec::new()),
     };
     let mut all_items = Vec::new();
     for entry in entries.flatten() {
@@ -278,12 +281,24 @@ fn scan_worktrees(
         }
         item_paths.sort();
         for item_path in item_paths {
-            if let Ok(item) = parse_work_item(&item_path, allowed_statuses) {
-                all_items.push(item);
-            }
+            all_items.push(parse_work_item(&item_path, allowed_statuses)?);
         }
     }
-    all_items
+    Ok(all_items)
+}
+
+/// Derive the slug for a workflow entity path.
+/// For folder-form entities (`{slug}/index.md`), uses the parent directory name.
+/// For flat entities (`{slug}.md`), uses the file stem.
+fn slug_of_path(path: &Path) -> Option<std::ffi::OsString> {
+    let stem = path.file_stem()?;
+    if stem == "index" {
+        path.parent()
+            .and_then(|p| p.file_name())
+            .map(|s| s.to_owned())
+    } else {
+        Some(stem.to_owned())
+    }
 }
 
 /// Merge main-branch items with worktree items using SHA-1 hash comparison.
@@ -296,23 +311,16 @@ fn merge_worktree_items(
     if worktree_items.is_empty() {
         return main_items;
     }
-    let mut index: HashMap<String, crate::domain::WorkItem> = main_items
+    let mut index: HashMap<std::ffi::OsString, crate::domain::WorkItem> = main_items
         .into_iter()
         .filter_map(|item| {
-            let slug = item
-                .path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())?;
+            let slug = slug_of_path(&item.path)?;
             Some((slug, item))
         })
         .collect();
 
     for wt_item in worktree_items {
-        let Some(slug) = wt_item
-            .path
-            .file_stem()
-            .map(|s| s.to_string_lossy().into_owned())
-        else {
+        let Some(slug) = slug_of_path(&wt_item.path) else {
             continue;
         };
         if let Some(main_item) = index.get(&slug) {
@@ -324,11 +332,22 @@ fn merge_worktree_items(
                 .map(|b| Sha1::digest(&b))
                 .ok();
             match (wt_hash, main_hash) {
-                (Some(wh), Some(mh)) if wh == mh => {
-                    // Hashes match; keep main copy (already in index).
+                (Some(wt), Some(main)) if wt != main => {
+                    // Hashes differ: worktree wins (AC-4).
+                    index.insert(slug, wt_item);
                 }
-                _ => {
-                    // Hashes differ or IO error: worktree wins (AC-4).
+                (Some(_), Some(_)) => {
+                    // Hashes identical: keep main copy (already in index).
+                }
+                (Some(_), None) => {
+                    // Main hash unavailable: worktree wins.
+                    index.insert(slug, wt_item);
+                }
+                (None, Some(_)) => {
+                    // Worktree hash unavailable: keep known-good main copy.
+                }
+                (None, None) => {
+                    // Neither hash available: prefer fresher worktree copy.
                     index.insert(slug, wt_item);
                 }
             }
@@ -339,7 +358,11 @@ fn merge_worktree_items(
     }
 
     let mut result: Vec<_> = index.into_values().collect();
-    result.sort_by(|a, b| a.path.cmp(&b.path));
+    result.sort_by(|a, b| {
+        let a_slug = slug_of_path(&a.path);
+        let b_slug = slug_of_path(&b.path);
+        a_slug.cmp(&b_slug).then_with(|| a.path.cmp(&b.path))
+    });
     result
 }
 
