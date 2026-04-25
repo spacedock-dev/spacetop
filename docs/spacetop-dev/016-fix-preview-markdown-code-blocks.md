@@ -353,3 +353,16 @@ The plan translates the design's parser/TUI constraints into seven concrete, ord
 ### Summary
 
 All changes are confined to `src/ui/mod.rs`. A boolean `in_code_block` guard was added to `render_markdown_lines`; `Start(Tag::CodeBlock(_))` flushes any open prose block and sets the flag, `End(TagEnd::CodeBlock)` flushes the code block and clears the flag, and `Text` events inside the block emit styled `Line` values with `fg(Cyan).bg(DarkGray)` instead of accumulating into the spans buffer. The new test verifies no backtick fences appear, code body text is present, and the distinct style is applied; the full 137-test suite passes with no regressions.
+
+## Stage Report: review
+
+- DONE: Code block content is rendered with a visually distinct style (no raw backtick fences visible) — verified against AC-1.
+  `in_code_block` branch in `Text` arm emits `Span::styled(..., fg(Cyan).bg(DarkGray))`; test `preview_renders_fenced_code_block_without_backtick_fences` asserts no ` ``` ` in rendered buffer and confirms distinct fg/bg style on code text. 137/137 tests pass.
+- DONE: Existing non-code markdown rendering is unaffected — verified against AC-3.
+  The `in_code_block` check is inserted after the `in_table_cell` guard and before the existing prose path; `MarkdownEvent::Code` (inline) arm is untouched. All pre-existing tests including `preview_renders_markdown_body_instead_of_raw_markers` pass unchanged.
+- DONE: Test evidence covers all four AC items or explicitly notes which remain manual-only.
+  AC-1 (fenced blocks) and AC-2 (inline code, unchanged path, existing test coverage) are covered by automated tests. AC-3 (non-code rendering) is covered by the full 137-test suite passing. AC-4 (no layout breakage on long lines) is manual-only: the horizontal scroll machinery (`max_preview_scroll_x`, `preview_scroll_x`) participates automatically via `line_width` tracking on all `body_lines`; no new test added for long-line scroll, consistent with the spec noting "automatically participate … without any additional changes."
+
+### Summary
+
+PASSED. The implementation exactly follows the seven-step plan: `in_code_block` state variable added, `Start`/`End` arms flush surrounding blocks and toggle the flag, `Text` events inside the block emit per-line styled `Line` values with `fg(Cyan).bg(DarkGray)`, and a new unit test verifies all three behavioral properties (no backtick fences, body text present, distinct style applied). All 137 tests pass. AC-4 (long-line layout) is manual-only per spec; the existing horizontal scroll infrastructure handles it without code changes. No regressions detected.
