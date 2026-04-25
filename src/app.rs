@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -31,6 +32,7 @@ pub struct OverviewState {
     pub selected_index_archived: usize,
     pub last_refresh_error: Option<String>,
     pub preview_scroll: usize,
+    pub max_preview_scroll: Cell<usize>,
 }
 
 /// Derive a stable slug from a work-item path. Prefer the file stem; when the
@@ -73,6 +75,7 @@ impl OverviewState {
             selected_index_archived: 0,
             last_refresh_error: None,
             preview_scroll: 0,
+            max_preview_scroll: Cell::new(usize::MAX),
         }
     }
 
@@ -93,6 +96,7 @@ impl OverviewState {
             selected_index_archived: 0,
             last_refresh_error: None,
             preview_scroll: 0,
+            max_preview_scroll: Cell::new(usize::MAX),
         }
     }
 
@@ -140,6 +144,7 @@ impl OverviewState {
         }
 
         self.preview_scroll = 0;
+        self.max_preview_scroll.set(usize::MAX);
         self.last_refresh_error = None;
     }
 
@@ -248,6 +253,7 @@ impl OverviewState {
         };
         self.clamp_selection();
         self.preview_scroll = 0;
+        self.max_preview_scroll.set(usize::MAX);
     }
 
     fn clamp_selection(&mut self) {
@@ -314,6 +320,7 @@ impl OverviewState {
     fn set_scope_index(&mut self, value: usize) {
         if self.selected_index() != value {
             self.preview_scroll = 0;
+            self.max_preview_scroll.set(usize::MAX);
         }
         match self.view_scope {
             ViewScope::Active => self.selected_index = value,
@@ -326,7 +333,8 @@ impl OverviewState {
     }
 
     fn scroll_preview_down(&mut self) {
-        self.preview_scroll = self.preview_scroll.saturating_add(6);
+        let max = self.max_preview_scroll.get();
+        self.preview_scroll = self.preview_scroll.saturating_add(6).min(max);
     }
 
     fn scroll_preview_up(&mut self) {
@@ -1118,6 +1126,47 @@ mod tests {
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.selected_index(), 1);
         assert_eq!(app.as_overview().unwrap().preview_scroll(), 0);
+    }
+
+    #[test]
+    fn scroll_preview_down_is_capped_at_max_scroll() {
+        let mut state = super::OverviewState::from_snapshot(
+            PathBuf::from("workflow"),
+            snapshot_with_items(1),
+        );
+        // Simulate render having set max_scroll = 10.
+        state.max_preview_scroll.set(10);
+
+        // Press PageDown 20 times — should not exceed 10.
+        for _ in 0..20 {
+            state.scroll_preview_down();
+        }
+        assert!(
+            state.preview_scroll() <= 10,
+            "preview_scroll must not exceed max_scroll"
+        );
+    }
+
+    #[test]
+    fn scroll_preview_up_responds_immediately_after_capped_down() {
+        let mut state = super::OverviewState::from_snapshot(
+            PathBuf::from("workflow"),
+            snapshot_with_items(1),
+        );
+        state.max_preview_scroll.set(10);
+
+        // Press down many times (capped at 10).
+        for _ in 0..30 {
+            state.scroll_preview_down();
+        }
+        assert_eq!(state.preview_scroll(), 10);
+
+        // One PageUp should immediately decrease position.
+        state.scroll_preview_up();
+        assert!(
+            state.preview_scroll() < 10,
+            "first PageUp must decrease scroll after capped drift"
+        );
     }
 
     #[test]
