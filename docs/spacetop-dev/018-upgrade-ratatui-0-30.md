@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-018-upgrade-ratatui-0-30
 issue:
-pr:
+pr: #8
 mod-block: merge:pr-merge
 ---
 
