@@ -587,36 +587,59 @@ mod tests {
         let app = App::load(root).expect("workflow should load");
         let selected = app.selected_item().expect("selected").clone();
         let expected = super::stage_color(&selected.status);
+        let status_value = selected.status.clone();
         let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
         terminal
             .draw(|frame| render(frame, &app))
             .expect("render should succeed");
         let buffer = terminal.backend().buffer();
-        // Walk every row and look for the literal "status: " label, then check
-        // that the next cell after the space has the stage's fg color.
-        let label = "status: ";
+        // Walk every row by COLUMN (not by byte) so multi-byte symbols like `│`
+        // in pane borders don't shift the offsets we use to index cells.
+        // Build a Vec of per-column symbols, then sliding-window match the
+        // literal "status: " followed by the unstyled status value all in the
+        // expected stage fg color. This is robust to: body-excerpt
+        // repetitions of "status:" (those won't carry the stage fg), border
+        // glyphs preceding the label, and Wrap{trim:true} leading-space
+        // changes.
+        let label_chars: [&str; 8] = ["s", "t", "a", "t", "u", "s", ":", " "];
+        let value_chars: Vec<String> = status_value
+            .chars()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>();
         let cols = buffer.area.width;
         let rows = buffer.area.height;
         let mut found = false;
-        for y in 0..rows {
-            let mut row = String::new();
-            for x in 0..cols {
-                row.push_str(buffer[(x, y)].symbol());
+        'outer: for y in 0..rows {
+            let row_syms: Vec<&str> = (0..cols).map(|x| buffer[(x, y)].symbol()).collect();
+            let total_len = label_chars.len() + value_chars.len();
+            if (row_syms.len()) < total_len {
+                continue;
             }
-            if let Some(idx) = row.find(label) {
-                let value_x = (idx + label.len()) as u16;
-                if value_x < cols {
-                    let fg = buffer[(value_x, y)].style().fg;
-                    if fg == Some(expected) {
-                        found = true;
-                        break;
-                    }
+            for start in 0..=(row_syms.len() - total_len) {
+                // Match label literally.
+                let label_ok = label_chars
+                    .iter()
+                    .enumerate()
+                    .all(|(i, &c)| row_syms[start + i] == c);
+                if !label_ok {
+                    continue;
+                }
+                // Match status value literally and require the stage fg color.
+                let value_start = start + label_chars.len();
+                let value_ok = value_chars.iter().enumerate().all(|(i, c)| {
+                    let x = (value_start + i) as u16;
+                    row_syms[value_start + i] == c.as_str()
+                        && buffer[(x, y)].style().fg == Some(expected)
+                });
+                if value_ok {
+                    found = true;
+                    break 'outer;
                 }
             }
         }
         assert!(
             found,
-            "expected status value in preview to use stage color {expected:?}"
+            "expected status value `{status_value}` in preview to use stage color {expected:?}"
         );
     }
 

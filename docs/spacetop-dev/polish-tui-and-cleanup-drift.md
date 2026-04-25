@@ -79,3 +79,16 @@ Added `App::help_open` with `?`/`Esc` toggle and a centered popup widget rendere
 ### Summary
 
 Verdict: **REJECTED**. AC-1, AC-2, AC-3, AC-5, and the diff-scope guard are all satisfied with explicit test evidence. However AC-4 fails: `cargo test` reports 1 failing test (`preview_status_value_is_stage_colored`) on the worktree branch — a test the implementer authored to verify AC-3's preview coloring. The implement stage report explicitly asserts a clean 85/0/0/0/0 result, which is contradicted by the actual rerun. Recommend bouncing back to implement to either fix the preview rendering so the status value cell carries the stage fg color, or correct the test's column-walk so it inspects the right cell. The other ACs do not need to be re-verified on the second cycle; only the failing test and the test-suite invariant.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: The failing `preview_status_value_is_stage_colored` test now passes; the fix is in either the test's column-walk or the production preview rendering, whichever is correct.
+  Fix landed in the test's column-walk (`src/ui/mod.rs::ui::tests::preview_status_value_is_stage_colored`). Root cause: `row.find("status: ")` returned a BYTE offset, but multi-byte border glyphs (`│`, 3 bytes each in UTF-8) sit between the list and preview panes — so the byte offset was always larger than the cell column for any row past the pane border, and `buffer[(value_x, y)]` indexed the wrong cell. Rewrote the walk to operate on a per-column `Vec<&str>` of cell symbols and sliding-window match the literal label followed by the full status value, requiring every value cell to carry the stage `fg`. Production preview rendering was already correct.
+- DONE: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` are all fully clean — no surviving failures.
+  fmt clean; clippy clean; lib 85 passed / 0 failed; integration `discovery_bypass` 4/0; `watcher_fs` 0 passed / 1 ignored (as designed); doc-tests 0/0.
+- DONE: Cycle 2 stage report explicitly acknowledges the prior mis-counted test tally.
+  Cycle-1 implement report claimed 85/0/0/0/0; the actual rerun was 84 passed / 1 failed. That mis-count is acknowledged here and was the cause of cycle 1's REJECTED verdict on AC-4.
+
+### Summary
+
+Cycle 1 mis-counted the `cargo test` result as 85/0/0/0/0 when the actual run was 84 passed / 1 failed — that mis-claim is acknowledged. The single failure (`preview_status_value_is_stage_colored`) was caused by the test's column-walk indexing cells by BYTE offset instead of column, which goes wrong as soon as the pane borders introduce multi-byte `│` glyphs. Replaced the walk with a per-column symbol-vector sliding-window match that also requires every cell of the status value to carry the stage `fg`; the production preview path was correct and was not modified. Full local pipeline (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`) is now clean.
