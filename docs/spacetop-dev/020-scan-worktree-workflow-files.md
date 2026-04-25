@@ -273,3 +273,27 @@ Added `sha1 = "0.10"` dependency, implemented `scan_worktrees` and `merge_worktr
 ### Summary
 
 All three checklist items confirmed via direct code inspection and test run. SHA-1 is used exclusively via `Sha1::digest(&b)` on raw file bytes; string equality on content is never used. The `merge_worktree_items` logic correctly handles all three cases (main-only, worktree-only, conflict). Full test suite is green: 21 parser unit tests pass, 8 integration tests pass, no regressions.
+
+## Stage Report: review (cycle 2 — PR #9 feedback fixes)
+
+- DONE: Fix 1 — strip_prefix fallback returns empty vec instead of potentially wrong path
+  `load_workflow_dir` now uses `match path.strip_prefix(repo_root)` with `Err(_) => Vec::new()` branch; commit in progress.
+
+- DONE: Fix 2 — scan_worktrees propagates parse errors instead of silently dropping them
+  Changed `scan_worktrees` return type to `Result<Vec<WorkItem>, ParseError>`; uses `?` to propagate; call site in `load_workflow_dir` also uses `?`.
+
+- DONE: Fix 3 — slug_of_path helper added for folder-form entity support
+  New `fn slug_of_path(path: &Path) -> Option<OsString>` added to `src/parser.rs`; uses parent dir name when stem is `index`; used in both `merge_worktree_items` index key and sort.
+
+- DONE: Fix 4 — merge match arms fixed so worktree None hash does not win over main Some hash
+  Five explicit match arms now cover all combinations: `(Some, Some) diff` → worktree, `(Some, Some) equal` → main, `(Some, None)` → worktree, `(None, Some)` → main, `(None, None)` → worktree.
+
+- DONE: Fix 5 — sort by slug not absolute path
+  `result.sort_by` now uses `slug_of_path` with `then_with(|| a.path.cmp(&b.path))` as tiebreaker.
+
+- DONE: cargo test --lib exits 0
+  145 tests passed; 0 failed.
+
+### Summary
+
+All 5 PR review issues addressed in `src/parser.rs`. The `slug_of_path` helper is the key structural change enabling both Fix 3 (folder-form slug correctness) and Fix 5 (sort stability). Return-type change on `scan_worktrees` makes parse errors visible rather than silent. All 145 lib tests pass with no regressions.
