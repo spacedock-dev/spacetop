@@ -68,8 +68,9 @@ pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
                 let state = app::OverviewState::load(first.clone()).with_context(|| {
                     format!("failed to load workflow directory {}", first.display())
                 })?;
+                let scan_root = explicit.canonicalize().unwrap_or_else(|_| explicit.clone());
                 let session =
-                    app::OverviewSession::from_discovery(explicit, workflows, 0, state);
+                    app::OverviewSession::from_discovery(scan_root, workflows, 0, state);
                 Ok(DecideOutcome::Overview(App::from_session(session)))
             }
         };

@@ -1,4 +1,6 @@
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
 use spacetop::cli::Cli;
@@ -152,11 +154,41 @@ fn explicit_w_repo_root_falls_back_to_discovery_within_that_root() {
             let session = app.as_session().expect("overview session");
             assert_eq!(session.len(), 2);
             assert_eq!(
+                session.scan_root().expect("scan root"),
+                fs::canonicalize(root).unwrap().as_path()
+            );
+            assert_eq!(
                 app.workflow_dir(),
                 fs::canonicalize(root.join("docs/alpha")).unwrap().as_path()
             );
         }
         other => panic!("expected discovered overview from explicit repo root, got {other:?}"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn explicit_w_repo_root_symlink_uses_canonical_scan_root() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    fs::write(root.join("README.md"), "# Plain repo root\n").unwrap();
+    write_workflow(&root.join("docs/alpha"));
+    write_workflow(&root.join("docs/beta"));
+
+    let symlink_root = root.join("repo-link");
+    symlink(root, &symlink_root).unwrap();
+
+    let outcome = decide_app(&cli_with(Some(symlink_root)), root).unwrap();
+    match outcome {
+        DecideOutcome::Overview(app) => {
+            let session = app.as_session().expect("overview session");
+            assert_eq!(
+                session.scan_root().expect("scan root"),
+                fs::canonicalize(root).unwrap().as_path()
+            );
+        }
+        other => panic!("expected discovered overview from symlinked repo root, got {other:?}"),
     }
 }
 
