@@ -102,8 +102,7 @@ struct GlyphSet {
     arc_down_right: &'static str,
     arc_down_left: &'static str,
     arc_horizontal: &'static str,
-    arc_left_arrow: &'static str,
-    arc_right_arrow: &'static str,
+    arc_up_arrow: &'static str,
 }
 
 fn glyphs_for(ascii: bool) -> GlyphSet {
@@ -119,8 +118,7 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             arc_down_right: "+",
             arc_down_left: "+",
             arc_horizontal: "-",
-            arc_left_arrow: "<",
-            arc_right_arrow: ">",
+            arc_up_arrow: "^",
         }
     } else {
         GlyphSet {
@@ -134,8 +132,7 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             arc_down_right: "\u{2514}",                // └
             arc_down_left: "\u{2518}",                 // ┘
             arc_horizontal: "\u{2500}",                // ─
-            arc_left_arrow: "\u{2190}",                // ←
-            arc_right_arrow: "\u{2192}",               // →
+            arc_up_arrow: "\u{2191}",                  // ↑
         }
     }
 }
@@ -421,16 +418,14 @@ fn render_feedback_row(
     target_col: usize,
     g: &GlyphSet,
 ) -> (String, String) {
-    // Arrow points toward the target stage to show rollback direction.
-    let (left_glyph, right_glyph, left, right) = if source_col > target_col {
-        // Typical rollback: source is right, target is left → ←──────┘
-        (g.arc_left_arrow, g.arc_down_left, target_col, source_col)
+    // ↑ at the target end (points up toward the stage it rolls back to);
+    // corner at the source end.
+    let (left, right, target_is_left) = if source_col > target_col {
+        (target_col, source_col, true)
     } else {
-        // Forward feedback: source is left, target is right → └──────→
-        (g.arc_down_right, g.arc_right_arrow, source_col, target_col)
+        (source_col, target_col, false)
     };
 
-    // Arc line: directional arrow at target end, corner at source end.
     let arc_width = right + 1;
     let mut arc_buf: Vec<String> = vec![" ".to_string(); arc_width];
     if right > left + 1 {
@@ -438,22 +433,32 @@ fn render_feedback_row(
             *cell = g.arc_horizontal.to_string();
         }
     }
-    arc_buf[left] = left_glyph.to_string();
-    arc_buf[right] = right_glyph.to_string();
+    if target_is_left {
+        arc_buf[left] = g.arc_up_arrow.to_string();
+        arc_buf[right] = g.arc_down_left.to_string();
+    } else {
+        arc_buf[left] = g.arc_down_right.to_string();
+        arc_buf[right] = g.arc_up_arrow.to_string();
+    }
 
-    // Annotation line: indented to start under └ (left corner).
+    // Annotation centered between the two arc endpoints.
     let annotation = format!("{} reject", g.feedback);
     let ann_w = visible_width(&annotation);
-    let total_w = (left + ann_w).max(arc_width);
+    let arc_center = (left + right) / 2;
+    let ann_start = arc_center.saturating_sub(ann_w / 2);
+    let total_w = (ann_start + ann_w).max(arc_width);
 
-    // Pad arc line to total_w.
     while arc_buf.len() < total_w {
         arc_buf.push(" ".to_string());
     }
-    let ann_line = format!("{}{}", " ".repeat(left), annotation);
-    let ann_line = format!("{ann_line}{}", " ".repeat(total_w.saturating_sub(left + ann_w)));
+    let mut ann_buf = vec![" ".to_string(); total_w];
+    for (i, ch) in annotation.chars().enumerate() {
+        if let Some(cell) = ann_buf.get_mut(ann_start + i) {
+            *cell = ch.to_string();
+        }
+    }
 
-    (arc_buf.join(""), ann_line)
+    (arc_buf.join(""), ann_buf.join(""))
 }
 
 fn render_narrow<'a>(
