@@ -51,3 +51,20 @@ Verified by: test with two worktree directories each containing a distinct entit
 **AC-7 -- No regression on repos without worktrees.**
 When `.worktrees/` does not exist or is empty, the scanner behaves identically to today.
 Verified by: existing tests continue to pass unchanged.
+
+## Stage Report: design
+
+- DONE: The current scan logic is located and its entry point / data structures are identified.
+  Entry point is `parser::load_workflow_dir` (`src/parser.rs:191`). It reads `*.md` files from the workflow dir (skipping `README.md`) via `fs::read_dir` and returns a `WorkflowSnapshot { definition: WorkflowDefinition, items: Vec<WorkItem> }`. The `.worktrees` skip is in `discovery::PRUNED_DIR_NAMES` (`src/discovery.rs:29-38`), which prunes `.worktrees` from workflow-discovery walks; item scanning itself is plain `fs::read_dir` without worktree awareness. `OverviewState::reload` (`src/app.rs:169`) is the watcher-driven call site.
+
+- DONE: The SHA-1 merge strategy (main ∪ worktrees, worktree wins on hash mismatch) is concretely specified with the relevant types and function signatures.
+  A new function `merge_worktree_items` should be added to `src/parser.rs` with the signature:
+  `fn merge_worktree_items(main_items: Vec<WorkItem>, worktree_items: Vec<WorkItem>) -> Vec<WorkItem>`
+  The merge key is the file stem (slug) — same logic as `slug_of` in `src/app.rs:47`. Build a `HashMap<String, WorkItem>` from main items, then for each worktree item compute `sha1(fs::read(path))` and compare against `sha1(fs::read(main_path))`; if digests differ or no main copy exists, the worktree item wins. The `[sha1]` crate (crates.io, pure Rust, no_std compatible) is the recommended choice — it exposes `sha1::Sha1::digest(&[u8]) -> [u8; 20]`. No `sha2`/`ring`/`openssl` needed. Worktree path discovery: iterate `<repo_root>/.worktrees/*/`, each entry is a worktree root; the parallel workflow path is `<worktree_root>/<workflow_relative_path>/` where `workflow_relative_path` is the workflow dir path relative to `repo_root`.
+
+- DONE: Parser/TUI constraints are named so the plan stage can proceed immediately — specifically which Rust SHA-1 crate to use and how worktree paths are discovered.
+  Crate: `sha1 = "0.10"` (the `sha1` crate on crates.io, part of the RustCrypto family). API: `use sha1::{Sha1, Digest}; let hash: [u8; 20] = Sha1::digest(&file_bytes).into();`. Worktree path mapping: given `repo_root` and `workflow_dir` (absolute, canonical), the relative path is `workflow_dir.strip_prefix(repo_root)` → `rel`; each worktree scan path is `repo_root/.worktrees/<name>/<rel>/`. The `OverviewState::reload` call site needs `repo_root` passed in (currently not available — it must be threaded from `resolve_scan_root` through `OverviewState` or derived lazily from `workflow_dir` by walking up to `.git`). TUI constraint: `WorkItem.path` must remain the worktree-local absolute path so the file-watcher can watch the correct file; `reload_from_snapshot` slug-matching in `app.rs:122` is unaffected since it uses `file_stem`, not full path.
+
+### Summary
+
+The current active-item scan entry point is `parser::load_workflow_dir`, called by `OverviewState::reload`. The `.worktrees` skip lives in workflow-discovery (`discovery.rs`), not item scanning — so item scanning must be augmented, not the discovery prune list. The SHA-1 merge strategy uses the `sha1 = "0.10"` crate with `Sha1::digest(&bytes)` for a 20-byte digest comparison; worktree paths are resolved as `<repo_root>/.worktrees/<name>/<workflow_rel>/`. The one structural constraint is that `repo_root` must be available at reload time, either stored in `OverviewState` or re-derived from `workflow_dir`.
