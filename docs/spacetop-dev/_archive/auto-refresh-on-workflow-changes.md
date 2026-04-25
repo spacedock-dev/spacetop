@@ -1,16 +1,17 @@
 ---
 id: 008
 title: Auto-refresh task list and detail when workflow files change
-status: review
+status: done
 source: captain feedback during 006 planning
 started: 2026-04-24T16:13:15Z
-completed:
-verdict:
+completed: 2026-04-25T00:17:52Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-auto-refresh-on-workflow-changes
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-04-25T00:17:52Z
 ---
 
 ### Feedback Cycles
