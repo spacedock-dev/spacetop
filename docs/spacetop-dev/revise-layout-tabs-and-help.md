@@ -80,3 +80,26 @@ Verified by: command output cited in the implement stage report.
 ### Summary
 
 Replaced the wide-terminal centered-column rule with full-width dashboard layout while centering content blocks inside each pane. Added a real tab bar above the graph ribbon for multi-workflow sessions (one tab per workflow, `(active/total)` count visible, `Left`/`Right` cycle with wrap-around) and retired the `]`/`[` keybindings and the graph-title `[i/N]` breadcrumb. Surfaced the help affordance via a centered status-line footer at the bottom of the Overview and added the `Left`/`Right` switch entries to the help popup body. No app-state surface beyond key bindings and the removal of `breadcrumb_label` was changed.
+
+## Stage Report: review
+
+- DONE: AC-1 — dashboard fills 200×40 wide TestBackend and pane content is centered.
+  `dashboard_pane_spans_full_terminal_width` (top border at col 0 and col 199 both non-blank) plus `graph_ribbon_node_row_is_horizontally_centered_in_pane` pass; graph ribbon uses `Alignment::Center`, task list and preview use `center_horizontal(inner, PANE_CONTENT_TARGET=70)` in `src/ui/mod.rs:283-289` and `:347-354`.
+- DONE: AC-2 — multi-workflow tab bar with `(active/total)` count, `Left`/`Right` cycle with wrap-around, no double affordance.
+  `multi_session_renders_tab_bar_with_count_and_per_workflow_tabs` asserts `Workflows (1/3)` plus 3 tabs; `arrow_keys_cycle_active_tab_with_wraparound_in_multi` walks 0→1→2→0 (wrap) and Left wrap 0→2; `grep "KeyCode::Char(']')\|KeyCode::Char('[')" src tests` returns nothing — old bindings retired.
+- DONE: AC-3 — single/`-w` sessions hide the tab strip and ignore arrows.
+  `single_session_omits_tab_bar` asserts `Workflows (` absent; `arrow_keys_inert_in_single_session` confirms no `pending_switch` and active_index unchanged. The `is_multi`-gated branches in `render_overview` (mod.rs:120-149) and `App::handle_key` (app.rs:888-895) implement zero-row cost.
+- DONE: AC-4 — `?` opens the popup from Overview and the popup lists Left/Right keys.
+  `help_popup_includes_arrow_keys_in_multi_session` asserts both `→`/`Right` and `←`/`Left` plus `re-discover` in multi, and absence of cycle hints in single. `?` handler is wired in all three modes (`app.rs:881`, `:903`, `:938`).
+- DONE: AC-5 — visible status-line affordance with `?` + `help` substrings.
+  `dashboard_status_footer_lists_help_affordance` asserts `?`, `help`, and `q: quit`. `render_status_footer` (mod.rs:204-219) emits `?: help   ←/→: switch workflow   P: pick   a: archive   q: quit` (multi) or `?: help   a: archive   q: quit` (single).
+- DONE: AC-6 — `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` clean.
+  Re-ran in worktree: fmt silent, clippy `Finished` with no warnings, tests 99 lib + 4 discovery integration passed (1 watcher_fs ignored by design — real notify backend).
+- DONE: Two overrides cleanly retired.
+  `grep -rn "MAX_CONTENT_WIDTH\|centered_column\|render_stage_graph_with_breadcrumb\|breadcrumb_label\|KeyCode::Char(']')\|KeyCode::Char('[')" src tests` returns zero matches; orphan tests `breadcrumb_appears_in_header_when_multi` and `no_breadcrumb_in_single_workflow` were rewritten as `no_breadcrumb_in_graph_header`.
+- DONE: Diff scope contained.
+  `git diff --name-only main...HEAD` lists only `docs/.../revise-layout-tabs-and-help.md`, `src/app.rs`, `src/lib.rs`, `src/ui/graph.rs`, `src/ui/mod.rs` — no parser/discovery/watcher drive-by.
+
+### Summary
+
+Verdict: PASSED. Both overrides (task 009 width-cap, task 010 breadcrumb-tabs swap) are cleanly retired with grep-verified deletions and rewritten tests; new tab bar, status footer, and `Left`/`Right` keymap behave per ACs across multi and single sessions; fmt/clippy/test all clean on the worktree. No defects found.
