@@ -285,7 +285,11 @@ fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSes
     }
     hints.push("Enter: toggle preview");
     hints.push("a: archive");
-    hints.push("PgUp/PgDn: preview scroll");
+    if preview_open {
+        hints.push("PgUp/PgDn: preview scroll");
+    } else {
+        hints.push("PgUp/PgDn: page list");
+    }
     hints.push("q: quit");
     let text = hints.join("   ");
     let para = Paragraph::new(Line::from(Span::styled(
@@ -324,12 +328,17 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("  Home           jump to first item"),
         Line::from("  End            jump to last item"),
         Line::from("  Enter          toggle preview mode"),
-        Line::from("  PageUp         scroll preview up"),
-        Line::from("  PageDown       scroll preview down"),
         Line::from("  a              toggle active / archived view"),
         Line::from("  ?              toggle this help popup"),
-        Line::from("  Esc / q        quit (or close help)"),
+        Line::from("  Esc            close help"),
     ];
+    if preview_open {
+        lines.push(Line::from("  PageUp         scroll preview up"));
+        lines.push(Line::from("  PageDown       scroll preview down"));
+    } else {
+        lines.push(Line::from("  PageUp         page list up"));
+        lines.push(Line::from("  PageDown       page list down"));
+    }
     if preview_open {
         lines.push(Line::from("  \u{2192} / Right     scroll preview right"));
         lines.push(Line::from("  \u{2190} / Left      scroll preview left"));
@@ -1316,13 +1325,13 @@ mod tests {
             .expect("render should succeed");
 
         let buffer = terminal.backend().buffer();
-        let has_scrollbar = (0..buffer.area.height).any(|y| {
-            (0..buffer.area.width).any(|x| {
-                let symbol = buffer[(x, y)].symbol();
-                symbol == "\u{2588}" || symbol == "\u{2502}"
-            })
+        let has_scrollbar_thumb = (0..buffer.area.height).any(|y| {
+            (0..buffer.area.width).any(|x| buffer[(x, y)].symbol() == "\u{2588}")
         });
-        assert!(has_scrollbar, "overflowing preview should draw a scrollbar");
+        assert!(
+            has_scrollbar_thumb,
+            "overflowing preview should draw a scrollbar thumb"
+        );
     }
 
     #[test]
@@ -1531,7 +1540,19 @@ mod tests {
         assert!(rendered.contains("Help"), "missing help title");
         assert!(rendered.contains("keymap"), "missing keymap heading");
         assert!(rendered.contains("Up / k"), "missing Up/k binding");
-        assert!(rendered.contains("Esc / q"), "missing Esc/q binding");
+        assert!(rendered.contains("Esc"), "missing Esc binding");
+        assert!(
+            !rendered.contains("Esc / q"),
+            "help should not claim q closes the help popup"
+        );
+        assert!(
+            rendered.contains("PageUp         page list up"),
+            "help should describe PageUp as list paging when preview is closed"
+        );
+        assert!(
+            rendered.contains("PageDown       page list down"),
+            "help should describe PageDown as list paging when preview is closed"
+        );
         assert!(
             rendered.contains("press ? or Esc to close"),
             "missing close hint"
@@ -1676,6 +1697,8 @@ mod tests {
 
         assert!(rendered.contains("\u{2190}/\u{2192}: switch workflow"));
         assert!(!rendered.contains("\u{2190}/\u{2192}: preview scroll"));
+        assert!(rendered.contains("PgUp/PgDn: page list"));
+        assert!(!rendered.contains("PgUp/PgDn: preview scroll"));
     }
 
     #[test]
@@ -1691,6 +1714,8 @@ mod tests {
 
         assert!(rendered.contains("\u{2190}/\u{2192}: preview scroll"));
         assert!(!rendered.contains("\u{2190}/\u{2192}: switch workflow"));
+        assert!(rendered.contains("PgUp/PgDn: preview scroll"));
+        assert!(!rendered.contains("PgUp/PgDn: page list"));
     }
 
     // --- AC-2: tab bar workflow switcher (multi-workflow only) ---
@@ -1994,6 +2019,10 @@ mod tests {
         assert!(
             rendered.contains("scroll preview right"),
             "help popup must list preview scrolling when preview is open"
+        );
+        assert!(
+            rendered.contains("PageDown       scroll preview down"),
+            "preview-open help should describe PageDown as preview scroll"
         );
         assert!(
             !rendered.contains("switch to next workflow"),

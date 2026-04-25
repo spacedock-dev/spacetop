@@ -160,7 +160,8 @@ pub fn load_archived_items(
     for item_path in item_paths {
         match parse_work_item(&item_path, allowed_statuses) {
             Ok(item) => items.push(item),
-            Err(_) => continue,
+            Err(err) if should_skip_archived_parse_error(&err) => continue,
+            Err(err) => return Err(err),
         }
     }
 
@@ -174,6 +175,17 @@ pub fn load_archived_items(
     );
 
     Ok(items)
+}
+
+fn should_skip_archived_parse_error(error: &ParseError) -> bool {
+    matches!(
+        error,
+        ParseError::MissingFrontmatter { .. }
+            | ParseError::UnterminatedFrontmatter { .. }
+            | ParseError::MalformedYaml { .. }
+            | ParseError::MissingRequiredField { .. }
+            | ParseError::UnknownStatus { .. }
+    )
 }
 
 pub fn load_workflow_dir(path: &Path) -> Result<WorkflowSnapshot, ParseError> {
@@ -470,7 +482,10 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{load_archived_items, load_workflow_dir, parse_work_item, parse_workflow_readme};
+    use super::{
+        load_archived_items, load_workflow_dir, parse_work_item, parse_workflow_readme,
+        ParseError,
+    };
 
     fn fixture_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev")
@@ -907,6 +922,23 @@ Body
         let items = load_archived_items(&dir, &["done".to_string()]).expect("archive load");
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Good");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn load_archived_items_returns_io_errors_instead_of_silently_skipping_them() {
+        let dir = unique_temp_dir("archive-io-error");
+        let archive = dir.join("_archive");
+        fs::create_dir_all(&archive).expect("archive dir");
+        std::os::unix::fs::symlink(archive.join("missing-target.md"), archive.join("broken.md"))
+            .expect("symlink");
+
+        let err =
+            load_archived_items(&dir, &["done".to_string()]).expect_err("archive load should fail");
+        assert!(
+            matches!(err, ParseError::ReadFile { .. }),
+            "expected ReadFile error, got {err:?}"
+        );
     }
 
     #[test]
