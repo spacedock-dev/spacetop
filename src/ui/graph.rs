@@ -102,6 +102,8 @@ struct GlyphSet {
     arc_down_right: &'static str,
     arc_down_left: &'static str,
     arc_horizontal: &'static str,
+    arc_left_arrow: &'static str,
+    arc_right_arrow: &'static str,
 }
 
 fn glyphs_for(ascii: bool) -> GlyphSet {
@@ -117,6 +119,8 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             arc_down_right: "+",
             arc_down_left: "+",
             arc_horizontal: "-",
+            arc_left_arrow: "<",
+            arc_right_arrow: ">",
         }
     } else {
         GlyphSet {
@@ -130,6 +134,8 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             arc_down_right: "\u{2514}",                // └
             arc_down_left: "\u{2518}",                 // ┘
             arc_horizontal: "\u{2500}",                // ─
+            arc_left_arrow: "\u{2190}",                // ←
+            arc_right_arrow: "\u{2192}",               // →
         }
     }
 }
@@ -415,13 +421,16 @@ fn render_feedback_row(
     target_col: usize,
     g: &GlyphSet,
 ) -> (String, String) {
-    let (left, right) = if source_col <= target_col {
-        (source_col, target_col)
+    // Arrow points toward the target stage to show rollback direction.
+    let (left_glyph, right_glyph, left, right) = if source_col > target_col {
+        // Typical rollback: source is right, target is left → ←──────┘
+        (g.arc_left_arrow, g.arc_down_left, target_col, source_col)
     } else {
-        (target_col, source_col)
+        // Forward feedback: source is left, target is right → └──────→
+        (g.arc_down_right, g.arc_right_arrow, source_col, target_col)
     };
 
-    // Arc line: corner glyphs at left/right with horizontal fill between.
+    // Arc line: directional arrow at target end, corner at source end.
     let arc_width = right + 1;
     let mut arc_buf: Vec<String> = vec![" ".to_string(); arc_width];
     if right > left + 1 {
@@ -429,8 +438,8 @@ fn render_feedback_row(
             *cell = g.arc_horizontal.to_string();
         }
     }
-    arc_buf[left] = g.arc_down_right.to_string();
-    arc_buf[right] = g.arc_down_left.to_string();
+    arc_buf[left] = left_glyph.to_string();
+    arc_buf[right] = right_glyph.to_string();
 
     // Annotation line: indented to start under └ (left corner).
     let annotation = format!("{} reject", g.feedback);
