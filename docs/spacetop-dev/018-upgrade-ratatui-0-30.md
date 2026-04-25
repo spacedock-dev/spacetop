@@ -1,7 +1,7 @@
 ---
 id: "018"
 title: Upgrade ratatui to 0.30+ to unblock ratskin adoption
-status: design
+status: plan
 source: captain (unblocks 017 ratskin path)
 started: 2026-04-25T16:03:12Z
 completed:
