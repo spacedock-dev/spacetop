@@ -37,7 +37,7 @@ fn cli_with(workflow_dir: Option<PathBuf>) -> Cli {
 }
 
 #[test]
-fn multi_workflow_fixture_yields_picker_variant() {
+fn multi_workflow_fixture_opens_first_workflow_dashboard() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();
     fs::create_dir_all(root.join(".git")).unwrap();
@@ -46,11 +46,16 @@ fn multi_workflow_fixture_yields_picker_variant() {
 
     let outcome = decide_app(&cli_with(None), root).unwrap();
     match outcome {
-        DecideOutcome::Picker(app) => {
-            let state = app.as_picker().expect("picker state");
-            assert_eq!(state.workflows().len(), 2);
+        DecideOutcome::Overview(app) => {
+            let session = app.as_session().expect("overview session");
+            assert_eq!(session.len(), 2);
+            assert_eq!(session.active_index(), 0);
+            assert_eq!(
+                app.workflow_dir(),
+                fs::canonicalize(root.join("docs/alpha")).unwrap().as_path()
+            );
         }
-        other => panic!("expected Picker, got {other:?}"),
+        other => panic!("expected Overview, got {other:?}"),
     }
 }
 

@@ -537,6 +537,26 @@ mod tests {
         App::load(root).expect("real workflow should load")
     }
 
+    fn workflow_with_active_item() -> App {
+        let root = PathBuf::from("/tmp/spacetop-graph");
+        let snapshot = WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: root.clone(),
+                stages: vec![
+                    stage("design", true, false, false, false, None),
+                    stage("plan", false, false, false, false, None),
+                    stage("done", false, true, false, false, None),
+                ],
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+            },
+            items: vec![make_item("001", "plan", "Plan task")],
+        };
+        App::from_snapshot(root, snapshot)
+    }
+
     fn state_of(app: &App) -> &OverviewState {
         app.as_overview().expect("overview mode")
     }
@@ -732,7 +752,7 @@ mod tests {
     fn counts_row_aligns_under_nodes_and_marks_active_stage() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(ASCII_ENV_VAR);
-        let app = real_workflow();
+        let app = workflow_with_active_item();
         let width: u16 = 120;
         let height: u16 = 10;
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");

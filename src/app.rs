@@ -30,6 +30,7 @@ pub struct OverviewState {
     pub archive_error: Option<String>,
     pub selected_index_archived: usize,
     pub last_refresh_error: Option<String>,
+    pub preview_scroll: usize,
 }
 
 /// Derive a stable slug from a work-item path. Prefer the file stem; when the
@@ -71,6 +72,7 @@ impl OverviewState {
             archive_error: None,
             selected_index_archived: 0,
             last_refresh_error: None,
+            preview_scroll: 0,
         }
     }
 
@@ -90,6 +92,7 @@ impl OverviewState {
             archive_error: None,
             selected_index_archived: 0,
             last_refresh_error: None,
+            preview_scroll: 0,
         }
     }
 
@@ -136,6 +139,7 @@ impl OverviewState {
             self.selected_index_archived = 0;
         }
 
+        self.preview_scroll = 0;
         self.last_refresh_error = None;
     }
 
@@ -243,6 +247,7 @@ impl OverviewState {
             ViewScope::Archived => ViewScope::Active,
         };
         self.clamp_selection();
+        self.preview_scroll = 0;
     }
 
     fn clamp_selection(&mut self) {
@@ -307,10 +312,25 @@ impl OverviewState {
     }
 
     fn set_scope_index(&mut self, value: usize) {
+        if self.selected_index() != value {
+            self.preview_scroll = 0;
+        }
         match self.view_scope {
             ViewScope::Active => self.selected_index = value,
             ViewScope::Archived => self.selected_index_archived = value,
         }
+    }
+
+    pub fn preview_scroll(&self) -> usize {
+        self.preview_scroll
+    }
+
+    fn scroll_preview_down(&mut self) {
+        self.preview_scroll = self.preview_scroll.saturating_add(6);
+    }
+
+    fn scroll_preview_up(&mut self) {
+        self.preview_scroll = self.preview_scroll.saturating_sub(6);
     }
 }
 
@@ -882,6 +902,8 @@ impl App {
                     KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                     KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                     KeyCode::Up | KeyCode::Char('k') => state.select_previous(),
+                    KeyCode::PageDown => state.scroll_preview_down(),
+                    KeyCode::PageUp => state.scroll_preview_up(),
                     KeyCode::Home => state.select_first(),
                     KeyCode::End => state.select_last(),
                     KeyCode::Char('a') => state.toggle_scope(),
@@ -1001,8 +1023,8 @@ mod tests {
 
     #[test]
     fn loads_real_workflow_state_and_derives_stage_counts() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
-        let app = App::load(root.clone()).expect("workflow should load");
+        let root = PathBuf::from("workflow");
+        let app = App::from_snapshot(root.clone(), snapshot_with_items(3));
         let expected_stage_counts = app
             .snapshot()
             .definition
@@ -1067,6 +1089,35 @@ mod tests {
         app.handle_key(key(KeyCode::End));
         assert_eq!(app.selected_index(), 2);
         assert_eq!(app.snapshot().items.len(), 3);
+    }
+
+    #[test]
+    fn page_keys_scroll_preview_without_changing_selection() {
+        let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+
+        app.handle_key(key(KeyCode::PageDown));
+        assert_eq!(app.selected_index(), 0);
+        assert_eq!(app.as_overview().unwrap().preview_scroll(), 6);
+
+        app.handle_key(key(KeyCode::PageDown));
+        assert_eq!(app.selected_index(), 0);
+        assert_eq!(app.as_overview().unwrap().preview_scroll(), 12);
+
+        app.handle_key(key(KeyCode::PageUp));
+        assert_eq!(app.selected_index(), 0);
+        assert_eq!(app.as_overview().unwrap().preview_scroll(), 6);
+    }
+
+    #[test]
+    fn changing_selection_resets_preview_scroll() {
+        let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+
+        app.handle_key(key(KeyCode::PageDown));
+        assert_eq!(app.as_overview().unwrap().preview_scroll(), 6);
+
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.selected_index(), 1);
+        assert_eq!(app.as_overview().unwrap().preview_scroll(), 0);
     }
 
     #[test]

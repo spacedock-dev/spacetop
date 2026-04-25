@@ -2,25 +2,21 @@ mod graph;
 mod picker;
 
 use crossterm::event::Event;
+use pulldown_cmark::{Event as MarkdownEvent, Options, Parser, Tag, TagEnd};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     prelude::{Frame, Line, Modifier, Span, Style},
     style::Color,
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{
+        Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Table, Tabs, Wrap,
+    },
 };
 
 use crate::app::{App, AppMode, OverviewSession, OverviewState, ViewScope};
 use graph::render_stage_graph;
 
 pub type TerminalEvent = Event;
-
-/// Target inner width (in cells) used to horizontally center content blocks
-/// inside individual panes — task list rows and the preview block. Picked so
-/// the visible column-block stops hugging the left edge on wide terminals
-/// without wasting too much horizontal real estate. The dashboard pane
-/// itself fills the terminal width; this constant only governs the inner
-/// content column.
-const PANE_CONTENT_TARGET: u16 = 70;
 
 pub fn render_placeholder(frame: &mut Frame<'_>) {
     frame.render_widget(
@@ -72,20 +68,6 @@ fn picker_centered(area: Rect) -> Rect {
     }
 }
 
-/// Center a child rect of width `target_width` (capped at `outer.width`) inside
-/// `outer`, preserving full height. Used for centering the column-block of
-/// content inside a pane without changing the pane block itself.
-fn center_horizontal(outer: Rect, target_width: u16) -> Rect {
-    let w = target_width.min(outer.width);
-    let left = (outer.width.saturating_sub(w)) / 2;
-    Rect {
-        x: outer.x + left,
-        y: outer.y,
-        width: w,
-        height: outer.height,
-    }
-}
-
 /// Map a stage name to a stable color. Recognises the conventional Spacedock
 /// stage names; falls back to a deterministic palette index for anything else
 /// so unknown workflows still get distinct colors per stage.
@@ -120,34 +102,27 @@ pub(crate) fn stage_color(stage_name: &str) -> Color {
 fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
     let state = session.active_state();
     let show_tabs = session.is_multi();
-    // Vertical layout: optional tab strip (3 lines incl. borders), graph
-    // ribbon (7), main content fills the rest, status footer (1 line).
-    let constraints: Vec<Constraint> = if show_tabs {
-        vec![
-            Constraint::Length(3), // tab bar
-            Constraint::Length(7), // graph
-            Constraint::Min(0),    // content
-            Constraint::Length(1), // footer
-        ]
+    let dashboard_area = if show_tabs {
+        render_workflow_tabs_panel(frame, area, session)
     } else {
-        vec![
-            Constraint::Length(7),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ]
+        area
     };
+
+    // Vertical layout inside the active workflow panel: graph ribbon (7),
+    // main content fills the rest, status footer (1 line).
+    let constraints = vec![
+        Constraint::Length(7),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ];
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
-        .split(area);
+        .split(dashboard_area);
 
-    let (graph_area, content_area, footer_area) = if show_tabs {
-        render_tab_bar(frame, chunks[0], session);
-        (chunks[1], chunks[2], chunks[3])
-    } else {
-        (chunks[0], chunks[1], chunks[2])
-    };
-
+    let graph_area = chunks[0];
+    let content_area = chunks[1];
+    let footer_area = chunks[2];
     render_stage_graph(frame, graph_area, state);
 
     let [list_area, preview_area] = Layout::default()
@@ -161,41 +136,44 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession)
     render_status_footer(frame, footer_area, session);
 }
 
-/// Render the workflow tab bar at the top of the dashboard. One tab per
-/// discovered workflow; the active tab is highlighted with the implement-
-/// stage color and bold/reversed style, others are dimmed. The strip suffix
-/// shows the total count, e.g. `(2/5)`, satisfying the captain's "see how
-/// many workflows in this repo" request.
-fn render_tab_bar(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
+/// Render the workflow tabs as the outer dashboard panel. The active tab
+/// encloses the graph, task list, preview, and footer.
+fn render_workflow_tabs_panel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    session: &OverviewSession,
+) -> Rect {
     let active = session.active_index();
     let total = session.len();
-    let mut spans: Vec<Span<'_>> = Vec::new();
-    for (idx, disc) in session.discovery().iter().enumerate() {
-        if idx > 0 {
-            spans.push(Span::raw(" "));
-        }
-        let label = match &disc.title {
-            Some(t) if !t.trim().is_empty() => format!(" {t} "),
-            _ => disc
-                .root
+    let tabs = session.discovery().iter().map(|disc| match &disc.title {
+        Some(t) if !t.trim().is_empty() => Line::from(t.clone()),
+        _ => Line::from(
+            disc.root
                 .file_name()
-                .map(|s| format!(" {} ", s.to_string_lossy()))
-                .unwrap_or_else(|| format!(" {} ", disc.root.display())),
-        };
-        let style = if idx == active {
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| disc.root.display().to_string()),
+        ),
+    });
+    let title = format!("Workflows ({}/{})", active + 1, total);
+    let block = Block::default().title(title).borders(Borders::ALL);
+    let inner = block.inner(area);
+    let widget = Tabs::new(tabs)
+        .select(active)
+        .block(block)
+        .highlight_style(
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().add_modifier(Modifier::DIM)
-        };
-        spans.push(Span::styled(label, style));
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().add_modifier(Modifier::DIM));
+    frame.render_widget(widget, area);
+    Rect {
+        x: inner.x,
+        y: inner.y.saturating_add(1),
+        width: inner.width,
+        height: inner.height.saturating_sub(1),
     }
-    let title = format!("Workflows ({}/{})", active + 1, total);
-    let para = Paragraph::new(Line::from(spans))
-        .block(Block::default().title(title).borders(Borders::ALL));
-    frame.render_widget(para, area);
 }
 
 /// One-line status footer at the bottom of the dashboard. Surfaces the
@@ -208,6 +186,7 @@ fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSes
         hints.push("P: pick");
     }
     hints.push("a: archive");
+    hints.push("PgUp/PgDn: preview");
     hints.push("q: quit");
     let text = hints.join("   ");
     let para = Paragraph::new(Line::from(Span::styled(
@@ -241,6 +220,8 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("  Down / j       move selection down"),
         Line::from("  Home           jump to first item"),
         Line::from("  End            jump to last item"),
+        Line::from("  PageUp         scroll preview up"),
+        Line::from("  PageDown       scroll preview down"),
         Line::from("  Enter          open workflow (picker)"),
         Line::from("  a              toggle active / archived view"),
         Line::from("  ?              toggle this help popup"),
@@ -278,18 +259,22 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
         ViewScope::Active => "Tasks",
         ViewScope::Archived => "Archived",
     };
-    // Render the Block (borders + title) on the full pane width, then
-    // render the row column-block centered horizontally inside the pane.
     let block = Block::default().title(title).borders(Borders::ALL);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let lines = build_task_list_lines(state);
-    let inner_centered = center_horizontal(inner, PANE_CONTENT_TARGET);
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: true });
-    frame.render_widget(paragraph, inner_centered);
+    let items = build_task_list_items(state);
+    let mut list_state = ListState::default().with_selected(if items.is_empty() {
+        None
+    } else {
+        Some(state.selected_index())
+    });
+    let list = List::new(items)
+        .highlight_symbol("> ")
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD));
+    frame.render_stateful_widget(list, inner, &mut list_state);
 }
 
-fn build_task_list_lines(state: &OverviewState) -> Vec<Line<'_>> {
+fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
     let scope = state.view_scope();
     let items = state.visible_items();
     if items.is_empty() {
@@ -298,15 +283,13 @@ fn build_task_list_lines(state: &OverviewState) -> Vec<Line<'_>> {
             (ViewScope::Archived, None) => "No archived items found.".to_string(),
             (ViewScope::Active, _) => "No work items found.".to_string(),
         };
-        return vec![Line::from(empty_text)];
+        return vec![ListItem::new(Line::from(empty_text))];
     }
     items
         .iter()
         .enumerate()
-        .map(|(index, item)| {
-            let selected = index == state.selected_index();
-            let marker = if selected { ">" } else { " " };
-            let prefix = format!("{marker} {} ", item.id);
+        .map(|(_index, item)| {
+            let prefix = format!("{} ", item.id);
             let bracket = format!("[{}]", item.status);
             let suffix = match scope {
                 ViewScope::Archived => {
@@ -320,26 +303,25 @@ fn build_task_list_lines(state: &OverviewState) -> Vec<Line<'_>> {
                 ViewScope::Active => format!(" {}", item.title),
             };
 
-            let base_style = if selected {
-                Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
-            } else if scope == ViewScope::Archived {
+            let prefix_style = if scope == ViewScope::Archived {
                 Style::default().add_modifier(Modifier::DIM)
             } else {
                 Style::default()
             };
-            let stage_style = if selected {
-                base_style
+            let title_style = if scope == ViewScope::Archived {
+                Style::default().add_modifier(Modifier::DIM)
             } else {
                 Style::default()
-                    .fg(stage_color(&item.status))
-                    .add_modifier(Modifier::BOLD)
             };
+            let stage_style = Style::default()
+                .fg(stage_color(&item.status))
+                .add_modifier(Modifier::BOLD);
 
-            Line::from(vec![
-                Span::styled(prefix, base_style),
+            ListItem::new(Line::from(vec![
+                Span::styled(prefix, prefix_style),
                 Span::styled(bracket, stage_style),
-                Span::styled(suffix, base_style),
-            ])
+                Span::styled(suffix, title_style),
+            ]))
         })
         .collect()
 }
@@ -348,30 +330,113 @@ fn render_preview(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     let block = Block::default().title("Preview").borders(Borders::ALL);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let lines = build_preview_lines(state);
-    let inner_centered = center_horizontal(inner, PANE_CONTENT_TARGET);
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: true });
-    frame.render_widget(paragraph, inner_centered);
-}
-
-fn build_preview_lines(state: &OverviewState) -> Vec<Line<'_>> {
     let Some(item) = state.selected_item() else {
-        return vec![Line::from("Select a work item to inspect it.")];
+        let paragraph = Paragraph::new("Select a work item to inspect it.");
+        frame.render_widget(paragraph, inner);
+        return;
     };
 
+    let header_lines = build_preview_header_lines(item, state);
+    let header_height = (header_lines.len() as u16).min(inner.height);
+    let header_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: header_height,
+    };
+    frame.render_widget(
+        Paragraph::new(header_lines).wrap(Wrap { trim: true }),
+        header_area,
+    );
+
+    if header_height >= inner.height {
+        return;
+    }
+
+    let body_inner = Rect {
+        x: inner.x,
+        y: inner.y + header_height,
+        width: inner.width,
+        height: inner.height - header_height,
+    };
+    let blocks = render_markdown_blocks(&item.body, usize::MAX);
+    let content_height = blocks.iter().map(MarkdownBlock::height).sum::<u16>();
+    let show_scrollbar = content_height > body_inner.height && body_inner.width > 1;
+    let body_area = if show_scrollbar {
+        Rect {
+            x: body_inner.x,
+            y: body_inner.y,
+            width: body_inner.width - 1,
+            height: body_inner.height,
+        }
+    } else {
+        body_inner
+    };
+
+    let max_scroll = usize::from(content_height.saturating_sub(body_area.height));
+    let scroll_position = state.preview_scroll().min(max_scroll);
+    let mut skip_rows = scroll_position as u16;
+    let mut cursor_y = body_area.y;
+    let mut remaining = body_area.height;
+    for block in blocks {
+        if remaining == 0 {
+            break;
+        }
+        let block_height = block.height();
+        if skip_rows >= block_height {
+            skip_rows -= block_height;
+            continue;
+        }
+        let visible_height = (block_height - skip_rows).min(remaining);
+        let block_area = Rect {
+            x: body_area.x,
+            y: cursor_y,
+            width: body_area.width,
+            height: visible_height,
+        };
+        match block {
+            MarkdownBlock::Paragraph(lines) => {
+                frame.render_widget(
+                    Paragraph::new(lines)
+                        .wrap(Wrap { trim: true })
+                        .scroll((skip_rows, 0)),
+                    block_area,
+                );
+            }
+            MarkdownBlock::Table(table) => {
+                frame.render_widget(table_widget(table.skip_rows(skip_rows)), block_area);
+            }
+        }
+        cursor_y += visible_height;
+        remaining -= visible_height;
+        skip_rows = 0;
+    }
+
+    if show_scrollbar {
+        let mut scrollbar_state = ScrollbarState::new(content_height as usize)
+            .viewport_content_length(body_inner.height as usize)
+            .position(scroll_position);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(Some("\u{2502}"))
+                .thumb_symbol("\u{2588}"),
+            body_inner,
+            &mut scrollbar_state,
+        );
+    }
+}
+
+fn build_preview_header_lines<'a>(
+    item: &'a crate::domain::WorkItem,
+    state: &OverviewState,
+) -> Vec<Line<'a>> {
     let score = item
         .score
         .map(|score| format!("{score:.2}"))
         .unwrap_or_else(|| "n/a".to_string());
     let source = item.source.as_deref().unwrap_or("n/a");
-    let body_excerpt = item
-        .body
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .take(8)
-        .collect::<Vec<_>>()
-        .join("\n");
-
     let mut lines: Vec<Line<'_>> = Vec::new();
     lines.push(Line::from(Span::styled(
         item.title.as_str(),
@@ -407,8 +472,285 @@ fn build_preview_lines(state: &OverviewState) -> Vec<Line<'_>> {
     }
     lines.push(Line::from(format!("path: {}", item.path.display())));
     lines.push(Line::from(""));
-    lines.push(Line::from(body_excerpt));
     lines
+}
+
+#[derive(Debug, Clone)]
+enum MarkdownBlock {
+    Paragraph(Vec<Line<'static>>),
+    Table(TableRender),
+}
+
+impl MarkdownBlock {
+    fn height(&self) -> u16 {
+        match self {
+            MarkdownBlock::Paragraph(lines) => lines.len() as u16,
+            MarkdownBlock::Table(table) => table.height(),
+        }
+    }
+}
+
+fn render_markdown_blocks(markdown: &str, max_lines: usize) -> Vec<MarkdownBlock> {
+    let mut blocks = Vec::new();
+    let mut text_lines = Vec::new();
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut strong = false;
+    let mut heading_depth: Option<u32> = None;
+    let mut in_item = false;
+    let mut table: Option<TableRender> = None;
+    let mut table_row: Vec<String> = Vec::new();
+    let mut table_cell = String::new();
+    let mut in_table_cell = false;
+
+    let parser = Parser::new_ext(markdown, Options::ENABLE_TABLES);
+    for event in parser {
+        match event {
+            MarkdownEvent::Start(Tag::Table(_)) => {
+                flush_line(&mut text_lines, &mut spans, max_lines);
+                flush_text_block(&mut blocks, &mut text_lines);
+                table = Some(TableRender::default());
+            }
+            MarkdownEvent::End(TagEnd::Table) => {
+                if let Some(table) = table.take() {
+                    blocks.push(MarkdownBlock::Table(table));
+                }
+            }
+            MarkdownEvent::Start(Tag::TableHead) | MarkdownEvent::Start(Tag::TableRow) => {
+                table_row.clear();
+            }
+            MarkdownEvent::End(TagEnd::TableHead) | MarkdownEvent::End(TagEnd::TableRow) => {
+                if let Some(table) = &mut table {
+                    table.push_row(std::mem::take(&mut table_row));
+                }
+            }
+            MarkdownEvent::Start(Tag::TableCell) => {
+                table_cell.clear();
+                in_table_cell = true;
+            }
+            MarkdownEvent::End(TagEnd::TableCell) => {
+                table_row.push(table_cell.trim().to_string());
+                table_cell.clear();
+                in_table_cell = false;
+            }
+            MarkdownEvent::Start(Tag::Heading { level, .. }) => {
+                flush_line(&mut text_lines, &mut spans, max_lines);
+                heading_depth = Some(level as u32);
+            }
+            MarkdownEvent::End(TagEnd::Heading(_)) => {
+                flush_line(&mut text_lines, &mut spans, max_lines);
+                flush_text_block(&mut blocks, &mut text_lines);
+                heading_depth = None;
+            }
+            MarkdownEvent::Start(Tag::Paragraph) => {
+                if !spans.is_empty() {
+                    flush_line(&mut text_lines, &mut spans, max_lines);
+                }
+            }
+            MarkdownEvent::End(TagEnd::Paragraph) => {
+                flush_line(&mut text_lines, &mut spans, max_lines);
+                flush_text_block(&mut blocks, &mut text_lines);
+            }
+            MarkdownEvent::Start(Tag::Item) => {
+                flush_line(&mut text_lines, &mut spans, max_lines);
+                in_item = true;
+                spans.push(Span::raw("\u{2022} "));
+            }
+            MarkdownEvent::End(TagEnd::Item) => {
+                flush_line(&mut text_lines, &mut spans, max_lines);
+                flush_text_block(&mut blocks, &mut text_lines);
+                in_item = false;
+            }
+            MarkdownEvent::Start(Tag::Strong) => strong = true,
+            MarkdownEvent::End(TagEnd::Strong) => strong = false,
+            MarkdownEvent::Text(text) => {
+                if in_table_cell {
+                    table_cell.push_str(&text);
+                    continue;
+                }
+                let mut style = Style::default();
+                if strong || heading_depth.is_some() {
+                    style = style.add_modifier(Modifier::BOLD);
+                }
+                if heading_depth.is_some() {
+                    style = style.fg(Color::White);
+                }
+                spans.push(Span::styled(text.to_string(), style));
+            }
+            MarkdownEvent::Code(text) => {
+                if in_table_cell {
+                    table_cell.push_str(&text);
+                    continue;
+                }
+                spans.push(Span::styled(
+                    text.to_string(),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+            MarkdownEvent::SoftBreak | MarkdownEvent::HardBreak => {
+                if in_table_cell {
+                    table_cell.push(' ');
+                    continue;
+                }
+                if in_item {
+                    spans.push(Span::raw(" "));
+                } else {
+                    flush_line(&mut text_lines, &mut spans, max_lines);
+                }
+            }
+            MarkdownEvent::Rule => {
+                flush_line(&mut text_lines, &mut spans, max_lines);
+                if text_lines.len() < max_lines {
+                    text_lines.push(Line::from(Span::styled(
+                        "\u{2500}".repeat(12),
+                        Style::default().add_modifier(Modifier::DIM),
+                    )));
+                }
+                flush_text_block(&mut blocks, &mut text_lines);
+            }
+            _ => {}
+        }
+
+        let used_lines = blocks
+            .iter()
+            .map(|block| block.height() as usize)
+            .sum::<usize>()
+            + text_lines.len();
+        if used_lines >= max_lines {
+            break;
+        }
+    }
+
+    flush_line(&mut text_lines, &mut spans, max_lines);
+    flush_text_block(&mut blocks, &mut text_lines);
+    if blocks.is_empty() {
+        blocks.push(MarkdownBlock::Paragraph(vec![Line::from("")]));
+    }
+    add_markdown_block_spacing(blocks)
+}
+
+#[derive(Debug, Clone, Default)]
+struct TableRender {
+    rows: Vec<Vec<String>>,
+    widths: Vec<usize>,
+}
+
+impl TableRender {
+    fn push_row(&mut self, row: Vec<String>) {
+        if self.widths.len() < row.len() {
+            self.widths.resize(row.len(), 0);
+        }
+        for (index, cell) in row.iter().enumerate() {
+            self.widths[index] = self.widths[index].max(cell.chars().count());
+        }
+        self.rows.push(row);
+    }
+
+    fn height(&self) -> u16 {
+        let separator = u16::from(self.rows.len() > 1);
+        self.rows.len() as u16 + separator
+    }
+
+    fn skip_rows(self, skip: u16) -> Self {
+        if skip == 0 {
+            return self;
+        }
+
+        let mut visual_rows: Vec<Vec<String>> = Vec::new();
+        for (index, row) in self.rows.into_iter().enumerate() {
+            visual_rows.push(row);
+            if index == 0 && self.widths.len() > 0 {
+                visual_rows.push(
+                    self.widths
+                        .iter()
+                        .map(|width| "\u{2500}".repeat(*width))
+                        .collect(),
+                );
+            }
+        }
+
+        let rows = visual_rows
+            .into_iter()
+            .skip(skip as usize)
+            .collect::<Vec<_>>();
+        let mut table = TableRender::default();
+        for row in rows {
+            table.push_row(row);
+        }
+        table
+    }
+}
+
+fn table_widget(table: TableRender) -> Table<'static> {
+    let has_body = table.rows.len() > 1;
+    let column_widths = table.widths.clone();
+    let widths = table
+        .widths
+        .iter()
+        .map(|width| Constraint::Length((*width as u16).max(1)))
+        .collect::<Vec<_>>();
+    let mut rows = table.rows.into_iter();
+    let header = rows.next().map(|row| {
+        Row::new(
+            row.into_iter()
+                .map(|cell| Cell::from(cell).style(Style::default().add_modifier(Modifier::BOLD)))
+                .collect::<Vec<_>>(),
+        )
+    });
+    let body_rows = rows.map(|row| {
+        Row::new(
+            row.into_iter()
+                .map(Cell::from)
+                .collect::<Vec<Cell<'static>>>(),
+        )
+    });
+    let separator = if header.is_some() && has_body {
+        Some(Row::new(
+            column_widths
+                .iter()
+                .map(|width| {
+                    Cell::from("\u{2500}".repeat(*width)).style(
+                        Style::default()
+                            .fg(Color::DarkGray)
+                            .add_modifier(Modifier::DIM),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        ))
+    } else {
+        None
+    };
+    let table_rows = separator.into_iter().chain(body_rows);
+    let table = Table::new(table_rows, widths).column_spacing(2);
+    if let Some(header) = header {
+        table.header(header)
+    } else {
+        table
+    }
+}
+
+fn flush_text_block(blocks: &mut Vec<MarkdownBlock>, lines: &mut Vec<Line<'static>>) {
+    if !lines.is_empty() {
+        blocks.push(MarkdownBlock::Paragraph(std::mem::take(lines)));
+    }
+}
+
+fn add_markdown_block_spacing(blocks: Vec<MarkdownBlock>) -> Vec<MarkdownBlock> {
+    let mut spaced = Vec::with_capacity(blocks.len().saturating_mul(2));
+    for (index, block) in blocks.into_iter().enumerate() {
+        if index > 0 {
+            spaced.push(MarkdownBlock::Paragraph(vec![Line::from("")]));
+        }
+        spaced.push(block);
+    }
+    spaced
+}
+
+fn flush_line(lines: &mut Vec<Line<'static>>, spans: &mut Vec<Span<'static>>, max_lines: usize) {
+    if spans.is_empty() || lines.len() >= max_lines {
+        spans.clear();
+        return;
+    }
+    lines.push(Line::from(std::mem::take(spans)));
 }
 
 #[cfg(test)]
@@ -419,11 +761,15 @@ mod tests {
 
     use super::render;
     use crate::app::App;
+    use crate::domain::{StageDefinition, WorkItem, WorkflowDefinition, WorkflowSnapshot};
 
     #[test]
     fn renders_real_workflow_summary_task_list_and_preview() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
-        let app = App::load(root).expect("workflow should load");
+        let app = app_with_items(vec![item(
+            "001",
+            "Synthetic active task",
+            "This body gives the preview pane stable content.",
+        )]);
         let selected = app
             .selected_item()
             .expect("real workflow has a selected item");
@@ -540,6 +886,248 @@ mod tests {
         );
     }
 
+    fn app_with_items(items: Vec<WorkItem>) -> App {
+        let root = PathBuf::from("/tmp/spacetop-test");
+        let snapshot = WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: root.clone(),
+                stages: vec![StageDefinition {
+                    name: "design".to_string(),
+                    initial: true,
+                    terminal: false,
+                    gate: false,
+                    fresh: false,
+                    feedback_to: None,
+                    worktree: false,
+                    concurrency: None,
+                }],
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+            },
+            items,
+        };
+        App::from_snapshot(root, snapshot)
+    }
+
+    fn item(id: &str, title: &str, body: &str) -> WorkItem {
+        WorkItem {
+            path: PathBuf::from(format!("/tmp/{id}.md")),
+            id: id.to_string(),
+            title: title.to_string(),
+            status: "design".to_string(),
+            source: Some("test".to_string()),
+            started: None,
+            completed: None,
+            verdict: None,
+            score: None,
+            worktree: None,
+            issue: None,
+            pr: None,
+            body: body.to_string(),
+        }
+    }
+
+    #[test]
+    fn preview_renders_markdown_body_instead_of_raw_markers() {
+        let app = app_with_items(vec![item(
+            "001",
+            "Markdown Preview",
+            "# Heading\n\nSome **bold** text.\n\n- first item",
+        )]);
+        let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = buffer_text(buffer);
+        assert!(rendered.contains("Heading"), "missing rendered heading");
+        assert!(
+            rendered.contains("Some bold text."),
+            "missing rendered paragraph without markdown markers"
+        );
+        assert!(
+            !rendered.contains("# Heading") && !rendered.contains("**bold**"),
+            "preview should not show raw markdown markers"
+        );
+        assert!(
+            find_styled_text(buffer, "Heading", |style| {
+                style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+            }),
+            "heading text should be bold"
+        );
+        assert!(
+            find_styled_text(buffer, "bold", |style| {
+                style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+            }),
+            "strong markdown text should be bold"
+        );
+    }
+
+    #[test]
+    fn preview_renders_markdown_tables_as_aligned_rows() {
+        let app = app_with_items(vec![item(
+            "001",
+            "Markdown Table Preview",
+            "Ablation siblings\n| Arm | Entity | README |\n| --- | ---: | --- |\n| 1 | 17 | direct.md |\n| 2 | 18 | method.md |",
+        )]);
+        let mut terminal = Terminal::new(TestBackend::new(140, 24)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("Ablation siblings"));
+        assert!(rendered.contains("Arm  Entity  README"));
+        assert!(rendered.contains("1    17      direct.md"));
+        assert!(rendered.contains("2    18      method.md"));
+        assert!(
+            find_styled_text(terminal.backend().buffer(), "Arm", |style| {
+                style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+            }),
+            "table header should be rendered through a highlighted table header row"
+        );
+        assert!(
+            rendered.contains("\u{2500}\u{2500}\u{2500}"),
+            "table should show a separator row between header and body"
+        );
+        assert!(
+            !rendered.contains("---") && !rendered.contains("| Arm |"),
+            "preview should render table structure rather than raw markdown separators"
+        );
+    }
+
+    #[test]
+    fn preview_uses_full_pane_width_for_wide_content() {
+        let body = format!("{}PREVIEWFULLWIDTH", "X".repeat(92));
+        let app = app_with_items(vec![item("001", "Wide Preview", &body)]);
+        let width: u16 = 220;
+        let mut terminal = Terminal::new(TestBackend::new(width, 24)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        assert!(
+            find_text_starting_after(buffer, "PREVIEWFULLWIDTH", 150),
+            "preview content should use the full preview pane instead of a centered narrow column"
+        );
+    }
+
+    #[test]
+    fn preview_draws_scrollbar_when_content_overflows() {
+        let body = (0..40)
+            .map(|index| format!("Line {index}"))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let app = app_with_items(vec![item("001", "Scrollable Preview", &body)]);
+        let width: u16 = 120;
+        let height: u16 = 18;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let right_edge = width - 2;
+        let has_scrollbar = (1..height - 1).any(|y| {
+            let symbol = buffer[(right_edge, y)].symbol();
+            symbol == "\u{2588}" || symbol == "\u{2502}"
+        });
+        assert!(has_scrollbar, "overflowing preview should draw a scrollbar");
+    }
+
+    #[test]
+    fn preview_page_down_scrolls_visible_markdown_content() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let body = (0..30)
+            .map(|index| format!("Line {index:02}"))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let mut app = app_with_items(vec![item("001", "Scrollable Preview", &body)]);
+        app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+
+        let mut terminal = Terminal::new(TestBackend::new(120, 18)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            !rendered.contains("Line 00"),
+            "scrolled preview should not keep the first body line visible"
+        );
+        assert!(
+            rendered.contains("Line 03"),
+            "scrolled preview should advance by the PageDown row offset, including markdown spacing"
+        );
+    }
+
+    #[test]
+    fn preview_adds_blank_rows_between_markdown_blocks() {
+        let app = app_with_items(vec![item(
+            "001",
+            "Spaced Markdown",
+            "# Heading\n\nFirst paragraph.\n\nSecond paragraph.",
+        )]);
+        let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let heading_y = find_text(buffer, "Heading")[0].1;
+        let first_y = find_text(buffer, "First paragraph.")[0].1;
+        let second_y = find_text(buffer, "Second paragraph.")[0].1;
+        assert!(
+            first_y >= heading_y + 2,
+            "expected a blank row between heading and first paragraph"
+        );
+        assert!(
+            second_y >= first_y + 2,
+            "expected a blank row between paragraphs"
+        );
+    }
+
+    #[test]
+    fn task_list_uses_full_pane_width_and_ratatui_list_selection() {
+        let stable_title = "Stable selected title";
+        let long_title = format!("{}FULLWIDTHMARKER", "X".repeat(60));
+        let app = app_with_items(vec![
+            item("001", stable_title, "Body"),
+            item("002", &long_title, "Body"),
+            item("003", "Second task", "Body"),
+        ]);
+
+        let width: u16 = 220;
+        let mut terminal = Terminal::new(TestBackend::new(width, 24)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let buffer = terminal.backend().buffer();
+
+        assert!(
+            find_text_starting_after(buffer, "FULLWIDTHMARKER", 74),
+            "task row content should use the whole list pane rather than a centered narrow column"
+        );
+        let rendered = buffer_text(buffer);
+        assert!(
+            rendered.contains("> 001"),
+            "selected row should use ratatui-style highlight symbol"
+        );
+        assert!(
+            find_styled_text(buffer, stable_title, |style| {
+                style
+                    .add_modifier
+                    .contains(ratatui::style::Modifier::REVERSED)
+            }),
+            "selected row title should be highlighted by ratatui List selection"
+        );
+    }
+
     fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
         buffer
             .content()
@@ -547,6 +1135,52 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<Vec<_>>()
             .join("")
+    }
+
+    fn find_text_starting_after(
+        buffer: &ratatui::buffer::Buffer,
+        needle: &str,
+        min_x: u16,
+    ) -> bool {
+        find_text(buffer, needle)
+            .into_iter()
+            .any(|(x, _y)| x >= min_x)
+    }
+
+    fn find_styled_text<F>(buffer: &ratatui::buffer::Buffer, needle: &str, predicate: F) -> bool
+    where
+        F: Fn(ratatui::style::Style) -> bool,
+    {
+        let chars: Vec<String> = needle.chars().map(|c| c.to_string()).collect();
+        find_text(buffer, needle).into_iter().any(|(x, y)| {
+            chars
+                .iter()
+                .enumerate()
+                .all(|(offset, _)| predicate(buffer[(x + offset as u16, y)].style()))
+        })
+    }
+
+    fn find_text(buffer: &ratatui::buffer::Buffer, needle: &str) -> Vec<(u16, u16)> {
+        let chars: Vec<String> = needle.chars().map(|c| c.to_string()).collect();
+        let mut matches = Vec::new();
+        if chars.is_empty() {
+            return matches;
+        }
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                if x + chars.len() as u16 > buffer.area.width {
+                    continue;
+                }
+                if chars
+                    .iter()
+                    .enumerate()
+                    .all(|(i, c)| buffer[(x + i as u16, y)].symbol() == c.as_str())
+                {
+                    matches.push((x, y));
+                }
+            }
+        }
+        matches
     }
 
     // --- Help popup behaviour ---
@@ -781,6 +1415,45 @@ mod tests {
     }
 
     #[test]
+    fn multi_session_renders_dashboard_inside_workflow_tabs_panel() {
+        let session = synthetic_session(2);
+        let app = App::from_session(session);
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let buffer = terminal.backend().buffer();
+
+        let workflow_graph_y = find_text(buffer, "plan")
+            .into_iter()
+            .map(|(_, y)| y)
+            .filter(|y| *y > 0)
+            .min()
+            .expect("workflow graph title should render inside tab panel");
+        let tasks_y = find_text(buffer, "Tasks")[0].1;
+        let preview_y = find_text(buffer, "Preview")[0].1;
+
+        assert!(
+            workflow_graph_y <= 3,
+            "workflow graph should start inside the workflow tab panel, not below a separate tab strip"
+        );
+        assert!(
+            tasks_y > workflow_graph_y && preview_y > workflow_graph_y,
+            "task list and preview should render inside the selected workflow tab panel"
+        );
+        assert_ne!(
+            buffer[(0, 29)].symbol(),
+            " ",
+            "workflow tab panel should enclose the dashboard down to the bottom edge"
+        );
+        assert_ne!(
+            buffer[(159, 29)].symbol(),
+            " ",
+            "workflow tab panel should enclose the dashboard down to the right edge"
+        );
+    }
+
+    #[test]
     fn single_session_omits_tab_bar() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
         let app = App::load(root).expect("workflow should load");
@@ -880,8 +1553,7 @@ mod tests {
 
     #[test]
     fn preview_status_value_is_stage_colored() {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
-        let app = App::load(root).expect("workflow should load");
+        let app = app_with_items(vec![item("001", "Synthetic active task", "Body")]);
         let selected = app.selected_item().expect("selected").clone();
         let expected = super::stage_color(&selected.status);
         let status_value = selected.status.clone();

@@ -505,11 +505,47 @@ Body text should be preserved without frontmatter.
 
     #[test]
     fn loads_workflow_snapshot_from_directory_ignoring_mods_and_archive() {
-        let root = fixture_root();
+        let root = unique_temp_dir("snapshot");
+        fs::copy(fixture_root().join("README.md"), root.join("README.md"))
+            .expect("README fixture should copy");
+        write_markdown(
+            &root.join("active.md"),
+            r#"---
+id: "001"
+title: Active
+status: design
+---
+
+Active body.
+"#,
+        );
+        write_markdown(
+            &root.join("_mods/ignored.md"),
+            r#"---
+id: "002"
+title: Ignored Mod
+status: design
+---
+
+Ignored.
+"#,
+        );
+        write_markdown(
+            &root.join("_archive/archived.md"),
+            r#"---
+id: "003"
+title: Ignored Archived
+status: done
+---
+
+Ignored.
+"#,
+        );
         let snapshot = load_workflow_dir(&root).expect("workflow directory should load");
 
         assert_eq!(snapshot.definition.stages.len(), 5);
-        assert!(!snapshot.items.is_empty());
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].title, "Active");
         assert!(snapshot
             .items
             .iter()

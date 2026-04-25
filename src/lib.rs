@@ -60,9 +60,18 @@ pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
             let session = app::OverviewSession::single(state, false);
             Ok(DecideOutcome::Overview(App::from_session(session)))
         }
-        _ => Ok(DecideOutcome::Picker(App::from_picker(
-            scan_root, workflows,
-        ))),
+        _ => {
+            let first = workflows
+                .first()
+                .expect("non-empty workflow list")
+                .root
+                .clone();
+            let state = app::OverviewState::load(first.clone()).with_context(|| {
+                format!("failed to load workflow directory {}", first.display())
+            })?;
+            let session = app::OverviewSession::from_discovery(scan_root, workflows, 0, state);
+            Ok(DecideOutcome::Overview(App::from_session(session)))
+        }
     }
 }
 
