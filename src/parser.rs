@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
 use serde::Deserialize;
+use sha1::{Digest, Sha1};
 use thiserror::Error;
 
 use crate::domain::{StageDefinition, WorkItem, WorkflowDefinition, WorkflowSnapshot};
@@ -188,7 +190,7 @@ fn should_skip_archived_parse_error(error: &ParseError) -> bool {
     )
 }
 
-pub fn load_workflow_dir(path: &Path) -> Result<WorkflowSnapshot, ParseError> {
+pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapshot, ParseError> {
     let definition = parse_workflow_readme(&path.join("README.md"))?;
     let allowed_statuses = definition
         .stages
@@ -224,7 +226,121 @@ pub fn load_workflow_dir(path: &Path) -> Result<WorkflowSnapshot, ParseError> {
         items.push(parse_work_item(&item_path, &allowed_statuses)?);
     }
 
+    let workflow_rel = path.strip_prefix(repo_root).unwrap_or(path);
+    let worktree_items = scan_worktrees(repo_root, workflow_rel, &allowed_statuses);
+    let items = merge_worktree_items(items, worktree_items);
+
     Ok(WorkflowSnapshot { definition, items })
+}
+
+/// Scan `.worktrees/*/` subdirectories under `repo_root` for workflow entity
+/// files at `workflow_rel`. Returns all successfully parsed items from all
+/// worktrees; silently skips worktrees that do not contain the workflow dir.
+fn scan_worktrees(
+    repo_root: &Path,
+    workflow_rel: &Path,
+    allowed_statuses: &[String],
+) -> Vec<crate::domain::WorkItem> {
+    let wt_dir = repo_root.join(".worktrees");
+    if !wt_dir.exists() {
+        return Vec::new();
+    }
+    let entries = match fs::read_dir(&wt_dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let mut all_items = Vec::new();
+    for entry in entries.flatten() {
+        let wt_root = entry.path();
+        if !wt_root.is_dir() {
+            continue;
+        }
+        let candidate = wt_root.join(workflow_rel);
+        if !candidate.is_dir() {
+            continue;
+        }
+        let mut item_paths = Vec::new();
+        let Ok(dir_entries) = fs::read_dir(&candidate) else {
+            continue;
+        };
+        for file_entry in dir_entries.flatten() {
+            let file_path = file_entry.path();
+            if file_path.file_name().and_then(|n| n.to_str()) == Some("README.md") {
+                continue;
+            }
+            if file_path
+                .extension()
+                .and_then(|e| e.to_str())
+                == Some("md")
+            {
+                item_paths.push(file_path);
+            }
+        }
+        item_paths.sort();
+        for item_path in item_paths {
+            if let Ok(item) = parse_work_item(&item_path, allowed_statuses) {
+                all_items.push(item);
+            }
+        }
+    }
+    all_items
+}
+
+/// Merge main-branch items with worktree items using SHA-1 hash comparison.
+/// Worktree version wins when the same slug exists in both and hashes differ.
+/// Uses SHA-1 digest (not string equality on body) for content comparison (AC-5).
+fn merge_worktree_items(
+    main_items: Vec<crate::domain::WorkItem>,
+    worktree_items: Vec<crate::domain::WorkItem>,
+) -> Vec<crate::domain::WorkItem> {
+    if worktree_items.is_empty() {
+        return main_items;
+    }
+    let mut index: HashMap<String, crate::domain::WorkItem> = main_items
+        .into_iter()
+        .filter_map(|item| {
+            let slug = item
+                .path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())?;
+            Some((slug, item))
+        })
+        .collect();
+
+    for wt_item in worktree_items {
+        let Some(slug) = wt_item
+            .path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+        else {
+            continue;
+        };
+        if let Some(main_item) = index.get(&slug) {
+            // Both exist: compare via SHA-1 digest — not string equality on body (AC-5).
+            let wt_hash = fs::read(&wt_item.path)
+                .map(|b| Sha1::digest(&b))
+                .ok();
+            let main_hash = fs::read(&main_item.path)
+                .map(|b| Sha1::digest(&b))
+                .ok();
+            match (wt_hash, main_hash) {
+                (Some(wh), Some(mh)) if wh == mh => {
+                    // Hashes match; keep main copy (already in index).
+                }
+                _ => {
+                    // Hashes differ or IO error: worktree wins (AC-4).
+                    index.insert(slug, wt_item);
+                }
+            }
+        } else {
+            // Worktree-only item (AC-3).
+            index.insert(slug, wt_item);
+        }
+    }
+
+    let mut result: Vec<_> = index.into_values().collect();
+    result.sort_by(|a, b| a.path.cmp(&b.path));
+    result
 }
 
 fn parse_work_item_contents(
@@ -640,7 +756,7 @@ status: done
 Ignored.
 "#,
         );
-        let snapshot = load_workflow_dir(&root).expect("workflow directory should load");
+        let snapshot = load_workflow_dir(&root, &root).expect("workflow directory should load");
 
         assert_eq!(snapshot.definition.stages.len(), 5);
         assert_eq!(snapshot.items.len(), 1);
@@ -959,5 +1075,127 @@ Body
 
         assert!(error.contains("missing required field 'title'"));
         assert!(error.contains("missing-title.md"));
+    }
+
+    // ---- Worktree scan tests (AC-1 through AC-4, AC-6, AC-7) ----
+
+    /// Write a minimal workflow README and an optional entity file into `dir`.
+    fn write_minimal_workflow(dir: &Path, entity_name: Option<&str>, entity_content: Option<&str>) {
+        fs::create_dir_all(dir).expect("workflow dir");
+        fs::write(
+            dir.join("README.md"),
+            "---\ncommissioned-by: spacedock@0.10.1\nstages:\n  states:\n    - name: design\n      initial: true\n    - name: done\n      terminal: true\n---\n\n# Workflow\n",
+        )
+        .expect("write README");
+        if let (Some(name), Some(content)) = (entity_name, entity_content) {
+            write_markdown(&dir.join(name), content);
+        }
+    }
+
+    fn entity_md(id: &str, title: &str) -> String {
+        format!(
+            "---\nid: \"{id}\"\ntitle: {title}\nstatus: design\n---\n\n{title} body.\n"
+        )
+    }
+
+    #[test]
+    fn worktree_items_included() {
+        // AC-1, AC-6: two worktrees each with a distinct entity
+        let root = unique_temp_dir("wt-included");
+        let wf = root.join("docs/wf");
+        write_minimal_workflow(&wf, Some("main-task.md"), Some(&entity_md("001", "Main Task")));
+        let wt_a = root.join(".worktrees/wt-a/docs/wf");
+        write_minimal_workflow(&wt_a, Some("task-a.md"), Some(&entity_md("002", "Task A")));
+        let wt_b = root.join(".worktrees/wt-b/docs/wf");
+        write_minimal_workflow(&wt_b, Some("task-b.md"), Some(&entity_md("003", "Task B")));
+
+        let snapshot = load_workflow_dir(&wf, &root).expect("load workflow dir");
+        let titles: Vec<&str> = snapshot.items.iter().map(|i| i.title.as_str()).collect();
+        assert!(titles.contains(&"Main Task"), "main task missing: {titles:?}");
+        assert!(titles.contains(&"Task A"), "task-a missing: {titles:?}");
+        assert!(titles.contains(&"Task B"), "task-b missing: {titles:?}");
+        assert_eq!(snapshot.items.len(), 3);
+    }
+
+    #[test]
+    fn main_only_items_preserved() {
+        // AC-2: main has aaa, worktree has bbb — both appear
+        let root = unique_temp_dir("main-only");
+        let wf = root.join("docs/wf");
+        write_minimal_workflow(&wf, Some("aaa.md"), Some(&entity_md("001", "AAA")));
+        let wt = root.join(".worktrees/wt-1/docs/wf");
+        write_minimal_workflow(&wt, Some("bbb.md"), Some(&entity_md("002", "BBB")));
+
+        let snapshot = load_workflow_dir(&wf, &root).expect("load");
+        let titles: Vec<&str> = snapshot.items.iter().map(|i| i.title.as_str()).collect();
+        assert!(titles.contains(&"AAA"), "main-only item dropped: {titles:?}");
+        assert!(titles.contains(&"BBB"), "worktree-only item missing: {titles:?}");
+    }
+
+    #[test]
+    fn worktree_only_items_shown() {
+        // AC-3: main has no entity files; worktree has ccc.md
+        let root = unique_temp_dir("wt-only");
+        let wf = root.join("docs/wf");
+        write_minimal_workflow(&wf, None, None);
+        let wt = root.join(".worktrees/wt-1/docs/wf");
+        write_minimal_workflow(&wt, Some("ccc.md"), Some(&entity_md("003", "CCC")));
+
+        let snapshot = load_workflow_dir(&wf, &root).expect("load");
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].title, "CCC");
+    }
+
+    #[test]
+    fn worktree_version_wins_on_hash_mismatch() {
+        // AC-4: same slug in main and worktree with different content
+        let root = unique_temp_dir("wt-wins");
+        let wf = root.join("docs/wf");
+        write_minimal_workflow(
+            &wf,
+            Some("task.md"),
+            Some(&entity_md("010", "Main Version")),
+        );
+        let wt = root.join(".worktrees/wt-1/docs/wf");
+        write_minimal_workflow(
+            &wt,
+            Some("task.md"),
+            Some(&entity_md("010", "Worktree Version")),
+        );
+
+        let snapshot = load_workflow_dir(&wf, &root).expect("load");
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].title, "Worktree Version");
+    }
+
+    #[test]
+    fn no_regression_without_worktrees() {
+        // AC-7: no .worktrees directory — behavior identical to before
+        let root = unique_temp_dir("no-wt");
+        let wf = root.join("docs/wf");
+        write_minimal_workflow(&wf, Some("solo.md"), Some(&entity_md("001", "Solo")));
+        // Confirm no .worktrees dir exists
+        assert!(!root.join(".worktrees").exists());
+
+        let snapshot = load_workflow_dir(&wf, &root).expect("load");
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].title, "Solo");
+    }
+
+    #[test]
+    fn same_content_hash_keeps_main_item_path() {
+        // AC-4 inverse: same content hash → main item is kept (either is fine per spec)
+        let root = unique_temp_dir("same-hash");
+        let content = entity_md("020", "Identical");
+        let wf = root.join("docs/wf");
+        write_minimal_workflow(&wf, Some("task.md"), Some(&content));
+        let wt = root.join(".worktrees/wt-1/docs/wf");
+        write_minimal_workflow(&wt, Some("task.md"), Some(&content));
+
+        let snapshot = load_workflow_dir(&wf, &root).expect("load");
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].title, "Identical");
+        // When hashes match, the main copy is retained.
+        assert!(snapshot.items[0].path.starts_with(&wf));
     }
 }
