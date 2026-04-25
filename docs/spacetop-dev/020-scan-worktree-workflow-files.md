@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-020-scan-worktree-workflow-files
 issue:
-pr:
+pr: #9
 mod-block: merge:pr-merge
 ---
 
