@@ -258,3 +258,18 @@ The plan sequences five implementation steps — sha1 dep, repo_root field addit
 ### Summary
 
 Added `sha1 = "0.10"` dependency, implemented `scan_worktrees` and `merge_worktree_items` in `src/parser.rs` using SHA-1 digest comparison (not string equality), threaded `repo_root` through `OverviewState` derived lazily from `resolve_scan_root`, and updated `load_workflow_dir` to accept `repo_root` and invoke the merge after main-branch scanning. Six tempfile-based unit tests cover AC-1 through AC-4, AC-6, and AC-7; full test suite is green with no regressions.
+
+## Stage Report: review
+
+- DONE: SHA-1 hash comparison is used (not string equality) — verify Sha1::digest is called on raw bytes.
+  `src/parser.rs` lines 321 and 324: `Sha1::digest(&b)` called on `fs::read(path)` byte buffers; no string equality on `body` field anywhere in `merge_worktree_items`.
+
+- DONE: Worktree wins on hash mismatch and worktree-only tasks are included — verify in merge_worktree_items logic.
+  Hash-mismatch branch (`_ =>`) at line 331 calls `index.insert(slug, wt_item)`. Worktree-only path at line 337 also calls `index.insert(slug, wt_item)`. Both confirmed. Tests `worktree_version_wins_on_hash_mismatch` and `worktree_only_items_shown` pass (21/21 parser tests green).
+
+- DONE: No regression: repos without .worktrees still work; all tests pass.
+  `scan_worktrees` returns `Vec::new()` immediately when `.worktrees` dir is absent. `no_regression_without_worktrees` test confirms behavior. Full `cargo test` passes all suites with no failures.
+
+### Summary
+
+All three checklist items confirmed via direct code inspection and test run. SHA-1 is used exclusively via `Sha1::digest(&b)` on raw file bytes; string equality on content is never used. The `merge_worktree_items` logic correctly handles all three cases (main-only, worktree-only, conflict). Full test suite is green: 21 parser unit tests pass, 8 integration tests pass, no regressions.
