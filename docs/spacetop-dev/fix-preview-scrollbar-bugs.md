@@ -10,7 +10,7 @@ score: 0.9
 worktree: .worktrees/spacedock-ensign-fix-preview-scrollbar-bugs
 issue:
 pr: #3
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Two related scrollbar bugs in the preview pane (`src/ui/mod.rs` + `src/app.rs`):
