@@ -308,3 +308,32 @@ Decomposed the multi-workflow switch into eight ordered steps centered on a new 
 ### Summary
 
 Landed the in-session multi-workflow switch end-to-end. `App` now wraps an `OverviewSession` of lazy `OverviewState` slots with single-element pinned-single sessions for the `-w` and discovery==1 paths; `]`/`[`/`P` are gated on `is_multi()` and emit pure-state changes the event loop drains to perform watcher teardown + load-or-reload + watcher restart. Picker overlay is a `Clear`-overlaid reuse of the existing `picker::render_in`, with `Esc` restoring the underlying session and `Enter` confirming via `replace_discovery` + `select`. Breadcrumb is plumbed through a sibling `render_stage_graph_with_breadcrumb` so existing graph tests stay byte-stable; help popup grows three lines only when multi.
+
+## Stage Report: review
+
+- DONE: AC-1 — `]`/`[` cycle active workflow without process restart.
+  `app::tests::cycle_keys_advance_active_index_in_multi_session` exercises 3-workflow tempdir fixture, asserts wrap-around both directions, and confirms `WorkflowSwitch` emission with correct `target_index` + `needs_first_load`. `cargo test` shows it green.
+- DONE: AC-2 — Single-workflow sessions render no breadcrumb and `]`/`[`/`P` are inert.
+  `app::tests::cycle_keys_inert_in_single_session` clones the App, fires all three keys, asserts byte-identical state and no pending switch/overlay. `ui::graph::tests::no_breadcrumb_in_single_workflow` asserts header omits `[1/1]`. `is_multi()` returns false when `discovery.len() < 2 || pinned_single`, gating both keymap and breadcrumb.
+- DONE: AC-3 — Switching preserves `selected_index`, `view_scope`, archive cache.
+  `app::tests::switch_preserves_per_workflow_state` flips A to Archived (loads archive cache), cycles to B then back, asserts `view_scope == Archived` and `archive_loaded == true` on return. Cycle test also confirms `needs_first_load == false` on revisit (no re-IO).
+- DONE: AC-4 — One watcher follows active workflow.
+  `lib::tests::watcher_restarts_on_switch` starts watcher on w0, presses `]`, drops prior watcher, calls `materialize_active`, restarts watcher, asserts new `app.workflow_dir() == w1`. Event loop in `lib.rs:160-170` drops `watcher_state.take()` before installing new one — single-watcher invariant holds.
+- DONE: AC-5 — `P` re-runs discovery and updates list.
+  `app::tests::picker_overlay_pickup_adds_new_workflow` creates a third workflow on disk, opens overlay with augmented list, navigates to and Enters the new entry, asserts `discovery().len() == 3`, `target_index == 2`, `needs_first_load == true`. `lib.rs:145-155` drains overlay-open and re-runs `discover_workflows`.
+- DONE: AC-6 — New keymap doesn't collide with existing bindings.
+  `app::tests::keymap_audit_is_disjoint` asserts `]`,`[`,`P` not in `{a,?,j,k,q}`. Verified by reading `handle_key`: special keys (Down/Up/Home/End/Enter/Esc) are non-Char so cannot collide. Help popup adds cycle hints only when `is_multi()` (verified by `help_popup_shows_cycle_hints_only_in_multi`).
+- DONE: AC-7 — fmt/clippy/test all clean.
+  `cargo fmt --check`: no output. `cargo clippy --all-targets -- -D warnings`: zero warnings. `cargo test`: 96 lib + 4 integration tests passed (1 ignored notify-backend smoke as before, no carve-outs).
+- DONE: Diff confined to plan-owned files.
+  `git diff --stat main...HEAD` shows: `src/app.rs`, `src/lib.rs`, `src/ui/graph.rs`, `src/ui/mod.rs`, plus the entity file. No drive-by edits.
+- DONE: `render_stage_graph` signature unchanged.
+  Production callers go through new sibling `render_stage_graph_with_breadcrumb`; the original is `#[cfg(test)]`-gated and unchanged in arg shape, used only by existing graph tests. Grep confirms zero non-test callers of the original.
+- DONE: Picker overlay Esc/Enter semantics, single-watcher invariant, help/overlay key gating.
+  Inspected `App::handle_key`: help_open intercepts before any mode (line 878, returns), so `]`/`[`/`P` cannot fire while help is open. `PickerOverlay` arm only handles nav/Enter/Esc/q/?, not `]`/`[`/`P` — they no-op while overlay is open. `Esc` in overlay restores underlying session via `mem::replace`. `is_multi()` predicate already covers `pinned_single`, making the `&& !pinned` guard at line 906 redundant-but-harmless.
+
+### Summary
+
+Implementation matches the locked plan. `OverviewSession` cleanly owns `Vec<Option<OverviewState>>` with lazy materialization, switch is a pure index mutation that emits `WorkflowSwitch` for the event loop to drain (drop watcher → materialize-or-reload → restart watcher). PickerOverlay reuses `picker::render_in` over `Clear` and preserves the underlying session for `Esc` restore. All seven ACs verified with concrete test or code-trace evidence. fmt/clippy/test fully green with no carve-outs. Diff confined to the four plan-owned source files plus the entity file.
+
+Verdict: PASSED.
