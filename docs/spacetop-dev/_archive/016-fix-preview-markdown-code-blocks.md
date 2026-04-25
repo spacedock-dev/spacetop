@@ -1,16 +1,17 @@
 ---
 id: "016"
 title: Fix preview pane markdown code block rendering
-status: review
+status: done
 source: captain
 started: 2026-04-25T15:19:40Z
-completed:
-verdict:
+completed: 2026-04-25T15:37:51Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-016-fix-preview-markdown-code-blocks
+worktree: 
 issue:
 pr: #6
 mod-block: 
+archived: 2026-04-25T15:37:54Z
 ---
 
 The preview pane currently renders markdown code blocks (fenced with triple backticks) as plain text instead of styled code blocks. Users inspecting workflow entity bodies and stage reports see raw backtick fences rather than properly highlighted or visually distinct code sections.
