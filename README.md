@@ -2,6 +2,8 @@
 
 Spacetop is a Rust terminal UI for browsing [Spacedock](https://github.com/clkao/spacedock) workflow state.
 
+![Spacetop screenshot](assets/images/SpaceTop-screenshot.png)
+
 Spacedock stores workflow progress as markdown files in git. A workflow directory typically contains a `README.md` that defines stages and gates, plus work item files with YAML frontmatter such as `id`, `title`, and `status`. Spacetop is intended to make those state files easier to inspect from the terminal.
 
 ## Goals
