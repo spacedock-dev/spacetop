@@ -95,6 +95,30 @@ fn zero_workflow_fixture_yields_error_variant_with_scan_root() {
 }
 
 #[test]
+fn worktrees_excluded_from_decide_app_discovery() {
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    // One real workflow
+    write_workflow(&root.join("docs/real"));
+    // Same workflow mirrored inside a worktree clone — must not duplicate the entry
+    write_workflow(&root.join(".worktrees/some-task/docs/real"));
+
+    let outcome = decide_app(&cli_with(None), root).unwrap();
+    match outcome {
+        DecideOutcome::Overview(app) => {
+            let session = app.as_session().expect("overview session");
+            assert_eq!(
+                session.len(),
+                1,
+                "worktree clone must not inflate workflow count"
+            );
+        }
+        other => panic!("expected Overview, got {other:?}"),
+    }
+}
+
+#[test]
 fn explicit_w_bypasses_discovery_even_when_other_workflows_exist() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();

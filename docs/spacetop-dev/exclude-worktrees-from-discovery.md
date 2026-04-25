@@ -108,3 +108,25 @@ Run `cargo test` and confirm all pre-existing tests in `src/discovery.rs` and `t
 ### Summary
 
 The production fix (`.worktrees` in `PRUNED_DIR_NAMES`) is already in place in `src/discovery.rs`. The plan calls for adding three new tests — two unit tests in the `discovery` module and one integration test in `tests/discovery_bypass.rs` — that directly exercise each acceptance criterion using `tempfile` fixtures. No logic changes are needed; the work is entirely test coverage.
+
+## Stage Report: implement
+
+- DONE: All 3 new tests pass: worktrees_subdir_is_excluded_from_discovery, worktrees_clone_does_not_inflate_workflow_count (unit), worktrees_excluded_from_decide_app_discovery (integration).
+  Confirmed by `cargo test worktrees`: 3 passed, 0 failed (commit 452193e).
+- DONE: cargo test exits 0 with no regressions.
+  112 lib tests + 5 integration tests all pass; 0 failed.
+
+### Summary
+
+Added two unit tests to `src/discovery.rs` and one integration test to `tests/discovery_bypass.rs` covering AC-1, AC-2, and AC-3. No production code was modified — `PRUNED_DIR_NAMES` already contained `.worktrees`. All 117 tests pass with `cargo test` exit 0.
+
+## Stage Report: review
+
+- DONE: Verify all 3 ACs have test evidence from the implement stage report.
+  Implement report lists: `worktrees_subdir_is_excluded_from_discovery` (AC-1), `worktrees_clone_does_not_inflate_workflow_count` (AC-2), `worktrees_excluded_from_decide_app_discovery` (AC-1+AC-2 via `decide_app`). AC-3 covered by full `cargo test` exit 0 with 117 tests passing. All 3 ACs accounted for.
+- DONE: Check the diff for correctness and that no production code was accidentally changed.
+  `git diff main...HEAD --name-only` shows only 3 files changed: `docs/spacetop-dev/exclude-worktrees-from-discovery.md` (entity), `src/discovery.rs` (tests only, inside `#[cfg(test)]` block), `tests/discovery_bypass.rs` (new test function only). `PRUNED_DIR_NAMES` and all production functions are unmodified. Diff is correct.
+
+### Summary
+
+All 3 acceptance criteria are covered by named test evidence in the implement report. The diff is scoped entirely to test code and the entity file — no production logic was touched, which is correct since `.worktrees` was already in `PRUNED_DIR_NAMES`. Implementation is approved.

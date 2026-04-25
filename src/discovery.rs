@@ -285,6 +285,40 @@ mod tests {
         assert_eq!(found[0].root, canonical_real);
     }
 
+    #[test]
+    fn worktrees_subdir_is_excluded_from_discovery() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        // Real workflow at docs/real
+        write_workflow_readme(&root.join("docs/real"), "Real");
+        // Same workflow mirrored inside a worktree clone — must be skipped
+        write_workflow_readme(&root.join(".worktrees/some-task/docs/real"), "Real");
+
+        let found = discover_workflows(root).unwrap();
+        assert_eq!(found.len(), 1, "expected 1 workflow, got {found:?}");
+        // The returned path must not contain `.worktrees` as a component
+        let has_worktrees = found[0]
+            .root
+            .components()
+            .any(|c| c.as_os_str() == ".worktrees");
+        assert!(!has_worktrees, "result path must not be inside .worktrees");
+    }
+
+    #[test]
+    fn worktrees_clone_does_not_inflate_workflow_count() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        // Two real workflows
+        write_workflow_readme(&root.join("docs/alpha"), "Alpha");
+        write_workflow_readme(&root.join("docs/beta"), "Beta");
+        // Worktree clone with the same two workflows
+        write_workflow_readme(&root.join(".worktrees/task-1/docs/alpha"), "Alpha");
+        write_workflow_readme(&root.join(".worktrees/task-1/docs/beta"), "Beta");
+
+        let found = discover_workflows(root).unwrap();
+        assert_eq!(found.len(), 2, "expected 2 workflows, got {found:?}");
+    }
+
     #[cfg(unix)]
     #[test]
     fn handles_symlink_cycle_without_infinite_loop() {
