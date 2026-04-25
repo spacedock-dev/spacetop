@@ -270,8 +270,8 @@ mod tests {
         assert!(watcher_state.is_some(), "watcher should start on w0");
         assert_eq!(app.workflow_dir(), w0.as_path());
 
-        // Press `]` → switch pending.
-        app.handle_key(key(KeyCode::Char(']')));
+        // Press `Right` → switch pending.
+        app.handle_key(key(KeyCode::Right));
         let switch = app.take_pending_switch().expect("cycle emits switch");
         assert_eq!(switch.target_index, 1);
         assert!(switch.needs_first_load);

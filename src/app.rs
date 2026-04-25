@@ -486,16 +486,6 @@ impl OverviewSession {
         self.scan_root.as_deref()
     }
 
-    /// Breadcrumb prefix in the form `"[i/N]"`, or `None` in single-workflow
-    /// mode. Excludes the trailing space so the renderer can compose it.
-    pub fn breadcrumb_label(&self) -> Option<String> {
-        if self.is_multi() {
-            Some(format!("[{}/{}]", self.active + 1, self.discovery.len()))
-        } else {
-            None
-        }
-    }
-
     fn slot_loaded(&self, index: usize) -> bool {
         self.workflows
             .get(index)
@@ -895,11 +885,11 @@ impl App {
                     KeyCode::Home => state.select_first(),
                     KeyCode::End => state.select_last(),
                     KeyCode::Char('a') => state.toggle_scope(),
-                    KeyCode::Char(']') if is_multi => {
+                    KeyCode::Right if is_multi => {
                         let switch = session.cycle_next();
                         self.pending_switch = Some(switch);
                     }
-                    KeyCode::Char('[') if is_multi => {
+                    KeyCode::Left if is_multi => {
                         let switch = session.cycle_prev();
                         self.pending_switch = Some(switch);
                     }
@@ -1563,7 +1553,7 @@ mod tests {
         assert!(app.as_session().unwrap().is_multi());
         assert_eq!(app.as_session().unwrap().active_index(), 0);
 
-        app.handle_key(key(KeyCode::Char(']')));
+        app.handle_key(key(KeyCode::Right));
         let switch = app.take_pending_switch().expect("cycle next emits switch");
         assert_eq!(switch.target_index, 1);
         assert!(switch.needs_first_load);
@@ -1573,15 +1563,15 @@ mod tests {
         // index mutation but materialize is what the event loop does.
         app.materialize_active();
 
-        app.handle_key(key(KeyCode::Char(']')));
+        app.handle_key(key(KeyCode::Right));
         let _ = app.take_pending_switch();
         app.materialize_active();
-        app.handle_key(key(KeyCode::Char(']'))); // wraps back to 0
+        app.handle_key(key(KeyCode::Right)); // wraps back to 0
         let switch = app.take_pending_switch().expect("wrap emits switch");
         assert_eq!(switch.target_index, 0);
         assert!(!switch.needs_first_load, "w0 was already loaded");
 
-        app.handle_key(key(KeyCode::Char('['))); // wrap to last
+        app.handle_key(key(KeyCode::Left)); // wrap to last
         let switch = app.take_pending_switch().expect("prev emits switch");
         assert_eq!(switch.target_index, 2);
     }
@@ -1590,8 +1580,8 @@ mod tests {
     fn cycle_keys_inert_in_single_session() {
         let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
         let original = app.clone();
-        app.handle_key(key(KeyCode::Char(']')));
-        app.handle_key(key(KeyCode::Char('[')));
+        app.handle_key(key(KeyCode::Right));
+        app.handle_key(key(KeyCode::Left));
         app.handle_key(key(KeyCode::Char('P')));
         assert!(app.take_pending_switch().is_none());
         assert!(!app.take_pending_overlay_open());
@@ -1672,12 +1662,12 @@ mod tests {
         assert!(archived_loaded);
 
         // Cycle to w1 (first-load), then back to w0.
-        app.handle_key(key(KeyCode::Char(']')));
+        app.handle_key(key(KeyCode::Right));
         let switch = app.take_pending_switch().unwrap();
         assert_eq!(switch.target_index, 1);
         app.materialize_active();
         // Cycle back to w0.
-        app.handle_key(key(KeyCode::Char('[')));
+        app.handle_key(key(KeyCode::Left));
         let switch = app.take_pending_switch().unwrap();
         assert_eq!(switch.target_index, 0);
         assert!(
@@ -1700,7 +1690,7 @@ mod tests {
         new_disc[1].root = holder.path().join("does-not-exist");
         session.replace_discovery(new_disc);
         let mut app = App::from_session(session);
-        app.handle_key(key(KeyCode::Char(']')));
+        app.handle_key(key(KeyCode::Right));
         let switch = app.take_pending_switch().unwrap();
         assert_eq!(switch.target_index, 1);
         assert!(switch.needs_first_load);
@@ -1713,17 +1703,18 @@ mod tests {
 
     #[test]
     fn keymap_audit_is_disjoint() {
-        // The pre-existing key set used by the overview handler.
+        // The pre-existing char-key set used by the overview handler.
         let existing_chars: &[char] = &['a', '?', 'j', 'k', 'q'];
-        let new_chars: &[char] = &[']', '[', 'P'];
+        let new_chars: &[char] = &['P'];
         for c in new_chars {
             assert!(
                 !existing_chars.contains(c),
                 "new keymap char {c:?} collides with existing binding"
             );
         }
-        // Sanity: special keys (Down/Up/Home/End/Enter/Esc) are non-Char,
-        // so they cannot collide with the new Char-bound shortcuts.
+        // Tab-cycle bindings live on `Left`/`Right` (non-Char), and `Up`/
+        // `Down`/`Home`/`End`/`Enter`/`Esc` are also non-Char — those don't
+        // share the Char keyspace and can't collide here.
     }
 
     // The `cycle_keys_advance_active_index_in_multi_session` test above

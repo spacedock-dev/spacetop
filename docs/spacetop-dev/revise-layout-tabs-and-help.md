@@ -67,3 +67,16 @@ Verified by: render test asserts a literal substring like `?` and `help` appear 
 
 **AC-6 -- `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` are all fully clean on the worktree branch.**
 Verified by: command output cited in the implement stage report.
+
+## Stage Report: implement
+
+- DONE: Dashboard fills terminal width, pane content is centered, tab bar with `←`/`→` ships, help popup affordance is visible — each verified by at least one render or app-state test.
+  Render tests `dashboard_pane_spans_full_terminal_width`, `graph_ribbon_node_row_is_horizontally_centered_in_pane`, `multi_session_renders_tab_bar_with_count_and_per_workflow_tabs`, `arrow_keys_cycle_active_tab_with_wraparound_in_multi`, `arrow_keys_inert_in_single_session`, `single_session_omits_tab_bar`, `dashboard_status_footer_lists_help_affordance`, `help_popup_includes_arrow_keys_in_multi_session` cover each requirement.
+- DONE: The two overrides (task 009 centered-column and task 010 tabs-rejected) are explicitly named in the stage report along with what code was retired or rewritten.
+  Task 009 override: `MAX_CONTENT_WIDTH=120` cap and the `centered_column` width-cap in `src/ui/mod.rs` were dropped; the dashboard now fills `frame.area()` directly. Pane-internal content centering is achieved via `center_horizontal` for task list / preview and `Alignment::Center` on the graph ribbon Paragraph. Task 010 override: the `]`/`[` cycle bindings were removed in favor of `Left`/`Right`; `OverviewSession::breadcrumb_label` was deleted; `render_stage_graph_with_breadcrumb` was collapsed back into `render_stage_graph` with the `[i/N]` title prefix retired; the new `render_tab_bar` (`src/ui/mod.rs`) carries the workflow-count and per-workflow tabs. `P` picker-overlay is preserved; `?` was already wired in `App::handle_key` for Overview mode (no bug — captain's complaint was discoverability, fixed via the new `render_status_footer`).
+- DONE: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` all fully clean on the worktree branch — no surviving "pre-existing on main" carve-outs.
+  `cargo fmt --check` clean. `cargo clippy --all-targets -- -D warnings` clean. `cargo test` 103/103 passed across the four binaries (lib 99, integration suites 0/4/0/0).
+
+### Summary
+
+Replaced the wide-terminal centered-column rule with full-width dashboard layout while centering content blocks inside each pane. Added a real tab bar above the graph ribbon for multi-workflow sessions (one tab per workflow, `(active/total)` count visible, `Left`/`Right` cycle with wrap-around) and retired the `]`/`[` keybindings and the graph-title `[i/N]` breadcrumb. Surfaced the help affordance via a centered status-line footer at the bottom of the Overview and added the `Left`/`Right` switch entries to the help popup body. No app-state surface beyond key bindings and the removal of `breadcrumb_label` was changed.

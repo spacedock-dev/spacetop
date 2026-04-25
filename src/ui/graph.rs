@@ -6,7 +6,7 @@
 //! for the locked design.
 
 use ratatui::{
-    layout::Rect,
+    layout::{Alignment, Rect},
     prelude::{Frame, Line, Modifier, Span, Style},
     style::Color,
     widgets::{Block, Borders, Paragraph},
@@ -25,24 +25,11 @@ const MAX_FEEDBACK_ROWS: usize = 2;
 /// counts, and the currently selected item, then picks a width tier based on
 /// `area.width` and emits the ribbon, counts row, and optional feedback arc
 /// row(s).
-/// Back-compat wrapper kept so the existing graph-render tests don't have
-/// to thread a breadcrumb argument through every call site. Production
-/// callers go through [`render_stage_graph_with_breadcrumb`] directly.
-#[cfg(test)]
+///
+/// **Note (override of task 010):** the `[i/N]` breadcrumb prefix that this
+/// renderer used to inject into the block title has been retired — the
+/// dedicated tab bar above this pane now carries that information.
 pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
-    render_stage_graph_with_breadcrumb(frame, area, state, None);
-}
-
-/// Sibling renderer that injects an optional breadcrumb prefix (e.g.
-/// `"[2/3]"`) into the block title between the archived label and the
-/// workflow path. Single-workflow callers pass `None` and the title is
-/// byte-identical to the original `render_stage_graph`.
-pub fn render_stage_graph_with_breadcrumb(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    state: &OverviewState,
-    breadcrumb: Option<&str>,
-) {
     let ascii = std::env::var(ASCII_ENV_VAR)
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
@@ -67,17 +54,14 @@ pub fn render_stage_graph_with_breadcrumb(
         ViewScope::Archived => None,
     };
 
-    let breadcrumb_prefix = match breadcrumb {
-        Some(b) => format!("{b} "),
-        None => String::new(),
-    };
     let title = format!(
-        "Workflow \u{2014} [{scope_label}] \u{2014} {archived_label} \u{2014} {breadcrumb_prefix}{workflow_path}"
+        "Workflow \u{2014} [{scope_label}] \u{2014} {archived_label} \u{2014} {workflow_path}"
     );
 
     if stages.is_empty() {
         let paragraph = Paragraph::new(Line::from("(no stages defined)"))
-            .block(Block::default().title(title).borders(Borders::ALL));
+            .block(Block::default().title(title).borders(Borders::ALL))
+            .alignment(Alignment::Center);
         frame.render_widget(paragraph, area);
         return;
     }
@@ -93,8 +77,9 @@ pub fn render_stage_graph_with_breadcrumb(
         }
     };
 
-    let paragraph =
-        Paragraph::new(lines).block(Block::default().title(title).borders(Borders::ALL));
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default().title(title).borders(Borders::ALL))
+        .alignment(Alignment::Center);
     frame.render_widget(paragraph, area);
 }
 
@@ -842,7 +827,11 @@ mod tests {
     }
 
     #[test]
-    fn breadcrumb_appears_in_header_when_multi() {
+    fn no_breadcrumb_in_graph_header() {
+        // The breadcrumb prefix that task 010 added to the graph block title
+        // has been retired (the tab bar above the graph carries that info
+        // now). This test locks the absence of the [i/N] prefix in any
+        // session.
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(ASCII_ENV_VAR);
         let app = real_workflow();
@@ -852,44 +841,13 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
         terminal
             .draw(|frame| {
-                render_stage_graph_with_breadcrumb(
-                    frame,
-                    Rect::new(0, 0, width, height),
-                    state_of(&app),
-                    Some("[2/3]"),
-                );
+                render_stage_graph(frame, Rect::new(0, 0, width, height), state_of(&app));
             })
             .expect("draw");
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(
-            rendered.contains("[2/3]"),
-            "expected breadcrumb prefix in header"
-        );
-    }
-
-    #[test]
-    fn no_breadcrumb_in_single_workflow() {
-        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::remove_var(ASCII_ENV_VAR);
-        let app = real_workflow();
-        let path_len = app.workflow_dir().display().to_string().chars().count() as u16;
-        let width = path_len.saturating_add(80).max(200);
-        let height: u16 = 10;
-        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
-        terminal
-            .draw(|frame| {
-                render_stage_graph_with_breadcrumb(
-                    frame,
-                    Rect::new(0, 0, width, height),
-                    state_of(&app),
-                    None,
-                );
-            })
-            .expect("draw");
-        let rendered = buffer_text(terminal.backend().buffer());
-        assert!(
-            !rendered.contains("[1/1]"),
-            "single-workflow header should not include any [i/N] prefix"
+            !rendered.contains("[1/1]") && !rendered.contains("[2/3]"),
+            "graph header must not contain a [i/N] breadcrumb prefix"
         );
     }
 
