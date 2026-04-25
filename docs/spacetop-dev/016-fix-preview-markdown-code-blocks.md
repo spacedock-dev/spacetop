@@ -1,13 +1,13 @@
 ---
 id: "016"
 title: Fix preview pane markdown code block rendering
-status: plan
+status: implement
 source: captain
 started: 2026-04-25T15:19:40Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-016-fix-preview-markdown-code-blocks
 issue:
 pr:
 ---
