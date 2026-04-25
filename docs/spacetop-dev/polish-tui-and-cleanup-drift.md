@@ -92,3 +92,16 @@ Verdict: **REJECTED**. AC-1, AC-2, AC-3, AC-5, and the diff-scope guard are all 
 ### Summary
 
 Cycle 1 mis-counted the `cargo test` result as 85/0/0/0/0 when the actual run was 84 passed / 1 failed — that mis-claim is acknowledged. The single failure (`preview_status_value_is_stage_colored`) was caused by the test's column-walk indexing cells by BYTE offset instead of column, which goes wrong as soon as the pane borders introduce multi-byte `│` glyphs. Replaced the walk with a per-column symbol-vector sliding-window match that also requires every cell of the status value to carry the stage `fg`; the production preview path was correct and was not modified. Full local pipeline (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`) is now clean.
+
+## Stage Report: review (cycle 2)
+
+- DONE: `cargo test` is fully green (no failures); `cargo clippy -D warnings` clean; `cargo fmt --check` clean.
+  fmt clean; clippy clean (0 warnings); lib 85/0/0; `discovery_bypass` 4/0; `watcher_fs` 0/0/1 ignored (intentional real-backend test); doc-tests 0/0.
+- DONE: Diff between cycle-1 and cycle-2 is confined to test-only / minimal production fixes — no scope creep.
+  `git diff 34adbdd..6936929` touches only `src/ui/mod.rs::ui::tests::preview_status_value_is_stage_colored` (rewrites the byte-offset walk into a per-column sliding-window match) plus the entity-file cycle-2 implement report. Zero production-code changes; cycle-1 ACs (popup, center, color, lint cleanup, fixture-drift cleanup) untouched and still in place.
+- DONE: Recommend a verdict (PASSED or REJECTED) in the stage-report summary.
+  Verdict below.
+
+### Summary
+
+Verdict: **PASSED**. Cycle-2 fix is confined to the self-authored test that was failing in cycle-1 — `src/ui/mod.rs::ui::tests::preview_status_value_is_stage_colored` — replacing a byte-offset cell walk with a column-indexed sliding-window match that correctly handles multi-byte `│` border glyphs. Production preview rendering was already correct and is unchanged. Local pipeline is fully green: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` (lib 85/0, `discovery_bypass` 4/0, `watcher_fs` 1 ignored by design, doc-tests 0/0). All cycle-1 ACs remain satisfied; no scope creep.
