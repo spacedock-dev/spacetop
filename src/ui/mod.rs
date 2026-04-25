@@ -147,7 +147,7 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession)
 
     let [list_area, preview_area] = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .areas(content_area);
 
     render_task_list(frame, list_area, state);
@@ -336,7 +336,7 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
         ViewScope::Active => "Tasks",
         ViewScope::Archived => "Archived",
     };
-    let block = Block::default().title(title).borders(Borders::ALL);
+    let block = Block::default();
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -439,12 +439,17 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
 }
 
 fn render_preview(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
-    let block = Block::default().title("Preview").borders(Borders::ALL);
+    let block = Block::default().borders(Borders::LEFT);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let Some(item) = state.selected_item() else {
-        let paragraph = Paragraph::new("Select a work item to inspect it.");
-        frame.render_widget(paragraph, inner);
+        let dim = Style::default().add_modifier(Modifier::DIM);
+        let header = Line::from(Span::styled("Preview", dim));
+        let mut lines = vec![header];
+        if inner.height > 1 {
+            lines.push(Line::from("Select a work item to inspect it."));
+        }
+        frame.render_widget(Paragraph::new(lines), inner);
         return;
     };
 
@@ -1173,7 +1178,10 @@ mod tests {
             .expect("render should succeed");
 
         let buffer = terminal.backend().buffer();
-        let right_edge = width - 2;
+        // With Borders::LEFT on the preview pane and 50/50 split, the preview
+        // pane occupies cols width/2..width-1. The scrollbar sits at the
+        // rightmost column of the inner area, which is width-1.
+        let right_edge = width - 1;
         let has_scrollbar = (1..height - 1).any(|y| {
             let symbol = buffer[(right_edge, y)].symbol();
             symbol == "\u{2588}" || symbol == "\u{2502}"
@@ -1251,8 +1259,12 @@ mod tests {
             .expect("render should succeed");
         let buffer = terminal.backend().buffer();
 
+        // FULLWIDTHMARKER sits 60 X's into the title, after the row prefix
+        // (id + spaces + tag + spaces = 11 chars) and the 2-char highlight pad.
+        // With no border on the list pane it lands at col ~73; threshold 60
+        // is generous enough to prove content is not confined to a narrow column.
         assert!(
-            find_text_starting_after(buffer, "FULLWIDTHMARKER", 74),
+            find_text_starting_after(buffer, "FULLWIDTHMARKER", 60),
             "task row content should use the whole list pane rather than a centered narrow column"
         );
         let rendered = buffer_text(buffer);
