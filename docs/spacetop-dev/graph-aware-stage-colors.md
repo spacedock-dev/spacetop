@@ -263,3 +263,20 @@ The plan identifies `assign_stage_colors(&[StageDefinition]) -> Vec<Color>` in `
 ### Summary
 
 Implemented greedy graph-aware stage coloring: `assign_stage_colors` builds adjacency from linear and feedback edges, then assigns colors in definition order using preferred-color hints for known stage names, falling back to the first conflict-free GRAPH_PALETTE entry. `WorkflowDefinition` gains a `stage_colors` field populated at parse time and a `stage_color_for` lookup method. All render call sites in ui/mod.rs and ui/graph.rs updated to use graph-aware colors; the existing name-based `stage_color` function is preserved as a last-resort fallback. All 115 tests pass including three new AC tests.
+
+## Stage Report: review
+
+- DONE: AC-1 (adjacent differ) — `graph_coloring_no_adjacent_same_color` passes; tests all adjacent pairs including the feedback edge (gamma→alpha).
+  `cargo test graph_coloring_no_adjacent_same_color` — 1 passed.
+- DONE: AC-2 (≤2 colors linear) — `graph_coloring_linear_path_uses_at_most_two_colors` passes; 5-stage path uses exactly 2 distinct colors.
+  `cargo test graph_coloring_linear_path_uses_at_most_two_colors` — 1 passed.
+- DONE: AC-3 (preferred colors) — `graph_coloring_preserves_preferred_colors_for_standard_workflow` passes; design=Blue, plan=Cyan, implement=Yellow, review=Magenta, done=Green.
+  `cargo test graph_coloring_preserves_preferred_colors_for_standard_workflow` — 1 passed.
+- DONE: AC-4 (regressions none) — `cargo test` exits 0; `graph_ribbon_uses_stage_colors_per_stage` and `stage_color_assigns_distinct_colors_for_known_stages` both pass.
+  115/115 tests pass across all test suites.
+- DONE: Diff is clean — `assign_stage_colors()` in ui/mod.rs, `stage_colors` field on WorkflowDefinition in domain/mod.rs, `stage_color_for()` replacing `stage_color()` at all 3 call sites; no unrelated changes.
+  Changed files: src/domain/mod.rs, src/ui/mod.rs, src/ui/graph.rs, src/parser.rs, src/app.rs (struct literal updates), docs entity file.
+
+### Summary
+
+The implementation passes all four acceptance criteria. The greedy coloring algorithm correctly enforces no same-color constraint on adjacent stages (linear and feedback edges), uses at most 2 colors for a linear path, and preserves preferred colors for the standard 5-stage workflow. The diff is scoped to the planned files with no unrelated changes. Verdict: PASSED.
