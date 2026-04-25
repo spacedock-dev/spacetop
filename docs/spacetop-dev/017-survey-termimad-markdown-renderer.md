@@ -117,3 +117,14 @@ termimad 0.34.1 renders markdown via its own crossterm-backed pipeline with no f
 ### Summary
 
 All three hybrid angles were researched. `ratskin` 0.3.1 is a real, working termimad→ratatui bridge that produces `Vec<Line>` from a `MadSkin`, but requires ratatui ≥ 0.30.0 — a version spacetop does not currently use. The minimad-direct path replicates what ratskin provides without the version constraint, but adds a new dependency and maintenance burden for no functional improvement. No hybrid offers a rendering quality advantage over the current `render_markdown_lines` for the content types spacetop actually displays. Recommendation: keep `pulldown-cmark` and the current renderer.
+
+## Stage Report: plan
+
+- DONE: Plan documents that no code changes are required — the survey deliverable is the decision recorded in the entity body.
+  The design stage fully satisfied all ACs; the `## Decision` section records the keep-pulldown-cmark verdict with rationale. No implementation work exists in this task.
+- DONE: Plan records the unblocking dependency: ratatui upgrade to 0.30+ (task 018) must ship before ratskin adoption.
+  If ratskin is ever revisited, it requires ratatui ≥ 0.30.0. Task 018 handles that upgrade; ratskin adoption is deferred until 018 ships.
+
+### Summary
+
+This survey task is complete as a documentation artifact. The design stage produced a full comparison of termimad vs. pulldown-cmark, evaluated three hybrid integration paths, and concluded that the existing `render_markdown_lines` implementation should be retained. The only forward action is optional: if ratskin adoption is desired after task 018 upgrades ratatui to 0.30+, the path is documented in the `## Decision` section. No code changes are required in this task.
