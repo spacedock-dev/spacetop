@@ -9,7 +9,7 @@ verdict:
 score: 0.7
 worktree: .worktrees/spacedock-ensign-exclude-worktrees-from-discovery
 issue:
-pr:
+pr: #1
 mod-block: merge:pr-merge
 ---
 
