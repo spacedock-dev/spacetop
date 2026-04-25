@@ -61,6 +61,7 @@ impl OverviewState {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
+                stage_colors: Vec::new(),
             },
             items: Vec::new(),
         };
@@ -1381,6 +1382,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
+                stage_colors: Vec::new(),
             },
             items: (0..count)
                 .map(|index| WorkItem {
@@ -1420,6 +1422,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
+                stage_colors: Vec::new(),
             },
             items: paths
                 .iter()

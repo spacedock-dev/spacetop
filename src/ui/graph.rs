@@ -13,8 +13,7 @@ use ratatui::{
 };
 
 use crate::app::{OverviewState, ViewScope};
-use crate::domain::StageDefinition;
-use crate::ui::stage_color;
+use crate::domain::{StageDefinition, WorkflowDefinition};
 
 const ASCII_ENV_VAR: &str = "SPACETOP_ASCII";
 const MAX_FEEDBACK_ROWS: usize = 2;
@@ -75,8 +74,9 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
     let inner_width = area.width as usize;
     let tier = pick_width_tier(inner_width, stages, &counts, &glyphs);
 
+    let definition = &state.snapshot().definition;
     let lines = match tier {
-        WidthTier::Wide => render_wide(stages, &counts, active_stage.as_deref(), &glyphs),
+        WidthTier::Wide => render_wide(stages, &counts, active_stage.as_deref(), &glyphs, definition),
         WidthTier::Narrow => render_narrow(stages, &counts, active_stage.as_deref(), &glyphs),
         WidthTier::VeryNarrow => {
             render_very_narrow(stages, &counts, active_stage.as_deref(), &glyphs)
@@ -273,6 +273,7 @@ fn render_wide<'a>(
     counts: &'a [usize],
     active: Option<&str>,
     g: &'a GlyphSet,
+    definition: &WorkflowDefinition,
 ) -> Vec<Line<'a>> {
     let cols = layout_columns(stages, counts, active, g);
 
@@ -287,7 +288,7 @@ fn render_wide<'a>(
             ));
         }
         let mut style = Style::default()
-            .fg(stage_color(&col.stage_name))
+            .fg(definition.stage_color_for(&col.stage_name))
             .add_modifier(Modifier::BOLD);
         if col.is_active {
             style = style.add_modifier(Modifier::REVERSED);
@@ -583,6 +584,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
+                stage_colors: Vec::new(),
             },
             items: vec![make_item("001", "plan", "Plan task")],
         };
@@ -740,6 +742,7 @@ mod tests {
                 entity_type: None,
                 entity_label: None,
                 entity_label_plural: None,
+                stage_colors: Vec::new(),
             },
             items: Vec::new(),
         };

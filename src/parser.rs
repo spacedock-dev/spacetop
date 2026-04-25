@@ -79,6 +79,7 @@ pub fn parse_workflow_readme(path: &Path) -> Result<WorkflowDefinition, ParseErr
         });
     }
 
+    let stage_colors = crate::ui::assign_stage_colors(&stages);
     Ok(WorkflowDefinition {
         root: path.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
         stages,
@@ -86,6 +87,7 @@ pub fn parse_workflow_readme(path: &Path) -> Result<WorkflowDefinition, ParseErr
         entity_type: raw.entity_type,
         entity_label: raw.entity_label,
         entity_label_plural: raw.entity_label_plural,
+        stage_colors,
     })
 }
 
