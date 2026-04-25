@@ -1,13 +1,13 @@
 ---
 id: "013"
 title: Assign stage colors using graph-aware coloring — no same color on adjacent stages
-status: plan
+status: implement
 source: captain feedback 2026-04-25
 started: 2026-04-25T10:37:39Z
 completed:
 verdict:
 score: 0.8
-worktree:
+worktree: .worktrees/spacedock-ensign-graph-aware-stage-colors
 issue:
 pr:
 ---
