@@ -1,7 +1,7 @@
 ---
 id: "017"
 title: Survey termimad as markdown renderer for the preview pane
-status: design
+status: plan
 source: captain (follow-up from 016)
 started: 2026-04-25T15:38:17Z
 completed:
