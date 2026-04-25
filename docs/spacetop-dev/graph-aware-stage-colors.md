@@ -1,9 +1,9 @@
 ---
 id: "013"
 title: Assign stage colors using graph-aware coloring — no same color on adjacent stages
-status: design
+status: plan
 source: captain feedback 2026-04-25
-started:
+started: 2026-04-25T10:37:39Z
 completed:
 verdict:
 score: 0.8
