@@ -491,6 +491,7 @@ fn render_preview(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     };
 
     let max_scroll = usize::from(content_height.saturating_sub(body_area.height));
+    state.max_preview_scroll.set(max_scroll);
     let scroll_position = state.preview_scroll().min(max_scroll);
     let mut skip_rows = scroll_position as u16;
     let mut cursor_y = body_area.y;
@@ -530,8 +531,7 @@ fn render_preview(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     }
 
     if show_scrollbar {
-        let mut scrollbar_state = ScrollbarState::new(content_height as usize)
-            .viewport_content_length(body_inner.height as usize)
+        let mut scrollbar_state = ScrollbarState::new(max_scroll + 1)
             .position(scroll_position);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -1831,5 +1831,63 @@ mod tests {
             }
         }
         assert_eq!(done, Color::Green);
+    }
+
+    #[test]
+    fn preview_scrollbar_thumb_reaches_bottom_at_max_scroll() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let body = (0..60)
+            .map(|i| format!("Line {:02}", i))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let mut app = app_with_items(vec![item("001", "Scrollable", &body)]);
+        let width: u16 = 160;
+        let height: u16 = 30;
+
+        // Run several render+scroll cycles so max_preview_scroll is set by
+        // render_preview before scroll_preview_down reads it.
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        for _ in 0..30 {
+            terminal.draw(|frame| render(frame, &app)).unwrap();
+            app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+        }
+        // Final render at max scroll.
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let right_edge = width - 1;
+        let bottom_row = height - 2; // last row before footer
+        let thumb_at_bottom = buffer[(right_edge, bottom_row)].symbol() == "\u{2588}";
+        assert!(
+            thumb_at_bottom,
+            "scrollbar thumb must reach bottom row at max scroll (col={right_edge}, row={bottom_row})"
+        );
+    }
+
+    #[test]
+    fn preview_scrollbar_thumb_starts_at_top_at_zero_scroll() {
+        let body = (0..60)
+            .map(|i| format!("Line {:02}", i))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let app = app_with_items(vec![item("001", "Scrollable", &body)]);
+        let width: u16 = 160;
+        let height: u16 = 30;
+
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let right_edge = width - 1;
+
+        let first_thumb_row = (1..height - 1)
+            .find(|&y| buffer[(right_edge, y)].symbol() == "\u{2588}")
+            .expect("scrollbar thumb must be visible at scroll=0");
+
+        assert!(
+            first_thumb_row < height / 2,
+            "at scroll=0, thumb must sit in the upper half of the track (got row {first_thumb_row})"
+        );
     }
 }
