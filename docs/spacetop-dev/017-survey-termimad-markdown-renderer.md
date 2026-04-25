@@ -140,3 +140,16 @@ This survey task is complete as a documentation artifact. The design stage produ
 ### Summary
 
 No implementation work was required. The survey deliverable was fully produced in the design stage: the `## Decision` section records the keep-pulldown-cmark verdict, documents the ratskin hybrid path (viable but gated on a ratatui upgrade), and names task 018 as the precondition for any future ratskin adoption.
+
+## Stage Report: review
+
+- DONE: All four AC items are satisfied: comparison written, recommendation stated, no implementation (correct for keep path), Decision section present.
+  AC-1: `## Comparison` section covers all required content types, API surface, integration friction, and crate weight. AC-2: `## Decision` opens with "Keep `pulldown-cmark`." and design stage reports contain `Recommendation: keep pulldown-cmark.` AC-3: N/A (keep path taken). AC-4: `## Decision` section present at entity line 83 with full rationale.
+- DONE: The ratskin path and its task 018 dependency are clearly recorded for future reference.
+  `## Decision` names ratskin as viable-but-blocked (ratatui ≥ 0.30.0 required); plan stage report explicitly records task 018 as the precondition.
+- DONE: No source files were modified — the survey deliverable is documentation only.
+  `git diff main...HEAD --stat` shows exactly 1 file changed: `docs/spacetop-dev/017-survey-termimad-markdown-renderer.md`. No `src/` changes.
+
+### Summary
+
+All checklist items pass. The entity body contains a thorough termimad vs. pulldown-cmark comparison, a clear keep recommendation backed by integration-friction analysis, and a Decision section documenting all three hybrid paths including the ratskin/task-018 dependency. The worktree diff is documentation-only; no source code was touched. Approved.
