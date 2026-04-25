@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-revise-layout-tabs-and-help
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Combined UI/UX revision task. Captain asked to skip design/plan and implement directly.
