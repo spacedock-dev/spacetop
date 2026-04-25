@@ -60,13 +60,19 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
 
     if stages.is_empty() {
         let paragraph = Paragraph::new(Line::from("(no stages defined)"))
-            .block(Block::default().title(title).borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::TOP | Borders::BOTTOM),
+            )
             .alignment(Alignment::Center);
         frame.render_widget(paragraph, area);
         return;
     }
 
-    let inner_width = area.width.saturating_sub(2) as usize;
+    // With TOP+BOTTOM borders only, the inner width equals the full area width
+    // (no left/right border columns are consumed).
+    let inner_width = area.width as usize;
     let tier = pick_width_tier(inner_width, stages, &counts, &glyphs);
 
     let lines = match tier {
@@ -78,7 +84,11 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
     };
 
     let paragraph = Paragraph::new(lines)
-        .block(Block::default().title(title).borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(title)
+                .borders(Borders::TOP | Borders::BOTTOM),
+        )
         .alignment(Alignment::Center);
     frame.render_widget(paragraph, area);
 }
@@ -750,8 +760,10 @@ mod tests {
         std::env::remove_var(ASCII_ENV_VAR);
         let app = real_workflow();
         // Width chosen so the wide ribbon doesn't fit but the compact narrow
-        // form does — see pick_width_tier().
-        let rendered = render_to_string(&app, 58, 10);
+        // form does — see pick_width_tier(). With TOP+BOTTOM-only borders,
+        // inner_width equals area.width directly (no left/right columns
+        // consumed), so the threshold dropped by 2 vs. the old ALL-border code.
+        let rendered = render_to_string(&app, 56, 10);
         for name in ["design", "plan", "implement", "review", "done"] {
             assert!(rendered.contains(name), "missing stage {name}");
         }
