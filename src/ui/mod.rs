@@ -707,6 +707,7 @@ fn render_markdown_lines(markdown: &str, max_lines: usize) -> Vec<Line<'static>>
     let mut strong = false;
     let mut heading_depth: Option<u32> = None;
     let mut in_item = false;
+    let mut in_code_block = false;
     let mut table: Option<TableRender> = None;
     let mut table_row: Vec<String> = Vec::new();
     let mut table_cell = String::new();
@@ -770,11 +771,30 @@ fn render_markdown_lines(markdown: &str, max_lines: usize) -> Vec<Line<'static>>
                 flush_text_block(&mut blocks, &mut text_lines);
                 in_item = false;
             }
+            MarkdownEvent::Start(Tag::CodeBlock(_)) => {
+                flush_line(&mut text_lines, &mut spans, max_lines);
+                flush_text_block(&mut blocks, &mut text_lines);
+                in_code_block = true;
+            }
+            MarkdownEvent::End(TagEnd::CodeBlock) => {
+                flush_text_block(&mut blocks, &mut text_lines);
+                in_code_block = false;
+            }
             MarkdownEvent::Start(Tag::Strong) => strong = true,
             MarkdownEvent::End(TagEnd::Strong) => strong = false,
             MarkdownEvent::Text(text) => {
                 if in_table_cell {
                     table_cell.push_str(&text);
+                    continue;
+                }
+                if in_code_block {
+                    let content = text.trim_end_matches('\n').to_string();
+                    if text_lines.len() < max_lines {
+                        text_lines.push(Line::from(Span::styled(
+                            content,
+                            Style::default().fg(Color::Cyan).bg(Color::DarkGray),
+                        )));
+                    }
                     continue;
                 }
                 let mut style = Style::default();
@@ -2225,5 +2245,32 @@ mod tests {
         assert_eq!(colors["implement"], Color::Yellow, "implement should be Yellow");
         assert_eq!(colors["review"], Color::Magenta, "review should be Magenta");
         assert_eq!(colors["done"], Color::Green, "done should be Green");
+    }
+
+    #[test]
+    fn preview_renders_fenced_code_block_without_backtick_fences() {
+        let body = "Some prose.\n\n```rust\nlet x = 1;\n```\n\nAfter block.";
+        let app = app_with_items(vec![item("001", "Code Block Preview", body)]);
+        let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = buffer_text(buffer);
+
+        // Backtick fences must not appear
+        assert!(!rendered.contains("```"), "backtick fences should not be visible");
+
+        // Code body text must appear
+        assert!(rendered.contains("let x = 1;"), "code body text must be rendered");
+
+        // Code text must carry distinct styling (Cyan fg or DarkGray bg)
+        assert!(
+            find_styled_text(buffer, "let x = 1;", |style| {
+                style.fg == Some(Color::Cyan) || style.bg == Some(Color::DarkGray)
+            }),
+            "code block text must have distinct style"
+        );
     }
 }

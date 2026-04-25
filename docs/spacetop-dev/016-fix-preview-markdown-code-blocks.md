@@ -340,3 +340,16 @@ cargo run -- --workflow-dir docs/spacetop-dev
 ### Summary
 
 The plan translates the design's parser/TUI constraints into seven concrete, ordered steps with inline code sketches, a clear state-variable addition, and two explicit test commands that require only `TestBackend` (no live TUI). All work is confined to `src/ui/mod.rs`. The implementer can begin at Step 1 and verify progress at each step with `cargo check`; Steps 5-7 confirm correctness without any manual inspection session.
+
+## Stage Report: implement
+
+- DONE: `render_markdown_lines` correctly emits styled `Line` values for fenced code block content, distinct from prose lines.
+  Added `in_code_block` bool, `Start(Tag::CodeBlock(_))` / `End(TagEnd::CodeBlock)` arms, and per-line `Line::from(Span::styled(..., fg(Cyan).bg(DarkGray)))` emission in the `Text` arm.
+- DONE: Both new unit tests pass: one for fenced blocks, one confirming existing prose rendering is unaffected.
+  `preview_renders_fenced_code_block_without_backtick_fences` added; all 137 tests pass including existing `preview_renders_markdown_body_instead_of_raw_markers`.
+- DONE: `cargo test --lib` exits 0 with no failures.
+  137 passed; 0 failed; 0 ignored — `cargo test --lib` output confirms clean run.
+
+### Summary
+
+All changes are confined to `src/ui/mod.rs`. A boolean `in_code_block` guard was added to `render_markdown_lines`; `Start(Tag::CodeBlock(_))` flushes any open prose block and sets the flag, `End(TagEnd::CodeBlock)` flushes the code block and clears the flag, and `Text` events inside the block emit styled `Line` values with `fg(Cyan).bg(DarkGray)` instead of accumulating into the spans buffer. The new test verifies no backtick fences appear, code body text is present, and the distinct style is applied; the full 137-test suite passes with no regressions.
