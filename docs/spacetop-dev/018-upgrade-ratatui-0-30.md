@@ -1,6 +1,6 @@
 ---
 id: "018"
-title: Upgrade ratatui to 0.30+ to unblock ratskin adoption
+title: Upgrade ratatui to 0.30+ and fix multi-line code block rendering
 status: review
 source: captain (unblocks 017 ratskin path)
 started: 2026-04-25T16:03:12Z
@@ -140,3 +140,9 @@ Alternatively, manually add `ratskin = "0.3"` to `[dependencies]` in `Cargo.toml
 ### Summary
 
 The plan distills to a single line change in `Cargo.toml` (`ratatui = "0.29"` → `ratatui = "0.30"`) followed by `cargo check` and `cargo test --lib`. The design stage's breaking-changes inventory confirmed no source edits are needed. AC-5 ratskin compatibility is verified by temporarily adding `ratskin` via `cargo add`, confirming `cargo check` exits 0, then removing it — ratskin wiring remains task 019's responsibility. File ownership is unambiguous: only `Cargo.toml` is modified.
+
+### Feedback Cycles
+
+**Cycle 1 — review → implement**
+Reviewer: captain. Stage: review. Verdict: REJECTED.
+Reason: Multi-line code block rendering is broken — pulldown-cmark delivers an entire code block body as a single `Text` event with embedded `\n` characters, but the current `render_markdown_lines` emits it as one `Line` instead of splitting on newlines. Fix required in this task's implement stage alongside the ratatui upgrade.
