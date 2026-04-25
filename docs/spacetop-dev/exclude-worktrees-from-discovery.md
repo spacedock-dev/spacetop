@@ -38,3 +38,72 @@ Verified by: `cargo test` with a fixture that has both a real workflow dir and a
 
 **AC-3 — The filter does not break discovery when `.worktrees/` is absent.**
 Verified by: existing discovery tests continue to pass with no modification.
+
+## Implementation Plan
+
+### Current state
+
+`.worktrees` is already listed in `PRUNED_DIR_NAMES` in `src/discovery.rs` (line 31). The `is_pruned` function uses this constant to skip entire subtrees during `WalkDir` traversal. The discovery logic is correct. What is missing are explicit test cases proving AC-1 and AC-2 coverage.
+
+No changes to production source code are required. The implementation work is entirely in tests.
+
+### Step 1 — Add unit tests for `.worktrees` exclusion in `src/discovery.rs`
+
+**File:** `src/discovery.rs`, inside the existing `#[cfg(test)] mod tests` block.
+
+**Tests to add:**
+
+**Test A — AC-1: `discover_workflows` returns nothing under `.worktrees/`**
+```
+fn worktrees_subdir_is_excluded_from_discovery()
+```
+- Fixture: `tempdir` with `docs/real/README.md` (valid workflow) and `.worktrees/some-task/docs/real/README.md` (same workflow inside worktree clone).
+- Assertion: `discover_workflows(root)` returns exactly 1 workflow and its root does not contain `.worktrees` as a path component.
+
+**Test B — AC-2: picker item count equals real-workflow count (not N+1)**
+```
+fn worktrees_clone_does_not_inflate_workflow_count()
+```
+- Fixture: `tempdir` with `docs/alpha/README.md`, `docs/beta/README.md` (2 real workflows), `.worktrees/task-1/docs/alpha/README.md`, `.worktrees/task-1/docs/beta/README.md` (worktree clone with same 2 workflows).
+- Assertion: `discover_workflows(root).len() == 2`.
+
+### Step 2 — Add integration test for `.worktrees` exclusion in `tests/discovery_bypass.rs`
+
+**File:** `tests/discovery_bypass.rs`, new test function.
+
+**Test C — AC-1+AC-2 via `decide_app`:**
+```
+fn worktrees_excluded_from_decide_app_discovery()
+```
+- Fixture: `tempdir` with `.git/`, `docs/real/README.md` (valid full workflow using `write_workflow`), `.worktrees/some-task/docs/real/README.md` (same).
+- Call `decide_app(&cli_with(None), root)`.
+- Assertion: outcome is `DecideOutcome::Overview(app)` where `app.as_session().unwrap().len() == 1`, confirming no duplication from the worktree clone.
+
+### Step 3 — Verify AC-3 (no regression)
+
+Run `cargo test` and confirm all pre-existing tests in `src/discovery.rs` and `tests/discovery_bypass.rs` still pass. No code changes needed; this is a verification-only step.
+
+**Command:** `cargo test 2>&1 | tail -20`
+
+### File ownership
+
+| File | Change |
+|------|--------|
+| `src/discovery.rs` | Add 2 unit tests inside existing `#[cfg(test)]` block |
+| `tests/discovery_bypass.rs` | Add 1 integration test using existing `write_workflow` helper |
+
+### Evidence of completion
+
+- `cargo test` output showing all tests pass (including the 3 new tests by name).
+- No changes to `PRUNED_DIR_NAMES`, `is_pruned`, or `discover_workflows` — production code is already correct.
+
+## Stage Report: plan
+
+- DONE: Step-by-step implementation plan naming exact files, functions, and test locations.
+  Plan above covers all 3 ACs: 2 unit tests in `src/discovery.rs`, 1 integration test in `tests/discovery_bypass.rs`. Production code (`PRUNED_DIR_NAMES` already includes `.worktrees`) requires no changes.
+- DONE: Test strategy: at least one proposed test fixture and assertion for each AC.
+  AC-1: `worktrees_subdir_is_excluded_from_discovery` — fixture has `.worktrees/…/README.md`, asserts 1 result with no `.worktrees` path component. AC-2: `worktrees_clone_does_not_inflate_workflow_count` — fixture has 2 real workflows + 2 in a worktree clone, asserts `len() == 2`. AC-3: existing tests pass without modification.
+
+### Summary
+
+The production fix (`.worktrees` in `PRUNED_DIR_NAMES`) is already in place in `src/discovery.rs`. The plan calls for adding three new tests — two unit tests in the `discovery` module and one integration test in `tests/discovery_bypass.rs` — that directly exercise each acceptance criterion using `tempfile` fixtures. No logic changes are needed; the work is entirely test coverage.
