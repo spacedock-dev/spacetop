@@ -8,6 +8,12 @@ use ratatui::{
 use crate::app::PickerState;
 
 pub fn render_in(frame: &mut Frame<'_>, area: Rect, state: &PickerState) {
+    let outer = Block::default()
+        .title("Pick Workflow")
+        .borders(Borders::ALL);
+    let inner = outer.inner(area);
+    frame.render_widget(outer, area);
+
     let has_error = state.error().is_some();
     let mut constraints = vec![Constraint::Length(3), Constraint::Min(1)];
     if has_error {
@@ -18,7 +24,7 @@ pub fn render_in(frame: &mut Frame<'_>, area: Rect, state: &PickerState) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
-        .split(area);
+        .split(inner);
     let title_area = areas[0];
     let list_area = areas[1];
     let (error_area, footer_area) = if has_error {
@@ -135,6 +141,7 @@ mod tests {
         let rendered = buffer_text(terminal.backend().buffer());
 
         assert!(rendered.contains("pick a workflow"));
+        assert!(rendered.contains("Pick Workflow"));
         assert!(rendered.contains("/scan-root"));
         assert!(rendered.contains("docs/w0"));
         assert!(rendered.contains("docs/w1"));
@@ -190,5 +197,18 @@ mod tests {
             .unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("failed to load /nonexistent: boom"));
+    }
+
+    #[test]
+    fn renders_bordered_dialog() {
+        let state = state_with(2);
+        let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+
+        assert_ne!(buffer[(0, 0)].symbol(), " ");
+        assert_ne!(buffer[(99, 0)].symbol(), " ");
     }
 }

@@ -158,7 +158,10 @@ pub fn load_archived_items(
 
     let mut items = Vec::with_capacity(item_paths.len());
     for item_path in item_paths {
-        items.push(parse_work_item(&item_path, allowed_statuses)?);
+        match parse_work_item(&item_path, allowed_statuses) {
+            Ok(item) => items.push(item),
+            Err(_) => continue,
+        }
     }
 
     items.sort_by(
@@ -219,11 +222,7 @@ fn parse_work_item_contents(
 ) -> Result<WorkItem, ParseError> {
     let path_label = display_path(path);
     let (frontmatter, body) = extract_frontmatter(contents, &path_label)?;
-    let raw: RawWorkItemFrontmatter =
-        serde_yaml::from_str(frontmatter).map_err(|source| ParseError::MalformedYaml {
-            path: path_label.clone(),
-            source,
-        })?;
+    let raw = parse_work_item_frontmatter(frontmatter, &path_label)?;
 
     let id = required(raw.id, path, "id")?;
     let title = required(raw.title, path, "title")?;
@@ -251,6 +250,89 @@ fn parse_work_item_contents(
         pr: optional_text(raw.pr),
         body: body.to_string(),
     })
+}
+
+fn parse_work_item_frontmatter(
+    frontmatter: &str,
+    path_label: &str,
+) -> Result<RawWorkItemFrontmatter, ParseError> {
+    match serde_yaml::from_str(frontmatter) {
+        Ok(raw) => Ok(raw),
+        Err(source) => parse_flat_work_item_frontmatter(frontmatter).ok_or(ParseError::MalformedYaml {
+            path: path_label.to_string(),
+            source,
+        }),
+    }
+}
+
+fn parse_flat_work_item_frontmatter(frontmatter: &str) -> Option<RawWorkItemFrontmatter> {
+    let mut raw = RawWorkItemFrontmatter {
+        id: None,
+        title: None,
+        status: None,
+        source: None,
+        started: None,
+        completed: None,
+        verdict: None,
+        score: None,
+        worktree: None,
+        issue: None,
+        pr: None,
+    };
+
+    for line in frontmatter.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if line.starts_with(' ') || line.starts_with('\t') {
+            return None;
+        }
+        let (key, value) = trimmed.split_once(':')?;
+        let key = key.trim();
+        if key.is_empty() {
+            return None;
+        }
+        let value = value.trim_start();
+        if matches!(value.chars().next(), Some('[' | '{' | '|' | '>' | '&' | '*')) {
+            return None;
+        }
+        let value = unquote_scalar(value);
+        match key {
+            "id" => raw.id = optional_text(Some(value.to_string())),
+            "title" => raw.title = optional_text(Some(value.to_string())),
+            "status" => raw.status = optional_text(Some(value.to_string())),
+            "source" => raw.source = optional_text(Some(value.to_string())),
+            "started" => raw.started = optional_text(Some(value.to_string())),
+            "completed" => raw.completed = optional_text(Some(value.to_string())),
+            "verdict" => raw.verdict = optional_text(Some(value.to_string())),
+            "score" => {
+                raw.score = if value.trim().is_empty() {
+                    None
+                } else {
+                    Some(value.parse().ok()?)
+                }
+            }
+            "worktree" => raw.worktree = optional_text(Some(value.to_string())),
+            "issue" => raw.issue = optional_text(Some(value.to_string())),
+            "pr" => raw.pr = optional_text(Some(value.to_string())),
+            _ => {}
+        }
+    }
+
+    Some(raw)
+}
+
+fn unquote_scalar(value: &str) -> &str {
+    if value.len() >= 2 {
+        let bytes = value.as_bytes();
+        if (bytes[0] == b'"' && bytes[value.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[value.len() - 1] == b'\'')
+        {
+            return &value[1..value.len() - 1];
+        }
+    }
+    value
 }
 
 fn extract_frontmatter<'a>(
@@ -618,6 +700,37 @@ Body
         assert!(error.contains("malformed.md"));
     }
 
+    #[test]
+    fn parses_flat_frontmatter_with_unquoted_colon_in_title() {
+        let path = write_temp_markdown(
+            "colon-title.md",
+            r#"---
+id: 132
+title: Codex first officer: derive reusable context visibility
+status: ideation
+source: FO observation
+score: 0.62
+---
+
+Body
+"#,
+        );
+        let item = parse_work_item(
+            &path,
+            &["backlog".to_string(), "ideation".to_string(), "done".to_string()],
+        )
+        .expect("flat frontmatter fallback should parse");
+
+        assert_eq!(item.id, "132");
+        assert_eq!(
+            item.title,
+            "Codex first officer: derive reusable context visibility"
+        );
+        assert_eq!(item.status, "ideation");
+        assert_eq!(item.source.as_deref(), Some("FO observation"));
+        assert_eq!(item.score, Some(0.62));
+    }
+
     fn unique_temp_dir(label: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -740,7 +853,7 @@ Body
     }
 
     #[test]
-    fn load_archived_items_propagates_parse_error_with_path() {
+    fn load_archived_items_returns_empty_when_all_entries_are_malformed() {
         let dir = unique_temp_dir("broken");
         let archive = dir.join("_archive");
         fs::create_dir_all(&archive).expect("archive dir");
@@ -754,11 +867,46 @@ Body
 "#,
         );
 
-        let error = load_archived_items(&dir, &["done".to_string()])
-            .expect_err("broken frontmatter should fail")
-            .to_string();
-        assert!(error.contains("malformed YAML frontmatter"));
-        assert!(error.contains("broken.md"));
+        let items = load_archived_items(&dir, &["done".to_string()]).expect("archive load");
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn load_archived_items_skips_malformed_entries_and_keeps_valid_ones() {
+        let dir = unique_temp_dir("archive-skip-broken");
+        let archive = dir.join("_archive");
+        fs::create_dir_all(&archive).expect("archive dir");
+        write_markdown(
+            &archive.join("good.md"),
+            r#"---
+id: "001"
+title: Good
+status: done
+completed: 2026-04-24T15:00:00Z
+---
+
+Body
+"#,
+        );
+        write_markdown(
+            &archive.join("broken.md"),
+            r#"---
+id: 131
+title: Broken: archive entry
+<<<<<<< HEAD
+status: validation
+=======
+status: done
+>>>>>>> branch
+---
+
+Body
+"#,
+        );
+
+        let items = load_archived_items(&dir, &["done".to_string()]).expect("archive load");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "Good");
     }
 
     #[test]
