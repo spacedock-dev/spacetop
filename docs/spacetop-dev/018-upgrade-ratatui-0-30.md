@@ -150,3 +150,7 @@ Reason: Multi-line code block rendering is broken — pulldown-cmark delivers an
 **Cycle 2 — review → implement**
 Reviewer: captain. Stage: review. Verdict: REJECTED.
 Reason: The `text.split('\n')` fix in `render_markdown_lines` passes the unit test but the multi-line code block still does not appear as multiple lines in the TUI. The root cause is deeper — the issue may be in how the `Vec<Line>` output is passed to the Paragraph widget, how the preview area is sized/scrolled, or whether `render_markdown_lines` is the actual function rendering the preview. Must trace the full path from markdown input to on-screen output and fix the real cause.
+
+**Cycle 3 — review → implement**
+Reviewer: captain (screenshot provided). Stage: review. Verdict: REJECTED.
+Reason: Multi-line rendering is now correct. New issue: the DarkGray background only renders behind text characters, leaving the rest of the line (to the right of the text) unstyled. The background should cover the full line width of the preview pane. Fix: pass the preview pane width to render_markdown_lines and pad each code line with trailing spaces to fill the width, so the styled background extends edge-to-edge across the block.
