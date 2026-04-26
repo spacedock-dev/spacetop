@@ -10,6 +10,7 @@ score: 0.6
 worktree: .worktrees/spacedock-ensign-022-word-wrap-toggle
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 The preview pane currently renders content with a fixed line-width behavior. Users working with long entity body text or stage reports want to toggle word-wrap on and off without leaving the TUI. A dedicated keybinding should switch between wrapped and unwrapped (horizontal-scroll) mode in the preview pane.
