@@ -542,9 +542,10 @@ fn render_preview(
             .height
             .saturating_sub(metadata_height + divider_area.height),
     };
-    let body_lines = render_markdown_lines(&item.body, usize::MAX, body_inner.width as usize);
-    let content_height = body_lines.len() as u16;
-    let show_scrollbar = content_height > body_inner.height && body_inner.width > 1;
+    // First pass: measure line count with full inner width to decide scrollbar.
+    let body_lines_full = render_markdown_lines(&item.body, usize::MAX, body_inner.width as usize);
+    let content_height_full = body_lines_full.len() as u16;
+    let show_scrollbar = content_height_full > body_inner.height && body_inner.width > 1;
     let body_area = if show_scrollbar {
         Rect {
             x: body_inner.x,
@@ -555,6 +556,15 @@ fn render_preview(
     } else {
         body_inner
     };
+    // Second pass: re-render only when the scrollbar narrows the render area.
+    // This ensures code block lines are padded to body_area.width (not body_inner.width)
+    // so they do not overflow the render area and leave background gaps in wrap mode.
+    let body_lines = if show_scrollbar {
+        render_markdown_lines(&item.body, usize::MAX, body_area.width as usize)
+    } else {
+        body_lines_full
+    };
+    let content_height = body_lines.len() as u16;
 
     let max_scroll = usize::from(content_height.saturating_sub(body_area.height));
     state.max_preview_scroll.set(max_scroll);
@@ -2486,5 +2496,80 @@ mod tests {
             row_z > row_y,
             "third code line (row {row_z}) must be below second (row {row_y})"
         );
+    }
+
+    #[test]
+    fn code_block_background_fills_pane_width_in_wrap_mode() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let body = "```rust\nlet x = 1;\n```";
+        let mut app = app_with_items(vec![item("001", "Code Wrap", body)]);
+        // app_with_items presses Enter to open preview; enable wrap mode.
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+
+        let width: u16 = 80;
+        let height: u16 = 24;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+
+        let buffer = terminal.backend().buffer();
+        // Find the row that contains the code body text.
+        let hits = find_text(buffer, "let x = 1;");
+        assert!(!hits.is_empty(), "code line must appear in buffer");
+        let (_, row) = hits[0];
+
+        // Every cell on that row within the preview pane content area must have
+        // DarkGray background so the code block background fills the full width.
+        // The preview pane has a LEFT border at width/2, so content starts at width/2+1.
+        let preview_start = width / 2 + 1;
+        for col in preview_start..width {
+            let style = buffer[(col, row)].style();
+            assert_eq!(
+                style.bg,
+                Some(Color::DarkGray),
+                "col {col} on code row {row} must have DarkGray background in wrap mode"
+            );
+        }
+    }
+
+    #[test]
+    fn code_block_long_line_both_wrapped_rows_have_full_background() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        // Code line longer than the preview pane width so it wraps to a second row.
+        let long_line = "X".repeat(120);
+        let body = format!("```rust\n{long_line}\n```");
+        let mut app = app_with_items(vec![item("001", "Long Code Wrap", &body)]);
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+
+        let width: u16 = 80;
+        let height: u16 = 30;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+
+        let buffer = terminal.backend().buffer();
+        // Find the first row containing the leading X run.
+        let hits = find_text(buffer, "XXXX");
+        assert!(!hits.is_empty(), "long code line must appear in buffer");
+        let (_, first_row) = hits[0];
+
+        // Both the first and second visual row of the wrapped code line must be
+        // fully backgrounded. Check rightmost and leftmost preview content cells on each row.
+        // The preview pane has a LEFT border at width/2, so content starts at width/2+1.
+        let preview_start = width / 2 + 1;
+        for row in [first_row, first_row + 1] {
+            let style_right = buffer[(width - 1, row)].style();
+            assert_eq!(
+                style_right.bg,
+                Some(Color::DarkGray),
+                "rightmost cell on wrapped code row {row} must have DarkGray background"
+            );
+            let style_left = buffer[(preview_start, row)].style();
+            assert_eq!(
+                style_left.bg,
+                Some(Color::DarkGray),
+                "preview_start cell on wrapped code row {row} must have DarkGray background"
+            );
+        }
     }
 }
