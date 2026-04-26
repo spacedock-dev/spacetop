@@ -45,3 +45,14 @@ Verified by: unit test asserting body content comes from the worktree copy when 
 **AC-3 -- Entities without an active worktree are unaffected.**
 When `worktree` is empty, spacetop reads both frontmatter and body from main as before.
 Verified by: existing tests continue to pass; add an explicit test for the no-worktree path.
+
+## Stage Report: design
+
+- DONE: Problem statement names the exact code path in spacetop that reads frontmatter from the worktree copy instead of main.
+  `src/parser.rs` `merge_worktree_items` (line 307): when a worktree item's SHA-1 differs from the main-branch item (line 335-337), the worktree `WorkItem` fully replaces the main-branch one, including its `status` field parsed from the worktree copy. Upstream: `scan_worktrees` calls `parse_work_item` on worktree paths (line 284), reading frontmatter including `status` from the frozen worktree copy.
+- DONE: Acceptance criteria cover the merged-view requirement: frontmatter from main, body from worktree, no-worktree unchanged.
+  AC-1, AC-2, and AC-3 in the entity body cover all three cases: main-branch frontmatter wins for status (AC-1), worktree body wins for body content (AC-2), and no-worktree path is unchanged (AC-3).
+
+### Summary
+
+The exact bug site is `merge_worktree_items` in `src/parser.rs`: when hashes differ and the worktree item wins, it replaces the entire `WorkItem` including `status`, discarding the main-branch frontmatter. The fix must produce a merged `WorkItem` that keeps FO-owned frontmatter fields (`status`, `worktree`, `pr`, `completed`, `verdict`, `score`) from the main-branch item while taking `body` from the worktree item. The acceptance criteria in the entity file already name all three paths required for correctness: status from main (AC-1), body from worktree (AC-2), no-worktree unchanged (AC-3).
