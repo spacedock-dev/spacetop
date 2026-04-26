@@ -464,3 +464,16 @@ All three cycle 3 checklist items confirmed. The selected-row background is `Rgb
 ### Summary
 
 Added `phase_col_width()` to compute the phase column width dynamically from the longest visible item status, clamped to [4, 12]. Updated `phase_col()` to accept an explicit `width` parameter (breaking the implicit 12-char constant). `build_task_list_items` computes `pcw` once per render pass and passes it to every `phase_col()` call. Three new snapshot tests verify the three boundary behaviors. 173/173 tests pass.
+
+## Stage Report: review (cycle 4)
+
+- DONE: No hardcoded phase column width constant remains — width is computed from visible items, clamped 4–12.
+  `phase_col_width()` at `src/ui/mod.rs:101–110` uses `.max().unwrap_or(4).clamp(4, 12)` on visible item statuses. The only `12` literals in the file are in test assertions and the markdown-preview horizontal-rule (line 940, `"─".repeat(12)`, unrelated). No constant like `PHASE_COL_WIDTH = 12` exists anywhere.
+- DONE: phase_col() accepts an explicit width parameter; title column uses the remaining width correctly.
+  Signature is `pub(crate) fn phase_col(stage: &str, width: usize) -> String` (line 85). `build_task_list_items` calls `phase_col_width` once at line 497 then passes the result (`pcw`) to every `phase_col(&item.status, pcw)` call at line 520. Title span follows the fixed gutter+phase+id overhead and fills the remaining terminal width naturally.
+- DONE: Three new snapshot tests cover: uniform-short (→4), mixed (→longest≤12), long-clamped (→12+ellipsis); 173/173 suite green.
+  `phase_col_width_uniform_short_phases_clamped_to_4` (line 1918), `phase_col_width_mixed_phases_fits_longest` (line 1936), `phase_col_width_long_phase_name_clamped_at_12` (line 1970) — each asserts the exact `pcw` value and the resulting padded/truncated string. `cargo test`: 173 passed, 0 failed.
+
+### Summary
+
+All three cycle 4 checklist items confirmed passing. Phase column width is computed dynamically by `phase_col_width()` (no hardcoded constant), `phase_col()` accepts an explicit width parameter, and three new tests cover the uniform-short, mixed, and long-clamped boundary cases. The full 173-test suite is green with no regressions.
