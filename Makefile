@@ -2,10 +2,18 @@ BIN_NAME ?= spacetop
 PREFIX ?= $(HOME)/.cargo/bin
 BINDIR ?= $(PREFIX)
 
-.PHONY: build install uninstall
+export SENTRY_DSN
 
-build:
-	cargo build --release
+.PHONY: build lint clean install uninstall
+
+build: lint
+	SENTRY_DSN="$(SENTRY_DSN)" cargo build --release
+
+lint:
+	cargo clippy --all-targets --all-features -- -D warnings
+
+clean:
+	cargo clean
 
 install: build
 	install -d "$(BINDIR)"
