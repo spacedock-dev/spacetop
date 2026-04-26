@@ -44,3 +44,14 @@ The capture path is guarded by `_sentry.is_some()`. Verified by: existing `dev_b
 
 **AC-3 -- Successful runs produce no spurious Sentry events.**
 When `run()` returns `Ok(())`, no event is captured. Verified by: unit test asserting zero events on success path.
+
+## Stage Report: design
+
+- DONE: Problem statement names the exact line in main.rs where capture_error() must be inserted and how it is guarded by _sentry.is_some().
+  Line 28 of `src/main.rs` — `spacetop::run(cli)` — is the insertion point. The fix replaces the bare call with a result binding, calls `sentry::capture_error()` only when `_sentry.is_some()`, then returns the result.
+- DONE: Acceptance criteria are verifiable without a live Sentry connection (mock transport approach is confirmed).
+  AC-1 specifies a mock/test transport that records captured events; AC-2 and AC-3 verify zero-event paths, all runnable with `cargo test` without a real DSN.
+
+### Summary
+
+The entity file already contained a well-formed problem statement, root cause, and acceptance criteria. This design stage confirmed that line 28 of `src/main.rs` is the precise insertion point, that the `_sentry.is_some()` guard is already specified in the fix description, and that the three acceptance criteria are fully verifiable via a mock Sentry transport in unit tests — no live Sentry connection is required.
