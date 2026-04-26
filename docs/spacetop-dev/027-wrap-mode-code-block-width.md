@@ -1,13 +1,13 @@
 ---
 id: "027"
 title: "Code block background does not fill full pane width in wrap mode"
-status: plan
+status: implement
 source: bug report
 started: 2026-04-26T04:47:04Z
 completed:
 verdict:
 score: 0.7
-worktree:
+worktree: .worktrees/spacedock-ensign-027-wrap-mode-code-block-width
 issue:
 pr:
 ---
