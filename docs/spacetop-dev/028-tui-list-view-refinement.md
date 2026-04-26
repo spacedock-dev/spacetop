@@ -370,3 +370,8 @@ Defects:
 1. AC-5 not implemented — `render_narrow` unchanged; no 2-row DAG wrap at ~80 columns; `narrow_dag_wraps_to_two_rows` test missing.
 2. Named-color fallback still present in `stage_color()` (src/domain/mod.rs lines 67–102); checklist said all named-color fallbacks gone.
 3. AC-6 glyph test trivially-true — `task_row_no_glyphs_in_phase_col` never scans the rendered buffer; only checks helper in isolation.
+
+**Cycle 2** — gate rejection (captain). Selected task row highlight too similar to background.
+
+Current: `BG2 = Color::Rgb(41, 45, 62)` on bg `~Rgb(26, 27, 38)` — only ~15 brightness delta, not conspicuous enough.
+Required: Use a more visually distinct selection color. Tokyo Night's selection/visual color `Rgb(40, 52, 84)` or the blue-tinted `Rgb(52, 73, 116)` would give enough contrast. Also consider bolding the selected row title for extra pop.
