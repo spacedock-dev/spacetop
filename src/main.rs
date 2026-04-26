@@ -43,7 +43,7 @@ mod tests {
     fn dev_build_does_not_init_sentry() {
         // cfg!(debug_assertions) is true in test/debug builds.
         // Compile-time proof: the release branch is unreachable here.
-        assert!(cfg!(debug_assertions));
+        const { assert!(cfg!(debug_assertions)) };
     }
 
     // AC-1: an error from run() is forwarded to Sentry.

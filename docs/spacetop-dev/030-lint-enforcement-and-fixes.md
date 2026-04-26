@@ -89,3 +89,33 @@ Verified by: `make lint 2>&1; echo "exit: $?"`
 
 **AC-4 -- All tests still pass.**
 `cargo test` 174/174 (or current count) green.
+
+## Stage Report: implement
+
+- DONE: AGENTS.md updated with Lint Gate section (make lint instruction).
+  Appended to existing AGENTS.md; `grep -A3 "Lint Gate" AGENTS.md` confirms the `make lint` instruction.
+- DONE: CLAUDE.md created at repo root with project context and Lint Gate section.
+  Created at repo root; `grep -A3 "Lint Gate" CLAUDE.md` confirms the `make lint` instruction.
+- DONE: All 16 clippy errors fixed: 14 excessive_precision in src/domain/mod.rs, 1 collapsible_match in src/ui/mod.rs, 1 useless_vec in tests.
+  Also fixed 1 additional `assertions_on_constants` in src/main.rs that was exposed once the lib errors cleared. `make lint` exits 0.
+- DONE: make lint exits 0; cargo test passes.
+  `make lint` exits 0; `cargo test` 174 passed.
+
+### Summary
+
+Added lint enforcement instructions to AGENTS.md (appended Lint Gate section) and created CLAUDE.md at repo root with project context and lint gate rule. Fixed all 16 clippy errors: truncated 14 excessive-precision f32 literals in `src/domain/mod.rs`, collapsed a nested `if` into a match guard in `src/ui/mod.rs`, and replaced a `vec![...]` with an array literal in the test. A 17th pre-existing lint error (`assertions_on_constants` in `src/main.rs`) was also fixed since it was blocking `make lint` from exiting 0.
+
+## Stage Report: review
+
+- DONE: AGENTS.md contains a Lint Gate section with make lint instruction.
+  `grep -A3 "Lint Gate" AGENTS.md` confirms `make lint` present; commit e0da5f4.
+- DONE: CLAUDE.md exists at repo root and contains a Lint Gate section with make lint instruction.
+  `grep -A3 "Lint Gate" CLAUDE.md` confirms `make lint` present; commit e0da5f4.
+- DONE: make lint exits 0 — all clippy errors resolved (run it to verify).
+  `make lint` exits 0 (no diagnostics, finished in 0.43s).
+- DONE: cargo test passes.
+  174 + 4 + 8 = 186 tests passed, 0 failed.
+
+### Summary
+
+Reviewed the implement commit (e0da5f4) on branch `spacedock-ensign/030-lint-enforcement-and-fixes`. All four acceptance criteria pass: AGENTS.md and CLAUDE.md both contain the Lint Gate section with `make lint` instruction, `make lint` exits 0 with no diagnostics, and all 186 tests pass across unit, binary, and integration test targets.
