@@ -1,7 +1,7 @@
 ---
 id: "022"
 title: "Add word-wrap toggle key in the preview pane"
-status: implement
+status: review
 source: feature request
 started: 2026-04-26T04:32:47Z
 completed:
