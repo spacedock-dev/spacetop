@@ -46,3 +46,14 @@ Verified by: CI / local build.
 
 **AC-2 -- All existing tests still pass.**
 The three phase_col_width snapshot tests are updated to not call the removed function; 174/174 (or current count) tests pass.
+
+## Stage Report: design
+
+- DONE: Problem statement confirms phase_col_width call sites — production code (none) vs test code (3 tests).
+  Verified by grep: `phase_col_width` is defined at `src/ui/mod.rs:102` as `pub(crate) fn`; called only in test code at lines 1958, 1989, and 2009; no call sites exist outside the `#[cfg(test)]` module. All other occurrences are comments.
+- DONE: Fix direction confirmed: remove function, inline expression in tests.
+  Entity body already documents Option 1 as preferred (remove function, use `items.iter().map(|i| i.status.chars().count()).max().unwrap_or(4).clamp(4, 12)` directly in each of the 3 tests). No production code references the function, so deletion is safe.
+
+### Summary
+
+The `phase_col_width` function at `src/ui/mod.rs:102` has zero production call sites — its only call was inlined during PR #17 review. Three unit tests (lines 1958, 1989, 2009) still invoke it by name, but test usage does not suppress the `dead_code` lint. The fix direction is confirmed: delete the function and replace all three `super::phase_col_width(&items_ref)` calls with the inlined expression `items_ref.iter().map(|i| i.status.chars().count()).max().unwrap_or(4).clamp(4, 12)`.
