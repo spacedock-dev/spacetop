@@ -48,3 +48,14 @@ Verified by: unit test using a chmod 000 directory (Unix only, skipped on Window
 
 **AC-3 -- No raw os error string in user-facing output for any skipped-entry scenario.**
 Verified by: end-to-end test or manual check that stderr contains no `os error` substring when a sub-entry is missing.
+
+## Stage Report: design
+
+- DONE: Problem statement names the exact code path in discover_workflows that still propagates NotFound at depth > 0.
+  `src/discovery.rs` `discover_workflows` lines 83-89: the guard `io_err.kind() == io::ErrorKind::NotFound && depth == 0` (line 86) passes depth-0 NotFound to `Ok(vec![])` but lets any depth >= 1 NotFound fall through to `return Err(DiscoveryError::Io(io_err))` on line 89, which then propagates as the raw `"discovery IO error: No such file or directory (os error 2)"` chain seen in the reproduction.
+- DONE: Acceptance criteria distinguish skippable NotFound entries from genuine hard errors (e.g. PermissionDenied on root).
+  AC-1 defines skippable: NotFound at any depth (broken symlink, concurrently deleted sub-entry) → skip and continue walk, return Ok. AC-2 defines hard: PermissionDenied on root → still return Err. AC-3 requires no raw `os error` string surfaces to the user in any skipped scenario.
+
+### Summary
+
+The entity file already contained a complete problem statement, reproduction steps, root cause analysis, fix direction, and three acceptance criteria; no additional design content was needed. Confirmed the exact code path: `discover_workflows` in `src/discovery.rs` lines 83-89, where the `depth == 0` guard leaves depth >= 1 NotFound errors unhandled and propagates them as `DiscoveryError::Io`. The acceptance criteria cleanly separate skippable errors (NotFound at any depth) from hard errors (PermissionDenied on root), providing unambiguous guidance for the implement stage.
