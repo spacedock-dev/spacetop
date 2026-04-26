@@ -56,3 +56,130 @@ Verified by: existing tests continue to pass; add an explicit test for the no-wo
 ### Summary
 
 The exact bug site is `merge_worktree_items` in `src/parser.rs`: when hashes differ and the worktree item wins, it replaces the entire `WorkItem` including `status`, discarding the main-branch frontmatter. The fix must produce a merged `WorkItem` that keeps FO-owned frontmatter fields (`status`, `worktree`, `pr`, `completed`, `verdict`, `score`) from the main-branch item while taking `body` from the worktree item. The acceptance criteria in the entity file already name all three paths required for correctness: status from main (AC-1), body from worktree (AC-2), no-worktree unchanged (AC-3).
+
+## Implementation Plan
+
+### Step 1 -- Change the merge logic in `src/parser.rs` `merge_worktree_items`
+
+**File:** `src/parser.rs`, lines 334--337.
+
+**Current behavior (lines 335-337):**
+```rust
+(Some(wt), Some(main)) if wt != main => {
+    // Hashes differ: worktree wins (AC-4).
+    index.insert(slug, wt_item);
+}
+```
+
+**Required change:**
+Replace the full `wt_item` replacement with a merged `WorkItem` that keeps FO-owned frontmatter fields from `main_item` and takes `body` (and `path`) from `wt_item`.
+
+FO-owned fields to keep from `main_item`:
+- `status`
+- `worktree`
+- `pr`
+- `completed`
+- `verdict`
+- `score`
+
+Fields to take from `wt_item`:
+- `body` (latest stage report lives in the worktree)
+- `path` (for display: shows the worktree file location, consistent with current behavior)
+
+Fields that are common / non-contested (take from main for stability):
+- `id`, `title`, `source`, `started`, `issue` -- these are set at entity creation and should match; if they differ use main to stay conservative.
+
+**Implementation sketch inside the `(Some(wt), Some(main)) if wt != main` arm:**
+```rust
+(Some(wt), Some(main)) if wt != main => {
+    // Hashes differ: merge — keep FO-owned frontmatter from main, body from worktree.
+    let merged = WorkItem {
+        path: wt_item.path.clone(),
+        id: main_item.id.clone(),
+        title: main_item.title.clone(),
+        status: main_item.status.clone(),
+        source: main_item.source.clone(),
+        started: main_item.started.clone(),
+        completed: main_item.completed.clone(),
+        verdict: main_item.verdict.clone(),
+        score: main_item.score,
+        worktree: main_item.worktree.clone(),
+        issue: main_item.issue.clone(),
+        pr: main_item.pr.clone(),
+        body: wt_item.body.clone(),
+    };
+    index.insert(slug, merged);
+}
+```
+
+Note: `main_item` is borrowed via `index.get(&slug)`, so clone fields from it before the `index.insert`. The `(Some(_), None)` and `(None, None)` arms (lines 342-351) that also do a full worktree win should apply the same merge logic if a main item exists in the index -- but those arms only fire when reading fails, which is unusual; apply the same merge pattern there for completeness.
+
+### Step 2 -- Add unit tests for the merged-view behavior
+
+Add three tests in the existing `#[cfg(test)]` block in `src/parser.rs` after the existing worktree tests (~line 1194).
+
+**Test helper:** Extend `entity_md` or add a new helper `entity_md_with_status(id, title, status, body)` that writes an entity with a custom status and body string so tests can produce mismatched frontmatter without filesystem hacks.
+
+**Test AC-1 (status from main):**
+- Write `task.md` on "main" with `status: review` and body `"main body"`.
+- Write `task.md` on "worktree" with `status: plan` and body `"worktree body with stage report"`.
+- Call `load_workflow_dir`.
+- Assert `items[0].status == "review"` (main wins).
+
+**Test AC-2 (body from worktree):**
+- Same fixture as AC-1.
+- Assert `items[0].body` contains `"worktree body with stage report"` (worktree wins for body).
+
+**Test AC-3 (no-worktree unchanged):**
+- Write `task.md` on "main" only, no `.worktrees` directory.
+- Assert `items[0].status` and `items[0].body` come from main unchanged.
+- Existing test `no_regression_without_worktrees` already covers the no-worktree path; extend it or add a focused variant that checks `status` and `body` fields explicitly.
+
+### Step 3 -- Verify
+
+```bash
+cd /Users/kent/Dev/InfuseAI/GitHub/spacetop && cargo test 2>&1 | tail -20
+```
+
+All existing tests must continue to pass. The three new tests must pass.
+
+**AC-1 verification command:**
+```bash
+cargo test worktree_status_from_main -- --nocapture 2>&1
+```
+
+**AC-2 verification command:**
+```bash
+cargo test worktree_body_from_worktree -- --nocapture 2>&1
+```
+
+**AC-3 verification command:**
+```bash
+cargo test no_worktree_unchanged -- --nocapture 2>&1
+```
+
+**Full suite:**
+```bash
+cargo test 2>&1 | grep -E "^test result|FAILED|error"
+```
+
+### File ownership
+
+- `src/parser.rs` -- sole changed source file (merge logic + new tests).
+- `docs/spacetop-dev/023-worktree-status-merge.md` -- this entity file (stage reports only).
+
+### Evidence required for completion
+
+- `cargo test` output showing all tests pass, including the three new AC tests.
+- Commit SHA containing the change to `merge_worktree_items` and the new tests.
+
+## Stage Report: plan
+
+- DONE: Plan identifies the exact change to merge_worktree_items in src/parser.rs: keep FO-owned frontmatter fields from main-branch item, take body from worktree item.
+  Step 1 in the Implementation Plan above names lines 335-337 as the bug site and provides an exact Rust snippet that builds a merged `WorkItem` keeping `status`, `worktree`, `pr`, `completed`, `verdict`, `score` from `main_item` and `body` from `wt_item`.
+- DONE: Plan includes verification commands matching AC-1, AC-2, and AC-3.
+  Step 3 lists `cargo test worktree_status_from_main` (AC-1), `cargo test worktree_body_from_worktree` (AC-2), `cargo test no_worktree_unchanged` (AC-3), and a full-suite command.
+
+### Summary
+
+The plan pins the fix to a single Rust match arm in `merge_worktree_items` (lines 335-337 of `src/parser.rs`), replacing the full `wt_item` substitution with a merged `WorkItem` struct literal that takes FO-owned frontmatter from `main_item` and `body` from `wt_item`. Three new unit tests (one per AC) are specified alongside the existing test helpers, and verification commands are provided for each acceptance criterion.
