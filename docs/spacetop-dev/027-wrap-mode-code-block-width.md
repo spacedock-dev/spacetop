@@ -1,7 +1,7 @@
 ---
 id: "027"
 title: "Code block background does not fill full pane width in wrap mode"
-status: implement
+status: review
 source: bug report
 started: 2026-04-26T04:47:04Z
 completed:
