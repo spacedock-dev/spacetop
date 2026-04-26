@@ -375,3 +375,9 @@ Defects:
 
 Current: `BG2 = Color::Rgb(41, 45, 62)` on bg `~Rgb(26, 27, 38)` — only ~15 brightness delta, not conspicuous enough.
 Required: Use a more visually distinct selection color. Tokyo Night's selection/visual color `Rgb(40, 52, 84)` or the blue-tinted `Rgb(52, 73, 116)` would give enough contrast. Also consider bolding the selected row title for extra pop.
+
+**Cycle 3** — gate rejection (captain). Phase-name column must be auto-sized, not fixed 12ch.
+
+Requirement: Compute phase column width from the longest phase name currently visible in the task list, clamped to min=4ch, max=12ch. When all tasks share the same short phase (e.g. "run") the column is 4ch wide; when phases vary it grows to fit the longest (up to 12ch). Never use a hardcoded wide width — it wastes space and breaks visual balance.
+
+Implementation note: `build_task_list_items` already iterates all visible items; compute `phase_col_width = items.iter().map(|i| i.status.len()).max().unwrap_or(4).clamp(4, 12)` before building spans, then use that width for the `phase_col()` helper and `title` column remainder.
