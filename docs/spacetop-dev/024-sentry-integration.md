@@ -212,3 +212,16 @@ The plan lays out four ordered steps covering every artifact prescribed by the s
 ### Summary
 
 Sentry 0.34 was added to Cargo.toml with `default-features = false` and explicit feature selection (backtrace, contexts, panic, reqwest, rustls). A new `build.rs` forwards `SENTRY_DSN` from the build environment at compile time with an empty-string fallback, and `.env.example` documents the real DSN. The init block in `src/main.rs` is gated by `cfg!(debug_assertions)` so debug builds skip init entirely and release builds use the baked-in DSN with `sentry::release_name!()` satisfying AC-4. All checklist items verified locally.
+
+## Stage Report: review
+
+- DONE: cfg!(debug_assertions) guard is correct — debug builds truly skip init, not merely set sample rate.
+  `src/main.rs` diff: `if cfg!(debug_assertions) { None } else { ... sentry::init(...) }` — the else branch is compiled out entirely in debug builds; compile-time constant, not a runtime sample-rate adjustment.
+- DONE: .env is not committed; only .env.example appears in the diff.
+  `git diff main...spacedock-ensign/024-sentry-integration --stat` shows `.env.example` only. Pre-existing `.gitignore` already has `.env` / `.env.*` with `!.env.example` negation; branch did not need to add it.
+- DONE: All four ACs have evidence in the implement report.
+  AC-1: release build path exists in main.rs and `cargo build --release` confirmed in implement report. AC-2: `cargo test` 150/150 pass including `dev_build_does_not_init_sentry`; compile-time guard means no Sentry code in debug binary. AC-3: `build.rs` and `.env.example` both created (commits c565ea0); empty-string fallback confirmed by unset-DSN build. AC-4: `sentry::release_name!()` used in `ClientOptions`, expanding to `CARGO_PKG_NAME@CARGO_PKG_VERSION`.
+
+### Summary
+
+All three checklist items pass. The `cfg!(debug_assertions)` guard is a compile-time constant that eliminates the Sentry init code path from debug binaries entirely — not a runtime sample-rate workaround. The `.env` protection was already in place via `.gitignore` and the diff confirms no `.env` file was committed. The implement report provides concrete evidence for all four acceptance criteria including test count, build commands, and commit SHAs. Verdict: APPROVED.
