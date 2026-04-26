@@ -10,6 +10,7 @@ score: 0.7
 worktree: .worktrees/spacedock-ensign-027-wrap-mode-code-block-width
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 When word-wrap mode is enabled in the preview pane (task 022, key `w`), fenced code blocks render with a background that only spans the width of the code text rather than the full pane width. In no-wrap mode code blocks correctly fill the available width. The truncated background makes code blocks visually inconsistent and harder to read.
