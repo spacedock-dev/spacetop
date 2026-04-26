@@ -425,7 +425,7 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let items = build_task_list_items(state, inner.width);
+    let items = build_task_list_items(state);
     let item_count = state.visible_items().len();
 
     // Section header: "Tasks  ·  N" (or "Archived  ·  N") above the list.
@@ -466,12 +466,12 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     } else {
         Some(state.selected_index())
     });
-    // Gutter (▸ / space) and selected-row styling is encoded in each
-    // ListItem's spans (see build_task_list_items), so the highlight_symbol
-    // is empty and the highlight_style is reset to avoid double-highlighting.
+    // The ▸ gutter glyph is encoded in each ListItem span so unselected rows
+    // stay aligned. highlight_style floods the entire selected row width with
+    // the selection background — no manual trailing spacer needed.
     let list = List::new(items)
         .highlight_symbol("")
-        .highlight_style(Style::default());
+        .highlight_style(Style::default().bg(BG2).add_modifier(Modifier::BOLD));
     frame.render_stateful_widget(list, list_area, &mut list_state);
 }
 
@@ -479,7 +479,7 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
 /// Provides a distinct blue-tinted contrast against the dark terminal background (~Rgb(26,27,38)).
 const BG2: Color = Color::Rgb(40, 52, 84);
 
-fn build_task_list_items(state: &OverviewState, list_width: u16) -> Vec<ListItem<'_>> {
+fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
     let scope = state.view_scope();
     let items = state.visible_items();
     if items.is_empty() {
@@ -507,11 +507,9 @@ fn build_task_list_items(state: &OverviewState, list_width: u16) -> Vec<ListItem
             // Title: fills remaining width.
             let is_selected = index == selected_index && !items.is_empty();
 
-            let bg = if is_selected { BG2 } else { Color::Reset };
-
             let gutter_text = if is_selected { "\u{25B8} " } else { "  " }; // "▸ " or "  "
             let gutter_style = if is_selected {
-                Style::default().fg(Color::Yellow).bg(BG2)
+                Style::default().fg(Color::Yellow)
             } else {
                 Style::default()
             };
@@ -519,21 +517,13 @@ fn build_task_list_items(state: &OverviewState, list_width: u16) -> Vec<ListItem
             let id_str = format!("{:>4}", item.id);
             let phase = phase_col(&item.status, pcw);
 
-            let id_style = Style::default().fg(Color::Reset).bg(bg).add_modifier(Modifier::DIM);
+            let id_style = Style::default().add_modifier(Modifier::DIM);
             let stage_color = state.snapshot().definition.stage_color_for(&item.status);
-            let stage_style = Style::default()
-                .fg(stage_color)
-                .bg(bg)
-                .add_modifier(Modifier::BOLD);
+            let stage_style = Style::default().fg(stage_color);
             let title_style = if scope == ViewScope::Archived {
-                Style::default().fg(Color::Reset).bg(bg).add_modifier(Modifier::DIM)
-            } else if is_selected {
-                Style::default()
-                    .fg(Color::Reset)
-                    .bg(bg)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().add_modifier(Modifier::DIM)
             } else {
-                Style::default().fg(Color::Reset).bg(bg)
+                Style::default()
             };
 
             let mut spans: Vec<Span<'_>> = vec![
@@ -552,24 +542,6 @@ fn build_task_list_items(state: &OverviewState, list_width: u16) -> Vec<ListItem
                     None => " [?]",
                 };
                 spans.push(Span::styled(glyph, title_style));
-            }
-
-            // Trailing spacer: fills the rest of the row with the selected background
-            // so the highlight stripe covers the entire pane width, not just the text.
-            if is_selected {
-                // Compute how many chars the fixed columns consume:
-                // gutter(2) + phase(pcw) + space(1) + id(4) + 2spaces(2) = pcw + 9
-                let title_display_len = item.title.chars().count().min(
-                    (list_width as usize).saturating_sub(pcw + 9 + 1),
-                );
-                let used = 2 + pcw + 1 + 4 + 2 + title_display_len;
-                let trailing = (list_width as usize).saturating_sub(used);
-                if trailing > 0 {
-                    spans.push(Span::styled(
-                        " ".repeat(trailing),
-                        Style::default().bg(BG2),
-                    ));
-                }
             }
 
             ListItem::new(Line::from(spans))
