@@ -1,9 +1,9 @@
 ---
 id: "031"
 title: Refactor for readable Rust code
-status: design
+status: plan
 source: user request 2026-04-26
-started:
+started: 2026-04-26T07:26:44Z
 completed:
 verdict:
 score: 0.62
