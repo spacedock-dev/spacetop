@@ -53,3 +53,67 @@ Verified by: the implementation report names the specific functions or types sim
 
 **AC-5 -- No feature or dependency expansion occurs.**
 Verified by: review confirms no new CLI options, keyboard behavior, parsing contracts, UI features, workflow write behavior, or production dependencies were introduced.
+
+## Implementation plan
+
+This refactor should proceed in small, reviewable commits or worktree steps that each preserve behavior and keep ownership boundaries unchanged.
+
+1. Establish a behavior baseline.
+   - Run `cargo test` before editing so later failures are attributable to the refactor.
+   - Run `make lint` before or after the first inspection pass if the branch state is uncertain.
+   - Record any pre-existing failures in the implementation report instead of changing expectations to make the refactor pass.
+
+2. Inspect the largest readability hotspots and pick narrow targets.
+   - Start with `src/ui/mod.rs`, `src/app.rs`, `src/parser.rs`, and `src/ui/graph.rs`, since they are currently the largest files and contain the most private helpers.
+   - Use `rg "^fn |^pub fn |^impl "` and targeted reads to identify long functions, repeated formatting logic, deeply nested branches, or unclear local names.
+   - Favor code paths already covered by unit or integration tests; add focused tests only when a touched behavior path has no practical existing coverage.
+
+3. Refactor parser code without changing parsing semantics.
+   - Keep workflow README parsing, work item parsing, archive loading, status validation, frontmatter splitting, `.worktrees` scanning, and worktree merge behavior in `src/parser.rs`.
+   - Candidate areas: make `load_workflow_dir`, `scan_worktrees`, `merge_worktree_items`, and frontmatter helper flow easier to read by extracting small private helpers or renaming locals that currently hide intent.
+   - Do not alter accepted YAML shape, malformed archive skip behavior, active-item ignore rules, worktree merge precedence, or error variants.
+   - Verify with existing parser unit tests and `cargo test`; add narrow parser tests only if a helper extraction touches uncovered behavior.
+
+4. Refactor app-state code without introducing terminal rendering concerns.
+   - Keep overview sessions, picker state, selection movement, reload semantics, archived scope state, and pending workflow switches in `src/app.rs`.
+   - Candidate areas: split long state-transition methods into private helpers with names that describe the decision being made, reduce repeated selected-index bounds logic, and clarify workflow-switch state flow.
+   - Do not change key bindings, scope toggling behavior, preview scroll behavior, picker behavior, or reload outcomes.
+   - Cover touched behavior with app-state tests where practical rather than relying on a live TUI session.
+
+5. Refactor UI rendering code only after state/parser behavior is stable.
+   - Keep terminal rendering in `src/ui/mod.rs`, stage graph rendering in `src/ui/graph.rs`, and picker rendering in `src/ui/picker.rs`.
+   - Candidate areas in `src/ui/mod.rs`: decompose preview/header/task-list markdown rendering helpers, clarify layout decisions, and reduce repeated style/span construction when the shared concept is local and obvious.
+   - Candidate areas in `src/ui/graph.rs`: clarify width-tier selection, column layout construction, feedback arc collection, and ASCII/Unicode glyph selection without changing rendered content.
+   - Preserve footer/help text, keyboard documentation, narrow terminal behavior, Unicode graph/list glyphs, and `SPACETOP_ASCII=1` fallback behavior.
+   - Prefer Ratatui `TestBackend` assertions for any rendering path whose structure changes.
+
+6. Refactor discovery, watcher, and launch wiring only if concrete readability wins are visible.
+   - Keep scan-root resolution and workflow discovery in `src/discovery.rs`; do not change prune lists or commissioned workflow detection.
+   - Keep filesystem watching, event filtering, debounce, backend fallback, and refresh signaling in `src/watcher.rs`; do not change debounce timing or relevant-event criteria.
+   - Keep CLI launch decisions, terminal setup, event loop wiring, watcher lifecycle, and top-level `run` behavior in `src/lib.rs`; do not add CLI or runtime behavior.
+   - Existing integration tests in `tests/discovery_bypass.rs` and `tests/watcher_fs.rs` should continue to describe the external behavior.
+
+7. Keep each edit behavior-preserving and dependency-neutral.
+   - Do not add production dependencies, CLI options, key bindings, parsing contracts, UI features, telemetry behavior, or workflow write support.
+   - Avoid broad file moves or public API reshaping unless the current module already exposes that boundary.
+   - Prefer private helpers, clearer local names, reduced nesting, and explicit error-path names over new abstractions.
+
+8. Finish with verification and an implementation report.
+   - Run `cargo fmt`.
+   - Run `cargo test`.
+   - Run `make lint`.
+   - If watcher behavior changes, additionally run `cargo test -- --ignored` locally and note that it exercises the real `notify` backend.
+   - In the implementation report, name the exact functions or private types simplified, the tests that cover them, and confirm no feature, dependency, or module-ownership expansion occurred.
+
+## Stage Report: plan
+
+- DONE: Produce a concrete step-by-step implementation plan that identifies likely code areas to inspect and refactor while preserving behavior.
+  Added an eight-step implementation plan naming `src/ui/mod.rs`, `src/app.rs`, `src/parser.rs`, `src/ui/graph.rs`, `src/discovery.rs`, `src/watcher.rs`, and `src/lib.rs` as scoped inspection/refactor areas.
+- DONE: Include a focused verification strategy with exact commands, including `cargo test` and `make lint`, and note where lower-layer tests should cover touched behavior.
+  The plan requires baseline and final `cargo test`, final `make lint`, `cargo fmt`, optional `cargo test -- --ignored` for watcher changes, and lower-layer parser/app/UI test coverage for touched behavior.
+- DONE: Include file/module ownership guidance that keeps parser, discovery, watcher, app-state, launch, and UI concerns in their existing modules and forbids feature/dependency expansion.
+  The plan explicitly keeps parser logic in `src/parser.rs`, discovery in `src/discovery.rs`, watcher logic in `src/watcher.rs`, app state in `src/app.rs`, launch wiring in `src/lib.rs`, and rendering in `src/ui/`, while forbidding new features or dependencies.
+
+### Summary
+
+Planned a no-feature-change readability refactor with phased inspection, narrow module-local edits, and verification gates. The plan emphasizes private helper extraction, clearer naming, lower-layer tests for touched behavior, and preserving all documented SpaceTop module ownership boundaries.
