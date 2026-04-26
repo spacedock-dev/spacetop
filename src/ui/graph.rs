@@ -159,21 +159,22 @@ struct ColumnLayout {
 }
 
 fn build_node_text(stage: &StageDefinition, g: &GlyphSet) -> String {
-    // Marker ordering: ⚑ ⎇ ▶ name ■
-    let mut leading: Vec<&str> = Vec::new();
-    if stage.gate {
-        leading.push(g.gate);
-    }
-    if stage.worktree {
-        leading.push(g.worktree);
-    }
-    if stage.initial {
-        leading.push(g.initial);
-    }
+    // Exactly one leading glyph per stage, resolved by role priority:
+    //   initial → ▶, gate → ⚑, worktree/branchable → ⎇, else none.
+    // The terminal suffix (■) is appended separately.
+    let leading: Option<&str> = if stage.initial {
+        Some(g.initial)
+    } else if stage.gate {
+        Some(g.gate)
+    } else if stage.worktree {
+        Some(g.worktree)
+    } else {
+        None
+    };
 
     let mut parts: Vec<String> = Vec::new();
-    if !leading.is_empty() {
-        parts.push(leading.join(" "));
+    if let Some(glyph) = leading {
+        parts.push(glyph.to_string());
     }
     parts.push(stage.name.clone());
     if stage.terminal {
@@ -328,11 +329,18 @@ fn render_wide<'a>(
     lines.push(Line::from(ribbon_spans));
     lines.push(Line::from(counts_spans));
 
+    let arc_style = Style::default().fg(Color::Red);
     for (arc_line, ann_line) in arc_pairs {
         let arc_pad = uniform_width.saturating_sub(visible_width(&arc_line));
         let ann_pad = uniform_width.saturating_sub(visible_width(&ann_line));
-        lines.push(Line::from(format!("{arc_line}{}", " ".repeat(arc_pad))));
-        lines.push(Line::from(format!("{ann_line}{}", " ".repeat(ann_pad))));
+        lines.push(Line::from(vec![
+            Span::styled(arc_line, arc_style),
+            Span::raw(" ".repeat(arc_pad)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(ann_line, arc_style),
+            Span::raw(" ".repeat(ann_pad)),
+        ]));
     }
     if arcs.len() > MAX_FEEDBACK_ROWS {
         let overflow = arcs.len() - MAX_FEEDBACK_ROWS;
@@ -392,7 +400,10 @@ fn style_counts_spans<'a>(cols: &[ColumnLayout], counts_line: &str) -> Vec<Span<
                 Style::default().add_modifier(Modifier::REVERSED),
             ));
         } else {
-            spans.push(Span::raw(text));
+            spans.push(Span::styled(
+                text,
+                Style::default().add_modifier(Modifier::DIM),
+            ));
         }
     }
     spans
@@ -640,18 +651,25 @@ mod tests {
     }
 
     #[test]
-    fn layout_columns_marker_ordering_is_gate_worktree_initial_name_terminal() {
+    fn layout_columns_single_glyph_per_stage_initial_takes_priority() {
+        // Spec: exactly one leading glyph per stage, priority: initial > gate > worktree.
+        // A stage that is initial, gate, and worktree should display only ▶.
         let g = glyphs_for(false);
         let stages = vec![stage("x", true, true, true, true, None)];
         let cols = layout_columns(&stages, &[0], None, &g);
-        // Expect ⚑ first, then ⎇, then ▶, then space+name, then space+■.
         let t = &cols[0].node_text;
-        let gate = t.find('\u{2691}').unwrap();
-        let wt = t.find('\u{2387}').unwrap();
+        // Must contain initial glyph ▶, name 'x', and terminal ■.
+        assert!(t.contains('\u{25B6}'), "missing initial glyph ▶");
+        assert!(t.contains('x'), "missing stage name");
+        assert!(t.contains('\u{25A0}'), "missing terminal glyph ■");
+        // Must NOT contain gate ⚑ or worktree ⎇ (single-glyph rule).
+        assert!(!t.contains('\u{2691}'), "gate glyph ⚑ must not appear when initial is set");
+        assert!(!t.contains('\u{2387}'), "worktree glyph ⎇ must not appear when initial is set");
+        // ▶ must precede 'x' which must precede ■.
         let ini = t.find('\u{25B6}').unwrap();
         let nm = t.find('x').unwrap();
         let term = t.find('\u{25A0}').unwrap();
-        assert!(gate < wt && wt < ini && ini < nm && nm < term);
+        assert!(ini < nm && nm < term);
     }
 
     #[test]
@@ -906,6 +924,93 @@ mod tests {
             !rendered.contains("[1/1]") && !rendered.contains("[2/3]"),
             "graph header must not contain a [i/N] breadcrumb prefix"
         );
+    }
+
+    #[test]
+    fn dag_single_glyph_per_stage() {
+        // Spec: no stage node text should contain two consecutive vocabulary glyphs.
+        let g = glyphs_for(false);
+        let vocab: &[char] = &['\u{25B6}', '\u{2387}', '\u{2691}', '\u{25A0}'];
+        // Build stages covering all roles.
+        let stages = vec![
+            stage("start", true, false, false, false, None),  // initial → ▶
+            stage("check", false, false, true, false, None),   // gate → ⚑
+            stage("work", false, false, false, true, None),    // worktree → ⎇
+            stage("done", false, true, false, false, None),    // terminal → ■ suffix
+        ];
+        for s in &stages {
+            let text = build_node_text(s, &g);
+            // Find any two adjacent chars that are both in vocab.
+            let chars: Vec<char> = text.chars().collect();
+            for i in 0..chars.len().saturating_sub(1) {
+                assert!(
+                    !(vocab.contains(&chars[i]) && vocab.contains(&chars[i + 1])),
+                    "stage '{}' node text {:?} has two consecutive vocabulary glyphs at positions {i}/{}",
+                    s.name, text, i + 1
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rollback_arc_is_red() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(ASCII_ENV_VAR);
+        let app = real_workflow();
+        let width: u16 = 160;
+        let height: u16 = 12;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_stage_graph(frame, Rect::new(0, 0, width, height), state_of(&app));
+            })
+            .expect("draw");
+        let buffer = terminal.backend().buffer().clone();
+        // Find cells containing arc corner chars ╰ or ╯ and verify they are red.
+        let arc_left = '\u{2570}';  // ╰
+        let arc_right = '\u{256F}'; // ╯
+        let mut found_arc = false;
+        for y in 0..height {
+            for x in 0..width {
+                let cell = &buffer[(x, y)];
+                let symbol = cell.symbol();
+                let ch = symbol.chars().next().unwrap_or(' ');
+                if ch == arc_left || ch == arc_right {
+                    found_arc = true;
+                    assert_eq!(
+                        cell.style().fg,
+                        Some(Color::Red),
+                        "arc char {:?} at ({x},{y}) must be red, got {:?}",
+                        ch,
+                        cell.style().fg
+                    );
+                }
+            }
+        }
+        assert!(found_arc, "expected to find arc corner chars ╰/╯ in the rendered output");
+    }
+
+    #[test]
+    fn dag_oklch_colors_are_rgb() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var(ASCII_ENV_VAR);
+        let app = real_workflow();
+        let width: u16 = 160;
+        let height: u16 = 10;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal
+            .draw(|frame| {
+                render_stage_graph(frame, Rect::new(0, 0, width, height), state_of(&app));
+            })
+            .expect("draw");
+        let buffer = terminal.backend().buffer();
+        // At least 3 Color::Rgb fg colors must appear in the rendered graph.
+        let rgb_count = (0..height)
+            .flat_map(|y| (0..width).map(move |x| buffer[(x, y)].style().fg))
+            .flatten()
+            .filter(|c| matches!(c, Color::Rgb(_, _, _)))
+            .count();
+        assert!(rgb_count >= 3, "expected at least 3 Rgb-colored cells in DAG, found {rgb_count}");
     }
 
     // --- helpers ---
