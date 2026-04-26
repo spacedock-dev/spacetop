@@ -298,3 +298,16 @@ The plan breaks the feature into six sequential steps: adding the `preview_wrap`
 ### Summary
 
 Implemented the word-wrap toggle feature across `src/app.rs` and `src/ui/mod.rs` following the six-step plan verbatim. The `preview_wrap` bool on `OverviewState` is toggled by `w` (only when `preview_open`), reset by `reset_preview_scroll()` on every pane switch, and respected in `render_preview()` via a conditional `Wrap` widget that also clamps horizontal scroll to zero. Footer and help popup both surface the `w: word wrap` / `w toggle word wrap` hints when the preview is active. All three acceptance-criterion tests pass and the full suite is green.
+
+## Stage Report: review
+
+- DONE: All five touch points are present in the diff: field, handler, reset, render wrap + h-scroll clamp, footer and popup legend.
+  `preview_wrap: bool` field in struct + both constructors; `toggle_preview_wrap()` handler; `reset_preview_scroll()` clears flag; `render_preview()` applies `.wrap(Wrap { trim: false })` and sets `max_preview_scroll_x` to 0 when wrapped; footer adds `"w: word wrap"` hint and popup adds `"  w              toggle word wrap"` line with `popup_h` sized to 20 when `preview_open`.
+- DONE: w key does not appear in any other handler branch — no conflict introduced.
+  `grep -n "Char('w')" src/app.rs` returns exactly one hit at line 1021, guarded by `if state.preview_open()`. No other `AppMode` arm binds `w`.
+- DONE: All three AC tests pass and full suite is green.
+  `cargo test -q -- word_wrap` → 3/3 passed; `cargo test -q` → full suite green (zero failures).
+
+### Summary
+
+The implementation matches the plan exactly: all five touch points are present, the `w` key is conflict-free (single occurrence, gated by `preview_open`), and all three acceptance-criterion tests plus the full suite pass. The popup height fix (`preview_open { 20 }`) correctly prevents clipping when the extra line is added. No defects found; the feature is ready to ship.
