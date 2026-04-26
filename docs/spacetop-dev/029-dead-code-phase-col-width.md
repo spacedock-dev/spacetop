@@ -71,3 +71,14 @@ The `phase_col_width` function at `src/ui/mod.rs:102` has zero production call s
 ### Summary
 
 Deleted the `phase_col_width` helper function and replaced all three `super::phase_col_width(&items_ref)` test call sites with the inlined iterator expression. The build is now warning-free and all 174 tests continue to pass.
+
+## Stage Report: review
+
+- DONE: phase_col_width is gone — no remaining definition or call site in production code.
+  `grep -n "pub(crate) fn phase_col_width\|fn phase_col_width"` returns only the three test function names (not the removed helper); commit 7b5e754 removed the definition.
+- DONE: cargo build is warning-free; 174/174 tests pass.
+  `cargo build 2>&1` outputs "Finished" with no warnings; `cargo test` reports 174 passed, 0 failed across all lib test suites.
+
+### Summary
+
+Reviewed the implement-stage work in worktree `.worktrees/spacedock-ensign-029-dead-code-phase-col-width`. The `phase_col_width` function definition has been fully removed from `src/ui/mod.rs`; only test function names containing "phase_col_width" remain (they are the renamed snapshot tests, not the deleted helper). The build is clean and all 174 tests pass, satisfying both acceptance criteria.
