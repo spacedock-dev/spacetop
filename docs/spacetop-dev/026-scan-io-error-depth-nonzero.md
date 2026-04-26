@@ -9,7 +9,7 @@ verdict:
 score: 0.8
 worktree: .worktrees/spacedock-ensign-026-scan-io-error-depth-nonzero
 issue:
-pr:
+pr: #14
 mod-block: merge:pr-merge
 ---
 

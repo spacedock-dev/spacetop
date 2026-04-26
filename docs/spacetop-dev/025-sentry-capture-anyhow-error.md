@@ -9,7 +9,7 @@ verdict:
 score: 0.9
 worktree: .worktrees/spacedock-ensign-025-sentry-capture-anyhow-error
 issue:
-pr:
+pr: #13
 mod-block: merge:pr-merge
 ---
 
