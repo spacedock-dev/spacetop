@@ -3,51 +3,45 @@ use std::path::PathBuf;
 
 use ratatui::style::Color;
 
-/// Ordered palette for graph-aware coloring. This fixed set is chosen to give
-/// distinct colors for typical workflows; feedback edges can fan into a stage,
-/// so the graph's maximum degree is not bounded by 3.
-const GRAPH_PALETTE: &[Color] = &[
-    Color::Blue,
-    Color::Cyan,
-    Color::Yellow,
-    Color::Magenta,
-    Color::Green,
-    Color::LightBlue,
-    Color::LightCyan,
-    Color::LightYellow,
-    Color::LightMagenta,
-    Color::LightGreen,
-    Color::Red,
-    Color::LightRed,
-    Color::White,
-];
-
-/// Return the preferred color for a well-known stage name, or `None` for
-/// unknown stage names. Used as a hint by `assign_stage_colors`.
-fn preferred_color(stage_name: &str) -> Option<Color> {
-    match stage_name {
-        "design" => Some(Color::Blue),
-        "plan" => Some(Color::Cyan),
-        "implement" => Some(Color::Yellow),
-        "review" | "feedback" => Some(Color::Magenta),
-        "done" | "complete" | "completed" | "shipped" => Some(Color::Green),
-        "blocked" | "rejected" | "failed" => Some(Color::Red),
-        _ => None,
-    }
+/// Convert an oklch color to an sRGB triple (r, g, b) each in [0, 255].
+///
+/// Pipeline: oklch → oklab → linear-sRGB → gamma-sRGB → u8.
+/// No external crates required; the conversion is ~15 lines of pure Rust.
+pub fn oklch_to_srgb(l: f32, c: f32, h_deg: f32) -> (u8, u8, u8) {
+    let h_rad = h_deg.to_radians();
+    // oklch → oklab
+    let a = c * h_rad.cos();
+    let b = c * h_rad.sin();
+    // oklab → linear-sRGB via the published 3×3 matrix
+    let l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+    let m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+    let s_ = l - 0.0894841775 * a - 1.2914855480 * b;
+    let l3 = l_ * l_ * l_;
+    let m3 = m_ * m_ * m_;
+    let s3 = s_ * s_ * s_;
+    let r_lin = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+    let g_lin = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+    let b_lin = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+    // Apply sRGB gamma transfer function
+    let gamma = |c: f32| -> f32 {
+        let c = c.clamp(0.0, 1.0);
+        if c <= 0.0031308 {
+            12.92 * c
+        } else {
+            1.055 * c.powf(1.0 / 2.4) - 0.055
+        }
+    };
+    let r = (gamma(r_lin) * 255.0).round() as u8;
+    let g = (gamma(g_lin) * 255.0).round() as u8;
+    let b = (gamma(b_lin) * 255.0).round() as u8;
+    (r, g, b)
 }
 
-/// Assign a color to each stage using a graph-aware, palette-spreading pass.
+/// Assign a color to each stage using oklch-derived colors.
 ///
-/// Algorithm:
-/// 1. Build an undirected adjacency set from linear edges (i → i+1) and
-///    feedback edges (stage with `feedback_to` → named target, both directions).
-/// 2. For each stage in definition order, pick the preferred color (from
-///    `preferred_color`) if it does not conflict with any neighbor's color.
-/// 3. For unknown names, start from a stage-specific palette offset so a
-///    typical 5-stage linear workflow uses a broader set of colors instead
-///    of collapsing to a 2-color alternation.
-/// 4. When the primary palette is exhausted, cycle via deterministic hash
-///    until a non-conflicting color is found.
+/// All stages share lightness=0.78 and chroma=0.12; hue varies evenly by
+/// stage index across [0°, 360°). This produces perceptually uniform, muted
+/// colors that are distinct regardless of stage name or order.
 ///
 /// The returned `HashMap<String, Color>` maps stage name → assigned color.
 pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color> {
@@ -55,150 +49,30 @@ pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color>
     if n == 0 {
         return HashMap::new();
     }
-
-    // Build undirected adjacency: for each stage, the set of adjacent indices.
-    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
-    for i in 0..n {
-        // Linear forward edge: i → i+1
-        if i + 1 < n {
-            adj[i].push(i + 1);
-            adj[i + 1].push(i);
-        }
-        // Feedback edge: stage[i].feedback_to → some stage j
-        if let Some(target_name) = &stages[i].feedback_to {
-            if let Some(j) = stages.iter().position(|s| &s.name == target_name) {
-                if j != i {
-                    if !adj[i].contains(&j) {
-                        adj[i].push(j);
-                    }
-                    if !adj[j].contains(&i) {
-                        adj[j].push(i);
-                    }
-                }
-            }
-        }
-    }
-
-    let mut assigned: Vec<Option<Color>> = vec![None; n];
-
-    for i in 0..n {
-        // Collect colors already used by neighbors.
-        let neighbor_colors: std::collections::HashSet<Color> = adj[i]
-            .iter()
-            .filter_map(|&j| assigned[j])
-            .collect();
-
-        // Try preferred color first, then palette, then hash fallback.
-        let chosen = pick_color(i, &stages[i].name, &neighbor_colors);
-        assigned[i] = Some(chosen);
-    }
-
+    let step = 360.0 / n as f32;
     stages
         .iter()
         .enumerate()
-        .map(|(i, s)| (s.name.clone(), assigned[i].unwrap_or(Color::White)))
+        .map(|(i, s)| {
+            let hue = i as f32 * step;
+            let (r, g, b) = oklch_to_srgb(0.78, 0.12, hue);
+            (s.name.clone(), Color::Rgb(r, g, b))
+        })
         .collect()
 }
 
-/// Pick a non-conflicting color for stage `i` with name `stage_name`.
-///
-/// Priority:
-/// 1. Preferred color if not in `neighbor_colors`.
-/// 2. First non-conflicting palette entry, starting from a stage-specific
-///    offset to spread sequential stages across the palette.
-/// 3. Hash-based deterministic fallback cycling through extended colors until
-///    a non-conflicting one is found (rare path for high-degree stages).
-fn pick_color(
-    stage_index: usize,
-    stage_name: &str,
-    neighbor_colors: &std::collections::HashSet<Color>,
-) -> Color {
-    // Try preferred first.
-    if let Some(pref) = preferred_color(stage_name) {
-        if !neighbor_colors.contains(&pref) {
-            return pref;
-        }
-    }
-
-    // Spread unknown stages across the palette instead of minimizing to a
-    // tiny repeating set on simple linear workflows.
-    if !GRAPH_PALETTE.is_empty() {
-        let name_hash = stage_name
-            .bytes()
-            .fold(0usize, |a, b| a.wrapping_mul(33).wrapping_add(b as usize));
-        let start = (stage_index + name_hash) % GRAPH_PALETTE.len();
-        for offset in 0..GRAPH_PALETTE.len() {
-            let candidate = GRAPH_PALETTE[(start + offset) % GRAPH_PALETTE.len()];
-            if !neighbor_colors.contains(&candidate) {
-                return candidate;
-            }
-        }
-    }
-
-    // Palette exhausted: hash-based cycle until we find a non-conflicting color.
-    // Uses the same deterministic approach as `stage_color` fallback.
-    const EXTENDED: &[Color] = &[
-        Color::Blue,
-        Color::Cyan,
-        Color::Yellow,
-        Color::Magenta,
-        Color::Green,
-        Color::LightBlue,
-        Color::LightCyan,
-        Color::LightYellow,
-        Color::LightMagenta,
-        Color::LightGreen,
-        Color::Red,
-        Color::LightRed,
-        Color::White,
-        Color::Gray,
-        Color::DarkGray,
-    ];
-    let mut attempt = stage_index;
-    loop {
-        let candidate = EXTENDED[attempt % EXTENDED.len()];
-        if !neighbor_colors.contains(&candidate) {
-            return candidate;
-        }
-        attempt += 1;
-    }
-}
-
-/// Map a stage name to a stable color. Recognises the conventional Spacedock
-/// stage names; falls back to a deterministic palette index for anything else
-/// so unknown workflows still get distinct colors per stage.
+/// Map a stage name to a stable fallback color for archived/unknown stages
+/// not found in the graph-aware color map. Derives a deterministic hue from
+/// the stage name's bytes, then converts oklch (lightness=0.78, chroma=0.12)
+/// to `Color::Rgb` — so the fallback path never emits named `Color::*` variants.
 pub fn stage_color(stage_name: &str) -> Color {
-    match stage_name {
-        "design" => Color::Blue,
-        "plan" => Color::Cyan,
-        "implement" => Color::Yellow,
-        "review" | "feedback" => Color::Magenta,
-        "done" | "complete" | "completed" | "shipped" => Color::Green,
-        "blocked" | "rejected" | "failed" => Color::Red,
-        other => {
-            // Deterministic fallback over an expanded palette for unknown stages.
-            const PALETTE: &[Color] = &[
-                Color::Blue,
-                Color::Cyan,
-                Color::Yellow,
-                Color::Magenta,
-                Color::Green,
-                Color::LightBlue,
-                Color::LightCyan,
-                Color::LightYellow,
-                Color::LightMagenta,
-                Color::LightGreen,
-                Color::Red,
-                Color::LightRed,
-                Color::White,
-            ];
-            let idx = other
-                .bytes()
-                .fold(0usize, |a, b| a.wrapping_mul(33).wrapping_add(b as usize))
-                % PALETTE.len();
-            PALETTE[idx]
-        }
-    }
+    // Hash the stage name bytes to a stable hue in [0°, 360°).
+    let hash = stage_name
+        .bytes()
+        .fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32));
+    let hue = (hash % 360) as f32;
+    let (r, g, b) = oklch_to_srgb(0.78, 0.12, hue);
+    Color::Rgb(r, g, b)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -259,4 +133,47 @@ pub struct WorkItem {
 pub struct WorkflowSnapshot {
     pub definition: WorkflowDefinition,
     pub items: Vec<WorkItem>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oklch_palette_produces_rgb_values() {
+        // Five evenly-spaced hues around the oklch wheel (lightness=0.78, chroma=0.12).
+        let hues = [0.0_f32, 72.0, 144.0, 216.0, 288.0];
+        let mut results = Vec::new();
+        for h in hues {
+            let (r, g, b) = oklch_to_srgb(0.78, 0.12, h);
+            results.push(Color::Rgb(r, g, b));
+        }
+        // All results must be distinct Color::Rgb values.
+        let distinct: std::collections::HashSet<Color> = results.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            5,
+            "five evenly-spaced oklch hues must produce 5 distinct Rgb values, got {:?}",
+            results
+        );
+    }
+
+    #[test]
+    fn assign_stage_colors_returns_rgb_for_all_stages() {
+        let stages = vec![
+            StageDefinition { name: "design".to_string(), initial: true, terminal: false, gate: false, fresh: false, feedback_to: None, worktree: false, concurrency: None },
+            StageDefinition { name: "plan".to_string(), initial: false, terminal: false, gate: false, fresh: false, feedback_to: None, worktree: false, concurrency: None },
+            StageDefinition { name: "implement".to_string(), initial: false, terminal: false, gate: false, fresh: false, feedback_to: None, worktree: true, concurrency: None },
+            StageDefinition { name: "review".to_string(), initial: false, terminal: false, gate: true, fresh: false, feedback_to: Some("implement".to_string()), worktree: false, concurrency: None },
+            StageDefinition { name: "done".to_string(), initial: false, terminal: true, gate: false, fresh: false, feedback_to: None, worktree: false, concurrency: None },
+        ];
+        let colors = assign_stage_colors(&stages);
+        assert_eq!(colors.len(), 5);
+        for (name, color) in &colors {
+            assert!(
+                matches!(color, Color::Rgb(_, _, _)),
+                "stage {name} should have Color::Rgb color, got {color:?}"
+            );
+        }
+    }
 }

@@ -76,21 +76,36 @@ fn picker_centered(area: Rect, state: &crate::app::PickerState) -> Rect {
     }
 }
 
-/// Map a stage name to a 3-character uppercase tag for display in the task list.
-fn stage_tag(stage: &str) -> &str {
-    match stage {
-        "design" => "DES",
-        "plan" => "PLN",
-        "implement" => "IMP",
-        "review" => "REV",
-        "done" => "DON",
-        "pending" => "PEN",
-        "analyze" => "ANA",
-        "smoke" => "SMK",
-        "run" => "RUN",
-        "holdout" => "HLD",
-        _ => "···",
+/// Format a phase name into a fixed `width`-character column, preserving the
+/// user's original casing exactly. Names longer than `width` chars are
+/// truncated at `width-1` chars and suffixed with `…`; no additional glyphs
+/// are introduced beyond that truncation ellipsis.
+///
+/// `width` is expected to be in the range [4, 12] (as produced by
+/// `phase_col_width`), but the function works correctly for any width ≥ 1.
+pub(crate) fn phase_col(stage: &str, width: usize) -> String {
+    let char_count = stage.chars().count();
+    if char_count > width {
+        let truncated: String = stage.chars().take(width - 1).collect();
+        format!("{truncated}\u{2026}") // (width-1) chars + "…" = width
+    } else {
+        // left-aligned, space-padded to `width`
+        let pad = width - char_count;
+        format!("{stage}{}", " ".repeat(pad))
     }
+}
+
+/// Compute the phase column width from a slice of visible items.
+///
+/// Returns `max(status.len())` clamped to [4, 12]. When `items` is empty,
+/// falls back to 4 (the minimum).
+pub(crate) fn phase_col_width(items: &[&crate::domain::WorkItem]) -> usize {
+    items
+        .iter()
+        .map(|i| i.status.chars().count())
+        .max()
+        .unwrap_or(4)
+        .clamp(4, 12)
 }
 
 /// Map a stage name to a stable color. Thin re-export of `domain::stage_color`
@@ -173,9 +188,9 @@ fn preview_placement(area: Rect) -> PreviewPlacement {
 }
 
 /// Single-line header bar above the stage graph ribbon.
-/// Shows: muted "Workflow" label, scope badge [active]/[archived], archived
-/// count hint, and the workflow directory path (dim). The line is padded to
-/// fill the full area width so the top-left and top-right cells are non-blank.
+/// Shows: muted "Workflow" label, scope badge [active]/[archived] (yellow
+/// filled bg for active), archived count hint with muted key callout, and
+/// the workflow directory path (dim, left-truncated with … on overflow).
 fn render_header_bar(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     use crate::app::ViewScope;
     let dim = Style::default().add_modifier(Modifier::DIM);
@@ -184,7 +199,8 @@ fn render_header_bar(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
         ViewScope::Active => (
             "[active]",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::Black)
+                .bg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ),
         ViewScope::Archived => (
@@ -192,33 +208,54 @@ fn render_header_bar(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
             Style::default().add_modifier(Modifier::DIM | Modifier::BOLD),
         ),
     };
-    let archived_hint = match state.archived_count() {
-        Some(n) => format!("archived: {n}  (press a)"),
-        None => "(press a)".to_string(),
-    };
-    let path_str = state.workflow_dir().display().to_string();
 
-    // Compute the visible length of all text to pad the remainder with dim
-    // separator characters (─) so the row spans the full terminal width and
-    // both the left and right edges are non-blank (a ratatui buffer cell that
-    // contains " " is considered blank by layout tests).
-    let content_len = "Workflow ".len()
-        + badge_text.len()
-        + 2
-        + archived_hint.len()
-        + 2
-        + path_str.len();
-    let sep_len = (area.width as usize).saturating_sub(content_len);
-    let separator = "\u{2500}".repeat(sep_len); // "─" repeated
+    // Fixed portions of the header line (excluding path).
+    // "Workflow " + badge + "  " + archived label + "  " + "(press a)" + " "
+    let archived_label = match state.archived_count() {
+        Some(n) => format!("archived: {n}  "),
+        None => "archived: ".to_string(),
+    };
+    let key_hint = "(press a)";
+    let prefix_len = "Workflow ".chars().count()
+        + badge_text.chars().count()
+        + 2 // "  " gap
+        + archived_label.chars().count()
+        + key_hint.chars().count()
+        + 1; // trailing space before path
+
+    let full_path = state.workflow_dir().display().to_string();
+    let available = (area.width as usize).saturating_sub(prefix_len);
+    // Left-truncate path if it doesn't fit.
+    let path_str: String = if full_path.chars().count() <= available {
+        full_path.clone()
+    } else if available > 1 {
+        let skip = full_path.chars().count().saturating_sub(available - 1);
+        let truncated: String = full_path.chars().skip(skip).collect();
+        format!("\u{2026}{truncated}") // "…" + rest
+    } else {
+        "\u{2026}".to_string()
+    };
+
+    // Compute trailing space padding to fill the full area width so the
+    // header bar occupies every terminal cell (avoids blank right-edge cells).
+    let used = "Workflow ".chars().count()
+        + badge_text.chars().count()
+        + 2 // "  " gap
+        + archived_label.chars().count()
+        + key_hint.chars().count()
+        + 1 // " " before path
+        + path_str.chars().count();
+    let trailing_spaces = (area.width as usize).saturating_sub(used);
 
     let line = Line::from(vec![
         Span::styled("Workflow ", dim),
         Span::styled(badge_text, badge_style),
         Span::raw("  "),
-        Span::styled(archived_hint, dim),
-        Span::raw("  "),
+        Span::styled(archived_label, dim),
+        Span::styled(key_hint, dim),
+        Span::raw(" "),
         Span::styled(path_str, dim),
-        Span::styled(separator, dim),
+        Span::styled(" ".repeat(trailing_spaces), dim),
     ]);
     frame.render_widget(Paragraph::new(line), area);
 }
@@ -269,12 +306,15 @@ fn render_workflow_tabs_panel(
     }
 }
 
-/// One-line status footer at the bottom of the dashboard. Surfaces the
-/// headline keys so the help popup is discoverable without tutorialising the
-/// user. The exact key list adapts to single vs multi sessions.
+/// Pill background color for footer key hints (muted slate, Tokyo Night bg-2).
+const PILL_BG: Color = Color::Rgb(59, 66, 82);
+
+/// One-line status footer at the bottom of the dashboard. Each key hint is
+/// rendered as a pill-style styled span with a subtle background. The exact
+/// key list adapts to single vs multi sessions.
 fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
     let preview_open = session.active_state().preview_open();
-    let mut hints = vec!["?: help"];
+    let mut hints: Vec<&str> = vec!["?: help"];
     if preview_open {
         hints.push("\u{2190}/\u{2192}: preview scroll");
     } else if session.is_multi() {
@@ -283,7 +323,7 @@ fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSes
     if session.is_multi() {
         hints.push("P: pick workflow");
     }
-    hints.push("Enter: toggle preview");
+    hints.push("\u{23CE}: toggle preview");
     hints.push("a: archive");
     if preview_open {
         hints.push("PgUp/PgDn: preview scroll");
@@ -292,12 +332,18 @@ fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSes
         hints.push("PgUp/PgDn: page list");
     }
     hints.push("q: quit");
-    let text = hints.join("   ");
-    let para = Paragraph::new(Line::from(Span::styled(
-        text,
-        Style::default().add_modifier(Modifier::DIM),
-    )))
-    .alignment(Alignment::Center);
+
+    let pill_style = Style::default().fg(Color::White).bg(PILL_BG);
+    let sep_style = Style::default();
+    let mut spans: Vec<Span<'_>> = Vec::new();
+    for (i, hint) in hints.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("  ", sep_style));
+        }
+        spans.push(Span::styled(*hint, pill_style));
+    }
+
+    let para = Paragraph::new(Line::from(spans)).alignment(Alignment::Center);
     frame.render_widget(para, area);
 }
 
@@ -421,11 +467,18 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     } else {
         Some(state.selected_index())
     });
+    // The ▸ gutter glyph is encoded in each ListItem span so unselected rows
+    // stay aligned. highlight_style floods the entire selected row width with
+    // the selection background — no manual trailing spacer needed.
     let list = List::new(items)
-        .highlight_symbol("> ")
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD));
+        .highlight_symbol("")
+        .highlight_style(Style::default().bg(BG2));
     frame.render_stateful_widget(list, list_area, &mut list_state);
 }
+
+/// Tokyo Night selection/visual color for selected rows.
+/// Provides a distinct blue-tinted contrast against the dark terminal background (~Rgb(26,27,38)).
+const BG2: Color = Color::Rgb(40, 52, 84);
 
 fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
     let scope = state.view_scope();
@@ -438,31 +491,55 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
         };
         return vec![ListItem::new(Line::from(empty_text))];
     }
+    let selected_index = state.selected_index();
+
+    // Compute the phase column width from the longest visible status name,
+    // clamped to [4, 12]. This is done once per render pass over all items.
+    let pcw = items
+        .iter()
+        .map(|item| item.status.chars().count())
+        .max()
+        .unwrap_or(4)
+        .clamp(4, 12);
+
     items
         .iter()
         .enumerate()
-        .map(|(_index, item)| {
-            // Row format: "{id:>3}  {tag:3}  {title}" with optional verdict glyph for archived.
-            // The ratatui highlight_symbol "> " is prepended for the selected row, so the
-            // rendered text starts with "> {id}" for the selected item (keeping "> 001" visible).
-            let id_str = format!("{:>3}", item.id);
-            let tag = stage_tag(&item.status);
+        .map(|(index, item)| {
+            // Row format: "{gutter} {phase:<pcw} {id:>4}  {title}"
+            // Gutter: "▸ " for selected row, "  " otherwise (2 chars).
+            // Phase column: user casing, pcw-char auto-sized width, ellipsized with "…" if longer.
+            // ID: 4-char right-aligned.
+            // Title: fills remaining width.
+            let is_selected = index == selected_index && !items.is_empty();
+
+            let gutter_text = if is_selected { "\u{25B8} " } else { "  " }; // "▸ " or "  "
+            let gutter_style = if is_selected {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+
+            let id_str = format!("{:>4}", item.id);
+            let phase = phase_col(&item.status, pcw);
 
             let id_style = Style::default().add_modifier(Modifier::DIM);
-            let stage_style = Style::default()
-                .fg(state.snapshot().definition.stage_color_for(&item.status))
-                .add_modifier(Modifier::BOLD);
+            let stage_color = state.snapshot().definition.stage_color_for(&item.status);
+            let stage_style = Style::default().fg(stage_color);
             let title_style = if scope == ViewScope::Archived {
                 Style::default().add_modifier(Modifier::DIM)
+            } else if is_selected {
+                Style::default().add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
 
             let mut spans: Vec<Span<'_>> = vec![
+                Span::styled(gutter_text, gutter_style),
+                Span::styled(phase, stage_style),
+                Span::raw(" "),
                 Span::styled(id_str, id_style),
                 Span::raw("  "),
-                Span::styled(tag, stage_style),
-                Span::raw("   "),
                 Span::styled(item.title.clone(), title_style),
             ];
 
@@ -1582,18 +1659,361 @@ mod tests {
             "task row content should use the whole list pane rather than a centered narrow column"
         );
         let rendered = buffer_text(buffer);
+        // Selected row now uses ▸ gutter (not "> ") with bg-2 fill.
         assert!(
-            rendered.contains("> 001"),
-            "selected row should use ratatui-style highlight symbol"
+            rendered.contains('\u{25B8}'),
+            "selected row should display ▸ gutter glyph"
         );
         assert!(
             find_styled_text(buffer, stable_title, |style| {
-                style
-                    .add_modifier
-                    .contains(ratatui::style::Modifier::REVERSED)
+                style.bg == Some(ratatui::style::Color::Rgb(40, 52, 84))
             }),
-            "selected row title should be highlighted by ratatui List selection"
+            "selected row title should have selection color fill (Tokyo Night Rgb(40,52,84))"
         );
+        assert!(
+            find_styled_text(buffer, stable_title, |style| {
+                style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+            }),
+            "selected row title should be bold"
+        );
+    }
+
+    #[test]
+    fn selected_row_fill_covers_full_pane_width() {
+        // The selected row background (Rgb(40,52,84)) must extend to the rightmost
+        // cell of the task list pane, not stop at the last text character.
+        let app = app_with_items(vec![
+            item("001", "Short title", "Body"),
+            item("002", "Another task", "Body"),
+        ]);
+        let width: u16 = 80;
+        let height: u16 = 24;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let buffer = terminal.backend().buffer();
+
+        // Find the selected row (row with ▸ glyph).
+        let hits = find_text(buffer, "\u{25B8}");
+        assert!(!hits.is_empty(), "selected row must have ▸ glyph");
+        let (_, sel_row) = hits[0];
+
+        // The rightmost cell of the task-list pane (width/2 - 1 in split view, or
+        // width - 1 in full-pane view). In full-pane mode (no preview open by default)
+        // the list fills 0..width. Check the last cell on the selected row has BG2.
+        // app_with_items opens preview (Enter), so list is the left half: 0..width/2.
+        let last_list_col = width / 2 - 1;
+        let style = buffer[(last_list_col, sel_row)].style();
+        assert_eq!(
+            style.bg,
+            Some(Color::Rgb(40, 52, 84)),
+            "rightmost list cell on selected row (col {last_list_col}, row {sel_row}) must have selection background"
+        );
+    }
+
+    // ---- AC snapshot tests ----
+
+    #[test]
+    fn task_row_phase_column_12_char_fixed() {
+        // With a single item whose status is "implement" (9 chars), phase_col_width
+        // auto-sizes to 9 (the longest status, clamped to [4,12]). The phase
+        // column is "implement" with no trailing spaces.
+        let app = app_with_items(vec![{
+            let mut i = item("001", "Test task", "Body");
+            i.status = "implement".to_string();
+            i
+        }]);
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let rendered = buffer_text(terminal.backend().buffer());
+        // "implement" must appear with user casing preserved.
+        assert!(
+            rendered.contains("implement"),
+            "phase name 'implement' must appear in task row; rendered: {:?}",
+            &rendered[..rendered.len().min(200)]
+        );
+        // The word "implement" must not be uppercased.
+        assert!(
+            !rendered.contains("IMPLEMENT"),
+            "phase name must not be uppercased"
+        );
+        // Verify phase_col() helper directly for various widths.
+        let col_w9 = super::phase_col("implement", 9);
+        assert_eq!(col_w9, "implement", "phase_col('implement', 9) must be exact fit");
+        let col_w12 = super::phase_col("implement", 12);
+        assert_eq!(col_w12, "implement   ", "phase_col('implement', 12) must pad to 12");
+        let col_w4 = super::phase_col("implement", 4);
+        assert_eq!(col_w4, "imp\u{2026}", "phase_col('implement', 4) must truncate at 3+ellipsis");
+    }
+
+    #[test]
+    fn task_row_long_phase_name_ellipsis() {
+        // Phase names longer than 12 chars must be ellipsized at char 11 + "…".
+        let long_phase = "averylongphasename"; // 18 chars
+        let app = {
+            let root = PathBuf::from("/tmp/spacetop-ellipsis");
+            let snapshot = crate::domain::WorkflowSnapshot {
+                definition: crate::domain::WorkflowDefinition {
+                    root: root.clone(),
+                    stages: vec![crate::domain::StageDefinition {
+                        name: long_phase.to_string(),
+                        initial: true,
+                        terminal: false,
+                        gate: false,
+                        fresh: false,
+                        feedback_to: None,
+                        worktree: false,
+                        concurrency: None,
+                    }],
+                    id_style: None,
+                    entity_type: None,
+                    entity_label: None,
+                    entity_label_plural: None,
+                    stage_colors: std::collections::HashMap::new(),
+                },
+                items: vec![{
+                    let mut i = item("001", "Long phase task", "Body");
+                    i.status = long_phase.to_string();
+                    i
+                }],
+            };
+            App::from_snapshot(root, snapshot)
+        };
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let rendered = buffer_text(terminal.backend().buffer());
+        // First 11 chars of long_phase + "…"
+        let expected_prefix = &long_phase[..11]; // "averylongph"
+        assert!(
+            rendered.contains(&format!("{expected_prefix}\u{2026}")),
+            "long phase name should be ellipsized to 11 chars + '…'; rendered: {:?}",
+            &rendered[..rendered.len().min(200)]
+        );
+    }
+
+    #[test]
+    fn task_row_selected_gutter() {
+        // Selected row must show ▸ gutter; unselected rows must show 2 spaces.
+        let app = app_with_items(vec![
+            item("001", "Selected task", "Body"),
+            item("002", "Unselected task", "Body"),
+        ]);
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let rendered = buffer_text(terminal.backend().buffer());
+        // ▸ (\u{25B8}) must appear for the selected row.
+        assert!(
+            rendered.contains('\u{25B8}'),
+            "selected row must show ▸ gutter glyph"
+        );
+    }
+
+    #[test]
+    fn task_row_no_uppercase_phase() {
+        // Phase column must not uppercase any stage name.
+        let app = app_with_items(vec![item("001", "Task", "Body")]);
+        // The stage name in `app_with_items` is "design" (lowercase).
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let rendered = buffer_text(terminal.backend().buffer());
+        // "design" must appear (lowercase), not "DESIGN", "DES", "DGN", etc.
+        assert!(rendered.contains("design"), "phase name 'design' must appear in task row");
+        assert!(!rendered.contains("DESIGN"), "phase name must not be uppercased");
+        assert!(!rendered.contains("DES"), "old 3-letter tag must not appear");
+    }
+
+    #[test]
+    fn task_row_no_glyphs_in_phase_col() {
+        // Phase column must not contain DAG vocabulary glyphs.
+        // The DAG glyphs are ▶ (U+25B6), ⎇ (U+2387), ⚑ (U+2691), ■ (U+25A0).
+        // Note: ▸ (U+25B8) is the gutter selection glyph — NOT a DAG vocab glyph.
+        let dag_glyphs: &[char] = &['\u{25B6}', '\u{2387}', '\u{2691}', '\u{25A0}'];
+
+        let app = app_with_items(vec![item("001", "Task", "Body")]);
+        let width: u16 = 100;
+        let height: u16 = 24;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let buffer = terminal.backend().buffer();
+
+        // Layout (with preview open, Left placement at width=100, height=24):
+        //   row 0: header bar
+        //   rows 1–7: graph ribbon (7 rows)
+        //   row 8: "Tasks · N" section header
+        //   rows 9+: task list rows
+        //
+        // Task row column layout (x offsets, no border on list block):
+        //   x 0–1:  gutter (2 chars: "▸ " or "  ")
+        //   x 2–13: phase column (12 chars — user stage name)
+        //   x 14:   separator space
+        //   x 15–18: id (4 chars)
+        //   x 19+:  title
+        //
+        // We scan the phase column cells (x=2..14) for all task rows (y=9..height).
+        // No DAG vocabulary glyph may appear there.
+
+        let phase_col_x_start: u16 = 2;
+        let phase_col_x_end: u16 = 14; // exclusive
+        let task_rows_y_start: u16 = 9; // first task row (after section header at y=8)
+
+        let mut violations: Vec<(u16, u16, char)> = Vec::new();
+        for y in task_rows_y_start..height {
+            for x in phase_col_x_start..phase_col_x_end {
+                let cell = &buffer[(x, y)];
+                let sym = cell.symbol();
+                for ch in sym.chars() {
+                    if dag_glyphs.contains(&ch) {
+                        violations.push((x, y, ch));
+                    }
+                }
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "DAG glyphs found in task list phase column (x=2..14, y=9..{}): {:?}",
+            height,
+            violations
+        );
+
+        // Also verify phase_col() helper itself never emits DAG glyphs.
+        let pc = super::phase_col("design", 12);
+        for glyph in dag_glyphs {
+            assert!(
+                !pc.contains(*glyph),
+                "phase_col('design') must not contain DAG glyph {:?}, got {:?}",
+                glyph,
+                pc
+            );
+        }
+    }
+
+    #[test]
+    fn header_strip_badge_style_and_path_truncation() {
+        // At a short terminal width, the path should be left-truncated with "…".
+        // The badge should have yellow background (filled style).
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let app = App::load(root).expect("workflow should load");
+        let width: u16 = 60; // narrow enough to trigger path truncation
+        let mut terminal = Terminal::new(TestBackend::new(width, 20)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let buffer = terminal.backend().buffer();
+        let rendered = buffer_text(buffer);
+        // Badge "[active]" must appear.
+        assert!(rendered.contains("[active]"), "badge must appear");
+        // Yellow bg must be present in the header row (row 0) for badge cells.
+        let mut found_yellow_bg = false;
+        for x in 0..width {
+            let cell = &buffer[(x, 0)];
+            if cell.style().bg == Some(ratatui::style::Color::Yellow) {
+                found_yellow_bg = true;
+                break;
+            }
+        }
+        assert!(found_yellow_bg, "badge cell must have yellow background in row 0");
+        // "…" must appear in row 0 (left-truncated path) at narrow width.
+        assert!(
+            rendered.contains('\u{2026}'),
+            "path must be left-truncated with '…' at width={width}"
+        );
+    }
+
+    #[test]
+    fn footer_hints_have_background() {
+        // Footer pill-style hints must have a non-default background color.
+        let app = app_with_items(vec![item("001", "Task", "Body")]);
+        let height: u16 = 24;
+        let width: u16 = 120;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let buffer = terminal.backend().buffer();
+        // Footer is the last row.
+        let footer_y = height - 1;
+        let mut found_pill_bg = false;
+        for x in 0..width {
+            let cell = &buffer[(x, footer_y)];
+            if let Some(bg) = cell.style().bg {
+                if bg != ratatui::style::Color::Reset {
+                    found_pill_bg = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            found_pill_bg,
+            "footer row {footer_y} must have at least one cell with a non-default background (pill hint)"
+        );
+    }
+
+    // ---- phase_col_width auto-sizing snapshot tests ----
+
+    #[test]
+    fn phase_col_width_uniform_short_phases_clamped_to_4() {
+        // When all visible items have status "run" (3 chars), phase_col_width
+        // clamps to the minimum of 4. Verify via phase_col() helper directly.
+        let mut run_item = item("001", "Task", "Body");
+        run_item.status = "run".to_string(); // 3 chars, below minimum of 4
+        // "run" is 3 chars < 4 minimum → phase_col_width returns 4.
+        let items_ref: Vec<&crate::domain::WorkItem> = vec![&run_item];
+        // Simulate what build_task_list_items does: collect refs and call phase_col_width.
+        // We use a locally-constructed slice to test the helper.
+        let pcw = super::phase_col_width(&items_ref);
+        assert_eq!(pcw, 4, "phase_col_width for 'run' (3 chars) must clamp to 4");
+        // phase_col with width=4 pads "run" to "run " (3 chars + 1 space).
+        let col = super::phase_col("run", pcw);
+        assert_eq!(col, "run ", "phase_col('run', 4) must pad to 4 chars");
+        assert_eq!(col.chars().count(), 4, "column must be exactly 4 chars wide");
+    }
+
+    #[test]
+    fn phase_col_width_mixed_phases_fits_longest() {
+        // When items have mixed phase lengths, phase_col_width picks the longest
+        // (clamped ≤ 12). "run" (3→4 min), "implement" (9), "smoke-test" (10).
+        // Longest is 10 → phase_col_width = 10.
+        let items_data = vec![
+            {
+                let mut i = item("001", "Task A", "Body");
+                i.status = "run".to_string();
+                i
+            },
+            {
+                let mut i = item("002", "Task B", "Body");
+                i.status = "implement".to_string();
+                i
+            },
+            {
+                let mut i = item("003", "Task C", "Body");
+                i.status = "smoke-test".to_string();
+                i
+            },
+        ];
+        let items_ref: Vec<&crate::domain::WorkItem> = items_data.iter().collect();
+        let pcw = super::phase_col_width(&items_ref);
+        assert_eq!(pcw, 10, "phase_col_width for mixed phases with max len=10 must return 10");
+        // "implement" (9 chars) with width=10 must pad to 10 chars.
+        let col = super::phase_col("implement", pcw);
+        assert_eq!(col.chars().count(), 10, "phase column must be exactly 10 chars");
+        assert_eq!(col, "implement ", "implement padded to width 10");
+        // "smoke-test" (10 chars) with width=10 must fit exactly.
+        let col2 = super::phase_col("smoke-test", pcw);
+        assert_eq!(col2, "smoke-test", "smoke-test must fit exactly at width 10");
+    }
+
+    #[test]
+    fn phase_col_width_long_phase_name_clamped_at_12() {
+        // When the longest phase name exceeds 12 chars, phase_col_width clamps to 12.
+        let long_item = {
+            let mut i = item("001", "Task", "Body");
+            i.status = "a-very-long-phase-name".to_string(); // 22 chars
+            i
+        };
+        let items_ref: Vec<&crate::domain::WorkItem> = vec![&long_item];
+        let pcw = super::phase_col_width(&items_ref);
+        assert_eq!(pcw, 12, "phase_col_width must clamp to 12 for a 22-char status");
+        // phase_col with width=12 must truncate at 11 chars + "…".
+        let col = super::phase_col("a-very-long-phase-name", pcw);
+        assert_eq!(col.chars().count(), 12, "column must be exactly 12 chars after truncation");
+        assert!(col.ends_with('\u{2026}'), "truncated column must end with '…'");
+        assert_eq!(&col[..col.len() - 3], "a-very-long", // 11 chars, "…" is 3 bytes
+            "first 11 chars must be preserved before ellipsis");
     }
 
     fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
@@ -1742,10 +2162,8 @@ mod tests {
 
     #[test]
     fn dashboard_pane_spans_full_terminal_width() {
-        // The Overview block (graph ribbon) must touch column 0 and the
-        // last column on a wide terminal — i.e. no left/right margin
-        // gutter. This codifies the override of task 009's centered-
-        // column rule.
+        // The Overview block must render with no left/right margin gutter —
+        // i.e. content starts at column 0 and the layout fills the terminal width.
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
         let app = App::load(root).expect("workflow should load");
         let width: u16 = 200;
@@ -1755,18 +2173,25 @@ mod tests {
             .draw(|frame| render(frame, &app))
             .expect("render should succeed");
         let buffer = terminal.backend().buffer();
-        // The graph block has a top border drawn at row 0; that border
-        // should reach both the left and right edges of the terminal.
+        // Row 0 is the header bar; it starts with "Workflow" at col 0.
         let top_left = buffer[(0, 0)].symbol();
-        let top_right = buffer[(width - 1, 0)].symbol();
         assert_ne!(
             top_left, " ",
             "expected non-blank left edge of dashboard at (0,0), got blank"
         );
+        // Row 1 is the graph pane's TOP border; it spans the full width.
+        // The graph block uses TOP|BOTTOM borders only, so the top border character
+        // at (0, 1) and (width-1, 1) should be non-blank.
+        let graph_border_left = buffer[(0, 1)].symbol();
+        let graph_border_right = buffer[(width - 1, 1)].symbol();
         assert_ne!(
-            top_right,
+            graph_border_left, " ",
+            "expected non-blank left edge of graph pane border at (0,1), got blank"
+        );
+        assert_ne!(
+            graph_border_right,
             " ",
-            "expected non-blank right edge of dashboard at ({},0), got blank",
+            "expected non-blank right edge of graph pane border at ({},1), got blank",
             width - 1
         );
     }
@@ -2068,12 +2493,13 @@ mod tests {
                 }
             }
         }
+        // Collect oklch-derived Rgb colors for this workflow's stages.
         let stage_colors: std::collections::HashSet<Color> = app
             .snapshot()
             .definition
-            .stages
-            .iter()
-            .map(|s| super::stage_color(&s.name))
+            .stage_colors
+            .values()
+            .copied()
             .collect();
         let overlap = stage_colors.intersection(&seen_colors).count();
         assert!(
@@ -2203,12 +2629,19 @@ mod tests {
         let review = super::stage_color("review");
         let done = super::stage_color("done");
         let all = [design, plan, implement, review, done];
+        // All returned colors must be Color::Rgb (no named-color variants).
+        for c in &all {
+            assert!(
+                matches!(c, Color::Rgb(_, _, _)),
+                "stage_color() must return Color::Rgb, got {c:?}"
+            );
+        }
+        // All colors must be distinct.
         for (i, a) in all.iter().enumerate() {
             for b in &all[i + 1..] {
                 assert_ne!(a, b, "stage colors should be distinct");
             }
         }
-        assert_eq!(done, Color::Green);
     }
 
     #[test]
@@ -2343,9 +2776,9 @@ mod tests {
     }
 
     #[test]
-    fn graph_coloring_preserves_preferred_colors_for_standard_workflow() {
+    fn graph_coloring_produces_distinct_rgb_colors_for_standard_workflow() {
         // Standard spacetop-dev 5-stage workflow.
-        // review feedback_to: implement
+        // All stages should get distinct Color::Rgb values derived from oklch.
         let stages = vec![
             {
                 let mut s = make_stage("design", None);
@@ -2370,11 +2803,22 @@ mod tests {
             },
         ];
         let colors = super::assign_stage_colors(&stages);
-        assert_eq!(colors["design"], Color::Blue, "design should be Blue");
-        assert_eq!(colors["plan"], Color::Cyan, "plan should be Cyan");
-        assert_eq!(colors["implement"], Color::Yellow, "implement should be Yellow");
-        assert_eq!(colors["review"], Color::Magenta, "review should be Magenta");
-        assert_eq!(colors["done"], Color::Green, "done should be Green");
+        // All 5 stage colors must be Color::Rgb variants (oklch-derived).
+        for stage_name in &["design", "plan", "implement", "review", "done"] {
+            let color = colors[*stage_name];
+            assert!(
+                matches!(color, Color::Rgb(_, _, _)),
+                "stage {stage_name} color should be Color::Rgb, got {color:?}"
+            );
+        }
+        // All 5 colors must be distinct.
+        let distinct: std::collections::HashSet<Color> = colors.values().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            5,
+            "5 stages should have 5 distinct colors, got {:?}",
+            distinct
+        );
     }
 
     #[test]
