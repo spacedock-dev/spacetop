@@ -49,3 +49,14 @@ Verified by: unset `SENTRY_DSN`, build succeeds, no Sentry events emitted.
 **AC-4 -- Sentry release is tagged with the crate version.**
 The Sentry client is initialised with `release: env!("CARGO_PKG_VERSION")` so issues can be grouped by release in the dashboard.
 Verified by: inspect the event payload or integration test mock.
+
+## Stage Report: design
+
+- DONE: Problem statement names the exact init site in main.rs and how cfg(debug_assertions) gates it.
+  Confirmed: `src/main.rs` contains `fn main()` → `spacetop::run(cli)`. Entity spec prescribes Sentry init between `Cli::parse()` and `spacetop::run()`, gated by `cfg!(debug_assertions)` — true in debug profile (skip/sample-rate 0.0), false in release (init with DSN and sample rate 1.0).
+- DONE: DSN storage location (.env.example + build.rs forwarding) is confirmed against the existing project layout.
+  Neither `.env.example` nor `build.rs` exist yet in the project root (confirmed via `ls`). Entity spec accurately prescribes both as new files to create in the implement stage: `.env.example` holds `SENTRY_DSN=<dsn>`, `build.rs` forwards it via `println!("cargo:rustc-env=SENTRY_DSN=...")` with an empty-string fallback.
+
+### Summary
+
+The entity file already contains a complete design spec covering the init site (`src/main.rs` before `spacetop::run()`), `cfg!(debug_assertions)` gating, DSN storage in `.env.example`, compile-time forwarding via `build.rs`, and four acceptance criteria. Inspection of the actual project layout confirms `main.rs` matches the described call structure, and that `build.rs`/`.env.example` are absent and must be created in the implement stage.
