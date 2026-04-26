@@ -333,8 +333,24 @@ fn merge_worktree_items(
                 .ok();
             match (wt_hash, main_hash) {
                 (Some(wt), Some(main)) if wt != main => {
-                    // Hashes differ: worktree wins (AC-4).
-                    index.insert(slug, wt_item);
+                    // Hashes differ: merge — keep FO-owned frontmatter from main, body from worktree.
+                    let main_item = index.get(&slug).expect("main_item present");
+                    let merged = crate::domain::WorkItem {
+                        path: wt_item.path.clone(),
+                        id: main_item.id.clone(),
+                        title: main_item.title.clone(),
+                        status: main_item.status.clone(),
+                        source: main_item.source.clone(),
+                        started: main_item.started.clone(),
+                        completed: main_item.completed.clone(),
+                        verdict: main_item.verdict.clone(),
+                        score: main_item.score,
+                        worktree: main_item.worktree.clone(),
+                        issue: main_item.issue.clone(),
+                        pr: main_item.pr.clone(),
+                        body: wt_item.body.clone(),
+                    };
+                    index.insert(slug, merged);
                 }
                 (Some(_), Some(_)) => {
                     // Hashes identical: keep main copy (already in index).
@@ -1171,7 +1187,9 @@ Body
 
     #[test]
     fn worktree_version_wins_on_hash_mismatch() {
-        // AC-4: same slug in main and worktree with different content
+        // AC-4: same slug in main and worktree with different content.
+        // After the merged-view fix: FO-owned fields (title, status) come from main;
+        // body comes from worktree.
         let root = unique_temp_dir("wt-wins");
         let wf = root.join("docs/wf");
         write_minimal_workflow(
@@ -1188,7 +1206,14 @@ Body
 
         let snapshot = load_workflow_dir(&wf, &root).expect("load");
         assert_eq!(snapshot.items.len(), 1);
-        assert_eq!(snapshot.items[0].title, "Worktree Version");
+        // FO-owned frontmatter (title) comes from main.
+        assert_eq!(snapshot.items[0].title, "Main Version");
+        // Body comes from worktree.
+        assert!(
+            snapshot.items[0].body.contains("Worktree Version body"),
+            "body should come from worktree: {:?}",
+            snapshot.items[0].body
+        );
     }
 
     #[test]
@@ -1203,6 +1228,100 @@ Body
         let snapshot = load_workflow_dir(&wf, &root).expect("load");
         assert_eq!(snapshot.items.len(), 1);
         assert_eq!(snapshot.items[0].title, "Solo");
+    }
+
+    /// Write an entity with a custom status and body for merge-view tests.
+    fn entity_md_with_status(id: &str, title: &str, status: &str, body: &str) -> String {
+        format!("---\nid: \"{id}\"\ntitle: {title}\nstatus: {status}\n---\n\n{body}\n")
+    }
+
+    /// Write a minimal workflow README with both `design` and `done` states.
+    fn write_two_state_workflow(dir: &Path, entity_name: Option<&str>, entity_content: Option<&str>) {
+        fs::create_dir_all(dir).expect("workflow dir");
+        fs::write(
+            dir.join("README.md"),
+            "---\ncommissioned-by: spacedock@0.10.1\nstages:\n  states:\n    - name: design\n      initial: true\n    - name: done\n      terminal: true\n---\n\n# Workflow\n",
+        )
+        .expect("write README");
+        if let (Some(name), Some(content)) = (entity_name, entity_content) {
+            write_markdown(&dir.join(name), content);
+        }
+    }
+
+    #[test]
+    fn worktree_status_from_main() {
+        // AC-1: when main has status=done and worktree has status=design,
+        // the merged item displays the main-branch status (done).
+        let root = unique_temp_dir("wt-status-main");
+        let wf = root.join("docs/wf");
+        write_two_state_workflow(
+            &wf,
+            Some("task.md"),
+            Some(&entity_md_with_status("030", "My Task", "done", "main body")),
+        );
+        let wt = root.join(".worktrees/wt-1/docs/wf");
+        write_two_state_workflow(
+            &wt,
+            Some("task.md"),
+            Some(&entity_md_with_status("030", "My Task", "design", "worktree body with stage report")),
+        );
+
+        let snapshot = load_workflow_dir(&wf, &root).expect("load");
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(
+            snapshot.items[0].status, "done",
+            "status should come from main, got: {:?}",
+            snapshot.items[0].status
+        );
+    }
+
+    #[test]
+    fn worktree_body_from_worktree() {
+        // AC-2: when main and worktree differ, body comes from the worktree copy
+        // (which may contain the latest stage report not yet merged to main).
+        let root = unique_temp_dir("wt-body-wt");
+        let wf = root.join("docs/wf");
+        write_two_state_workflow(
+            &wf,
+            Some("task.md"),
+            Some(&entity_md_with_status("031", "My Task", "done", "main body")),
+        );
+        let wt = root.join(".worktrees/wt-1/docs/wf");
+        write_two_state_workflow(
+            &wt,
+            Some("task.md"),
+            Some(&entity_md_with_status("031", "My Task", "design", "worktree body with stage report")),
+        );
+
+        let snapshot = load_workflow_dir(&wf, &root).expect("load");
+        assert_eq!(snapshot.items.len(), 1);
+        assert!(
+            snapshot.items[0].body.contains("worktree body with stage report"),
+            "body should come from worktree, got: {:?}",
+            snapshot.items[0].body
+        );
+    }
+
+    #[test]
+    fn no_worktree_unchanged() {
+        // AC-3: when no worktree is present, both frontmatter and body come from main unchanged.
+        let root = unique_temp_dir("no-wt-unchanged");
+        let wf = root.join("docs/wf");
+        write_two_state_workflow(
+            &wf,
+            Some("task.md"),
+            Some(&entity_md_with_status("032", "Solo Task", "done", "main only body")),
+        );
+        assert!(!root.join(".worktrees").exists());
+
+        let snapshot = load_workflow_dir(&wf, &root).expect("load");
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].status, "done");
+        assert!(
+            snapshot.items[0].body.contains("main only body"),
+            "body should come from main, got: {:?}",
+            snapshot.items[0].body
+        );
     }
 
     #[test]
