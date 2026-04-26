@@ -457,8 +457,9 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     frame.render_stateful_widget(list, list_area, &mut list_state);
 }
 
-/// Tokyo Night bg-2 background fill color for selected rows.
-const BG2: Color = Color::Rgb(41, 45, 62);
+/// Tokyo Night selection/visual color for selected rows.
+/// Provides a distinct blue-tinted contrast against the dark terminal background (~Rgb(26,27,38)).
+const BG2: Color = Color::Rgb(40, 52, 84);
 
 fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
     let scope = state.view_scope();
@@ -503,6 +504,11 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
                 .add_modifier(Modifier::BOLD);
             let title_style = if scope == ViewScope::Archived {
                 Style::default().fg(Color::Reset).bg(bg).add_modifier(Modifier::DIM)
+            } else if is_selected {
+                Style::default()
+                    .fg(Color::Reset)
+                    .bg(bg)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Reset).bg(bg)
             };
@@ -1639,9 +1645,15 @@ mod tests {
         );
         assert!(
             find_styled_text(buffer, stable_title, |style| {
-                style.bg == Some(ratatui::style::Color::Rgb(41, 45, 62))
+                style.bg == Some(ratatui::style::Color::Rgb(40, 52, 84))
             }),
-            "selected row title should have bg-2 fill (Tokyo Night Rgb(41,45,62))"
+            "selected row title should have selection color fill (Tokyo Night Rgb(40,52,84))"
+        );
+        assert!(
+            find_styled_text(buffer, stable_title, |style| {
+                style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+            }),
+            "selected row title should be bold"
         );
     }
 
