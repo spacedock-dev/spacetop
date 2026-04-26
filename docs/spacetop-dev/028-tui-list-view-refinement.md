@@ -381,3 +381,8 @@ Required: Use a more visually distinct selection color. Tokyo Night's selection/
 Requirement: Compute phase column width from the longest phase name currently visible in the task list, clamped to min=4ch, max=12ch. When all tasks share the same short phase (e.g. "run") the column is 4ch wide; when phases vary it grows to fit the longest (up to 12ch). Never use a hardcoded wide width — it wastes space and breaks visual balance.
 
 Implementation note: `build_task_list_items` already iterates all visible items; compute `phase_col_width = items.iter().map(|i| i.status.len()).max().unwrap_or(4).clamp(4, 12)` before building spans, then use that width for the `phase_col()` helper and `title` column remainder.
+
+**Cycle 4** — gate rejection (captain). Selected row background must fill the entire row width, not just the text spans.
+
+Current: background color is applied only to the character spans (gutter + phase + id + title). Empty space to the right of the title has no background, so the selection stripe is broken.
+Required: The selected row highlight must extend to the full pane width. In ratatui this is typically done by padding the title span to fill the remaining width, or by using `ListItem` with a `Paragraph` that fills the available area. The simplest fix: pad the title text (or add a trailing spacer span) so the entire row width is covered with `Rgb(40, 52, 84)` background.
