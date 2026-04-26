@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
+use std::fs::DirEntry;
 use std::path::Path;
 
 use serde::Deserialize;
@@ -124,39 +125,7 @@ pub fn load_archived_items(
         return Ok(Vec::new());
     }
 
-    let path_label = display_path(&archive_root);
-    let mut item_paths = Vec::new();
-    for entry in fs::read_dir(&archive_root).map_err(|source| ParseError::ReadDirectory {
-        path: path_label.clone(),
-        source,
-    })? {
-        let entry = entry.map_err(|source| ParseError::ReadDirectory {
-            path: path_label.clone(),
-            source,
-        })?;
-        let entry_path = entry.path();
-        let file_type = entry
-            .file_type()
-            .map_err(|source| ParseError::ReadDirectory {
-                path: path_label.clone(),
-                source,
-            })?;
-        if file_type.is_dir() {
-            let index_path = entry_path.join("index.md");
-            if index_path.is_file() {
-                item_paths.push(index_path);
-            }
-            continue;
-        }
-        if entry_path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            == Some("md")
-        {
-            item_paths.push(entry_path);
-        }
-    }
-    item_paths.sort();
+    let item_paths = collect_archived_item_paths(&archive_root)?;
 
     let mut items = Vec::with_capacity(item_paths.len());
     for item_path in item_paths {
@@ -197,29 +166,7 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
         .iter()
         .map(|stage| stage.name.clone())
         .collect::<Vec<_>>();
-    let path_label = display_path(path);
-    let mut item_paths = Vec::new();
-    for entry in fs::read_dir(path).map_err(|source| ParseError::ReadDirectory {
-        path: path_label.clone(),
-        source,
-    })? {
-        let entry = entry.map_err(|source| ParseError::ReadDirectory {
-            path: path_label.clone(),
-            source,
-        })?;
-        let entry_path = entry.path();
-        if entry_path.file_name().and_then(|name| name.to_str()) == Some("README.md") {
-            continue;
-        }
-        if entry_path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            == Some("md")
-        {
-            item_paths.push(entry_path);
-        }
-    }
-    item_paths.sort();
+    let item_paths = collect_active_item_paths(path)?;
 
     let mut items = Vec::with_capacity(item_paths.len());
     for item_path in item_paths {
@@ -233,6 +180,73 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
     let items = merge_worktree_items(items, worktree_items);
 
     Ok(WorkflowSnapshot { definition, items })
+}
+
+fn collect_active_item_paths(workflow_dir: &Path) -> Result<Vec<std::path::PathBuf>, ParseError> {
+    let entries = read_directory(workflow_dir)?;
+    let mut item_paths = Vec::new();
+    for entry in entries {
+        let entry_path = entry.path();
+        if is_readme_path(&entry_path) {
+            continue;
+        }
+        if is_markdown_path(&entry_path) {
+            item_paths.push(entry_path);
+        }
+    }
+    item_paths.sort();
+    Ok(item_paths)
+}
+
+fn collect_archived_item_paths(archive_root: &Path) -> Result<Vec<std::path::PathBuf>, ParseError> {
+    let entries = read_directory(archive_root)?;
+    let path_label = display_path(archive_root);
+    let mut item_paths = Vec::new();
+    for entry in entries {
+        let entry_path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|source| ParseError::ReadDirectory {
+                path: path_label.clone(),
+                source,
+            })?;
+        if file_type.is_dir() {
+            let index_path = entry_path.join("index.md");
+            if index_path.is_file() {
+                item_paths.push(index_path);
+            }
+            continue;
+        }
+        if is_markdown_path(&entry_path) {
+            item_paths.push(entry_path);
+        }
+    }
+    item_paths.sort();
+    Ok(item_paths)
+}
+
+fn read_directory(path: &Path) -> Result<Vec<DirEntry>, ParseError> {
+    let path_label = display_path(path);
+    fs::read_dir(path)
+        .map_err(|source| ParseError::ReadDirectory {
+            path: path_label.clone(),
+            source,
+        })?
+        .map(|entry| {
+            entry.map_err(|source| ParseError::ReadDirectory {
+                path: path_label.clone(),
+                source,
+            })
+        })
+        .collect()
+}
+
+fn is_readme_path(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some("README.md")
+}
+
+fn is_markdown_path(path: &Path) -> bool {
+    path.extension().and_then(|extension| extension.to_str()) == Some("md")
 }
 
 /// Scan `.worktrees/*/` subdirectories under `repo_root` for workflow entity
@@ -262,29 +276,38 @@ fn scan_worktrees(
         if !candidate.is_dir() {
             continue;
         }
-        let mut item_paths = Vec::new();
-        let Ok(dir_entries) = fs::read_dir(&candidate) else {
-            continue;
-        };
-        for file_entry in dir_entries.flatten() {
-            let file_path = file_entry.path();
-            if file_path.file_name().and_then(|n| n.to_str()) == Some("README.md") {
-                continue;
-            }
-            if file_path
-                .extension()
-                .and_then(|e| e.to_str())
-                == Some("md")
-            {
-                item_paths.push(file_path);
-            }
-        }
-        item_paths.sort();
-        for item_path in item_paths {
-            all_items.push(parse_work_item(&item_path, allowed_statuses)?);
-        }
+        all_items.extend(load_worktree_items(&candidate, allowed_statuses)?);
     }
     Ok(all_items)
+}
+
+fn load_worktree_items(
+    workflow_dir: &Path,
+    allowed_statuses: &[String],
+) -> Result<Vec<WorkItem>, ParseError> {
+    let item_paths = collect_worktree_item_paths(workflow_dir);
+    item_paths
+        .into_iter()
+        .map(|item_path| parse_work_item(&item_path, allowed_statuses))
+        .collect()
+}
+
+fn collect_worktree_item_paths(workflow_dir: &Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = fs::read_dir(workflow_dir) else {
+        return Vec::new();
+    };
+    let mut item_paths = Vec::new();
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+        if is_readme_path(&entry_path) {
+            continue;
+        }
+        if is_markdown_path(&entry_path) {
+            item_paths.push(entry_path);
+        }
+    }
+    item_paths.sort();
+    item_paths
 }
 
 /// Derive the slug for a workflow entity path.
@@ -323,54 +346,14 @@ fn merge_worktree_items(
         let Some(slug) = slug_of_path(&wt_item.path) else {
             continue;
         };
-        if let Some(main_item) = index.get(&slug) {
-            // Both exist: compare via SHA-1 digest — not string equality on body (AC-5).
-            let wt_hash = fs::read(&wt_item.path)
-                .map(|b| Sha1::digest(&b))
-                .ok();
-            let main_hash = fs::read(&main_item.path)
-                .map(|b| Sha1::digest(&b))
-                .ok();
-            match (wt_hash, main_hash) {
-                (Some(wt), Some(main)) if wt != main => {
-                    // Hashes differ: merge — keep FO-owned frontmatter from main, body from worktree.
-                    let main_item = index.get(&slug).expect("main_item present");
-                    let merged = crate::domain::WorkItem {
-                        path: wt_item.path.clone(),
-                        id: main_item.id.clone(),
-                        title: main_item.title.clone(),
-                        status: main_item.status.clone(),
-                        source: main_item.source.clone(),
-                        started: main_item.started.clone(),
-                        completed: main_item.completed.clone(),
-                        verdict: main_item.verdict.clone(),
-                        score: main_item.score,
-                        worktree: main_item.worktree.clone(),
-                        issue: main_item.issue.clone(),
-                        pr: main_item.pr.clone(),
-                        body: wt_item.body.clone(),
-                    };
-                    index.insert(slug, merged);
-                }
-                (Some(_), Some(_)) => {
-                    // Hashes identical: keep main copy (already in index).
-                }
-                (Some(_), None) => {
-                    // Main hash unavailable: worktree wins.
-                    index.insert(slug, wt_item);
-                }
-                (None, Some(_)) => {
-                    // Worktree hash unavailable: keep known-good main copy.
-                }
-                (None, None) => {
-                    // Neither hash available: prefer fresher worktree copy.
-                    index.insert(slug, wt_item);
-                }
-            }
-        } else {
+        let Some(main_item) = index.get(&slug) else {
             // Worktree-only item (AC-3).
             index.insert(slug, wt_item);
-        }
+            continue;
+        };
+        if let Some(item) = merged_worktree_item(main_item, wt_item) {
+            index.insert(slug, item);
+        };
     }
 
     let mut result: Vec<_> = index.into_values().collect();
@@ -380,6 +363,39 @@ fn merge_worktree_items(
         a_slug.cmp(&b_slug).then_with(|| a.path.cmp(&b.path))
     });
     result
+}
+
+fn merged_worktree_item(main_item: &WorkItem, wt_item: WorkItem) -> Option<WorkItem> {
+    match (content_hash(&wt_item.path), content_hash(&main_item.path)) {
+        (Some(wt_hash), Some(main_hash)) if wt_hash == main_hash => None,
+        (None, Some(_)) => None,
+        (Some(_), Some(_)) => Some(merge_main_frontmatter_with_worktree_body(
+            main_item, wt_item,
+        )),
+        (Some(_), None) | (None, None) => Some(wt_item),
+    }
+}
+
+fn content_hash(path: &Path) -> Option<[u8; 20]> {
+    fs::read(path).map(|bytes| Sha1::digest(&bytes).into()).ok()
+}
+
+fn merge_main_frontmatter_with_worktree_body(main_item: &WorkItem, wt_item: WorkItem) -> WorkItem {
+    WorkItem {
+        path: wt_item.path,
+        id: main_item.id.clone(),
+        title: main_item.title.clone(),
+        status: main_item.status.clone(),
+        source: main_item.source.clone(),
+        started: main_item.started.clone(),
+        completed: main_item.completed.clone(),
+        verdict: main_item.verdict.clone(),
+        score: main_item.score,
+        worktree: main_item.worktree.clone(),
+        issue: main_item.issue.clone(),
+        pr: main_item.pr.clone(),
+        body: wt_item.body,
+    }
 }
 
 fn parse_work_item_contents(
@@ -425,10 +441,12 @@ fn parse_work_item_frontmatter(
 ) -> Result<RawWorkItemFrontmatter, ParseError> {
     match serde_yaml::from_str(frontmatter) {
         Ok(raw) => Ok(raw),
-        Err(source) => parse_flat_work_item_frontmatter(frontmatter).ok_or(ParseError::MalformedYaml {
-            path: path_label.to_string(),
-            source,
-        }),
+        Err(source) => {
+            parse_flat_work_item_frontmatter(frontmatter).ok_or(ParseError::MalformedYaml {
+                path: path_label.to_string(),
+                source,
+            })
+        }
     }
 }
 
@@ -461,7 +479,10 @@ fn parse_flat_work_item_frontmatter(frontmatter: &str) -> Option<RawWorkItemFron
             return None;
         }
         let value = value.trim_start();
-        if matches!(value.chars().next(), Some('[' | '{' | '|' | '>' | '&' | '*')) {
+        if matches!(
+            value.chars().next(),
+            Some('[' | '{' | '|' | '>' | '&' | '*')
+        ) {
             return None;
         }
         let value = unquote_scalar(value);
@@ -638,8 +659,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        load_archived_items, load_workflow_dir, parse_work_item, parse_workflow_readme,
-        ParseError,
+        load_archived_items, load_workflow_dir, parse_work_item, parse_workflow_readme, ParseError,
     };
 
     fn fixture_root() -> PathBuf {
@@ -887,7 +907,11 @@ Body
         );
         let item = parse_work_item(
             &path,
-            &["backlog".to_string(), "ideation".to_string(), "done".to_string()],
+            &[
+                "backlog".to_string(),
+                "ideation".to_string(),
+                "done".to_string(),
+            ],
         )
         .expect("flat frontmatter fallback should parse");
 
@@ -1132,9 +1156,7 @@ Body
     }
 
     fn entity_md(id: &str, title: &str) -> String {
-        format!(
-            "---\nid: \"{id}\"\ntitle: {title}\nstatus: design\n---\n\n{title} body.\n"
-        )
+        format!("---\nid: \"{id}\"\ntitle: {title}\nstatus: design\n---\n\n{title} body.\n")
     }
 
     #[test]
@@ -1142,7 +1164,11 @@ Body
         // AC-1, AC-6: two worktrees each with a distinct entity
         let root = unique_temp_dir("wt-included");
         let wf = root.join("docs/wf");
-        write_minimal_workflow(&wf, Some("main-task.md"), Some(&entity_md("001", "Main Task")));
+        write_minimal_workflow(
+            &wf,
+            Some("main-task.md"),
+            Some(&entity_md("001", "Main Task")),
+        );
         let wt_a = root.join(".worktrees/wt-a/docs/wf");
         write_minimal_workflow(&wt_a, Some("task-a.md"), Some(&entity_md("002", "Task A")));
         let wt_b = root.join(".worktrees/wt-b/docs/wf");
@@ -1150,7 +1176,10 @@ Body
 
         let snapshot = load_workflow_dir(&wf, &root).expect("load workflow dir");
         let titles: Vec<&str> = snapshot.items.iter().map(|i| i.title.as_str()).collect();
-        assert!(titles.contains(&"Main Task"), "main task missing: {titles:?}");
+        assert!(
+            titles.contains(&"Main Task"),
+            "main task missing: {titles:?}"
+        );
         assert!(titles.contains(&"Task A"), "task-a missing: {titles:?}");
         assert!(titles.contains(&"Task B"), "task-b missing: {titles:?}");
         assert_eq!(snapshot.items.len(), 3);
@@ -1167,8 +1196,14 @@ Body
 
         let snapshot = load_workflow_dir(&wf, &root).expect("load");
         let titles: Vec<&str> = snapshot.items.iter().map(|i| i.title.as_str()).collect();
-        assert!(titles.contains(&"AAA"), "main-only item dropped: {titles:?}");
-        assert!(titles.contains(&"BBB"), "worktree-only item missing: {titles:?}");
+        assert!(
+            titles.contains(&"AAA"),
+            "main-only item dropped: {titles:?}"
+        );
+        assert!(
+            titles.contains(&"BBB"),
+            "worktree-only item missing: {titles:?}"
+        );
     }
 
     #[test]
@@ -1236,7 +1271,11 @@ Body
     }
 
     /// Write a minimal workflow README with both `design` and `done` states.
-    fn write_two_state_workflow(dir: &Path, entity_name: Option<&str>, entity_content: Option<&str>) {
+    fn write_two_state_workflow(
+        dir: &Path,
+        entity_name: Option<&str>,
+        entity_content: Option<&str>,
+    ) {
         fs::create_dir_all(dir).expect("workflow dir");
         fs::write(
             dir.join("README.md"),
@@ -1257,13 +1296,23 @@ Body
         write_two_state_workflow(
             &wf,
             Some("task.md"),
-            Some(&entity_md_with_status("030", "My Task", "done", "main body")),
+            Some(&entity_md_with_status(
+                "030",
+                "My Task",
+                "done",
+                "main body",
+            )),
         );
         let wt = root.join(".worktrees/wt-1/docs/wf");
         write_two_state_workflow(
             &wt,
             Some("task.md"),
-            Some(&entity_md_with_status("030", "My Task", "design", "worktree body with stage report")),
+            Some(&entity_md_with_status(
+                "030",
+                "My Task",
+                "design",
+                "worktree body with stage report",
+            )),
         );
 
         let snapshot = load_workflow_dir(&wf, &root).expect("load");
@@ -1284,19 +1333,31 @@ Body
         write_two_state_workflow(
             &wf,
             Some("task.md"),
-            Some(&entity_md_with_status("031", "My Task", "done", "main body")),
+            Some(&entity_md_with_status(
+                "031",
+                "My Task",
+                "done",
+                "main body",
+            )),
         );
         let wt = root.join(".worktrees/wt-1/docs/wf");
         write_two_state_workflow(
             &wt,
             Some("task.md"),
-            Some(&entity_md_with_status("031", "My Task", "design", "worktree body with stage report")),
+            Some(&entity_md_with_status(
+                "031",
+                "My Task",
+                "design",
+                "worktree body with stage report",
+            )),
         );
 
         let snapshot = load_workflow_dir(&wf, &root).expect("load");
         assert_eq!(snapshot.items.len(), 1);
         assert!(
-            snapshot.items[0].body.contains("worktree body with stage report"),
+            snapshot.items[0]
+                .body
+                .contains("worktree body with stage report"),
             "body should come from worktree, got: {:?}",
             snapshot.items[0].body
         );
@@ -1310,7 +1371,12 @@ Body
         write_two_state_workflow(
             &wf,
             Some("task.md"),
-            Some(&entity_md_with_status("032", "Solo Task", "done", "main only body")),
+            Some(&entity_md_with_status(
+                "032",
+                "Solo Task",
+                "done",
+                "main only body",
+            )),
         );
         assert!(!root.join(".worktrees").exists());
 

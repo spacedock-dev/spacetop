@@ -118,3 +118,16 @@ This refactor should proceed in small, reviewable commits or worktree steps that
 ### Summary
 
 Planned a no-feature-change readability refactor with phased inspection, narrow module-local edits, and verification gates. The plan emphasizes private helper extraction, clearer naming, lower-layer tests for touched behavior, and preserving all documented SpaceTop module ownership boundaries.
+
+## Stage Report: implement
+
+- DONE: Make a concrete readability refactor in production Rust code that preserves behavior and improves named functions or helper flow.
+  Refactored `src/parser.rs` by extracting `collect_active_item_paths`, `collect_archived_item_paths`, `read_directory`, `load_worktree_items`, `collect_worktree_item_paths`, `merged_worktree_item`, `content_hash`, and `merge_main_frontmatter_with_worktree_body` from `load_archived_items`, `load_workflow_dir`, `scan_worktrees`, and `merge_worktree_items`.
+- DONE: Run `cargo fmt`, `cargo test`, and `make lint`, and report exact outcomes; if any command cannot pass, explain the blocker with evidence.
+  Baseline `cargo test` passed 174 lib tests, 4 main tests, 8 integration tests, 0 doctests, with 1 ignored watcher test; baseline `make lint` passed. Final `cargo fmt` completed, final `cargo test` passed the same non-ignored suites, and final `make lint` passed.
+- DONE: Append an implementation stage report naming files/functions changed, tests run, and confirming no feature/dependency/module-ownership expansion.
+  This report names the parser helpers changed, records `cargo fmt`, `cargo test`, and `make lint`, and confirms changes stayed in parser ownership with no new features, dependencies, CLI flags, key bindings, UI behavior, telemetry behavior, parsing contracts, or write support.
+
+### Summary
+
+Implemented a narrow parser readability refactor in `src/parser.rs`. The change keeps active item loading, archive loading, `.worktrees` scanning, and worktree merge precedence behavior-covered by existing parser and integration tests while reducing nesting and making path collection and merge decisions explicit.
