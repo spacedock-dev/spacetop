@@ -425,7 +425,7 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let items = build_task_list_items(state);
+    let items = build_task_list_items(state, inner.width);
     let item_count = state.visible_items().len();
 
     // Section header: "Tasks  ·  N" (or "Archived  ·  N") above the list.
@@ -479,7 +479,7 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
 /// Provides a distinct blue-tinted contrast against the dark terminal background (~Rgb(26,27,38)).
 const BG2: Color = Color::Rgb(40, 52, 84);
 
-fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
+fn build_task_list_items(state: &OverviewState, list_width: u16) -> Vec<ListItem<'_>> {
     let scope = state.view_scope();
     let items = state.visible_items();
     if items.is_empty() {
@@ -552,6 +552,24 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
                     None => " [?]",
                 };
                 spans.push(Span::styled(glyph, title_style));
+            }
+
+            // Trailing spacer: fills the rest of the row with the selected background
+            // so the highlight stripe covers the entire pane width, not just the text.
+            if is_selected {
+                // Compute how many chars the fixed columns consume:
+                // gutter(2) + phase(pcw) + space(1) + id(4) + 2spaces(2) = pcw + 9
+                let title_display_len = item.title.chars().count().min(
+                    (list_width as usize).saturating_sub(pcw + 9 + 1),
+                );
+                let used = 2 + pcw + 1 + 4 + 2 + title_display_len;
+                let trailing = (list_width as usize).saturating_sub(used);
+                if trailing > 0 {
+                    spans.push(Span::styled(
+                        " ".repeat(trailing),
+                        Style::default().bg(BG2),
+                    ));
+                }
             }
 
             ListItem::new(Line::from(spans))
@@ -1677,6 +1695,38 @@ mod tests {
                 style.add_modifier.contains(ratatui::style::Modifier::BOLD)
             }),
             "selected row title should be bold"
+        );
+    }
+
+    #[test]
+    fn selected_row_fill_covers_full_pane_width() {
+        // The selected row background (Rgb(40,52,84)) must extend to the rightmost
+        // cell of the task list pane, not stop at the last text character.
+        let app = app_with_items(vec![
+            item("001", "Short title", "Body"),
+            item("002", "Another task", "Body"),
+        ]);
+        let width: u16 = 80;
+        let height: u16 = 24;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let buffer = terminal.backend().buffer();
+
+        // Find the selected row (row with ▸ glyph).
+        let hits = find_text(buffer, "\u{25B8}");
+        assert!(!hits.is_empty(), "selected row must have ▸ glyph");
+        let (_, sel_row) = hits[0];
+
+        // The rightmost cell of the task-list pane (width/2 - 1 in split view, or
+        // width - 1 in full-pane view). In full-pane mode (no preview open by default)
+        // the list fills 0..width. Check the last cell on the selected row has BG2.
+        // app_with_items opens preview (Enter), so list is the left half: 0..width/2.
+        let last_list_col = width / 2 - 1;
+        let style = buffer[(last_list_col, sel_row)].style();
+        assert_eq!(
+            style.bg,
+            Some(Color::Rgb(40, 52, 84)),
+            "rightmost list cell on selected row (col {last_list_col}, row {sel_row}) must have selection background"
         );
     }
 
