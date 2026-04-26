@@ -10,6 +10,7 @@ score: 0.9
 worktree: .worktrees/spacedock-ensign-025-sentry-capture-anyhow-error
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 The Sentry integration initialised in task 024 uses the `panic` feature, which hooks `std::panic::set_hook`. When `spacetop::run()` returns an `anyhow::Err` — such as a scan IO error or a discovery failure — that error propagates through `main()` and is printed to stderr by Rust's default `Result` handler. It is never sent to Sentry.

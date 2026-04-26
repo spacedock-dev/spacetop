@@ -10,6 +10,7 @@ score: 0.8
 worktree: .worktrees/spacedock-ensign-026-scan-io-error-depth-nonzero
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Task 021 fixed the case where the scan root itself does not exist (WalkDir `NotFound` at depth 0). However the user still sees a raw `(os error 2)` when running spacetop from a directory that exists but contains an inaccessible sub-entry — for example a broken symlink, a deleted directory mid-walk, or a path that becomes unreachable during traversal.
