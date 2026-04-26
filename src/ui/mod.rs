@@ -76,17 +76,35 @@ fn picker_centered(area: Rect, state: &crate::app::PickerState) -> Rect {
     }
 }
 
-/// Format a phase name into a fixed 12-character column, preserving the
-/// user's original casing exactly. Names longer than 12 chars are truncated
-/// at 11 chars and suffixed with `…`. No glyphs are added.
-pub(crate) fn phase_col(stage: &str) -> String {
+/// Format a phase name into a fixed `width`-character column, preserving the
+/// user's original casing exactly. Names longer than `width` chars are
+/// truncated at `width-1` chars and suffixed with `…`. No glyphs are added.
+///
+/// `width` is expected to be in the range [4, 12] (as produced by
+/// `phase_col_width`), but the function works correctly for any width ≥ 1.
+pub(crate) fn phase_col(stage: &str, width: usize) -> String {
     let char_count = stage.chars().count();
-    if char_count > 12 {
-        let truncated: String = stage.chars().take(11).collect();
-        format!("{truncated}\u{2026}") // 11 chars + "…" = 12
+    if char_count > width {
+        let truncated: String = stage.chars().take(width - 1).collect();
+        format!("{truncated}\u{2026}") // (width-1) chars + "…" = width
     } else {
-        format!("{stage:<12}") // left-aligned, space-padded to 12
+        // left-aligned, space-padded to `width`
+        let pad = width - char_count;
+        format!("{stage}{}", " ".repeat(pad))
     }
+}
+
+/// Compute the phase column width from a slice of visible items.
+///
+/// Returns `max(status.len())` clamped to [4, 12]. When `items` is empty,
+/// falls back to 4 (the minimum).
+pub(crate) fn phase_col_width(items: &[&crate::domain::WorkItem]) -> usize {
+    items
+        .iter()
+        .map(|i| i.status.chars().count())
+        .max()
+        .unwrap_or(4)
+        .clamp(4, 12)
 }
 
 /// Map a stage name to a stable color. Thin re-export of `domain::stage_color`
@@ -473,13 +491,18 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
         return vec![ListItem::new(Line::from(empty_text))];
     }
     let selected_index = state.selected_index();
+
+    // Compute the phase column width from the longest visible status name,
+    // clamped to [4, 12]. This is done once per render pass over all items.
+    let pcw = phase_col_width(&items.iter().collect::<Vec<_>>());
+
     items
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            // Row format: "{gutter}  {phase:12}  {id:>4}  {title}"
-            // Gutter: "▸ " for selected row, "  " otherwise.
-            // Phase column: user casing, 12-char fixed width, ellipsized with "…" if longer.
+            // Row format: "{gutter} {phase:<pcw} {id:>4}  {title}"
+            // Gutter: "▸ " for selected row, "  " otherwise (2 chars).
+            // Phase column: user casing, pcw-char auto-sized width, ellipsized with "…" if longer.
             // ID: 4-char right-aligned.
             // Title: fills remaining width.
             let is_selected = index == selected_index && !items.is_empty();
@@ -494,7 +517,7 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
             };
 
             let id_str = format!("{:>4}", item.id);
-            let phase = phase_col(&item.status);
+            let phase = phase_col(&item.status, pcw);
 
             let id_style = Style::default().fg(Color::Reset).bg(bg).add_modifier(Modifier::DIM);
             let stage_color = state.snapshot().definition.stage_color_for(&item.status);
@@ -1661,7 +1684,9 @@ mod tests {
 
     #[test]
     fn task_row_phase_column_12_char_fixed() {
-        // Phase column for "implement" (9 chars) must be left-padded to exactly 12 chars.
+        // With a single item whose status is "implement" (9 chars), phase_col_width
+        // auto-sizes to 9 (the longest status, clamped to [4,12]). The phase
+        // column is "implement" with no trailing spaces.
         let app = app_with_items(vec![{
             let mut i = item("001", "Test task", "Body");
             i.status = "implement".to_string();
@@ -1670,10 +1695,10 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
         terminal.draw(|frame| render(frame, &app)).expect("render");
         let rendered = buffer_text(terminal.backend().buffer());
-        // "implement" padded to 12 = "implement   " (3 trailing spaces)
+        // "implement" must appear with user casing preserved.
         assert!(
-            rendered.contains("implement   "),
-            "phase column should be exactly 12 chars with trailing spaces; rendered: {:?}",
+            rendered.contains("implement"),
+            "phase name 'implement' must appear in task row; rendered: {:?}",
             &rendered[..rendered.len().min(200)]
         );
         // The word "implement" must not be uppercased.
@@ -1681,6 +1706,13 @@ mod tests {
             !rendered.contains("IMPLEMENT"),
             "phase name must not be uppercased"
         );
+        // Verify phase_col() helper directly for various widths.
+        let col_w9 = super::phase_col("implement", 9);
+        assert_eq!(col_w9, "implement", "phase_col('implement', 9) must be exact fit");
+        let col_w12 = super::phase_col("implement", 12);
+        assert_eq!(col_w12, "implement   ", "phase_col('implement', 12) must pad to 12");
+        let col_w4 = super::phase_col("implement", 4);
+        assert_eq!(col_w4, "imp\u{2026}", "phase_col('implement', 4) must truncate at 3+ellipsis");
     }
 
     #[test]
@@ -1813,7 +1845,7 @@ mod tests {
         );
 
         // Also verify phase_col() helper itself never emits DAG glyphs.
-        let pc = super::phase_col("design");
+        let pc = super::phase_col("design", 12);
         for glyph in dag_glyphs {
             assert!(
                 !pc.contains(*glyph),
@@ -1879,6 +1911,79 @@ mod tests {
             found_pill_bg,
             "footer row {footer_y} must have at least one cell with a non-default background (pill hint)"
         );
+    }
+
+    // ---- phase_col_width auto-sizing snapshot tests ----
+
+    #[test]
+    fn phase_col_width_uniform_short_phases_clamped_to_4() {
+        // When all visible items have status "run" (3 chars), phase_col_width
+        // clamps to the minimum of 4. Verify via phase_col() helper directly.
+        let mut run_item = item("001", "Task", "Body");
+        run_item.status = "run".to_string(); // 3 chars, below minimum of 4
+        // "run" is 3 chars < 4 minimum → phase_col_width returns 4.
+        let items_ref: Vec<&crate::domain::WorkItem> = vec![&run_item];
+        // Simulate what build_task_list_items does: collect refs and call phase_col_width.
+        // We use a locally-constructed slice to test the helper.
+        let pcw = super::phase_col_width(&items_ref);
+        assert_eq!(pcw, 4, "phase_col_width for 'run' (3 chars) must clamp to 4");
+        // phase_col with width=4 pads "run" to "run " (3 chars + 1 space).
+        let col = super::phase_col("run", pcw);
+        assert_eq!(col, "run ", "phase_col('run', 4) must pad to 4 chars");
+        assert_eq!(col.chars().count(), 4, "column must be exactly 4 chars wide");
+    }
+
+    #[test]
+    fn phase_col_width_mixed_phases_fits_longest() {
+        // When items have mixed phase lengths, phase_col_width picks the longest
+        // (clamped ≤ 12). "run" (3→4 min), "implement" (9), "smoke-test" (10).
+        // Longest is 10 → phase_col_width = 10.
+        let items_data = vec![
+            {
+                let mut i = item("001", "Task A", "Body");
+                i.status = "run".to_string();
+                i
+            },
+            {
+                let mut i = item("002", "Task B", "Body");
+                i.status = "implement".to_string();
+                i
+            },
+            {
+                let mut i = item("003", "Task C", "Body");
+                i.status = "smoke-test".to_string();
+                i
+            },
+        ];
+        let items_ref: Vec<&crate::domain::WorkItem> = items_data.iter().collect();
+        let pcw = super::phase_col_width(&items_ref);
+        assert_eq!(pcw, 10, "phase_col_width for mixed phases with max len=10 must return 10");
+        // "implement" (9 chars) with width=10 must pad to 10 chars.
+        let col = super::phase_col("implement", pcw);
+        assert_eq!(col.chars().count(), 10, "phase column must be exactly 10 chars");
+        assert_eq!(col, "implement ", "implement padded to width 10");
+        // "smoke-test" (10 chars) with width=10 must fit exactly.
+        let col2 = super::phase_col("smoke-test", pcw);
+        assert_eq!(col2, "smoke-test", "smoke-test must fit exactly at width 10");
+    }
+
+    #[test]
+    fn phase_col_width_long_phase_name_clamped_at_12() {
+        // When the longest phase name exceeds 12 chars, phase_col_width clamps to 12.
+        let long_item = {
+            let mut i = item("001", "Task", "Body");
+            i.status = "a-very-long-phase-name".to_string(); // 22 chars
+            i
+        };
+        let items_ref: Vec<&crate::domain::WorkItem> = vec![&long_item];
+        let pcw = super::phase_col_width(&items_ref);
+        assert_eq!(pcw, 12, "phase_col_width must clamp to 12 for a 22-char status");
+        // phase_col with width=12 must truncate at 11 chars + "…".
+        let col = super::phase_col("a-very-long-phase-name", pcw);
+        assert_eq!(col.chars().count(), 12, "column must be exactly 12 chars after truncation");
+        assert!(col.ends_with('\u{2026}'), "truncated column must end with '…'");
+        assert_eq!(&col[..col.len() - 3], "a-very-long", // 11 chars, "…" is 3 bytes
+            "first 11 chars must be preserved before ellipsis");
     }
 
     fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
