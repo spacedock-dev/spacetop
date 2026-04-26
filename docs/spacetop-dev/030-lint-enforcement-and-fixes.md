@@ -10,6 +10,7 @@ score: 0.9
 worktree: .worktrees/spacedock-ensign-030-lint-enforcement-and-fixes
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 `make lint` now runs `cargo clippy --all-targets --all-features -- -D warnings` (enforced via the Makefile). Agents are not currently instructed to run it before completing a task, causing lint regressions to accumulate undetected (16 errors exist today). This task adds the lint enforcement rule to both AGENTS.md and CLAUDE.md and fixes every current clippy error.
