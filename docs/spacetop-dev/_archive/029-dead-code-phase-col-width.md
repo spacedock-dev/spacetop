@@ -1,16 +1,17 @@
 ---
 id: "029"
 title: "Dead code warning: phase_col_width is never used"
-status: review
+status: done
 source: bug report
 started: 2026-04-26T06:41:03Z
-completed:
-verdict:
+completed: 2026-04-26T06:48:08Z
+verdict: PASSED
 score: 0.6
-worktree: .worktrees/spacedock-ensign-029-dead-code-phase-col-width
+worktree: 
 issue:
 pr: #18
-mod-block: merge:pr-merge
+mod-block: 
+archived: 2026-04-26T06:48:08Z
 ---
 
 `cargo build` emits a dead code warning after PR #17 was merged:
