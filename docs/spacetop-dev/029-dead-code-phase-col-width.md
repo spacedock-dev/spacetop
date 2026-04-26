@@ -1,13 +1,13 @@
 ---
 id: "029"
 title: "Dead code warning: phase_col_width is never used"
-status: plan
+status: implement
 source: bug report
 started: 2026-04-26T06:41:03Z
 completed:
 verdict:
 score: 0.6
-worktree:
+worktree: .worktrees/spacedock-ensign-029-dead-code-phase-col-width
 issue:
 pr:
 ---
