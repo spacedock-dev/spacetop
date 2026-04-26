@@ -1,13 +1,13 @@
 ---
 id: "024"
 title: "Integrate Sentry for error reporting with dev/release environment mode"
-status: plan
+status: implement
 source: feature request
 started: 2026-04-26T03:49:44Z
 completed:
 verdict:
 score: 0.75
-worktree:
+worktree: .worktrees/spacedock-ensign-024-sentry-integration
 issue:
 pr:
 ---
