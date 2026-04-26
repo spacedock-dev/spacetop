@@ -9,7 +9,7 @@ verdict:
 score: 0.8
 worktree: .worktrees/spacedock-ensign-021-scan-discovery-io-error
 issue:
-pr:
+pr: #11
 mod-block: merge:pr-merge
 ---
 
