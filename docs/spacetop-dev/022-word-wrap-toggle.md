@@ -9,7 +9,7 @@ verdict:
 score: 0.6
 worktree: .worktrees/spacedock-ensign-022-word-wrap-toggle
 issue:
-pr:
+pr: #15
 mod-block: merge:pr-merge
 ---
 
