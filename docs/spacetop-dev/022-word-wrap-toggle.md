@@ -27,3 +27,14 @@ Verified by: unit test or manual test of pane-switch sequence.
 **AC-3 -- Key is discoverable in the help bar or key legend.**
 The toggle key appears in the existing help/legend UI element (footer or overlay) when the preview pane is active.
 Verified by: screenshot or snapshot test showing the key hint.
+
+## Stage Report: design
+
+- DONE: Problem statement names the exact app state field and TUI render path that must change to support wrap/no-wrap mode.
+  `OverviewState.preview_wrap: bool` (src/app.rs) is the new field; `render_preview()` in src/ui/mod.rs (line 481) is the render path — the body `Paragraph` gains `.wrap(Wrap { trim: false })` when the flag is true, and `reset_preview_scroll()` resets it to `false` on item or pane switch.
+- DONE: Acceptance criteria confirm the key choice (e.g. w) does not conflict with existing keybindings.
+  Existing char bindings are `?`, `q`, `j`, `k`, `a`, `P`; `w` is unbound in all three `AppMode` arms (Overview, Picker, PickerOverlay) — confirmed by grep of `KeyCode::Char` in src/app.rs.
+
+### Summary
+
+The feature requires one new bool field (`preview_wrap`) on `OverviewState`, toggled by `w` only while `preview_open` is true, reset to `false` inside `reset_preview_scroll()`. The render change is a conditional `.wrap(Wrap { trim: false })` on the body `Paragraph` in `render_preview()`; when wrap is active, `max_preview_scroll_x` must be set to 0 so horizontal scroll keys become inert. The key `w` is confirmed free of conflicts. The help footer and help popup in `render_status_footer` and `render_help_popup` (src/ui/mod.rs) must add the `w: word wrap` hint in the `preview_open` conditional branches.
