@@ -275,3 +275,16 @@ The plan is a two-pass render call in `src/ui/mod.rs`: a first `render_markdown_
 ### Summary
 
 Applied the two-pass render_markdown_lines approach from the plan directly in src/ui/mod.rs: the first call with body_inner.width drives the scrollbar/body_area decision, and the second call (only when show_scrollbar is true) uses body_area.width to pad code block lines to the exact render width. Added AC-1 and AC-3 tests that assert DarkGray background fills every cell of the preview content area in wrap mode, including both visual rows of a wrapped long code line. The test boundary was adjusted to preview_start = width/2+1 to skip the LEFT border character. All 168 tests pass.
+
+## Stage Report: review
+
+- DONE: Two-pass approach is correct — second pass only fires when show_scrollbar is true, no redundant work on the common path.
+  Diff confirmed: `body_lines_full` used for first pass; `if show_scrollbar { render_markdown_lines(..., body_area.width) } else { body_lines_full }` for second pass. Branch spacedock-ensign/027-wrap-mode-code-block-width, commit 6577788.
+- DONE: AC-1 and AC-3 tests verify full-width DarkGray background; AC-2 existing tests unchanged.
+  `code_block_background_fills_pane_width_in_wrap_mode` and `code_block_long_line_both_wrapped_rows_have_full_background` both pass; `render_markdown_lines_multiline_code_block_emits_one_line_per_source_line` and `preview_renders_multiline_code_block_on_distinct_rows` unchanged and pass.
+- DONE: Only src/ui/mod.rs modified; 168 tests green.
+  `git diff --stat` shows src/ui/mod.rs and entity file only; full suite: 156 lib + 4 main + 8 integration = 168 total, 0 failed.
+
+### Summary
+
+The two-pass implementation correctly isolates the scroll-bar width decision from the code-block padding, with the second `render_markdown_lines` call guarded by `show_scrollbar` so the common (no-scrollbar) path pays no extra cost. Both new tests assert `Color::DarkGray` across the full preview content width including the rightmost cell, giving direct evidence for AC-1 and AC-3. AC-2 coverage is supplied by the two pre-existing tests that remain unmodified and green. All 168 tests pass. Verdict: APPROVED.
