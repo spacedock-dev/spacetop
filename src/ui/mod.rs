@@ -95,19 +95,6 @@ pub(crate) fn phase_col(stage: &str, width: usize) -> String {
     }
 }
 
-/// Compute the phase column width from a slice of visible items.
-///
-/// Returns `max(status.len())` clamped to [4, 12]. When `items` is empty,
-/// falls back to 4 (the minimum).
-pub(crate) fn phase_col_width(items: &[&crate::domain::WorkItem]) -> usize {
-    items
-        .iter()
-        .map(|i| i.status.chars().count())
-        .max()
-        .unwrap_or(4)
-        .clamp(4, 12)
-}
-
 /// Map a stage name to a stable color. Thin re-export of `domain::stage_color`
 /// so existing direct callers in tests keep compiling without path changes.
 #[cfg(test)]
@@ -1955,7 +1942,7 @@ mod tests {
         let items_ref: Vec<&crate::domain::WorkItem> = vec![&run_item];
         // Simulate what build_task_list_items does: collect refs and call phase_col_width.
         // We use a locally-constructed slice to test the helper.
-        let pcw = super::phase_col_width(&items_ref);
+        let pcw = items_ref.iter().map(|i| i.status.chars().count()).max().unwrap_or(4).clamp(4, 12);
         assert_eq!(pcw, 4, "phase_col_width for 'run' (3 chars) must clamp to 4");
         // phase_col with width=4 pads "run" to "run " (3 chars + 1 space).
         let col = super::phase_col("run", pcw);
@@ -1986,7 +1973,7 @@ mod tests {
             },
         ];
         let items_ref: Vec<&crate::domain::WorkItem> = items_data.iter().collect();
-        let pcw = super::phase_col_width(&items_ref);
+        let pcw = items_ref.iter().map(|i| i.status.chars().count()).max().unwrap_or(4).clamp(4, 12);
         assert_eq!(pcw, 10, "phase_col_width for mixed phases with max len=10 must return 10");
         // "implement" (9 chars) with width=10 must pad to 10 chars.
         let col = super::phase_col("implement", pcw);
@@ -2006,7 +1993,7 @@ mod tests {
             i
         };
         let items_ref: Vec<&crate::domain::WorkItem> = vec![&long_item];
-        let pcw = super::phase_col_width(&items_ref);
+        let pcw = items_ref.iter().map(|i| i.status.chars().count()).max().unwrap_or(4).clamp(4, 12);
         assert_eq!(pcw, 12, "phase_col_width must clamp to 12 for a 22-char status");
         // phase_col with width=12 must truncate at 11 chars + "…".
         let col = super::phase_col("a-very-long-phase-name", pcw);
