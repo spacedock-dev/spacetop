@@ -449,3 +449,18 @@ Replaced the selected-row background from `Rgb(41, 45, 62)` (15 brightness units
 ### Summary
 
 All three cycle 3 checklist items confirmed. The selected-row background is `Rgb(40, 52, 84)` (Tokyo Night selection blue), a visually clear contrast against the ~`Rgb(26, 27, 38)` terminal background. The selected row title receives `Modifier::BOLD`; archived rows remain `DIM` and unselected rows have no modifier — no regressions. The snapshot test was updated to assert both conditions and the full 170-test suite is green.
+
+## Stage Report: implement (cycle 4)
+
+- DONE: phase_col_width is computed dynamically (max of visible status lengths, clamped 4–12) in build_task_list_items.
+  New `phase_col_width()` helper in `src/ui/mod.rs` takes `&[&WorkItem]`, returns `max(status.chars().count()).clamp(4, 12)`; called once per render pass in `build_task_list_items`. Commit c4d057a.
+- DONE: phase_col() uses phase_col_width for padding/truncation; title column uses remaining width.
+  `phase_col()` signature changed to `phase_col(stage: &str, width: usize) -> String`; `build_task_list_items` passes `pcw` (computed from visible items) to each call; title span follows the fixed-overhead spans and fills remaining terminal width naturally. Commit c4d057a.
+- DONE: Three snapshot tests: uniform-short-phases → 4ch column, mixed-phases → fits longest (≤12), long-phase-name → clamped at 12ch.
+  `phase_col_width_uniform_short_phases_clamped_to_4`, `phase_col_width_mixed_phases_fits_longest`, `phase_col_width_long_phase_name_clamped_at_12` all pass. 173/173 green.
+- DONE: 170/170 suite passes.
+  Suite is 173/173 green (3 new tests added, all others unchanged). Commit c4d057a.
+
+### Summary
+
+Added `phase_col_width()` to compute the phase column width dynamically from the longest visible item status, clamped to [4, 12]. Updated `phase_col()` to accept an explicit `width` parameter (breaking the implicit 12-char constant). `build_task_list_items` computes `pcw` once per render pass and passes it to every `phase_col()` call. Three new snapshot tests verify the three boundary behaviors. 173/173 tests pass.
