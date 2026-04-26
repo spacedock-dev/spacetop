@@ -1,16 +1,17 @@
 ---
 id: "023"
 title: "spacetop shows stale worktree status instead of main-branch status for active entities"
-status: review
+status: done
 source: bug report
 started: 2026-04-26T02:59:52Z
-completed:
-verdict:
+completed: 2026-04-26T03:12:21Z
+verdict: PASSED
 score: 0.85
-worktree: .worktrees/spacedock-ensign-023-worktree-status-merge
+worktree: 
 issue:
 pr: #10
 mod-block: 
+archived: 2026-04-26T03:12:24Z
 ---
 
 When an entity has an active worktree, spacetop reads the entity file from the worktree path and displays whatever `status` field is in that copy. But the first officer owns and advances `status` on the main branch — the worktree copy's `status` field is whatever value was present when the worktree branch was created, and the implement worker never updates it. This causes spacetop to display a stale (earlier) stage name while the entity is actually further along.
