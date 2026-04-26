@@ -33,3 +33,14 @@ Verified by: existing snapshot tests continue to pass.
 **AC-3 -- Wrapped code lines that exceed pane width are also fully backgrounded.**
 When a long code line wraps onto a second visual row, both rows have a full-width background.
 Verified by: snapshot test with a long code line in wrap mode.
+
+## Stage Report: design
+
+- DONE: Problem statement names the exact render path in src/ui/mod.rs where code block lines are emitted and why wrap mode breaks full-width background.
+  `render_markdown_lines` (line 710) pads code block lines to `pane_width` using `format!("{:<width$}", ...)` (line 803), then the caller at line 545 passes `body_inner.width` as `pane_width`. When a scrollbar is shown, `body_area` is 1 column narrower (line 552); the padded span is then wider than the render area and ratatui's `Wrap` engine splits it. On the resulting visual rows, trailing-space background coverage becomes unreliable because ratatui only applies the span style to the characters present, not to the remainder of the cell row.
+- DONE: Fix direction is confirmed against the actual rendering code — padding vs Block widget approach.
+  The padding approach is architecturally correct. The concrete fix is to defer `render_markdown_lines` until after the `show_scrollbar` / `body_area` decision, then pass `body_area.width` instead of `body_inner.width` as `pane_width`. This ensures padded code lines exactly fill the render area without triggering a wrap. The Block widget alternative would require splitting code blocks into separate `Paragraph` widgets layered over a background widget, which is a larger structural change and is not preferred.
+
+### Summary
+
+The bug lives in `src/ui/mod.rs`: `render_markdown_lines` is called at line 545 with `body_inner.width` before the scrollbar decision narrows `body_area` by 1 column at line 552. Code block lines padded to `body_inner.width` are 1 cell wider than the wrap-mode render area, causing ratatui to split them and leave the background incomplete. The confirmed fix is to move the `render_markdown_lines` call after the `body_area` calculation and pass `body_area.width` as `pane_width`. No Block widget layer is needed.
