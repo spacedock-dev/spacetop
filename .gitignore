@@ -32,3 +32,4 @@ temp/
 # Miscellaneous
 recce.yml
 .nvimlog
+.envrc
