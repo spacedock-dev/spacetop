@@ -73,3 +73,108 @@ In `discover_workflows` (`src/discovery.rs`), detect when the WalkDir root-entry
 ### Summary
 
 The bug is caused by `discover_workflows` propagating an ENOENT `io::Error` from WalkDir when the scan root does not exist, bypassing the `ZeroWorkflows` graceful branch and surfacing a raw anyhow error chain to the user. The fix belongs in `src/discovery.rs`: treat `ErrorKind::NotFound` on the root-entry error as an empty result rather than a hard failure. No new acceptance criteria were needed; the two existing ACs are concretely verifiable with a temp-directory test.
+
+## Implementation Plan
+
+### File and function to change
+
+**File:** `src/discovery.rs`
+**Function:** `discover_workflows` (line 62)
+
+### Step-by-step plan
+
+**Step 1 — Add `io::ErrorKind` import (already imported via `use std::io`; no change needed).**
+
+`std::io::ErrorKind` is available through the existing `use std::io;` import at line 3.
+
+**Step 2 — Detect `ErrorKind::NotFound` on the WalkDir root-entry error and return `Ok(vec![])`.**
+
+In the error arm of the `for entry in walker` loop (lines 73-87), after the symlink-cycle check and before the unconditional `Err(DiscoveryError::Io(...))` return, add a check: if the IO error kind is `NotFound` **and** the failing entry has depth 0 (meaning WalkDir failed to open the root itself), return `Ok(vec![])` instead.
+
+The change to lines 81-84 of `src/discovery.rs`:
+
+```rust
+// Before (current code):
+if let Some(io_err) = err.into_io_error() {
+    return Err(DiscoveryError::Io(io_err));
+}
+
+// After:
+if let Some(io_err) = err.into_io_error() {
+    // Root path does not exist: treat as empty, not a hard error.
+    // This routes through the ZeroWorkflows branch in lib.rs.
+    if io_err.kind() == io::ErrorKind::NotFound && err.depth() == 0 {
+        return Ok(vec![]);
+    }
+    return Err(DiscoveryError::Io(io_err));
+}
+```
+
+Note: `err.depth()` is accessible on the `walkdir::Error` before calling `into_io_error()`, so the depth check must be extracted before the `into_io_error()` call consumes the error. The corrected sequence:
+
+```rust
+if err.loop_ancestor().is_some() {
+    continue;
+}
+let depth = err.depth();
+if let Some(io_err) = err.into_io_error() {
+    if io_err.kind() == io::ErrorKind::NotFound && depth == 0 {
+        return Ok(vec![]);
+    }
+    return Err(DiscoveryError::Io(io_err));
+}
+continue;
+```
+
+**Step 3 — Add a regression test in `src/discovery.rs`.**
+
+In the `#[cfg(test)] mod tests` block, add:
+
+```rust
+#[test]
+fn nonexistent_root_returns_empty_not_error() {
+    let result = discover_workflows(Path::new("/tmp/spacetop-nonexistent-test-dir-xyzzy"));
+    assert!(result.is_ok(), "expected Ok, got {result:?}");
+    assert!(result.unwrap().is_empty());
+}
+```
+
+This test directly covers AC-1 (graceful path) and AC-2 (no raw OS error) at the unit level.
+
+**Step 4 — Verify with the AC commands.**
+
+AC-1 verification (run from an empty temp dir, check for human-readable message and non-zero exit):
+```
+mkdir /tmp/spacetop-ac-test && cargo run --bin spacetop -- 2>&1; echo "exit: $?"
+```
+Expected: stderr contains `spacetop: no Spacedock workflows found under ...`; exit code is non-zero (1).
+
+AC-2 verification (no raw errno string in output):
+```
+cargo run --bin spacetop -- 2>&1 | grep "os error" ; echo "grep exit: $?"
+```
+Run from an empty/no-workflow directory. Expected: grep finds nothing (exit 1 from grep means no match = pass).
+
+**Step 5 — Run the full test suite to confirm no regressions.**
+
+```
+cargo test
+```
+
+All existing tests must pass; the new `nonexistent_root_returns_empty_not_error` test must also pass.
+
+### Module/file ownership notes
+
+- Only `src/discovery.rs` needs to change. No changes to `src/lib.rs`, frontmatter, UI, or other modules.
+- The `ZeroWorkflows` path in `lib.rs:84` and `run()` in `lib.rs:115-122` already emits the correct human-readable message; no changes there.
+
+## Stage Report: plan
+
+- DONE: Step-by-step implementation plan identifies the exact file and function to change in src/discovery.rs.
+  Function is `discover_workflows` at line 62 of `src/discovery.rs`. The plan gives the exact code change: extract `depth` before consuming the error, check `io_err.kind() == ErrorKind::NotFound && depth == 0`, return `Ok(vec![])`.
+- DONE: Plan includes the verification command from AC-1 and AC-2 to confirm the fix works.
+  AC-1: `mkdir /tmp/spacetop-ac-test && cargo run --bin spacetop -- 2>&1; echo "exit: $?"` — check human-readable message and non-zero exit. AC-2: pipe stderr through `grep "os error"` — expect no match.
+
+### Summary
+
+The plan targets a single three-line change in `discover_workflows` (`src/discovery.rs` lines 81-84): extract the WalkDir error depth before consuming it, then short-circuit with `Ok(vec![])` when the kind is `NotFound` and depth is 0. This routes the missing-directory case through the already-correct `ZeroWorkflows` branch in `lib.rs` without touching any other file. A new unit test `nonexistent_root_returns_empty_not_error` covers both ACs at the unit level, and the two AC terminal commands verify the end-to-end binary behavior.
