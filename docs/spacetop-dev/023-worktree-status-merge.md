@@ -1,7 +1,7 @@
 ---
 id: "023"
 title: "spacetop shows stale worktree status instead of main-branch status for active entities"
-status: implement
+status: review
 source: bug report
 started: 2026-04-26T02:59:52Z
 completed:
