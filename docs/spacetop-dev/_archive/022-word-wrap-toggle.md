@@ -1,16 +1,17 @@
 ---
 id: "022"
 title: "Add word-wrap toggle key in the preview pane"
-status: review
+status: done
 source: feature request
 started: 2026-04-26T04:32:47Z
-completed:
-verdict:
+completed: 2026-04-26T04:44:06Z
+verdict: PASSED
 score: 0.6
-worktree: .worktrees/spacedock-ensign-022-word-wrap-toggle
+worktree: 
 issue:
 pr: #15
-mod-block: merge:pr-merge
+mod-block: 
+archived: 2026-04-26T04:44:06Z
 ---
 
 The preview pane currently renders content with a fixed line-width behavior. Users working with long entity body text or stage reports want to toggle word-wrap on and off without leaving the TUI. A dedicated keybinding should switch between wrapped and unwrapped (horizontal-scroll) mode in the preview pane.
