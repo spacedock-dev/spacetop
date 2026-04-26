@@ -484,13 +484,46 @@ fn render_feedback_row(
     (top.join(""), bottom.join(""))
 }
 
+/// Build a single ribbon row for a slice of stages (used by render_narrow for 2-row split).
+fn build_narrow_row(stages: &[StageDefinition], counts: &[usize], active: Option<&str>, g: &GlyphSet) -> String {
+    let parts: Vec<String> = stages
+        .iter()
+        .enumerate()
+        .map(|(i, stage)| {
+            let count = counts.get(i).copied().unwrap_or(0);
+            let node = build_node_text(stage, g);
+            let _ = active; // active styling not applied in narrow text-only mode
+            format!("{node}({count})")
+        })
+        .collect();
+    parts.join(&format!(" {} ", g.narrow_arrow))
+}
+
 fn render_narrow<'a>(
     stages: &'a [StageDefinition],
     counts: &'a [usize],
-    _active: Option<&str>,
+    active: Option<&str>,
     g: &'a GlyphSet,
 ) -> Vec<Line<'a>> {
-    let mut lines = vec![Line::from(narrow_summary(stages, counts, g))];
+    // AC-5: Split DAG into two rows at the midpoint so it fits at ~80 columns.
+    // Row 1: stages[0..mid], Row 2: stages[mid..].
+    let mid = stages.len() / 2;
+    let (row1_stages, row2_stages) = stages.split_at(mid.max(1).min(stages.len()));
+    let row1_counts = &counts[..row1_stages.len().min(counts.len())];
+    let row2_counts = if counts.len() > row1_stages.len() {
+        &counts[row1_stages.len()..]
+    } else {
+        &[]
+    };
+
+    let row1 = build_narrow_row(row1_stages, row1_counts, active, g);
+    let row2 = build_narrow_row(row2_stages, row2_counts, active, g);
+
+    let mut lines = vec![Line::from(row1)];
+    if !row2_stages.is_empty() {
+        lines.push(Line::from(row2));
+    }
+
     // Append textual feedback annotation line if any valid feedback edges.
     let mut fb_parts: Vec<String> = Vec::new();
     for stage in stages.iter() {
@@ -1011,6 +1044,43 @@ mod tests {
             .filter(|c| matches!(c, Color::Rgb(_, _, _)))
             .count();
         assert!(rgb_count >= 3, "expected at least 3 Rgb-colored cells in DAG, found {rgb_count}");
+    }
+
+    #[test]
+    fn narrow_dag_wraps_to_two_rows() {
+        // AC-5: render_narrow must produce (at least) 2 lines, with the first half
+        // of stages on row 1 and the second half on row 2.
+        let g = glyphs_for(false);
+        // Use 6 stages: mid = 3. Row1 = [alpha, beta, gamma], row2 = [delta, epsilon, done].
+        let stages = vec![
+            stage("alpha", true, false, false, false, None),
+            stage("beta", false, false, false, true, None),
+            stage("gamma", false, false, true, false, None),
+            stage("delta", false, false, false, true, None),
+            stage("epsilon", false, false, false, false, None),
+            stage("done", false, true, false, false, None),
+        ];
+        let counts = vec![1usize, 2, 3, 4, 5, 0];
+        let lines = render_narrow(&stages, &counts, None, &g);
+        // Must produce at least 2 lines.
+        assert!(
+            lines.len() >= 2,
+            "render_narrow must produce at least 2 lines for split DAG, got {}",
+            lines.len()
+        );
+        // First row must contain the first-half stage names (alpha, beta, gamma).
+        let row1: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(row1.contains("alpha"), "row 1 must contain 'alpha'; got: {row1:?}");
+        assert!(row1.contains("beta"), "row 1 must contain 'beta'; got: {row1:?}");
+        assert!(row1.contains("gamma"), "row 1 must contain 'gamma'; got: {row1:?}");
+        // Second row must contain the second-half stage names (delta, epsilon, done).
+        let row2: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(row2.contains("delta"), "row 2 must contain 'delta'; got: {row2:?}");
+        assert!(row2.contains("epsilon"), "row 2 must contain 'epsilon'; got: {row2:?}");
+        assert!(row2.contains("done"), "row 2 must contain 'done'; got: {row2:?}");
+        // Row 1 must NOT contain second-half names (they must be on row 2).
+        assert!(!row1.contains("delta"), "row 1 must not contain 'delta' (should be on row 2)");
+        assert!(!row1.contains("epsilon"), "row 1 must not contain 'epsilon' (should be on row 2)");
     }
 
     // --- helpers ---

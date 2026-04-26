@@ -1750,30 +1750,61 @@ mod tests {
     #[test]
     fn task_row_no_glyphs_in_phase_col() {
         // Phase column must not contain DAG vocabulary glyphs.
-        let dag_glyphs = ['\u{25B6}', '\u{2387}', '\u{2691}', '\u{25A0}'];
+        // The DAG glyphs are ▶ (U+25B6), ⎇ (U+2387), ⚑ (U+2691), ■ (U+25A0).
+        // Note: ▸ (U+25B8) is the gutter selection glyph — NOT a DAG vocab glyph.
+        let dag_glyphs: &[char] = &['\u{25B6}', '\u{2387}', '\u{2691}', '\u{25A0}'];
+
         let app = app_with_items(vec![item("001", "Task", "Body")]);
-        let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+        let width: u16 = 100;
+        let height: u16 = 24;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
         terminal.draw(|frame| render(frame, &app)).expect("render");
-        let rendered = buffer_text(terminal.backend().buffer());
-        // Find the task list area (after the section header "Tasks").
-        // We check globally that the DAG glyphs that might appear in phase col are absent.
-        // Note: ▸ (▶ is 25B6 but ▸ is 25B8) is the gutter glyph — only check exact DAG ones.
-        for glyph in dag_glyphs {
-            // The DAG glyphs may appear in the graph ribbon (rows 1-8) but NOT in the
-            // task list rows. We can't easily isolate rows, so we check the phase column
-            // is not polluted by verifying that "design" appears without a glyph prefix.
-            // This is best verified by checking the phase_col() helper directly.
-            assert!(
-                !format!("{glyph}design").is_empty(), // trivially true; real check below
-                "placeholder"
-            );
-            let _ = glyph;
+        let buffer = terminal.backend().buffer();
+
+        // Layout (with preview open, Left placement at width=100, height=24):
+        //   row 0: header bar
+        //   rows 1–7: graph ribbon (7 rows)
+        //   row 8: "Tasks · N" section header
+        //   rows 9+: task list rows
+        //
+        // Task row column layout (x offsets, no border on list block):
+        //   x 0–1:  gutter (2 chars: "▸ " or "  ")
+        //   x 2–13: phase column (12 chars — user stage name)
+        //   x 14:   separator space
+        //   x 15–18: id (4 chars)
+        //   x 19+:  title
+        //
+        // We scan the phase column cells (x=2..14) for all task rows (y=9..height).
+        // No DAG vocabulary glyph may appear there.
+
+        let phase_col_x_start: u16 = 2;
+        let phase_col_x_end: u16 = 14; // exclusive
+        let task_rows_y_start: u16 = 9; // first task row (after section header at y=8)
+
+        let mut violations: Vec<(u16, u16, char)> = Vec::new();
+        for y in task_rows_y_start..height {
+            for x in phase_col_x_start..phase_col_x_end {
+                let cell = &buffer[(x, y)];
+                let sym = cell.symbol();
+                for ch in sym.chars() {
+                    if dag_glyphs.contains(&ch) {
+                        violations.push((x, y, ch));
+                    }
+                }
+            }
         }
-        // Direct check: phase_col helper must not emit any DAG glyph.
+        assert!(
+            violations.is_empty(),
+            "DAG glyphs found in task list phase column (x=2..14, y=9..{}): {:?}",
+            height,
+            violations
+        );
+
+        // Also verify phase_col() helper itself never emits DAG glyphs.
         let pc = super::phase_col("design");
         for glyph in dag_glyphs {
             assert!(
-                !pc.contains(glyph),
+                !pc.contains(*glyph),
                 "phase_col('design') must not contain DAG glyph {:?}, got {:?}",
                 glyph,
                 pc
@@ -2451,12 +2482,19 @@ mod tests {
         let review = super::stage_color("review");
         let done = super::stage_color("done");
         let all = [design, plan, implement, review, done];
+        // All returned colors must be Color::Rgb (no named-color variants).
+        for c in &all {
+            assert!(
+                matches!(c, Color::Rgb(_, _, _)),
+                "stage_color() must return Color::Rgb, got {c:?}"
+            );
+        }
+        // All colors must be distinct.
         for (i, a) in all.iter().enumerate() {
             for b in &all[i + 1..] {
                 assert_ne!(a, b, "stage colors should be distinct");
             }
         }
-        assert_eq!(done, Color::Green);
     }
 
     #[test]

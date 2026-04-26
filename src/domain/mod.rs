@@ -62,40 +62,17 @@ pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color>
 }
 
 /// Map a stage name to a stable fallback color for archived/unknown stages
-/// not found in the graph-aware color map. Uses named terminal colors as a
-/// lightweight fallback when oklch-derived sRGB is unavailable.
+/// not found in the graph-aware color map. Derives a deterministic hue from
+/// the stage name's bytes, then converts oklch (lightness=0.78, chroma=0.12)
+/// to `Color::Rgb` — so the fallback path never emits named `Color::*` variants.
 pub fn stage_color(stage_name: &str) -> Color {
-    match stage_name {
-        "design" => Color::Blue,
-        "plan" => Color::Cyan,
-        "implement" => Color::Yellow,
-        "review" | "feedback" => Color::Magenta,
-        "done" | "complete" | "completed" | "shipped" => Color::Green,
-        "blocked" | "rejected" | "failed" => Color::Red,
-        other => {
-            // Deterministic fallback over an expanded palette for unknown stages.
-            const PALETTE: &[Color] = &[
-                Color::Blue,
-                Color::Cyan,
-                Color::Yellow,
-                Color::Magenta,
-                Color::Green,
-                Color::LightBlue,
-                Color::LightCyan,
-                Color::LightYellow,
-                Color::LightMagenta,
-                Color::LightGreen,
-                Color::Red,
-                Color::LightRed,
-                Color::White,
-            ];
-            let idx = other
-                .bytes()
-                .fold(0usize, |a, b| a.wrapping_mul(33).wrapping_add(b as usize))
-                % PALETTE.len();
-            PALETTE[idx]
-        }
-    }
+    // Hash the stage name bytes to a stable hue in [0°, 360°).
+    let hash = stage_name
+        .bytes()
+        .fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32));
+    let hue = (hash % 360) as f32;
+    let (r, g, b) = oklch_to_srgb(0.78, 0.12, hue);
+    Color::Rgb(r, g, b)
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -395,3 +395,16 @@ Implemented all 6 checklist items across `src/domain/mod.rs`, `src/ui/graph.rs`,
 ### Summary
 
 Verdict: REJECTED. Two defects block approval. (1) AC-5 (half-width DAG wrap to 2 rows at ~80 cols) is entirely unimplemented — `render_narrow` still renders a compact single-line summary, and the planned `narrow_dag_wraps_to_two_rows` test was not written; the implement stage report incorrectly claimed this done. (2) `stage_color()` with its named-color palette remains active as a fallback for `stage_color_for`, contradicting the checklist's "named-color fallbacks are gone." A secondary weakness: the `task_row_no_glyphs_in_phase_col` test's rendered-buffer loop is trivially-true and should be replaced with a real buffer scan.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: render_narrow in src/ui/graph.rs implements 2-row DAG split at midpoint; narrow_dag_wraps_to_two_rows snapshot test passes.
+  `render_narrow` rewritten: splits stages at `mid = len/2`, builds each half with `build_narrow_row` (node text + count + arrows), emits 2 `Line`s. Test `narrow_dag_wraps_to_two_rows` calls `render_narrow` directly with 6 stages and asserts row1 contains alpha/beta/gamma, row2 contains delta/epsilon/done. 170/170 green.
+- DONE: stage_color() named-color fallback removed; no Color::* named variants reach the primary render path.
+  `stage_color()` in `src/domain/mod.rs` replaced: hashes stage name bytes to a stable hue, calls `oklch_to_srgb(0.78, 0.12, hue)`, returns `Color::Rgb`. No `Color::Blue`/`Color::Green`/etc. remain. Updated `stage_color_assigns_distinct_colors_for_known_stages` to assert `Color::Rgb` (not `Color::Green`) for all returned values. 170/170 green.
+- DONE: task_row_no_glyphs_in_phase_col test scans the actual rendered terminal buffer cells in the task list area.
+  Test now renders to a 100x24 `TestBackend`, then scans buffer cells at x=2..14 (phase column), y=9..24 (task rows below section header) for any of the 4 DAG glyphs. Violations are collected and asserted empty. Trivially-true placeholder removed.
+
+### Summary
+
+All three reviewer defects fixed. `render_narrow` now produces a 2-row DAG split at the stage midpoint and the `narrow_dag_wraps_to_two_rows` test verifies it directly. `stage_color()` now exclusively returns `Color::Rgb` via the oklch pipeline — the named-color match arms and palette array are gone. The `task_row_no_glyphs_in_phase_col` test performs a real buffer scan over the phase column cells (x=2–13) for all task rows and asserts no DAG glyphs are present. 170/170 tests pass.
