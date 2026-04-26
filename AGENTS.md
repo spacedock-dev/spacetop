@@ -39,3 +39,11 @@ Keep parser and state logic testable without a terminal backend.
 - Do not mutate Spacedock workflow markdown by default.
 - Preserve user changes and workflow state files.
 - When adding write features later, make writes explicit and easy to audit in git.
+
+## Lint Gate
+
+Before marking any task complete, run:
+
+    make lint
+
+This runs `cargo clippy --all-targets --all-features -- -D warnings`. All warnings are errors. Fix every clippy diagnostic before committing the stage report.

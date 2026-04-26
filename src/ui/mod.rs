@@ -838,11 +838,12 @@ fn render_markdown_lines(markdown: &str, max_lines: usize, pane_width: usize) ->
                 flush_text_block(&mut blocks, &mut text_lines);
                 heading_depth = None;
             }
-            MarkdownEvent::Start(Tag::Paragraph) => {
-                if !spans.is_empty() {
-                    flush_line(&mut text_lines, &mut spans, max_lines);
-                }
+            MarkdownEvent::Start(Tag::Paragraph)
+                if !spans.is_empty() =>
+            {
+                flush_line(&mut text_lines, &mut spans, max_lines);
             }
+            MarkdownEvent::Start(Tag::Paragraph) => {}
             MarkdownEvent::End(TagEnd::Paragraph) => {
                 flush_line(&mut text_lines, &mut spans, max_lines);
                 flush_text_block(&mut blocks, &mut text_lines);
@@ -1955,7 +1956,7 @@ mod tests {
         // When items have mixed phase lengths, phase_col_width picks the longest
         // (clamped ≤ 12). "run" (3→4 min), "implement" (9), "smoke-test" (10).
         // Longest is 10 → phase_col_width = 10.
-        let items_data = vec![
+        let items_data = [
             {
                 let mut i = item("001", "Task A", "Body");
                 i.status = "run".to_string();
