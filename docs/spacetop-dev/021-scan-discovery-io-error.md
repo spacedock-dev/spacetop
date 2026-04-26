@@ -1,7 +1,7 @@
 ---
 id: "021"
 title: "spacetop panics with IO error when workflow directory does not exist"
-status: implement
+status: plan
 source: bug report
 started: 2026-04-26T02:46:13Z
 completed:
