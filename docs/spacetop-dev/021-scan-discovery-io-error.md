@@ -179,3 +179,16 @@ All existing tests must pass; the new `nonexistent_root_returns_empty_not_error`
 ### Summary
 
 The plan targets a single three-line change in `discover_workflows` (`src/discovery.rs` lines 81-84): extract the WalkDir error depth before consuming it, then short-circuit with `Ok(vec![])` when the kind is `NotFound` and depth is 0. This routes the missing-directory case through the already-correct `ZeroWorkflows` branch in `lib.rs` without touching any other file. A new unit test `nonexistent_root_returns_empty_not_error` covers both ACs at the unit level, and the two AC terminal commands verify the end-to-end binary behavior.
+
+## Stage Report: implement
+
+- DONE: The three-line change in discover_workflows correctly intercepts ErrorKind::NotFound at depth 0 and returns Ok(vec![]).
+  Implemented in `src/discovery.rs` lines 81-89: extract `depth` before `into_io_error()`, guard on `kind() == NotFound && depth == 0`. Commit a72766c.
+- DONE: cargo test passes including the new unit test nonexistent_root_returns_empty_not_error.
+  146/146 tests pass; `discovery::tests::nonexistent_root_returns_empty_not_error` passes.
+- DONE: Running spacetop from a nonexistent directory prints a human-readable message with no raw os error string.
+  AC-1: `spacetop` from empty `/tmp/spacetop-ac-test` prints `spacetop: no Spacedock workflows found under ... Pass --workflow-dir <path>` and exits 1. AC-2: `grep "os error"` returns exit 1 (no match).
+
+### Summary
+
+The fix is a minimal change in `src/discovery.rs`: before consuming the WalkDir error with `into_io_error()`, extract the entry depth, then return `Ok(vec![])` when kind is `NotFound` and depth is 0. This routes the nonexistent-directory case through the existing `ZeroWorkflows` graceful branch, eliminating the raw `(os error 2)` suffix from user-visible output. A new unit test and both AC terminal commands confirm the behavior. No other files were modified.
