@@ -72,29 +72,10 @@ pub fn discover_workflows(root: &Path) -> Result<Vec<DiscoveredWorkflow>, Discov
     for entry in walker {
         let entry = match entry {
             Ok(entry) => entry,
-            Err(err) => {
-                // Loop errors (symlink cycles via follow_links) are reported by
-                // walkdir; treat as soft: skip and continue.
-                if err.loop_ancestor().is_some() {
-                    continue;
-                }
-                // Bubble up real IO errors so callers see them.
-                let depth = err.depth();
-                if let Some(io_err) = err.into_io_error() {
-                    // Root path does not exist: treat as empty, not a hard error.
-                    // This routes through the ZeroWorkflows branch in lib.rs.
-                    if io_err.kind() == io::ErrorKind::NotFound && depth == 0 {
-                        return Ok(vec![]);
-                    }
-                    // Sub-entry disappeared mid-walk (broken symlink, concurrent delete)
-                    // — skip and continue rather than aborting the whole scan.
-                    if io_err.kind() == io::ErrorKind::NotFound {
-                        continue;
-                    }
-                    return Err(DiscoveryError::Io(io_err));
-                }
-                continue;
-            }
+            Err(err) => match walk_error_decision(err)? {
+                WalkErrorDecision::Skip => continue,
+                WalkErrorDecision::MissingRoot => return Ok(vec![]),
+            },
         };
 
         if !entry.file_type().is_dir() {
@@ -115,11 +96,7 @@ pub fn discover_workflows(root: &Path) -> Result<Vec<DiscoveredWorkflow>, Discov
             continue;
         }
 
-        if read_commission_marker(&readme)
-            .map(|marker| marker.starts_with(SPACEDOCK_COMMISSION_PREFIX))
-            .unwrap_or(false)
-            && out_paths.insert(canonical.clone())
-        {
+        if is_spacedock_workflow_readme(&readme) && out_paths.insert(canonical.clone()) {
             out.push(DiscoveredWorkflow {
                 title: read_title(&readme),
                 root: canonical,
@@ -129,6 +106,45 @@ pub fn discover_workflows(root: &Path) -> Result<Vec<DiscoveredWorkflow>, Discov
 
     out.sort_by(|a, b| a.root.cmp(&b.root));
     Ok(out)
+}
+
+enum WalkErrorDecision {
+    Skip,
+    MissingRoot,
+}
+
+fn walk_error_decision(err: walkdir::Error) -> Result<WalkErrorDecision, DiscoveryError> {
+    // Loop errors (symlink cycles via follow_links) are reported by walkdir;
+    // treat as soft: skip and continue.
+    if err.loop_ancestor().is_some() {
+        return Ok(WalkErrorDecision::Skip);
+    }
+
+    // Bubble up real IO errors so callers see them.
+    let depth = err.depth();
+    let Some(io_err) = err.into_io_error() else {
+        return Ok(WalkErrorDecision::Skip);
+    };
+
+    // Root path does not exist: treat as empty, not a hard error. This routes
+    // through the ZeroWorkflows branch in lib.rs.
+    if io_err.kind() == io::ErrorKind::NotFound && depth == 0 {
+        return Ok(WalkErrorDecision::MissingRoot);
+    }
+
+    // Sub-entry disappeared mid-walk (broken symlink, concurrent delete):
+    // skip and continue rather than aborting the whole scan.
+    if io_err.kind() == io::ErrorKind::NotFound {
+        return Ok(WalkErrorDecision::Skip);
+    }
+
+    Err(DiscoveryError::Io(io_err))
+}
+
+fn is_spacedock_workflow_readme(readme: &Path) -> bool {
+    read_commission_marker(readme)
+        .map(|marker| marker.starts_with(SPACEDOCK_COMMISSION_PREFIX))
+        .unwrap_or(false)
 }
 
 fn is_pruned(entry: &DirEntry) -> bool {
@@ -349,10 +365,17 @@ mod tests {
         // A real workflow so we can confirm the walk completes and finds it.
         write_workflow_readme(&root.join("docs/real"), "Real");
         // Broken symlink: target does not exist.
-        symlink(root.join("nonexistent-target"), root.join("docs/broken-link")).unwrap();
+        symlink(
+            root.join("nonexistent-target"),
+            root.join("docs/broken-link"),
+        )
+        .unwrap();
 
         let result = discover_workflows(root);
-        assert!(result.is_ok(), "broken symlink must not be fatal, got {result:?}");
+        assert!(
+            result.is_ok(),
+            "broken symlink must not be fatal, got {result:?}"
+        );
         let found = result.unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].title.as_deref(), Some("Real"));
@@ -370,7 +393,10 @@ mod tests {
         let result = discover_workflows(&root);
         // Restore permissions before asserting so tempdir cleanup succeeds.
         fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(result.is_err(), "PermissionDenied on root must return Err, got {result:?}");
+        assert!(
+            result.is_err(),
+            "PermissionDenied on root must return Err, got {result:?}"
+        );
     }
 
     #[cfg(unix)]

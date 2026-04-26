@@ -4,34 +4,44 @@ use spacetop::cli::Cli;
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    let _sentry = init_sentry();
+    let result = spacetop::run(cli);
+    capture_run_error_if_sentry_enabled(&result, _sentry.as_ref());
+    result
+}
+
+fn init_sentry() -> Option<sentry::ClientInitGuard> {
     // Sentry is only active in release builds (cfg!(debug_assertions) is false
     // for `cargo build --release`). In debug builds the guard is dropped
     // immediately and no events are sent.
-    let _sentry = if cfg!(debug_assertions) {
-        None
-    } else {
-        let dsn = env!("SENTRY_DSN");
-        if dsn.is_empty() {
-            None
-        } else {
-            Some(sentry::init((
-                dsn,
-                sentry::ClientOptions {
-                    release: sentry::release_name!(),
-                    sample_rate: 1.0,
-                    ..Default::default()
-                },
-            )))
-        }
-    };
+    if cfg!(debug_assertions) {
+        return None;
+    }
 
-    let result = spacetop::run(cli);
-    if let Err(ref e) = result {
-        if _sentry.is_some() {
-            sentry::capture_error(e.as_ref() as &dyn std::error::Error);
+    let dsn = env!("SENTRY_DSN");
+    if dsn.is_empty() {
+        return None;
+    }
+
+    Some(sentry::init((
+        dsn,
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            sample_rate: 1.0,
+            ..Default::default()
+        },
+    )))
+}
+
+fn capture_run_error_if_sentry_enabled(
+    result: &anyhow::Result<()>,
+    sentry_guard: Option<&sentry::ClientInitGuard>,
+) {
+    if let Err(error) = result {
+        if sentry_guard.is_some() {
+            sentry::capture_error(error.as_ref() as &dyn std::error::Error);
         }
     }
-    result
 }
 
 #[cfg(test)]
@@ -85,6 +95,10 @@ mod tests {
                 }
             }
         });
-        assert_eq!(events.len(), 0, "expected no events when sentry is not initialised");
+        assert_eq!(
+            events.len(),
+            0,
+            "expected no events when sentry is not initialised"
+        );
     }
 }

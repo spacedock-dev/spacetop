@@ -64,29 +64,35 @@ fn list(state: &PickerState) -> Paragraph<'_> {
         .workflows()
         .iter()
         .enumerate()
-        .map(|(index, workflow)| {
-            let rel = workflow
-                .root
-                .strip_prefix(scan_root)
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| workflow.root.display().to_string());
-            let title = workflow.title.as_deref().unwrap_or("");
-            let text = if title.is_empty() {
-                format!(" {rel}")
-            } else {
-                format!(" {rel}  —  {title}")
-            };
-            if index == state.selected_index() {
-                Line::from(Span::styled(
-                    text,
-                    Style::default().add_modifier(Modifier::REVERSED),
-                ))
-            } else {
-                Line::from(text)
-            }
-        })
+        .map(|(index, workflow)| workflow_row(scan_root, workflow, index == state.selected_index()))
         .collect();
     Paragraph::new(lines)
+}
+
+fn workflow_row<'a>(
+    scan_root: &std::path::Path,
+    workflow: &crate::discovery::DiscoveredWorkflow,
+    selected: bool,
+) -> Line<'a> {
+    let rel = workflow
+        .root
+        .strip_prefix(scan_root)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| workflow.root.display().to_string());
+    let title = workflow.title.as_deref().unwrap_or("");
+    let text = if title.is_empty() {
+        format!(" {rel}")
+    } else {
+        format!(" {rel}  —  {title}")
+    };
+    if selected {
+        Line::from(Span::styled(
+            text,
+            Style::default().add_modifier(Modifier::REVERSED),
+        ))
+    } else {
+        Line::from(text)
+    }
 }
 
 fn error_line(state: &PickerState) -> Paragraph<'_> {
