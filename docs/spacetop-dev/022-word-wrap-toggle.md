@@ -285,3 +285,16 @@ Final verification after all steps: `cargo test -q 2>&1 | tail -10` — all test
 ### Summary
 
 The plan breaks the feature into six sequential steps: adding the `preview_wrap` bool field and supporting methods to `OverviewState` (Step 1), wiring the `w` key handler in the `AppMode::Overview` match arm (Step 2), applying conditional `.wrap()` in `render_preview()` with `max_preview_scroll_x` clamped to 0 (Step 3), adding the footer hint (Step 4), adding the help popup line (Step 5), and writing three test functions covering all three acceptance criteria (Step 6). Each step specifies exact line locations, minimal code changes, and a `cargo test -q` verification command. No new dependencies are needed.
+
+## Stage Report: implement
+
+- DONE: All five touch points implemented: preview_wrap field, w key handler, reset_preview_scroll reset, render_preview conditional wrap + h-scroll clamp, footer and popup legend.
+  `preview_wrap: bool` added to `OverviewState` struct and both constructors; `toggle_preview_wrap()` and `preview_wrap()` accessor added; `reset_preview_scroll()` now resets the flag; `w` key wired in `AppMode::Overview`; `render_preview()` conditionally applies `.wrap(Wrap { trim: false })` and clamps `max_preview_scroll_x` to 0; `render_status_footer()` and `render_help_popup()` both add the hint when `preview_open`.
+- DONE: Three AC tests pass: word_wrap_toggle_rerenders, word_wrap_resets_on_pane_switch, word_wrap_hint_visible_in_footer.
+  `cargo test -q -- word_wrap` → 3/3 passed.
+- DONE: Full cargo test suite passes.
+  `cargo test -q` → 154 + 4 + 8 = 166 tests passed, 0 failed.
+
+### Summary
+
+Implemented the word-wrap toggle feature across `src/app.rs` and `src/ui/mod.rs` following the six-step plan verbatim. The `preview_wrap` bool on `OverviewState` is toggled by `w` (only when `preview_open`), reset by `reset_preview_scroll()` on every pane switch, and respected in `render_preview()` via a conditional `Wrap` widget that also clamps horizontal scroll to zero. Footer and help popup both surface the `w: word wrap` / `w toggle word wrap` hints when the preview is active. All three acceptance-criterion tests pass and the full suite is green.
