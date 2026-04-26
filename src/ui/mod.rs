@@ -287,6 +287,7 @@ fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSes
     hints.push("a: archive");
     if preview_open {
         hints.push("PgUp/PgDn: preview scroll");
+        hints.push("w: word wrap");
     } else {
         hints.push("PgUp/PgDn: page list");
     }
@@ -307,7 +308,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .map(|s| s.active_state().preview_open())
         .unwrap_or(false);
     let popup_w = area.width.min(64);
-    let popup_h = area.height.min(if is_multi { 22 } else { 18 });
+    let popup_h = area.height.min(if is_multi { 22 } else if preview_open { 20 } else { 18 });
     let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
     let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
     let popup = Rect {
@@ -335,6 +336,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if preview_open {
         lines.push(Line::from("  PageUp         scroll preview up"));
         lines.push(Line::from("  PageDown       scroll preview down"));
+        lines.push(Line::from("  w              toggle word wrap"));
     } else {
         lines.push(Line::from("  PageUp         page list up"));
         lines.push(Line::from("  PageDown       page list down"));
@@ -561,10 +563,15 @@ fn render_preview(
     state.max_preview_scroll_x.set(max_scroll_x);
     let scroll_position = state.preview_scroll().min(max_scroll);
     let scroll_x = state.preview_scroll_x().min(max_scroll_x) as u16;
-    frame.render_widget(
-        Paragraph::new(body_lines).scroll((scroll_position as u16, scroll_x)),
-        body_area,
-    );
+    let body_para = if state.preview_wrap() {
+        state.max_preview_scroll_x.set(0);
+        Paragraph::new(body_lines)
+            .scroll((scroll_position as u16, 0))
+            .wrap(Wrap { trim: false })
+    } else {
+        Paragraph::new(body_lines).scroll((scroll_position as u16, scroll_x))
+    };
+    frame.render_widget(body_para, body_area);
 
     if show_scrollbar {
         let mut scrollbar_state = ScrollbarState::new(max_scroll + 1)
@@ -1225,6 +1232,109 @@ mod tests {
             pr: None,
             body: body.to_string(),
         }
+    }
+
+    fn snapshot_with_body(id: &str, title: &str, body: &str) -> WorkflowSnapshot {
+        WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: PathBuf::from("/tmp/ww-test"),
+                stages: vec![StageDefinition {
+                    name: "design".to_string(),
+                    initial: true,
+                    terminal: false,
+                    gate: false,
+                    fresh: false,
+                    feedback_to: None,
+                    worktree: false,
+                    concurrency: None,
+                }],
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+                stage_colors: std::collections::HashMap::new(),
+            },
+            items: vec![item(id, title, body)],
+        }
+    }
+
+    #[test]
+    fn word_wrap_toggle_changes_body_render() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let body = "a".repeat(200);
+        let mut app = App::from_snapshot(
+            PathBuf::from("/tmp/ww-ac1"),
+            snapshot_with_body("001", "Wrap test", &body),
+        );
+        // Open preview.
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+        // No-wrap state: max_scroll_x is set after first render.
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let max_x_before = app.as_overview().unwrap().max_preview_scroll_x.get();
+        // Toggle wrap on.
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        assert_eq!(
+            app.as_overview().unwrap().max_preview_scroll_x.get(),
+            0,
+            "wrap mode clamps scroll_x to 0"
+        );
+        // Toggle wrap off.
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        assert_eq!(
+            app.as_overview().unwrap().max_preview_scroll_x.get(),
+            max_x_before,
+            "no-wrap restores scroll_x limit"
+        );
+    }
+
+    #[test]
+    fn word_wrap_resets_when_preview_closed() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = App::from_snapshot(
+            PathBuf::from("/tmp/ww-ac2"),
+            snapshot_with_body("001", "Reset test", "some body"),
+        );
+        // Open preview, enable wrap.
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+        assert!(app.as_overview().unwrap().preview_wrap());
+        // Close preview — wrap resets via toggle_preview -> reset_preview_scroll.
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(
+            !app.as_overview().unwrap().preview_wrap(),
+            "wrap resets on pane close"
+        );
+        // Re-open: default should be no-wrap.
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(
+            !app.as_overview().unwrap().preview_wrap(),
+            "wrap stays off on re-open"
+        );
+    }
+
+    #[test]
+    fn footer_shows_word_wrap_hint_when_preview_open() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = App::from_snapshot(
+            PathBuf::from("/tmp/ww-ac3"),
+            snapshot_with_body("001", "Legend test", "body"),
+        );
+        let mut terminal = Terminal::new(TestBackend::new(180, 24)).expect("terminal");
+        // Before preview: hint absent.
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(!rendered.contains("w: word wrap"), "hint absent before preview opens");
+        // After preview: hint present.
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("w: word wrap"), "hint visible when preview open");
     }
 
     #[test]

@@ -38,6 +38,7 @@ pub struct OverviewState {
     pub max_preview_scroll: Cell<usize>,
     pub preview_scroll_x: usize,
     pub max_preview_scroll_x: Cell<usize>,
+    pub preview_wrap: bool,
     pub task_page_size: Cell<usize>,
 }
 
@@ -88,6 +89,7 @@ impl OverviewState {
             max_preview_scroll: Cell::new(usize::MAX),
             preview_scroll_x: 0,
             max_preview_scroll_x: Cell::new(usize::MAX),
+            preview_wrap: false,
             task_page_size: Cell::new(10),
         }
     }
@@ -124,6 +126,7 @@ impl OverviewState {
             max_preview_scroll: Cell::new(usize::MAX),
             preview_scroll_x: 0,
             max_preview_scroll_x: Cell::new(usize::MAX),
+            preview_wrap: false,
             task_page_size: Cell::new(10),
         }
     }
@@ -372,6 +375,14 @@ impl OverviewState {
         self.preview_scroll_x
     }
 
+    pub fn preview_wrap(&self) -> bool {
+        self.preview_wrap
+    }
+
+    pub fn toggle_preview_wrap(&mut self) {
+        self.preview_wrap = !self.preview_wrap;
+    }
+
     fn scroll_preview_down(&mut self) {
         if !self.preview_open {
             return;
@@ -424,6 +435,7 @@ impl OverviewState {
         self.max_preview_scroll.set(usize::MAX);
         self.preview_scroll_x = 0;
         self.max_preview_scroll_x.set(usize::MAX);
+        self.preview_wrap = false;
     }
 }
 
@@ -1006,6 +1018,7 @@ impl App {
                     KeyCode::Char('a') => state.toggle_scope(),
                     KeyCode::Right if state.preview_open() => state.scroll_preview_right(),
                     KeyCode::Left if state.preview_open() => state.scroll_preview_left(),
+                    KeyCode::Char('w') if state.preview_open() => state.toggle_preview_wrap(),
                     KeyCode::Right if is_multi => {
                         let switch = session.cycle_next();
                         self.pending_switch = Some(switch);
