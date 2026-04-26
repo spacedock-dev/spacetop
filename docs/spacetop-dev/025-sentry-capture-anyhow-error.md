@@ -206,3 +206,16 @@ The plan requires two file changes: `Cargo.toml` gains a sentry dev-dependency w
 ### Summary
 
 Added sentry dev-dependency with the `test` feature in `Cargo.toml` and replaced the bare `spacetop::run(cli)` call in `src/main.rs` with a result-binding block that calls `sentry::capture_error()` only when `_sentry.is_some()`. Three new unit tests using `sentry::test::with_captured_events` verify all three acceptance criteria without a live DSN. The full test suite passes with no regressions.
+
+## Stage Report: review
+
+- DONE: capture_error() is guarded by _sentry.is_some() — debug builds and unset-DSN builds produce zero Sentry calls.
+  Lines 29-33 of src/main.rs wrap the capture in `if _sentry.is_some()` inside `if let Err(ref e) = result`; no capture reaches Sentry unless the guard was initialised.
+- DONE: All three AC tests pass and cover error captured, no capture in debug, no capture on success.
+  `cargo test` output: 4/4 tests in main.rs pass — `capture_error_on_run_failure`, `no_capture_on_run_success`, `no_capture_when_sentry_not_initialised`, `dev_build_does_not_init_sentry`.
+- DONE: No unrelated files modified.
+  Changed files: `src/main.rs` (production fix + tests), `Cargo.toml` (sentry dev-dependency with `test` feature required for tests to compile), `docs/spacetop-dev/025-sentry-capture-anyhow-error.md` (stage reports). The `Cargo.toml` change is explicitly called out in Implementation Plan Step 1 and is required for AC tests; the entity file change is expected stage reporting.
+
+### Summary
+
+Implementation correctly gates `sentry::capture_error()` behind `_sentry.is_some()`, matching the spec exactly. All four tests in `src/main.rs` pass (including the pre-existing debug guard test). The `Cargo.toml` addition of the sentry `test` dev-dependency is required for the AC tests to compile and was explicitly planned in Step 1 of the implementation plan — it is not an unrelated change. Verdict: approved.
