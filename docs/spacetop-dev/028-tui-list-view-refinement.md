@@ -10,6 +10,7 @@ score: 0.85
 worktree: .worktrees/spacedock-ensign-028-tui-list-view-refinement
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Overhaul the spacetop list view to a strict terminal-safe aesthetic (text + box-drawing only) with a Tokyo Night-ish muted palette, a centered workflow DAG header, and a redesigned task row layout. All output must survive a plain terminal font with no emoji or decorative icons outside the defined glyph vocabulary.
