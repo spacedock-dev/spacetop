@@ -10,6 +10,7 @@ score: 0.75
 worktree: .worktrees/spacedock-ensign-024-sentry-integration
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Spacetop currently surfaces errors only through the terminal UI or process exit. Adding Sentry gives us automatic error capture in production releases while keeping dev sessions (cargo run / debug builds) free from noise.
