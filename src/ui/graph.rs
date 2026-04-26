@@ -485,14 +485,13 @@ fn render_feedback_row(
 }
 
 /// Build a single ribbon row for a slice of stages (used by render_narrow for 2-row split).
-fn build_narrow_row(stages: &[StageDefinition], counts: &[usize], active: Option<&str>, g: &GlyphSet) -> String {
+fn build_narrow_row(stages: &[StageDefinition], counts: &[usize], _active: Option<&str>, g: &GlyphSet) -> String {
     let parts: Vec<String> = stages
         .iter()
         .enumerate()
         .map(|(i, stage)| {
             let count = counts.get(i).copied().unwrap_or(0);
             let node = build_node_text(stage, g);
-            let _ = active; // active styling not applied in narrow text-only mode
             format!("{node}({count})")
         })
         .collect();

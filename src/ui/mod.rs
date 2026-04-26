@@ -78,7 +78,8 @@ fn picker_centered(area: Rect, state: &crate::app::PickerState) -> Rect {
 
 /// Format a phase name into a fixed `width`-character column, preserving the
 /// user's original casing exactly. Names longer than `width` chars are
-/// truncated at `width-1` chars and suffixed with `…`. No glyphs are added.
+/// truncated at `width-1` chars and suffixed with `…`; no additional glyphs
+/// are introduced beyond that truncation ellipsis.
 ///
 /// `width` is expected to be in the range [4, 12] (as produced by
 /// `phase_col_width`), but the function works correctly for any width ≥ 1.
@@ -471,7 +472,7 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     // the selection background — no manual trailing spacer needed.
     let list = List::new(items)
         .highlight_symbol("")
-        .highlight_style(Style::default().bg(BG2).add_modifier(Modifier::BOLD));
+        .highlight_style(Style::default().bg(BG2));
     frame.render_stateful_widget(list, list_area, &mut list_state);
 }
 
@@ -494,7 +495,12 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
 
     // Compute the phase column width from the longest visible status name,
     // clamped to [4, 12]. This is done once per render pass over all items.
-    let pcw = phase_col_width(&items.iter().collect::<Vec<_>>());
+    let pcw = items
+        .iter()
+        .map(|item| item.status.chars().count())
+        .max()
+        .unwrap_or(4)
+        .clamp(4, 12);
 
     items
         .iter()
@@ -522,6 +528,8 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
             let stage_style = Style::default().fg(stage_color);
             let title_style = if scope == ViewScope::Archived {
                 Style::default().add_modifier(Modifier::DIM)
+            } else if is_selected {
+                Style::default().add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
