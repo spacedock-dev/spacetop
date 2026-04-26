@@ -1,16 +1,17 @@
 ---
 id: "021"
 title: "spacetop panics with IO error when workflow directory does not exist"
-status: review
+status: done
 source: bug report
 started: 2026-04-26T02:46:13Z
-completed:
-verdict:
+completed: 2026-04-26T03:43:00Z
+verdict: PASSED
 score: 0.8
-worktree: .worktrees/spacedock-ensign-021-scan-discovery-io-error
+worktree: 
 issue:
 pr: #11
 mod-block: 
+archived: 2026-04-26T03:43:03Z
 ---
 
 `spacetop` crashes with an unhelpful discovery IO error when run from a directory where the expected workflow path does not exist on disk. The user sees a raw OS error (2: No such file or directory) rather than a clear message about what path was scanned and what to do next.
