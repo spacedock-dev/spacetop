@@ -1,7 +1,7 @@
 ---
 id: "028"
 title: "Refine TUI list view — Tokyo Night palette, DAG header, task row layout"
-status: implement
+status: review
 source: feature request
 started: 2026-04-26T05:37:33Z
 completed:
