@@ -1,13 +1,13 @@
 ---
 id: "030"
 title: "Add lint enforcement to CLAUDE.md/AGENTS.md and fix all clippy errors"
-status: plan
+status: implement
 source: feature request
 started: 2026-04-26T07:07:02Z
 completed:
 verdict:
 score: 0.9
-worktree:
+worktree: .worktrees/spacedock-ensign-030-lint-enforcement-and-fixes
 issue:
 pr:
 ---
