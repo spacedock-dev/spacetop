@@ -408,3 +408,18 @@ Verdict: REJECTED. Two defects block approval. (1) AC-5 (half-width DAG wrap to 
 ### Summary
 
 All three reviewer defects fixed. `render_narrow` now produces a 2-row DAG split at the stage midpoint and the `narrow_dag_wraps_to_two_rows` test verifies it directly. `stage_color()` now exclusively returns `Color::Rgb` via the oklch pipeline — the named-color match arms and palette array are gone. The `task_row_no_glyphs_in_phase_col` test performs a real buffer scan over the phase column cells (x=2–13) for all task rows and asserts no DAG glyphs are present. 170/170 tests pass.
+
+## Stage Report: review (cycle 2)
+
+- DONE: render_narrow in src/ui/graph.rs implements 2-row DAG split at midpoint; narrow_dag_wraps_to_two_rows snapshot test passes with real assertions.
+  `render_narrow` splits at `mid = stages.len() / 2`, builds two rows via `build_narrow_row`. Test calls `render_narrow` directly with 6 stages; asserts `lines.len() >= 2`, row 1 contains alpha/beta/gamma, row 2 contains delta/epsilon/done, and row 1 does not contain second-half names. Commit b216943.
+- DONE: stage_color() named-color fallback removed — only Color::Rgb values produced.
+  `stage_color()` in `src/domain/mod.rs` hashes stage name bytes to a hue then calls `oklch_to_srgb(0.78, 0.12, hue)`, returning `Color::Rgb`. No `Color::Blue`/`Color::Green`/etc. variants remain in the file. Commit b216943.
+- DONE: task_row_no_glyphs_in_phase_col scans actual rendered buffer cells in the phase column area.
+  Test renders to `TestBackend` 100x24, then iterates buffer cells at `x=2..14` (phase column), `y=9..24` (task rows); collects any cell whose symbol contains a DAG glyph (`▶ ⎇ ⚑ ■`) into `violations`, then asserts `violations.is_empty()`. Commit b216943.
+- DONE: All 6 ACs have passing tests; 170/170 suite green.
+  `cargo test` on branch `spacedock-ensign/028-tui-list-view-refinement`: 170 passed, 0 failed, 1 ignored (watcher integration test).
+
+### Summary
+
+All four checklist items confirmed passing. `render_narrow` produces a genuine 2-row split; `stage_color()` has no named-color fallback remaining; `task_row_no_glyphs_in_phase_col` performs a real buffer scan rather than a trivially-true helper check; and the 170-test suite is fully green. No further defects identified.
