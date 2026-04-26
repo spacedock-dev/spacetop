@@ -197,3 +197,16 @@ The plan pins the fix to a single Rust match arm in `merge_worktree_items` (line
 ### Summary
 
 The `(Some(wt), Some(main)) if wt != main` arm in `merge_worktree_items` now builds a merged `WorkItem` instead of blindly inserting `wt_item`. FO-owned frontmatter fields (`status`, `title`, `id`, etc.) come from the main-branch item; `body` and `path` come from the worktree item. Three new tests (AC-1, AC-2, AC-3) validate this merged-view behavior, and the pre-existing `worktree_version_wins_on_hash_mismatch` test was updated to match the corrected semantics. All 148 tests pass.
+
+## Stage Report: review
+
+- DONE: The merged WorkItem struct literal correctly lists all FO-owned fields from main and body/path from worktree — no field is accidentally taken from the wrong source.
+  `src/parser.rs` lines 338-352: `path` and `body` from `wt_item`; `id`, `title`, `status`, `source`, `started`, `completed`, `verdict`, `score`, `worktree`, `issue`, `pr` all cloned from `main_item`. No FO-owned field is sourced from worktree. Commit 38f1cdb.
+- DONE: All three AC tests (worktree_status_from_main, worktree_body_from_worktree, no_worktree_unchanged) have evidence of passing.
+  Individually confirmed: `parser::tests::worktree_status_from_main ... ok`, `parser::tests::worktree_body_from_worktree ... ok`, `parser::tests::no_worktree_unchanged ... ok`. Full suite: 148 passed; 0 failed.
+- DONE: No unrelated files were modified.
+  `git diff main...spacedock-ensign/023-worktree-status-merge --name-only` shows only `src/parser.rs` and `docs/spacetop-dev/023-worktree-status-merge.md`.
+
+### Summary
+
+The implementation is correct and complete. The single match-arm change in `merge_worktree_items` produces a proper merged `WorkItem` that takes every FO-owned field from the main-branch item and `body`/`path` from the worktree item, exactly as the design required. All three AC unit tests pass and the full 148-test suite is green. One minor observation: the `(Some(_), None)` and `(None, None)` error-path arms still do a full `wt_item` replacement without merging; the plan flagged this as a completeness note for unusual read-failure cases and it does not affect normal operation or any AC. Approved.
