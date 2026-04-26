@@ -1,7 +1,7 @@
 ---
 id: "029"
 title: "Dead code warning: phase_col_width is never used"
-status: implement
+status: review
 source: bug report
 started: 2026-04-26T06:41:03Z
 completed:
