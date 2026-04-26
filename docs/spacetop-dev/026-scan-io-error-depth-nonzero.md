@@ -191,3 +191,16 @@ Only `src/discovery.rs` needs to change. No other files, crates, or modules are 
 ### Summary
 
 The plan makes a single minimal change to `src/discovery.rs` lines 83-89: add a `continue` branch for `NotFound` at depth >= 1, leaving depth-0 `NotFound` returning `Ok(vec![])` and all other IO errors (including `PermissionDenied` on root) returning `Err` as before. Two new `#[cfg(unix)]` tests cover both acceptance criteria directly, and AC-3 is satisfied implicitly because the skipped error never reaches the user-facing anyhow chain.
+
+## Stage Report: implement
+
+- DONE: discover_workflows in src/discovery.rs skips NotFound at depth >= 1 and continues the walk.
+  Added `if io_err.kind() == io::ErrorKind::NotFound { continue; }` before the existing `return Err(...)` in the walker error arm; commit 0337e0b.
+- DONE: NotFound at depth == 0 still returns Ok(vec![]) (existing 021 behaviour preserved).
+  The depth-0 guard (`if io_err.kind() == NotFound && depth == 0 { return Ok(vec![]); }`) is unchanged; `nonexistent_root_returns_empty_not_error` test still passes.
+- DONE: cargo test passes including new tests for broken-symlink AC-1 and PermissionDenied AC-2; full suite passes.
+  151/151 tests pass including `broken_symlink_in_subtree_is_skipped_not_fatal` (AC-1) and `permission_denied_on_root_surfaces_as_error` (AC-2).
+
+### Summary
+
+Applied the planned minimal fix to `src/discovery.rs`: one new `if` block continuing on `NotFound` at depth >= 1, leaving the depth-0 empty-return and all other IO errors unchanged. Added two `#[cfg(unix)]` tests covering both acceptance criteria. Full suite (151 tests) passes. AC-3 is satisfied implicitly — the skipped error never reaches the anyhow chain that formats user-facing output.
