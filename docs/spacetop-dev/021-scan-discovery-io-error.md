@@ -192,3 +192,16 @@ The plan targets a single three-line change in `discover_workflows` (`src/discov
 ### Summary
 
 The fix is a minimal change in `src/discovery.rs`: before consuming the WalkDir error with `into_io_error()`, extract the entry depth, then return `Ok(vec![])` when kind is `NotFound` and depth is 0. This routes the nonexistent-directory case through the existing `ZeroWorkflows` graceful branch, eliminating the raw `(os error 2)` suffix from user-visible output. A new unit test and both AC terminal commands confirm the behavior. No other files were modified.
+
+## Stage Report: review
+
+- DONE: The NotFound-at-depth-0 guard is correct and does not swallow legitimate IO errors at deeper paths.
+  Guard checks `depth == 0` before returning `Ok(vec![])`, so `NotFound` errors at depth > 0 (sub-paths) still propagate as `DiscoveryError::Io`. Diff confirms this in `src/discovery.rs` lines 82-89.
+- DONE: All acceptance criteria (AC-1 graceful message, AC-2 no raw os error) have evidence in the implement stage report.
+  Implement report records: AC-1 — `spacetop` from empty dir prints human-readable message and exits 1; AC-2 — `grep "os error"` exits 1 (no match). Test `nonexistent_root_returns_empty_not_error` passes (146/146). Verified by re-running `cargo test` in worktree: all 146 tests pass.
+- DONE: No unrelated files were modified.
+  `git diff main...spacedock-ensign/021-scan-discovery-io-error --stat` shows exactly two files: `src/discovery.rs` and `docs/spacetop-dev/021-scan-discovery-io-error.md`. No other files touched.
+
+### Summary
+
+The fix is minimal, targeted, and correct. The depth-0 guard ensures only the "root does not exist" case is silenced; any `NotFound` at a sub-path (e.g., a dangling symlink mid-walk) still returns a hard `DiscoveryError::Io`, preserving legitimate error visibility. Both ACs are evidenced in the implement report and confirmed by a clean 146/146 test run. The branch touches no files outside `src/discovery.rs` and the entity doc. Approved for merge.
