@@ -79,7 +79,13 @@ pub fn discover_workflows(root: &Path) -> Result<Vec<DiscoveredWorkflow>, Discov
                     continue;
                 }
                 // Bubble up real IO errors so callers see them.
+                let depth = err.depth();
                 if let Some(io_err) = err.into_io_error() {
+                    // Root path does not exist: treat as empty, not a hard error.
+                    // This routes through the ZeroWorkflows branch in lib.rs.
+                    if io_err.kind() == io::ErrorKind::NotFound && depth == 0 {
+                        return Ok(vec![]);
+                    }
                     return Err(DiscoveryError::Io(io_err));
                 }
                 continue;
@@ -178,6 +184,13 @@ mod tests {
         fs::create_dir_all(dir).expect("create workflow dir");
         let readme = format!("---\ncommissioned-by: spacedock@0.10.1\n---\n\n# {title}\n\nbody\n");
         fs::write(dir.join("README.md"), readme).expect("write readme");
+    }
+
+    #[test]
+    fn nonexistent_root_returns_empty_not_error() {
+        let result = discover_workflows(Path::new("/tmp/spacetop-nonexistent-test-dir-xyzzy"));
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+        assert!(result.unwrap().is_empty());
     }
 
     #[test]
