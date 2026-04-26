@@ -1,13 +1,13 @@
 ---
 id: "023"
 title: "spacetop shows stale worktree status instead of main-branch status for active entities"
-status: plan
+status: implement
 source: bug report
 started: 2026-04-26T02:59:52Z
 completed:
 verdict:
 score: 0.85
-worktree:
+worktree: .worktrees/spacedock-ensign-023-worktree-status-merge
 issue:
 pr:
 ---
