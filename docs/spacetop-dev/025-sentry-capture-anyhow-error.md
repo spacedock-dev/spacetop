@@ -1,13 +1,13 @@
 ---
 id: "025"
 title: "Sentry does not capture anyhow errors returned from main — only panics are reported"
-status: plan
+status: implement
 source: bug report
 started: 2026-04-26T04:11:46Z
 completed:
 verdict:
 score: 0.9
-worktree:
+worktree: .worktrees/spacedock-ensign-025-sentry-capture-anyhow-error
 issue:
 pr:
 ---

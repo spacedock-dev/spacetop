@@ -1,13 +1,13 @@
 ---
 id: "026"
 title: "Raw IO error still surfaces when scan root exists but a sub-entry is inaccessible"
-status: plan
+status: implement
 source: bug report
 started: 2026-04-26T04:11:46Z
 completed:
 verdict:
 score: 0.8
-worktree:
+worktree: .worktrees/spacedock-ensign-026-scan-io-error-depth-nonzero
 issue:
 pr:
 ---
