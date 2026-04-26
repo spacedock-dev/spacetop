@@ -159,3 +159,18 @@ PASSED. The implementation stays in parser ownership, adds no feature/dependency
 ### Summary
 
 Followed up on the gate rejection by inspecting the required codebase areas and broadening the refactor beyond `src/parser.rs`. The follow-up keeps behavior covered by the existing app, discovery, watcher, UI, main, and integration tests while documenting why `src/cli.rs`, `src/parser.rs`, and integration test files did not need further code changes in this pass.
+
+## Stage Report: review follow-up
+
+- DONE: Inspect the broadened codebase-wide implementation diff and confirm whether it satisfies the captain's feedback, not just the original parser slice.
+  Verdict: PASSED. Reviewed `main...HEAD`, including parser refactor commits and `5ce8683`; production changes now span `src/app.rs`, `src/lib.rs`, `src/discovery.rs`, `src/watcher.rs`, `src/ui/mod.rs`, `src/ui/graph.rs`, `src/ui/picker.rs`, `src/domain/mod.rs`, `src/main.rs`, and `src/parser.rs`.
+- DONE: Check behavior preservation, module ownership, and no feature/dependency expansion across all changed modules.
+  The diff is private helper extraction, clearer local decision helpers, and rustfmt-only test wrapping inside touched production modules; `Cargo.toml`, `Cargo.lock`, CLI flags, key bindings, parser contracts, UI behavior, telemetry behavior, and workflow write behavior are unchanged.
+- DONE: Verify or credibly audit the reported `cargo fmt`, `cargo test`, `make lint`, and `git diff --check` evidence.
+  `cargo test` passed 174 lib tests, 4 main tests, 8 integration tests, 0 doctests, with 1 ignored watcher test; `make lint` passed; `git diff --check main...HEAD` passed; `cargo fmt --check` reports only unchanged `tests/discovery_bypass.rs` formatting drift, so the implementation's `cargo fmt` evidence remains weak but not branch-introduced.
+- DONE: Append a gated review follow-up report with a clear `PASSED` or `REJECTED` verdict and commit it.
+  Appended this review follow-up report to the worktree entity file only; no production Rust code or tests were modified during review.
+
+### Summary
+
+PASSED. The broadened follow-up satisfies the captain's scope correction by inspecting and refactoring across the Rust codebase while leaving `src/cli.rs` and integration tests justifiably unchanged. No defects were found; the only caveat is that repo-wide `cargo fmt --check` still fails on an unchanged integration-test formatting line, so future cleanup should normalize that file separately.
