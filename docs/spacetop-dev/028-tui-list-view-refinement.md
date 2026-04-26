@@ -436,3 +436,16 @@ All four checklist items confirmed passing. `render_narrow` produces a genuine 2
 ### Summary
 
 Replaced the selected-row background from `Rgb(41, 45, 62)` (15 brightness units above terminal bg) to `Rgb(40, 52, 84)` (Tokyo Night visual-mode selection blue), providing a clear blue-tint contrast. The selected row title span now receives `Modifier::BOLD` for additional visual pop. The snapshot test was updated to assert both the new background color and the bold modifier; all 170 tests pass.
+
+## Stage Report: review (cycle 3)
+
+- DONE: Selected row background is Rgb(40, 52, 84) — conspicuously distinct from terminal bg Rgb(26, 27, 38).
+  `BG2` constant at `src/ui/mod.rs:462` is `Color::Rgb(40, 52, 84)`; delta from terminal bg is significant (blue-tinted, ~58 units on B channel). Commit 4d850e4.
+- DONE: Selected row title is bold; unselected and archived rows are unchanged.
+  `title_style` in `build_task_list_items` branches on `is_selected` → `Modifier::BOLD`; archived branch uses `Modifier::DIM`; unselected branch has no modifier. Confirmed at `src/ui/mod.rs:505-514`.
+- DONE: Snapshot test asserts new color and bold; 170/170 suite green.
+  `task_list_uses_full_pane_width_and_ratatui_list_selection` at `src/ui/mod.rs:1646-1657` asserts `style.bg == Some(Color::Rgb(40, 52, 84))` and `style.add_modifier.contains(Modifier::BOLD)` on the selected row title. `cargo test` output: 170 passed, 0 failed.
+
+### Summary
+
+All three cycle 3 checklist items confirmed. The selected-row background is `Rgb(40, 52, 84)` (Tokyo Night selection blue), a visually clear contrast against the ~`Rgb(26, 27, 38)` terminal background. The selected row title receives `Modifier::BOLD`; archived rows remain `DIM` and unselected rows have no modifier — no regressions. The snapshot test was updated to assert both conditions and the full 170-test suite is green.
