@@ -1,13 +1,13 @@
 ---
 id: "021"
 title: "spacetop panics with IO error when workflow directory does not exist"
-status: plan
+status: implement
 source: bug report
 started: 2026-04-26T02:46:13Z
 completed:
 verdict:
 score: 0.8
-worktree:
+worktree: .worktrees/spacedock-ensign-021-scan-discovery-io-error
 issue:
 pr:
 ---
