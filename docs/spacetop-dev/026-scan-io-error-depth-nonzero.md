@@ -59,3 +59,134 @@ Verified by: end-to-end test or manual check that stderr contains no `os error` 
 ### Summary
 
 The entity file already contained a complete problem statement, reproduction steps, root cause analysis, fix direction, and three acceptance criteria; no additional design content was needed. Confirmed the exact code path: `discover_workflows` in `src/discovery.rs` lines 83-89, where the `depth == 0` guard leaves depth >= 1 NotFound errors unhandled and propagates them as `DiscoveryError::Io`. The acceptance criteria cleanly separate skippable errors (NotFound at any depth) from hard errors (PermissionDenied on root), providing unambiguous guidance for the implement stage.
+
+## Implementation Plan
+
+### Fix: `src/discovery.rs` — `discover_workflows`, lines 83-89
+
+Replace the current error-handling block inside the walker's `Err(err)` arm. The existing code is:
+
+```rust
+let depth = err.depth();
+if let Some(io_err) = err.into_io_error() {
+    if io_err.kind() == io::ErrorKind::NotFound && depth == 0 {
+        return Ok(vec![]);
+    }
+    return Err(DiscoveryError::Io(io_err));
+}
+continue;
+```
+
+New logic:
+
+```rust
+let depth = err.depth();
+if let Some(io_err) = err.into_io_error() {
+    match io_err.kind() {
+        // Root path does not exist → treat as empty (routes to ZeroWorkflows branch).
+        io::ErrorKind::NotFound if depth == 0 => return Ok(vec![]),
+        // Sub-entry disappeared mid-walk (broken symlink, concurrent delete) → skip.
+        io::ErrorKind::NotFound => continue,
+        // Hard error on root (e.g. PermissionDenied) → surface as error.
+        _ if depth == 0 => return Err(DiscoveryError::Io(io_err)),
+        // Hard error on sub-entry → surface as error (genuine IO failure).
+        _ => return Err(DiscoveryError::Io(io_err)),
+    }
+}
+continue;
+```
+
+The two `_` arms collapse to the same action and can be written as a single `_ =>` arm. Written out cleanly:
+
+```rust
+let depth = err.depth();
+if let Some(io_err) = err.into_io_error() {
+    if io_err.kind() == io::ErrorKind::NotFound && depth == 0 {
+        return Ok(vec![]);
+    }
+    if io_err.kind() == io::ErrorKind::NotFound {
+        // Broken symlink or concurrently deleted sub-entry — skip, keep walking.
+        continue;
+    }
+    return Err(DiscoveryError::Io(io_err));
+}
+continue;
+```
+
+This is a minimal, surgical change: one new `if` block added before the existing `return Err(...)`. No other logic changes.
+
+### Tests to add: `src/discovery.rs` `#[cfg(test)]` block
+
+**AC-1 test — broken symlink at depth >= 1 (Unix only)**
+
+```rust
+#[cfg(unix)]
+#[test]
+fn broken_symlink_in_subtree_is_skipped_not_fatal() {
+    use std::os::unix::fs::symlink;
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    // A real workflow so we can confirm the walk completes and finds it.
+    write_workflow_readme(&root.join("docs/real"), "Real");
+    // Broken symlink: target does not exist.
+    symlink(root.join("nonexistent-target"), root.join("docs/broken-link")).unwrap();
+
+    let result = discover_workflows(root);
+    assert!(result.is_ok(), "broken symlink must not be fatal, got {result:?}");
+    let found = result.unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].title.as_deref(), Some("Real"));
+}
+```
+
+**AC-2 test — PermissionDenied on scan root (Unix only)**
+
+```rust
+#[cfg(unix)]
+#[test]
+fn permission_denied_on_root_surfaces_as_error() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempdir().unwrap();
+    let root = tmp.path().join("locked");
+    fs::create_dir_all(&root).unwrap();
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let result = discover_workflows(&root);
+    // Restore permissions before asserting so tempdir cleanup succeeds.
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.is_err(), "PermissionDenied on root must return Err, got {result:?}");
+}
+```
+
+Note: The chmod 000 test must run as a non-root user to exercise the permission denial. If run as root, the OS bypasses the permission check and the test would be vacuous. Standard CI (GitHub Actions, non-root user) is fine. Add a `#[cfg(unix)]` guard; skip on Windows.
+
+### Verification commands
+
+```
+# unit tests (covers AC-1 and AC-2)
+cargo test -p spacetop discovery -- --nocapture
+
+# full test suite to confirm no regressions
+cargo test -p spacetop
+```
+
+### File ownership
+
+Only `src/discovery.rs` needs to change. No other files, crates, or modules are affected. No dependency additions required.
+
+### Module/crate notes
+
+- `DiscoveryError::Io` and its `thiserror` derive remain unchanged.
+- The `filter_entry` predicate (`is_pruned`) is unchanged — symlinks at the root of a pruned dir name are already excluded before they can generate errors.
+- AC-3 (no raw `os error` in user-facing output) is satisfied automatically: if the error is never returned from `discover_workflows`, it never reaches the `anyhow` chain in `lib.rs` that formats the user-facing message.
+
+## Stage Report: plan
+
+- DONE: Plan specifies the exact change to discover_workflows in src/discovery.rs: skip NotFound at depth >= 1, surface PermissionDenied on root as hard error.
+  Implementation Plan section above gives the exact before/after for lines 83-89 and explains the logic: add one new `if io_err.kind() == NotFound { continue; }` guard before the existing `return Err(...)`.
+- DONE: Plan includes unit test commands for AC-1 (broken symlink fixture) and AC-2 (chmod 000, Unix-only).
+  AC-1 test `broken_symlink_in_subtree_is_skipped_not_fatal` and AC-2 test `permission_denied_on_root_surfaces_as_error` are fully spelled out with code; verification command is `cargo test -p spacetop discovery -- --nocapture`.
+
+### Summary
+
+The plan makes a single minimal change to `src/discovery.rs` lines 83-89: add a `continue` branch for `NotFound` at depth >= 1, leaving depth-0 `NotFound` returning `Ok(vec![])` and all other IO errors (including `PermissionDenied` on root) returning `Err` as before. Two new `#[cfg(unix)]` tests cover both acceptance criteria directly, and AC-3 is satisfied implicitly because the skipped error never reaches the user-facing anyhow chain.
