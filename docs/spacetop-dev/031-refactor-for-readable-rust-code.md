@@ -144,3 +144,18 @@ Implemented a narrow parser readability refactor in `src/parser.rs`. The change 
 ### Summary
 
 PASSED. The implementation stays in parser ownership, adds no feature/dependency/CLI/key binding/UI/telemetry/parsing-contract/workflow-write expansion, and names concrete readability improvements in `load_workflow_dir`, `load_archived_items`, `scan_worktrees`, and `merge_worktree_items`. The only caveat is weak fmt evidence in the implementation report because current `cargo fmt --check` is repo-wide dirty on both main and the review worktree, but required behavior and lint gates pass.
+
+## Stage Report: implement follow-up
+
+- DONE: Inspect the whole Rust codebase and record module-by-module findings, including modules intentionally left unchanged.
+  Inspected `src/app.rs` (changed key handling flow), `src/lib.rs` (changed launch decision duplication), `src/discovery.rs` (changed walk/readme decision helpers), `src/watcher.rs` (changed event forwarding/debounce first-event helpers), `src/ui/mod.rs` (changed footer hint construction), `src/ui/graph.rs` (changed feedback-line helpers), `src/ui/picker.rs` (changed picker row helper), `src/domain/mod.rs` (changed color constants/hue helper), `src/main.rs` (changed Sentry init/capture helpers), `src/cli.rs` (left unchanged because the small clap surface was already clear and covered), `src/parser.rs` (left unchanged in this follow-up because the prior accepted helper extraction already covered parser ownership), and `tests/discovery_bypass.rs` plus `tests/watcher_fs.rs` (left unchanged because existing integration assertions already covered the refactored launch/discovery/watcher behavior).
+- DONE: Broaden the readability refactor with behavior-preserving changes in multiple modules where concrete readability wins exist.
+  Broadened production changes across app, launch, discovery, watcher, UI, graph, picker, domain, and main modules using private helpers, clearer decision names, and reduced nesting without adding public API surface or behavior.
+- DONE: Run `cargo fmt`, `cargo test`, `make lint`, and `git diff --check`, and report exact outcomes.
+  `cargo fmt` completed; final `cargo test` passed 174 lib tests, 4 main tests, 8 integration tests, and 0 doctests with 1 ignored watcher test; final `make lint` passed via `cargo clippy --all-targets --all-features -- -D warnings`; final `git diff --check` exited cleanly.
+- DONE: Confirm no feature/dependency/module-ownership expansion and no behavior changes.
+  No dependencies, CLI flags, key bindings, UI behavior, parsing contracts, telemetry behavior, workflow writes, or module ownership boundaries were expanded; all changes are private helper/readability refactors in their existing modules.
+
+### Summary
+
+Followed up on the gate rejection by inspecting the required codebase areas and broadening the refactor beyond `src/parser.rs`. The follow-up keeps behavior covered by the existing app, discovery, watcher, UI, main, and integration tests while documenting why `src/cli.rs`, `src/parser.rs`, and integration test files did not need further code changes in this pass.

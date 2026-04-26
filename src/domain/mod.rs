@@ -3,6 +3,9 @@ use std::path::PathBuf;
 
 use ratatui::style::Color;
 
+const STAGE_LIGHTNESS: f32 = 0.78;
+const STAGE_CHROMA: f32 = 0.12;
+
 /// Convert an oklch color to an sRGB triple (r, g, b) each in [0, 255].
 ///
 /// Pipeline: oklch → oklab → linear-sRGB → gamma-sRGB → u8.
@@ -55,7 +58,7 @@ pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color>
         .enumerate()
         .map(|(i, s)| {
             let hue = i as f32 * step;
-            let (r, g, b) = oklch_to_srgb(0.78, 0.12, hue);
+            let (r, g, b) = oklch_to_srgb(STAGE_LIGHTNESS, STAGE_CHROMA, hue);
             (s.name.clone(), Color::Rgb(r, g, b))
         })
         .collect()
@@ -66,13 +69,17 @@ pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color>
 /// the stage name's bytes, then converts oklch (lightness=0.78, chroma=0.12)
 /// to `Color::Rgb` — so the fallback path never emits named `Color::*` variants.
 pub fn stage_color(stage_name: &str) -> Color {
-    // Hash the stage name bytes to a stable hue in [0°, 360°).
-    let hash = stage_name
-        .bytes()
-        .fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32));
-    let hue = (hash % 360) as f32;
-    let (r, g, b) = oklch_to_srgb(0.78, 0.12, hue);
+    let hue = stable_stage_hue(stage_name);
+    let (r, g, b) = oklch_to_srgb(STAGE_LIGHTNESS, STAGE_CHROMA, hue);
     Color::Rgb(r, g, b)
+}
+
+fn stable_stage_hue(stage_name: &str) -> f32 {
+    // Hash the stage name bytes to a stable hue in [0°, 360°).
+    let hash = stage_name.bytes().fold(0u32, |acc, byte| {
+        acc.wrapping_mul(31).wrapping_add(byte as u32)
+    });
+    (hash % 360) as f32
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,11 +168,56 @@ mod tests {
     #[test]
     fn assign_stage_colors_returns_rgb_for_all_stages() {
         let stages = vec![
-            StageDefinition { name: "design".to_string(), initial: true, terminal: false, gate: false, fresh: false, feedback_to: None, worktree: false, concurrency: None },
-            StageDefinition { name: "plan".to_string(), initial: false, terminal: false, gate: false, fresh: false, feedback_to: None, worktree: false, concurrency: None },
-            StageDefinition { name: "implement".to_string(), initial: false, terminal: false, gate: false, fresh: false, feedback_to: None, worktree: true, concurrency: None },
-            StageDefinition { name: "review".to_string(), initial: false, terminal: false, gate: true, fresh: false, feedback_to: Some("implement".to_string()), worktree: false, concurrency: None },
-            StageDefinition { name: "done".to_string(), initial: false, terminal: true, gate: false, fresh: false, feedback_to: None, worktree: false, concurrency: None },
+            StageDefinition {
+                name: "design".to_string(),
+                initial: true,
+                terminal: false,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: false,
+                concurrency: None,
+            },
+            StageDefinition {
+                name: "plan".to_string(),
+                initial: false,
+                terminal: false,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: false,
+                concurrency: None,
+            },
+            StageDefinition {
+                name: "implement".to_string(),
+                initial: false,
+                terminal: false,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: true,
+                concurrency: None,
+            },
+            StageDefinition {
+                name: "review".to_string(),
+                initial: false,
+                terminal: false,
+                gate: true,
+                fresh: false,
+                feedback_to: Some("implement".to_string()),
+                worktree: false,
+                concurrency: None,
+            },
+            StageDefinition {
+                name: "done".to_string(),
+                initial: false,
+                terminal: true,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: false,
+                concurrency: None,
+            },
         ];
         let colors = assign_stage_colors(&stages);
         assert_eq!(colors.len(), 5);

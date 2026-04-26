@@ -300,6 +300,22 @@ const PILL_BG: Color = Color::Rgb(59, 66, 82);
 /// rendered as a pill-style styled span with a subtle background. The exact
 /// key list adapts to single vs multi sessions.
 fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
+    let hints = status_footer_hints(session);
+    let pill_style = Style::default().fg(Color::White).bg(PILL_BG);
+    let sep_style = Style::default();
+    let mut spans: Vec<Span<'_>> = Vec::new();
+    for (i, hint) in hints.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("  ", sep_style));
+        }
+        spans.push(Span::styled(*hint, pill_style));
+    }
+
+    let para = Paragraph::new(Line::from(spans)).alignment(Alignment::Center);
+    frame.render_widget(para, area);
+}
+
+fn status_footer_hints(session: &OverviewSession) -> Vec<&'static str> {
     let preview_open = session.active_state().preview_open();
     let mut hints: Vec<&str> = vec!["?: help"];
     if preview_open {
@@ -319,19 +335,7 @@ fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSes
         hints.push("PgUp/PgDn: page list");
     }
     hints.push("q: quit");
-
-    let pill_style = Style::default().fg(Color::White).bg(PILL_BG);
-    let sep_style = Style::default();
-    let mut spans: Vec<Span<'_>> = Vec::new();
-    for (i, hint) in hints.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled("  ", sep_style));
-        }
-        spans.push(Span::styled(*hint, pill_style));
-    }
-
-    let para = Paragraph::new(Line::from(spans)).alignment(Alignment::Center);
-    frame.render_widget(para, area);
+    hints
 }
 
 fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
@@ -341,7 +345,13 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .map(|s| s.active_state().preview_open())
         .unwrap_or(false);
     let popup_w = area.width.min(64);
-    let popup_h = area.height.min(if is_multi { 22 } else if preview_open { 20 } else { 18 });
+    let popup_h = area.height.min(if is_multi {
+        22
+    } else if preview_open {
+        20
+    } else {
+        18
+    });
     let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
     let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
     let popup = Rect {
@@ -379,7 +389,9 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         lines.push(Line::from("  \u{2190} / Left      scroll preview left"));
     } else if is_multi {
         lines.push(Line::from("  \u{2192} / Right     switch to next workflow"));
-        lines.push(Line::from("  \u{2190} / Left      switch to previous workflow"));
+        lines.push(Line::from(
+            "  \u{2190} / Left      switch to previous workflow",
+        ));
     }
     if is_multi {
         lines.push(Line::from("  P              pick workflow"));
@@ -417,10 +429,7 @@ fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
     let item_count = state.visible_items().len();
 
     // Section header: "Tasks  ·  N" (or "Archived  ·  N") above the list.
-    let section_header_text = format!(
-        "{}  \u{00B7}  {}",
-        title, item_count
-    );
+    let section_header_text = format!("{}  \u{00B7}  {}", title, item_count);
     let section_header = Line::from(Span::styled(
         section_header_text,
         Style::default().add_modifier(Modifier::DIM),
@@ -653,8 +662,7 @@ fn render_preview(
     frame.render_widget(body_para, body_area);
 
     if show_scrollbar {
-        let mut scrollbar_state = ScrollbarState::new(max_scroll + 1)
-            .position(scroll_position);
+        let mut scrollbar_state = ScrollbarState::new(max_scroll + 1).position(scroll_position);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(None)
@@ -786,7 +794,11 @@ fn build_preview_header_lines<'a>(
     lines
 }
 
-fn render_markdown_lines(markdown: &str, max_lines: usize, pane_width: usize) -> Vec<Line<'static>> {
+fn render_markdown_lines(
+    markdown: &str,
+    max_lines: usize,
+    pane_width: usize,
+) -> Vec<Line<'static>> {
     let mut blocks: Vec<Vec<Line<'static>>> = Vec::new();
     let mut text_lines = Vec::new();
     let mut spans: Vec<Span<'static>> = Vec::new();
@@ -838,9 +850,7 @@ fn render_markdown_lines(markdown: &str, max_lines: usize, pane_width: usize) ->
                 flush_text_block(&mut blocks, &mut text_lines);
                 heading_depth = None;
             }
-            MarkdownEvent::Start(Tag::Paragraph)
-                if !spans.is_empty() =>
-            {
+            MarkdownEvent::Start(Tag::Paragraph) if !spans.is_empty() => {
                 flush_line(&mut text_lines, &mut spans, max_lines);
             }
             MarkdownEvent::Start(Tag::Paragraph) => {}
@@ -932,11 +942,7 @@ fn render_markdown_lines(markdown: &str, max_lines: usize, pane_width: usize) ->
             _ => {}
         }
 
-        let used_lines = blocks
-            .iter()
-            .map(Vec::len)
-            .sum::<usize>()
-            + text_lines.len();
+        let used_lines = blocks.iter().map(Vec::len).sum::<usize>() + text_lines.len();
         if used_lines >= max_lines {
             break;
         }
@@ -1030,12 +1036,16 @@ fn add_markdown_block_spacing(blocks: Vec<Vec<Line<'static>>>) -> Vec<Line<'stat
 }
 
 fn line_width(line: &Line<'_>) -> usize {
-    line.spans.iter().map(|span| span.content.chars().count()).sum()
+    line.spans
+        .iter()
+        .map(|span| span.content.chars().count())
+        .sum()
 }
 
 fn wrapped_lines_height(lines: &[Line<'_>], width: u16) -> u16 {
     let width = usize::from(width.max(1));
-    lines.iter()
+    lines
+        .iter()
         .map(|line| {
             let len = line_width(line).max(1);
             len.div_ceil(width) as u16
@@ -1409,12 +1419,18 @@ mod tests {
         // Before preview: hint absent.
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
-        assert!(!rendered.contains("w: word wrap"), "hint absent before preview opens");
+        assert!(
+            !rendered.contains("w: word wrap"),
+            "hint absent before preview opens"
+        );
         // After preview: hint present.
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
-        assert!(rendered.contains("w: word wrap"), "hint visible when preview open");
+        assert!(
+            rendered.contains("w: word wrap"),
+            "hint visible when preview open"
+        );
     }
 
     #[test]
@@ -1540,9 +1556,8 @@ mod tests {
             .expect("render should succeed");
 
         let buffer = terminal.backend().buffer();
-        let has_scrollbar_thumb = (0..buffer.area.height).any(|y| {
-            (0..buffer.area.width).any(|x| buffer[(x, y)].symbol() == "\u{2588}")
-        });
+        let has_scrollbar_thumb = (0..buffer.area.height)
+            .any(|y| (0..buffer.area.width).any(|x| buffer[(x, y)].symbol() == "\u{2588}"));
         assert!(
             has_scrollbar_thumb,
             "overflowing preview should draw a scrollbar thumb"
@@ -1726,11 +1741,20 @@ mod tests {
         );
         // Verify phase_col() helper directly for various widths.
         let col_w9 = super::phase_col("implement", 9);
-        assert_eq!(col_w9, "implement", "phase_col('implement', 9) must be exact fit");
+        assert_eq!(
+            col_w9, "implement",
+            "phase_col('implement', 9) must be exact fit"
+        );
         let col_w12 = super::phase_col("implement", 12);
-        assert_eq!(col_w12, "implement   ", "phase_col('implement', 12) must pad to 12");
+        assert_eq!(
+            col_w12, "implement   ",
+            "phase_col('implement', 12) must pad to 12"
+        );
         let col_w4 = super::phase_col("implement", 4);
-        assert_eq!(col_w4, "imp\u{2026}", "phase_col('implement', 4) must truncate at 3+ellipsis");
+        assert_eq!(
+            col_w4, "imp\u{2026}",
+            "phase_col('implement', 4) must truncate at 3+ellipsis"
+        );
     }
 
     #[test]
@@ -1804,9 +1828,18 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).expect("render");
         let rendered = buffer_text(terminal.backend().buffer());
         // "design" must appear (lowercase), not "DESIGN", "DES", "DGN", etc.
-        assert!(rendered.contains("design"), "phase name 'design' must appear in task row");
-        assert!(!rendered.contains("DESIGN"), "phase name must not be uppercased");
-        assert!(!rendered.contains("DES"), "old 3-letter tag must not appear");
+        assert!(
+            rendered.contains("design"),
+            "phase name 'design' must appear in task row"
+        );
+        assert!(
+            !rendered.contains("DESIGN"),
+            "phase name must not be uppercased"
+        );
+        assert!(
+            !rendered.contains("DES"),
+            "old 3-letter tag must not appear"
+        );
     }
 
     #[test]
@@ -1896,7 +1929,10 @@ mod tests {
                 break;
             }
         }
-        assert!(found_yellow_bg, "badge cell must have yellow background in row 0");
+        assert!(
+            found_yellow_bg,
+            "badge cell must have yellow background in row 0"
+        );
         // "…" must appear in row 0 (left-truncated path) at narrow width.
         assert!(
             rendered.contains('\u{2026}'),
@@ -1939,16 +1975,28 @@ mod tests {
         // clamps to the minimum of 4. Verify via phase_col() helper directly.
         let mut run_item = item("001", "Task", "Body");
         run_item.status = "run".to_string(); // 3 chars, below minimum of 4
-        // "run" is 3 chars < 4 minimum → phase_col_width returns 4.
+                                             // "run" is 3 chars < 4 minimum → phase_col_width returns 4.
         let items_ref: Vec<&crate::domain::WorkItem> = vec![&run_item];
         // Simulate what build_task_list_items does: collect refs and call phase_col_width.
         // We use a locally-constructed slice to test the helper.
-        let pcw = items_ref.iter().map(|i| i.status.chars().count()).max().unwrap_or(4).clamp(4, 12);
-        assert_eq!(pcw, 4, "phase_col_width for 'run' (3 chars) must clamp to 4");
+        let pcw = items_ref
+            .iter()
+            .map(|i| i.status.chars().count())
+            .max()
+            .unwrap_or(4)
+            .clamp(4, 12);
+        assert_eq!(
+            pcw, 4,
+            "phase_col_width for 'run' (3 chars) must clamp to 4"
+        );
         // phase_col with width=4 pads "run" to "run " (3 chars + 1 space).
         let col = super::phase_col("run", pcw);
         assert_eq!(col, "run ", "phase_col('run', 4) must pad to 4 chars");
-        assert_eq!(col.chars().count(), 4, "column must be exactly 4 chars wide");
+        assert_eq!(
+            col.chars().count(),
+            4,
+            "column must be exactly 4 chars wide"
+        );
     }
 
     #[test]
@@ -1974,15 +2022,30 @@ mod tests {
             },
         ];
         let items_ref: Vec<&crate::domain::WorkItem> = items_data.iter().collect();
-        let pcw = items_ref.iter().map(|i| i.status.chars().count()).max().unwrap_or(4).clamp(4, 12);
-        assert_eq!(pcw, 10, "phase_col_width for mixed phases with max len=10 must return 10");
+        let pcw = items_ref
+            .iter()
+            .map(|i| i.status.chars().count())
+            .max()
+            .unwrap_or(4)
+            .clamp(4, 12);
+        assert_eq!(
+            pcw, 10,
+            "phase_col_width for mixed phases with max len=10 must return 10"
+        );
         // "implement" (9 chars) with width=10 must pad to 10 chars.
         let col = super::phase_col("implement", pcw);
-        assert_eq!(col.chars().count(), 10, "phase column must be exactly 10 chars");
+        assert_eq!(
+            col.chars().count(),
+            10,
+            "phase column must be exactly 10 chars"
+        );
         assert_eq!(col, "implement ", "implement padded to width 10");
         // "smoke-test" (10 chars) with width=10 must fit exactly.
         let col2 = super::phase_col("smoke-test", pcw);
-        assert_eq!(col2, "smoke-test", "smoke-test must fit exactly at width 10");
+        assert_eq!(
+            col2, "smoke-test",
+            "smoke-test must fit exactly at width 10"
+        );
     }
 
     #[test]
@@ -1994,14 +2057,32 @@ mod tests {
             i
         };
         let items_ref: Vec<&crate::domain::WorkItem> = vec![&long_item];
-        let pcw = items_ref.iter().map(|i| i.status.chars().count()).max().unwrap_or(4).clamp(4, 12);
-        assert_eq!(pcw, 12, "phase_col_width must clamp to 12 for a 22-char status");
+        let pcw = items_ref
+            .iter()
+            .map(|i| i.status.chars().count())
+            .max()
+            .unwrap_or(4)
+            .clamp(4, 12);
+        assert_eq!(
+            pcw, 12,
+            "phase_col_width must clamp to 12 for a 22-char status"
+        );
         // phase_col with width=12 must truncate at 11 chars + "…".
         let col = super::phase_col("a-very-long-phase-name", pcw);
-        assert_eq!(col.chars().count(), 12, "column must be exactly 12 chars after truncation");
-        assert!(col.ends_with('\u{2026}'), "truncated column must end with '…'");
-        assert_eq!(&col[..col.len() - 3], "a-very-long", // 11 chars, "…" is 3 bytes
-            "first 11 chars must be preserved before ellipsis");
+        assert_eq!(
+            col.chars().count(),
+            12,
+            "column must be exactly 12 chars after truncation"
+        );
+        assert!(
+            col.ends_with('\u{2026}'),
+            "truncated column must end with '…'"
+        );
+        assert_eq!(
+            &col[..col.len() - 3],
+            "a-very-long", // 11 chars, "…" is 3 bytes
+            "first 11 chars must be preserved before ellipsis"
+        );
     }
 
     fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
@@ -2727,7 +2808,11 @@ mod tests {
         assert_ne!(c("alpha"), c("beta"), "alpha vs beta must differ");
         assert_ne!(c("beta"), c("gamma"), "beta vs gamma must differ");
         assert_ne!(c("gamma"), c("delta"), "gamma vs delta must differ");
-        assert_ne!(c("gamma"), c("alpha"), "gamma vs alpha (feedback edge) must differ");
+        assert_ne!(
+            c("gamma"),
+            c("alpha"),
+            "gamma vs alpha (feedback edge) must differ"
+        );
     }
 
     #[test]
@@ -2822,10 +2907,16 @@ mod tests {
         let rendered = buffer_text(buffer);
 
         // Backtick fences must not appear
-        assert!(!rendered.contains("```"), "backtick fences should not be visible");
+        assert!(
+            !rendered.contains("```"),
+            "backtick fences should not be visible"
+        );
 
         // Code body text must appear
-        assert!(rendered.contains("let x = 1;"), "code body text must be rendered");
+        assert!(
+            rendered.contains("let x = 1;"),
+            "code body text must be rendered"
+        );
 
         // Code text must carry distinct styling (Cyan fg or DarkGray bg)
         assert!(
@@ -2876,9 +2967,18 @@ mod tests {
         }
 
         // Source text must be preserved at the start of the padded span.
-        assert!(code_spans[0].starts_with("let x = 1;"), "first code line content must be preserved");
-        assert!(code_spans[1].starts_with("let y = 2;"), "second code line content must be preserved");
-        assert!(code_spans[2].starts_with("let z = 3;"), "third code line content must be preserved");
+        assert!(
+            code_spans[0].starts_with("let x = 1;"),
+            "first code line content must be preserved"
+        );
+        assert!(
+            code_spans[1].starts_with("let y = 2;"),
+            "second code line content must be preserved"
+        );
+        assert!(
+            code_spans[2].starts_with("let z = 3;"),
+            "third code line content must be preserved"
+        );
     }
 
     #[test]
@@ -2900,9 +3000,18 @@ mod tests {
         let rendered = buffer_text(buffer);
 
         // All three code lines must appear somewhere in the rendered output.
-        assert!(rendered.contains("let x = 1;"), "first code line must appear");
-        assert!(rendered.contains("let y = 2;"), "second code line must appear");
-        assert!(rendered.contains("let z = 3;"), "third code line must appear");
+        assert!(
+            rendered.contains("let x = 1;"),
+            "first code line must appear"
+        );
+        assert!(
+            rendered.contains("let y = 2;"),
+            "second code line must appear"
+        );
+        assert!(
+            rendered.contains("let z = 3;"),
+            "third code line must appear"
+        );
 
         // Each code line must be on a distinct row in the buffer.
         let y_x = find_text(buffer, "let x = 1;");
@@ -3028,17 +3137,24 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
 
         // First draw: populates max_preview_scroll so PageDown can scroll.
-        terminal.draw(|frame| render(frame, &app)).expect("first render");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("first render");
 
         // Scroll to the bottom using PageDown repeatedly.
         for _ in 0..20 {
             app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
-            terminal.draw(|frame| render(frame, &app)).expect("scroll render");
+            terminal
+                .draw(|frame| render(frame, &app))
+                .expect("scroll render");
         }
 
         let buffer = terminal.backend().buffer();
         let hits = find_text(buffer, "let x = 1;");
-        assert!(!hits.is_empty(), "code line must be visible after scrolling to bottom");
+        assert!(
+            !hits.is_empty(),
+            "code line must be visible after scrolling to bottom"
+        );
         let (_, row) = hits[0];
 
         // With the scrollbar present the content area is body_inner.width - 1 columns wide.

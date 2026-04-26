@@ -83,15 +83,8 @@ impl WorkflowWatcher {
         let (signal_tx, signal_rx) = mpsc::channel::<RefreshSignal>();
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
 
-        let raw_tx_for_backend = raw_tx.clone();
-        let event_handler = move |res: notify::Result<Event>| {
-            if let Ok(event) = res {
-                let _ = raw_tx_for_backend.send(event);
-            }
-        };
-
         let (watcher_box, backend): (Box<dyn Watcher + Send>, WatcherBackend) =
-            match RecommendedWatcher::new(event_handler.clone(), Config::default()) {
+            match RecommendedWatcher::new(forward_events_to(raw_tx.clone()), Config::default()) {
                 Ok(mut w) => {
                     w.watch(root, RecursiveMode::Recursive)
                         .map_err(|e| WatcherError::Watch {
@@ -102,7 +95,7 @@ impl WorkflowWatcher {
                 }
                 Err(recommended_err) => {
                     let poll_config = Config::default().with_poll_interval(POLL_FALLBACK_INTERVAL);
-                    match PollWatcher::new(event_handler, poll_config) {
+                    match PollWatcher::new(forward_events_to(raw_tx), poll_config) {
                         Ok(mut w) => {
                             w.watch(root, RecursiveMode::Recursive).map_err(|e| {
                                 WatcherError::Watch {
@@ -137,6 +130,14 @@ impl WorkflowWatcher {
 
     pub fn backend(&self) -> WatcherBackend {
         self.backend
+    }
+}
+
+fn forward_events_to(raw_tx: Sender<Event>) -> impl FnMut(notify::Result<Event>) + Send + 'static {
+    move |res| {
+        if let Ok(event) = res {
+            let _ = raw_tx.send(event);
+        }
     }
 }
 
@@ -212,15 +213,10 @@ fn debounce_loop(
         // `raw_rx.recv()` here would deadlock `Drop::drop` because the
         // live `raw_tx` clone is held by the backend's event handler,
         // which is itself dropped only after `Drop::drop` returns.)
-        let first = match raw_rx.recv_timeout(SHUTDOWN_POLL_INTERVAL) {
-            Ok(ev) => ev,
-            Err(RecvTimeoutError::Timeout) => {
-                if shutdown_rx.try_recv().is_ok() {
-                    return;
-                }
-                continue;
-            }
-            Err(RecvTimeoutError::Disconnected) => return,
+        let first = match next_event_or_shutdown(&raw_rx, &shutdown_rx) {
+            DebounceInput::Event(event) => event,
+            DebounceInput::Shutdown => return,
+            DebounceInput::Quiet => continue,
         };
         if shutdown_rx.try_recv().is_ok() {
             return;
@@ -260,6 +256,26 @@ fn debounce_loop(
         if signal_tx.send(RefreshSignal).is_err() {
             return;
         }
+    }
+}
+
+enum DebounceInput {
+    Event(Event),
+    Quiet,
+    Shutdown,
+}
+
+fn next_event_or_shutdown(raw_rx: &Receiver<Event>, shutdown_rx: &Receiver<()>) -> DebounceInput {
+    match raw_rx.recv_timeout(SHUTDOWN_POLL_INTERVAL) {
+        Ok(event) => DebounceInput::Event(event),
+        Err(RecvTimeoutError::Timeout) => {
+            if shutdown_rx.try_recv().is_ok() {
+                DebounceInput::Shutdown
+            } else {
+                DebounceInput::Quiet
+            }
+        }
+        Err(RecvTimeoutError::Disconnected) => DebounceInput::Shutdown,
     }
 }
 

@@ -97,7 +97,11 @@ impl OverviewState {
     pub fn load(workflow_dir: PathBuf) -> Result<Self, ParseError> {
         let repo_root = resolve_scan_root(&workflow_dir);
         let snapshot = load_workflow_dir(&workflow_dir, &repo_root)?;
-        Ok(Self::from_snapshot_with_root(workflow_dir, repo_root, snapshot))
+        Ok(Self::from_snapshot_with_root(
+            workflow_dir,
+            repo_root,
+            snapshot,
+        ))
     }
 
     pub fn from_snapshot(workflow_dir: PathBuf, snapshot: WorkflowSnapshot) -> Self {
@@ -987,52 +991,20 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
-        // Help popup intercepts input regardless of underlying mode. `?` and
-        // `Esc` close it; any other key is consumed too so the help stays
-        // modal.
-        if self.help_open {
-            match key.code {
-                KeyCode::Char('?') | KeyCode::Esc => self.help_open = false,
-                _ => {}
-            }
+        if self.consume_help_key(key) {
             return;
         }
+        let overview_action = match &mut self.mode {
+            AppMode::Overview(session) => Some(handle_overview_key(session, key)),
+            _ => None,
+        };
+        if let Some(action) = overview_action {
+            self.apply_overview_key_action(action);
+            return;
+        }
+
         match &mut self.mode {
-            AppMode::Overview(session) => {
-                let is_multi = session.is_multi();
-                let pinned = session.pinned_single();
-                let state = session.active_state_mut();
-                match key.code {
-                    KeyCode::Char('?') => self.help_open = true,
-                    KeyCode::Char('q') if state.preview_open() => state.toggle_preview(),
-                    KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                    KeyCode::Down | KeyCode::Char('j') => state.select_next(),
-                    KeyCode::Up | KeyCode::Char('k') => state.select_previous(),
-                    KeyCode::Enter => state.toggle_preview(),
-                    KeyCode::PageDown if state.preview_open() => state.scroll_preview_down(),
-                    KeyCode::PageUp if state.preview_open() => state.scroll_preview_up(),
-                    KeyCode::PageDown => state.page_selection_down(),
-                    KeyCode::PageUp => state.page_selection_up(),
-                    KeyCode::Home => state.select_first(),
-                    KeyCode::End => state.select_last(),
-                    KeyCode::Char('a') => state.toggle_scope(),
-                    KeyCode::Right if state.preview_open() => state.scroll_preview_right(),
-                    KeyCode::Left if state.preview_open() => state.scroll_preview_left(),
-                    KeyCode::Char('w') if state.preview_open() => state.toggle_preview_wrap(),
-                    KeyCode::Right if is_multi => {
-                        let switch = session.cycle_next();
-                        self.pending_switch = Some(switch);
-                    }
-                    KeyCode::Left if is_multi => {
-                        let switch = session.cycle_prev();
-                        self.pending_switch = Some(switch);
-                    }
-                    KeyCode::Char('P') if is_multi && !pinned => {
-                        self.pending_overlay_open = true;
-                    }
-                    _ => {}
-                }
-            }
+            AppMode::Overview(_) => {}
             AppMode::Picker(state) => match key.code {
                 KeyCode::Char('?') => self.help_open = true,
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
@@ -1041,29 +1013,8 @@ impl App {
                 KeyCode::Home => state.select_first(),
                 KeyCode::End => state.select_last(),
                 KeyCode::Enter => {
-                    let Some(selected) = state.selected().cloned() else {
-                        return;
-                    };
-                    state.clear_error();
-                    let scan_root = state.scan_root().to_path_buf();
-                    let workflows = state.workflows().to_vec();
-                    let initial_active = state.selected_index();
-                    match OverviewState::load(selected.root.clone()) {
-                        Ok(overview) => {
-                            let session = OverviewSession::from_discovery(
-                                scan_root,
-                                workflows,
-                                initial_active,
-                                overview,
-                            );
-                            self.mode = AppMode::Overview(session);
-                        }
-                        Err(err) => {
-                            state.set_error(format!(
-                                "failed to load {}: {err}",
-                                selected.root.display()
-                            ));
-                        }
+                    if let Some(next_mode) = picker_enter_transition(state) {
+                        self.mode = next_mode;
                     }
                 }
                 _ => {}
@@ -1112,6 +1063,127 @@ impl App {
                 }
                 _ => {}
             },
+        }
+    }
+
+    fn consume_help_key(&mut self, key: KeyEvent) -> bool {
+        if !self.help_open {
+            return false;
+        }
+        if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc) {
+            self.help_open = false;
+        }
+        true
+    }
+
+    fn apply_overview_key_action(&mut self, action: OverviewKeyAction) {
+        match action {
+            OverviewKeyAction::None => {}
+            OverviewKeyAction::OpenHelp => self.help_open = true,
+            OverviewKeyAction::Quit => self.should_quit = true,
+            OverviewKeyAction::Switch(workflow_switch) => {
+                self.pending_switch = Some(workflow_switch);
+            }
+            OverviewKeyAction::OpenPickerOverlay => {
+                self.pending_overlay_open = true;
+            }
+        }
+    }
+}
+
+enum OverviewKeyAction {
+    None,
+    OpenHelp,
+    Quit,
+    Switch(WorkflowSwitch),
+    OpenPickerOverlay,
+}
+
+fn handle_overview_key(session: &mut OverviewSession, key: KeyEvent) -> OverviewKeyAction {
+    let is_multi = session.is_multi();
+    let pinned = session.pinned_single();
+    let state = session.active_state_mut();
+    match key.code {
+        KeyCode::Char('?') => OverviewKeyAction::OpenHelp,
+        KeyCode::Char('q') if state.preview_open() => {
+            state.toggle_preview();
+            OverviewKeyAction::None
+        }
+        KeyCode::Char('q') | KeyCode::Esc => OverviewKeyAction::Quit,
+        KeyCode::Down | KeyCode::Char('j') => {
+            state.select_next();
+            OverviewKeyAction::None
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            state.select_previous();
+            OverviewKeyAction::None
+        }
+        KeyCode::Enter => {
+            state.toggle_preview();
+            OverviewKeyAction::None
+        }
+        KeyCode::PageDown if state.preview_open() => {
+            state.scroll_preview_down();
+            OverviewKeyAction::None
+        }
+        KeyCode::PageUp if state.preview_open() => {
+            state.scroll_preview_up();
+            OverviewKeyAction::None
+        }
+        KeyCode::PageDown => {
+            state.page_selection_down();
+            OverviewKeyAction::None
+        }
+        KeyCode::PageUp => {
+            state.page_selection_up();
+            OverviewKeyAction::None
+        }
+        KeyCode::Home => {
+            state.select_first();
+            OverviewKeyAction::None
+        }
+        KeyCode::End => {
+            state.select_last();
+            OverviewKeyAction::None
+        }
+        KeyCode::Char('a') => {
+            state.toggle_scope();
+            OverviewKeyAction::None
+        }
+        KeyCode::Right if state.preview_open() => {
+            state.scroll_preview_right();
+            OverviewKeyAction::None
+        }
+        KeyCode::Left if state.preview_open() => {
+            state.scroll_preview_left();
+            OverviewKeyAction::None
+        }
+        KeyCode::Char('w') if state.preview_open() => {
+            state.toggle_preview_wrap();
+            OverviewKeyAction::None
+        }
+        KeyCode::Right if is_multi => OverviewKeyAction::Switch(session.cycle_next()),
+        KeyCode::Left if is_multi => OverviewKeyAction::Switch(session.cycle_prev()),
+        KeyCode::Char('P') if is_multi && !pinned => OverviewKeyAction::OpenPickerOverlay,
+        _ => OverviewKeyAction::None,
+    }
+}
+
+fn picker_enter_transition(state: &mut PickerState) -> Option<AppMode> {
+    let selected = state.selected().cloned()?;
+    state.clear_error();
+    let scan_root = state.scan_root().to_path_buf();
+    let workflows = state.workflows().to_vec();
+    let initial_active = state.selected_index();
+    match OverviewState::load(selected.root.clone()) {
+        Ok(overview) => {
+            let session =
+                OverviewSession::from_discovery(scan_root, workflows, initial_active, overview);
+            Some(AppMode::Overview(session))
+        }
+        Err(err) => {
+            state.set_error(format!("failed to load {}: {err}", selected.root.display()));
+            None
         }
     }
 }
@@ -1278,10 +1350,8 @@ mod tests {
 
     #[test]
     fn scroll_preview_down_is_capped_at_max_scroll() {
-        let mut state = super::OverviewState::from_snapshot(
-            PathBuf::from("workflow"),
-            snapshot_with_items(1),
-        );
+        let mut state =
+            super::OverviewState::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(1));
         state.preview_open = true;
         // Simulate render having set max_scroll = 10.
         state.max_preview_scroll.set(10);
@@ -1298,10 +1368,8 @@ mod tests {
 
     #[test]
     fn scroll_preview_up_responds_immediately_after_capped_down() {
-        let mut state = super::OverviewState::from_snapshot(
-            PathBuf::from("workflow"),
-            snapshot_with_items(1),
-        );
+        let mut state =
+            super::OverviewState::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(1));
         state.preview_open = true;
         state.max_preview_scroll.set(10);
 

@@ -44,68 +44,54 @@ pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
 
         let workflows = discovery::discover_workflows(&explicit)
             .with_context(|| format!("failed to scan {}", explicit.display()))?;
-        return match workflows.len() {
-            0 => {
-                let app = App::load(explicit.clone()).with_context(|| {
-                    format!("failed to load workflow directory {}", explicit.display())
-                })?;
-                Ok(DecideOutcome::Overview(app))
-            }
-            1 => {
-                let only = workflows.into_iter().next().unwrap();
-                let state = app::OverviewState::load(only.root.clone()).with_context(|| {
-                    format!("failed to load workflow directory {}", only.root.display())
-                })?;
-                let session = app::OverviewSession::single(state, false);
-                Ok(DecideOutcome::Overview(App::from_session(session)))
-            }
-            _ => {
-                let first = workflows
-                    .first()
-                    .expect("non-empty workflow list")
-                    .root
-                    .clone();
-                let state = app::OverviewState::load(first.clone()).with_context(|| {
-                    format!("failed to load workflow directory {}", first.display())
-                })?;
-                let scan_root = explicit.canonicalize().unwrap_or_else(|_| explicit.clone());
-                let session =
-                    app::OverviewSession::from_discovery(scan_root, workflows, 0, state);
-                Ok(DecideOutcome::Overview(App::from_session(session)))
-            }
-        };
+        if workflows.is_empty() {
+            let app = App::load(explicit.clone()).with_context(|| {
+                format!("failed to load workflow directory {}", explicit.display())
+            })?;
+            return Ok(DecideOutcome::Overview(app));
+        }
+
+        let scan_root = explicit.canonicalize().unwrap_or_else(|_| explicit.clone());
+        return overview_from_discovered_workflows(scan_root, workflows);
     }
 
     let scan_root = discovery::resolve_scan_root(cwd);
     let workflows = discovery::discover_workflows(&scan_root)
         .with_context(|| format!("failed to scan {}", scan_root.display()))?;
 
-    match workflows.len() {
-        0 => Ok(DecideOutcome::ZeroWorkflows { scan_root }),
-        1 => {
-            let only = workflows.into_iter().next().unwrap();
-            let state = app::OverviewState::load(only.root.clone()).with_context(|| {
-                format!("failed to load workflow directory {}", only.root.display())
-            })?;
-            // Discovery path with exactly one workflow: not `-w` pinned, but
-            // is_multi() is false because len() == 1, so cycle/P keys stay
-            // inert per the design.
-            let session = app::OverviewSession::single(state, false);
-            Ok(DecideOutcome::Overview(App::from_session(session)))
-        }
-        _ => {
-            let first = workflows
-                .first()
-                .expect("non-empty workflow list")
-                .root
-                .clone();
-            let state = app::OverviewState::load(first.clone()).with_context(|| {
-                format!("failed to load workflow directory {}", first.display())
-            })?;
-            let session = app::OverviewSession::from_discovery(scan_root, workflows, 0, state);
-            Ok(DecideOutcome::Overview(App::from_session(session)))
-        }
+    if workflows.is_empty() {
+        return Ok(DecideOutcome::ZeroWorkflows { scan_root });
     }
+    overview_from_discovered_workflows(scan_root, workflows)
+}
+
+fn overview_from_discovered_workflows(
+    scan_root: PathBuf,
+    workflows: Vec<discovery::DiscoveredWorkflow>,
+) -> anyhow::Result<DecideOutcome> {
+    if workflows.len() == 1 {
+        let only = workflows.into_iter().next().expect("one workflow");
+        let state = load_overview_state(&only.root)?;
+        // Discovery path with exactly one workflow: not `-w` pinned, but
+        // is_multi() is false because len() == 1, so cycle/P keys stay
+        // inert per the design.
+        let session = app::OverviewSession::single(state, false);
+        return Ok(DecideOutcome::Overview(App::from_session(session)));
+    }
+
+    let first = workflows
+        .first()
+        .expect("non-empty workflow list")
+        .root
+        .clone();
+    let state = load_overview_state(&first)?;
+    let session = app::OverviewSession::from_discovery(scan_root, workflows, 0, state);
+    Ok(DecideOutcome::Overview(App::from_session(session)))
+}
+
+fn load_overview_state(root: &Path) -> anyhow::Result<app::OverviewState> {
+    app::OverviewState::load(root.to_path_buf())
+        .with_context(|| format!("failed to load workflow directory {}", root.display()))
 }
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {

@@ -72,7 +72,13 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
 
     let definition = &state.snapshot().definition;
     let lines = match tier {
-        WidthTier::Wide => render_wide(stages, &counts, active_stage.as_deref(), &glyphs, definition),
+        WidthTier::Wide => render_wide(
+            stages,
+            &counts,
+            active_stage.as_deref(),
+            &glyphs,
+            definition,
+        ),
         WidthTier::Narrow => render_narrow(stages, &counts, active_stage.as_deref(), &glyphs),
         WidthTier::VeryNarrow => {
             render_very_narrow(stages, &counts, active_stage.as_deref(), &glyphs)
@@ -331,16 +337,12 @@ fn render_wide<'a>(
 
     let arc_style = Style::default().fg(Color::Red);
     for (arc_line, ann_line) in arc_pairs {
-        let arc_pad = uniform_width.saturating_sub(visible_width(&arc_line));
-        let ann_pad = uniform_width.saturating_sub(visible_width(&ann_line));
-        lines.push(Line::from(vec![
-            Span::styled(arc_line, arc_style),
-            Span::raw(" ".repeat(arc_pad)),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled(ann_line, arc_style),
-            Span::raw(" ".repeat(ann_pad)),
-        ]));
+        lines.extend(padded_feedback_lines(
+            arc_line,
+            ann_line,
+            uniform_width,
+            arc_style,
+        ));
     }
     if arcs.len() > MAX_FEEDBACK_ROWS {
         let overflow = arcs.len() - MAX_FEEDBACK_ROWS;
@@ -348,6 +350,26 @@ fn render_wide<'a>(
     }
 
     lines
+}
+
+fn padded_feedback_lines<'a>(
+    arc_line: String,
+    ann_line: String,
+    uniform_width: usize,
+    style: Style,
+) -> [Line<'a>; 2] {
+    [
+        padded_styled_line(arc_line, uniform_width, style),
+        padded_styled_line(ann_line, uniform_width, style),
+    ]
+}
+
+fn padded_styled_line<'a>(text: String, uniform_width: usize, style: Style) -> Line<'a> {
+    let padding = uniform_width.saturating_sub(visible_width(&text));
+    Line::from(vec![
+        Span::styled(text, style),
+        Span::raw(" ".repeat(padding)),
+    ])
 }
 
 fn build_counts_line(cols: &[ColumnLayout]) -> String {
@@ -423,7 +445,10 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
             if let Some(t) = target_idx {
                 let source_col = cols[i].name_center;
                 let target_col = cols[t].name_center;
-                arcs.push(FeedbackArc { source_col, target_col });
+                arcs.push(FeedbackArc {
+                    source_col,
+                    target_col,
+                });
             }
         }
     }
@@ -434,11 +459,7 @@ fn collect_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> V
 /// carries the vertical markers and the centred `reject` label; the bottom
 /// line draws the rounded arc.  Both strings have the same width so the
 /// caller can pad them to a uniform width for centred alignment.
-fn render_feedback_row(
-    source_col: usize,
-    target_col: usize,
-    g: &GlyphSet,
-) -> (String, String) {
+fn render_feedback_row(source_col: usize, target_col: usize, g: &GlyphSet) -> (String, String) {
     // Two-line feedback rendering:
     //   line 1:  ↑   reject   │     (↑ at target, │ at source, label centred)
     //   line 2:  ╰────────────╯     (rounded corners with horizontal fill)
@@ -485,7 +506,12 @@ fn render_feedback_row(
 }
 
 /// Build a single ribbon row for a slice of stages (used by render_narrow for 2-row split).
-fn build_narrow_row(stages: &[StageDefinition], counts: &[usize], _active: Option<&str>, g: &GlyphSet) -> String {
+fn build_narrow_row(
+    stages: &[StageDefinition],
+    counts: &[usize],
+    _active: Option<&str>,
+    g: &GlyphSet,
+) -> String {
     let parts: Vec<String> = stages
         .iter()
         .enumerate()
@@ -523,22 +549,26 @@ fn render_narrow<'a>(
         lines.push(Line::from(row2));
     }
 
-    // Append textual feedback annotation line if any valid feedback edges.
-    let mut fb_parts: Vec<String> = Vec::new();
-    for stage in stages.iter() {
-        if let Some(target) = &stage.feedback_to {
-            if stages.iter().any(|s| &s.name == target) {
-                fb_parts.push(format!(
-                    "{} rollback on reject: {} {} {}",
-                    g.feedback, stage.name, g.narrow_arrow, target
-                ));
-            }
-        }
-    }
+    let fb_parts = feedback_annotations(stages, g);
     if !fb_parts.is_empty() {
         lines.push(Line::from(fb_parts.join(", ")));
     }
     lines
+}
+
+fn feedback_annotations(stages: &[StageDefinition], g: &GlyphSet) -> Vec<String> {
+    stages
+        .iter()
+        .filter_map(|stage| {
+            let target = stage.feedback_to.as_ref()?;
+            stages.iter().any(|s| &s.name == target).then(|| {
+                format!(
+                    "{} rollback on reject: {} {} {}",
+                    g.feedback, stage.name, g.narrow_arrow, target
+                )
+            })
+        })
+        .collect()
 }
 
 fn render_very_narrow<'a>(
@@ -695,8 +725,14 @@ mod tests {
         assert!(t.contains('x'), "missing stage name");
         assert!(t.contains('\u{25A0}'), "missing terminal glyph ■");
         // Must NOT contain gate ⚑ or worktree ⎇ (single-glyph rule).
-        assert!(!t.contains('\u{2691}'), "gate glyph ⚑ must not appear when initial is set");
-        assert!(!t.contains('\u{2387}'), "worktree glyph ⎇ must not appear when initial is set");
+        assert!(
+            !t.contains('\u{2691}'),
+            "gate glyph ⚑ must not appear when initial is set"
+        );
+        assert!(
+            !t.contains('\u{2387}'),
+            "worktree glyph ⎇ must not appear when initial is set"
+        );
         // ▶ must precede 'x' which must precede ■.
         let ini = t.find('\u{25B6}').unwrap();
         let nm = t.find('x').unwrap();
@@ -799,8 +835,14 @@ mod tests {
         assert!(rendered.contains("gamma"));
         assert!(!rendered.contains("design"));
         assert!(!rendered.contains("review"));
-        assert!(!rendered.contains("\u{2570}"), "no arc corner for topology without feedback edges");
-        assert!(!rendered.contains("reject"), "no reject label for topology without feedback edges");
+        assert!(
+            !rendered.contains("\u{2570}"),
+            "no arc corner for topology without feedback edges"
+        );
+        assert!(
+            !rendered.contains("reject"),
+            "no reject label for topology without feedback edges"
+        );
     }
 
     #[test]
@@ -922,7 +964,10 @@ mod tests {
         assert!(!rendered.contains('\u{25A0}'), "Unicode terminal leaked");
         assert!(!rendered.contains('\u{2691}'), "Unicode gate leaked");
         assert!(!rendered.contains('\u{2387}'), "Unicode worktree leaked");
-        assert!(!rendered.contains('\u{2191}'), "Unicode arc up-arrow leaked");
+        assert!(
+            !rendered.contains('\u{2191}'),
+            "Unicode arc up-arrow leaked"
+        );
         assert!(!rendered.contains('\u{2570}'), "Unicode arc corner leaked");
         // Note: ratatui's block borders use │ and ─ regardless of mode, so we
         // don't assert their absence here.
@@ -965,10 +1010,10 @@ mod tests {
         let vocab: &[char] = &['\u{25B6}', '\u{2387}', '\u{2691}', '\u{25A0}'];
         // Build stages covering all roles.
         let stages = vec![
-            stage("start", true, false, false, false, None),  // initial → ▶
-            stage("check", false, false, true, false, None),   // gate → ⚑
-            stage("work", false, false, false, true, None),    // worktree → ⎇
-            stage("done", false, true, false, false, None),    // terminal → ■ suffix
+            stage("start", true, false, false, false, None), // initial → ▶
+            stage("check", false, false, true, false, None), // gate → ⚑
+            stage("work", false, false, false, true, None),  // worktree → ⎇
+            stage("done", false, true, false, false, None),  // terminal → ■ suffix
         ];
         for s in &stages {
             let text = build_node_text(s, &g);
@@ -999,7 +1044,7 @@ mod tests {
             .expect("draw");
         let buffer = terminal.backend().buffer().clone();
         // Find cells containing arc corner chars ╰ or ╯ and verify they are red.
-        let arc_left = '\u{2570}';  // ╰
+        let arc_left = '\u{2570}'; // ╰
         let arc_right = '\u{256F}'; // ╯
         let mut found_arc = false;
         for y in 0..height {
@@ -1019,7 +1064,10 @@ mod tests {
                 }
             }
         }
-        assert!(found_arc, "expected to find arc corner chars ╰/╯ in the rendered output");
+        assert!(
+            found_arc,
+            "expected to find arc corner chars ╰/╯ in the rendered output"
+        );
     }
 
     #[test]
@@ -1042,7 +1090,10 @@ mod tests {
             .flatten()
             .filter(|c| matches!(c, Color::Rgb(_, _, _)))
             .count();
-        assert!(rgb_count >= 3, "expected at least 3 Rgb-colored cells in DAG, found {rgb_count}");
+        assert!(
+            rgb_count >= 3,
+            "expected at least 3 Rgb-colored cells in DAG, found {rgb_count}"
+        );
     }
 
     #[test]
@@ -1069,17 +1120,41 @@ mod tests {
         );
         // First row must contain the first-half stage names (alpha, beta, gamma).
         let row1: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(row1.contains("alpha"), "row 1 must contain 'alpha'; got: {row1:?}");
-        assert!(row1.contains("beta"), "row 1 must contain 'beta'; got: {row1:?}");
-        assert!(row1.contains("gamma"), "row 1 must contain 'gamma'; got: {row1:?}");
+        assert!(
+            row1.contains("alpha"),
+            "row 1 must contain 'alpha'; got: {row1:?}"
+        );
+        assert!(
+            row1.contains("beta"),
+            "row 1 must contain 'beta'; got: {row1:?}"
+        );
+        assert!(
+            row1.contains("gamma"),
+            "row 1 must contain 'gamma'; got: {row1:?}"
+        );
         // Second row must contain the second-half stage names (delta, epsilon, done).
         let row2: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(row2.contains("delta"), "row 2 must contain 'delta'; got: {row2:?}");
-        assert!(row2.contains("epsilon"), "row 2 must contain 'epsilon'; got: {row2:?}");
-        assert!(row2.contains("done"), "row 2 must contain 'done'; got: {row2:?}");
+        assert!(
+            row2.contains("delta"),
+            "row 2 must contain 'delta'; got: {row2:?}"
+        );
+        assert!(
+            row2.contains("epsilon"),
+            "row 2 must contain 'epsilon'; got: {row2:?}"
+        );
+        assert!(
+            row2.contains("done"),
+            "row 2 must contain 'done'; got: {row2:?}"
+        );
         // Row 1 must NOT contain second-half names (they must be on row 2).
-        assert!(!row1.contains("delta"), "row 1 must not contain 'delta' (should be on row 2)");
-        assert!(!row1.contains("epsilon"), "row 1 must not contain 'epsilon' (should be on row 2)");
+        assert!(
+            !row1.contains("delta"),
+            "row 1 must not contain 'delta' (should be on row 2)"
+        );
+        assert!(
+            !row1.contains("epsilon"),
+            "row 1 must not contain 'epsilon' (should be on row 2)"
+        );
     }
 
     // --- helpers ---
