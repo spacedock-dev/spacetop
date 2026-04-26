@@ -193,3 +193,16 @@ No other files need to change.
 ### Summary
 
 The plan requires two file changes: `Cargo.toml` gains a sentry dev-dependency with the `test` feature to unlock `sentry::test::with_captured_events`, and `src/main.rs` has line 28 replaced with a result-binding block that calls `capture_error` only when `_sentry.is_some()`. Three unit tests cover AC-1 (error captured), AC-2 (no capture when guard is None), and AC-3 (no capture on success), all runnable with `cargo test` without a live Sentry DSN.
+
+## Stage Report: implement
+
+- DONE: src/main.rs binds run() result and calls sentry::capture_error() when _sentry.is_some() and result is Err.
+  Commit 06c2219 — replaced bare `spacetop::run(cli)` on line 28 with a result-binding block guarded by `_sentry.is_some()`.
+- DONE: cargo test passes with unit tests covering AC-1 (error captured), AC-2 (no capture in debug/no-DSN), AC-3 (no capture on success).
+  4/4 tests in main.rs pass: `capture_error_on_run_failure`, `no_capture_on_run_success`, `no_capture_when_sentry_not_initialised`, `dev_build_does_not_init_sentry`.
+- DONE: Full cargo test suite passes.
+  162 tests total (149 lib + 4 main.rs + 8 integration + 1 ignored) — all pass, 0 failed.
+
+### Summary
+
+Added sentry dev-dependency with the `test` feature in `Cargo.toml` and replaced the bare `spacetop::run(cli)` call in `src/main.rs` with a result-binding block that calls `sentry::capture_error()` only when `_sentry.is_some()`. Three new unit tests using `sentry::test::with_captured_events` verify all three acceptance criteria without a live DSN. The full test suite passes with no regressions.
