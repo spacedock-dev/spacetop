@@ -477,3 +477,16 @@ Added `phase_col_width()` to compute the phase column width dynamically from the
 ### Summary
 
 All three cycle 4 checklist items confirmed passing. Phase column width is computed dynamically by `phase_col_width()` (no hardcoded constant), `phase_col()` accepts an explicit width parameter, and three new tests cover the uniform-short, mixed, and long-clamped boundary cases. The full 173-test suite is green with no regressions.
+
+## Stage Report: review (cycle 5)
+
+- DONE: Trailing spacer span logic is correct — fills exactly the remaining width with BG2 on selected rows, nothing on unselected rows.
+  `build_task_list_items` (lines 557–573): `if is_selected` guard wraps the spacer; `title_display_len` is capped at `list_width - pcw - 10` so `trailing >= 1` always when title fills the max; `used = 2 + pcw + 1 + 4 + 2 + title_display_len`; spacer = `list_width - used` spaces styled `bg(BG2)`. Unselected rows never enter the block. Arithmetic verified: fixed overhead is `pcw + 9`; with max-length title, trailing = 1 (guaranteed positive). Commit a3a6ddf.
+- DONE: selected_row_fill_covers_full_pane_width test asserts the rightmost list cell has BG2 on the selected row.
+  Test at `src/ui/mod.rs:1701–1731`: renders to 80x24 `TestBackend`, locates selected row via `▸` glyph, checks `buffer[(width/2 - 1, sel_row)].style().bg == Some(Color::Rgb(40, 52, 84))`. Covers split-pane right edge (list occupies left half). Commit a3a6ddf.
+- DONE: 174/174 suite green; nothing regressed.
+  `cargo test` on branch `spacedock-ensign/028-tui-list-view-refinement`: 174 passed, 0 failed, 1 ignored (watcher integration test). One new test added relative to cycle 4 (173 → 174).
+
+### Summary
+
+Cycle 4's trailing spacer fix is correct. `list_width` flows from `render_task_list` via `inner.width` (the block's inner rect), `build_task_list_items` receives it as a parameter, and the trailing spacer is computed only for the selected row, filling exactly `list_width - used` columns with `BG2` background. The width arithmetic is sound: fixed overhead `pcw + 9` plus `title_display_len` (capped to guarantee at least 1 trailing space); unselected rows receive no spacer. The `selected_row_fill_covers_full_pane_width` test exercises the right edge of the list pane in split view, asserting `Rgb(40, 52, 84)` at the boundary column. 174/174 tests pass.
