@@ -10,7 +10,7 @@ score: 0.8
 worktree: .worktrees/spacedock-ensign-021-scan-discovery-io-error
 issue:
 pr: #11
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 `spacetop` crashes with an unhelpful discovery IO error when run from a directory where the expected workflow path does not exist on disk. The user sees a raw OS error (2: No such file or directory) rather than a clear message about what path was scanned and what to do next.
