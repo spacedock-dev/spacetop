@@ -1,7 +1,7 @@
 ---
 id: "031"
 title: Refactor for readable Rust code
-status: implement
+status: review
 source: user request 2026-04-26
 started: 2026-04-26T07:26:44Z
 completed:
