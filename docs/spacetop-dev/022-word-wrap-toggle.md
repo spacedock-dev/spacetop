@@ -1,13 +1,13 @@
 ---
 id: "022"
 title: "Add word-wrap toggle key in the preview pane"
-status: plan
+status: implement
 source: feature request
 started: 2026-04-26T04:32:47Z
 completed:
 verdict:
 score: 0.6
-worktree:
+worktree: .worktrees/spacedock-ensign-022-word-wrap-toggle
 issue:
 pr:
 ---
