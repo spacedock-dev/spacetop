@@ -1,16 +1,17 @@
 ---
 id: "027"
 title: "Code block background does not fill full pane width in wrap mode"
-status: review
+status: done
 source: bug report
 started: 2026-04-26T04:47:04Z
-completed:
-verdict:
+completed: 2026-04-26T05:15:14Z
+verdict: PASSED
 score: 0.7
-worktree: .worktrees/spacedock-ensign-027-wrap-mode-code-block-width
+worktree: 
 issue:
 pr: #16
-mod-block: merge:pr-merge
+mod-block: 
+archived: 2026-04-26T05:15:14Z
 ---
 
 When word-wrap mode is enabled in the preview pane (task 022, key `w`), fenced code blocks render with a background that only spans the width of the code text rather than the full pane width. In no-wrap mode code blocks correctly fill the available width. The truncated background makes code blocks visually inconsistent and harder to read.
