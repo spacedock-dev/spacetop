@@ -361,3 +361,12 @@ Each step has a `cargo test` verification command so work can be committed and t
 ### Summary
 
 The plan breaks implementation into 6 independently testable steps mapped to specific functions in `src/ui/mod.rs`, `src/ui/graph.rs`, and `src/domain/mod.rs`. The single `stage_tag()` call site in `build_task_list_items` is explicitly identified and replaced with a `phase_col()` helper preserving user casing in a 12-char fixed column. All 6 ACs are covered by named snapshot tests using `ratatui::backend::TestBackend`, runnable headless with `cargo test`.
+
+### Feedback Cycles
+
+**Cycle 1** — review rejected implement. Findings routed back to implement.
+
+Defects:
+1. AC-5 not implemented — `render_narrow` unchanged; no 2-row DAG wrap at ~80 columns; `narrow_dag_wraps_to_two_rows` test missing.
+2. Named-color fallback still present in `stage_color()` (src/domain/mod.rs lines 67–102); checklist said all named-color fallbacks gone.
+3. AC-6 glyph test trivially-true — `task_row_no_glyphs_in_phase_col` never scans the rendered buffer; only checks helper in isolation.
