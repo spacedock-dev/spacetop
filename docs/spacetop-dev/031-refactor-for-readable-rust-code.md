@@ -9,7 +9,7 @@ verdict:
 score: 0.62
 worktree: .worktrees/spacedock-ensign-031-refactor-for-readable-rust-code
 issue:
-pr:
+pr: #20
 mod-block: merge:pr-merge
 ---
 
