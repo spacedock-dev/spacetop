@@ -188,7 +188,10 @@ mod tests {
 
     #[test]
     fn nonexistent_root_returns_empty_not_error() {
-        let result = discover_workflows(Path::new("/tmp/spacetop-nonexistent-test-dir-xyzzy"));
+        let tmp = tempdir().unwrap();
+        let missing = tmp.path().join("definitely-does-not-exist");
+
+        let result = discover_workflows(&missing);
         assert!(result.is_ok(), "expected Ok, got {result:?}");
         assert!(result.unwrap().is_empty());
     }
