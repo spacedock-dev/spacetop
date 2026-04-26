@@ -423,3 +423,16 @@ All three reviewer defects fixed. `render_narrow` now produces a 2-row DAG split
 ### Summary
 
 All four checklist items confirmed passing. `render_narrow` produces a genuine 2-row split; `stage_color()` has no named-color fallback remaining; `task_row_no_glyphs_in_phase_col` performs a real buffer scan rather than a trivially-true helper check; and the 170-test suite is fully green. No further defects identified.
+
+## Stage Report: implement (cycle 3)
+
+- DONE: Selected row background changed from BG2 `Rgb(41, 45, 62)` to selection color `Rgb(40, 52, 84)`.
+  `BG2` constant in `src/ui/mod.rs` updated to `Color::Rgb(40, 52, 84)` with updated comment. Commit 4d850e4.
+- DONE: Selected row title span is bold.
+  `title_style` branch for `is_selected` adds `Modifier::BOLD`; archived rows remain DIM, unselected rows unchanged. Commit 4d850e4.
+- DONE: Existing selected-row snapshot test updated to assert the new color; 170/170 suite passes.
+  `task_list_uses_full_pane_width_and_ratatui_list_selection` updated to assert `Rgb(40, 52, 84)` and `BOLD`; `cargo test` confirms 170/170 pass.
+
+### Summary
+
+Replaced the selected-row background from `Rgb(41, 45, 62)` (15 brightness units above terminal bg) to `Rgb(40, 52, 84)` (Tokyo Night visual-mode selection blue), providing a clear blue-tint contrast. The selected row title span now receives `Modifier::BOLD` for additional visual pop. The snapshot test was updated to assert both the new background color and the bold modifier; all 170 tests pass.
