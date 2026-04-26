@@ -9,7 +9,7 @@ verdict:
 score: 0.75
 worktree: .worktrees/spacedock-ensign-024-sentry-integration
 issue:
-pr:
+pr: #12
 mod-block: merge:pr-merge
 ---
 
