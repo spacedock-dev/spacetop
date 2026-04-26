@@ -1,13 +1,13 @@
 ---
 id: "028"
 title: "Refine TUI list view — Tokyo Night palette, DAG header, task row layout"
-status: plan
+status: implement
 source: feature request
 started: 2026-04-26T05:37:33Z
 completed:
 verdict:
 score: 0.85
-worktree:
+worktree: .worktrees/spacedock-ensign-028-tui-list-view-refinement
 issue:
 pr:
 ---
