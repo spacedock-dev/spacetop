@@ -262,3 +262,16 @@ cargo test
 ### Summary
 
 The plan is a two-pass render call in `src/ui/mod.rs`: a first `render_markdown_lines` call with `body_inner.width` resolves the scrollbar decision and `body_area`, then a conditional second call with `body_area.width` produces correctly-padded code block lines when the scrollbar narrows the render area by 1 column. Three new tests cover AC-1 (wrap mode full-width background), AC-3 (long wrapped code line full-width background), and AC-2 is verified by the two existing tests that must continue to pass.
+
+## Stage Report: implement
+
+- DONE: render_markdown_lines is called with body_area.width when scrollbar narrows the render area, ensuring code block padding matches the actual render width.
+  Two-pass implementation in src/ui/mod.rs: first pass with body_inner.width decides show_scrollbar/body_area; second pass with body_area.width re-renders only when show_scrollbar is true. Commit 6577788.
+- DONE: New AC-1 and AC-3 snapshot tests pass; existing AC-2 tests unchanged.
+  code_block_background_fills_pane_width_in_wrap_mode and code_block_long_line_both_wrapped_rows_have_full_background both pass; render_markdown_lines_multiline_code_block_emits_one_line_per_source_line and preview_renders_multiline_code_block_on_distinct_rows unchanged and pass.
+- DONE: Full cargo test suite passes.
+  156 lib + 4 main + 8 integration tests pass (168 total); 0 failed.
+
+### Summary
+
+Applied the two-pass render_markdown_lines approach from the plan directly in src/ui/mod.rs: the first call with body_inner.width drives the scrollbar/body_area decision, and the second call (only when show_scrollbar is true) uses body_area.width to pad code block lines to the exact render width. Added AC-1 and AC-3 tests that assert DarkGray background fills every cell of the preview content area in wrap mode, including both visual rows of a wrapped long code line. The test boundary was adjusted to preview_start = width/2+1 to skip the LEFT border character. All 168 tests pass.
