@@ -1,16 +1,17 @@
 ---
 id: "024"
 title: "Integrate Sentry for error reporting with dev/release environment mode"
-status: review
+status: done
 source: feature request
 started: 2026-04-26T03:49:44Z
-completed:
-verdict:
+completed: 2026-04-26T04:00:23Z
+verdict: PASSED
 score: 0.75
-worktree: .worktrees/spacedock-ensign-024-sentry-integration
+worktree: 
 issue:
 pr: #12
 mod-block: 
+archived: 2026-04-26T04:00:23Z
 ---
 
 Spacetop currently surfaces errors only through the terminal UI or process exit. Adding Sentry gives us automatic error capture in production releases while keeping dev sessions (cargo run / debug builds) free from noise.
