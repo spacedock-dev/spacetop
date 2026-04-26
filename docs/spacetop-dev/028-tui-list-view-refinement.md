@@ -9,7 +9,7 @@ verdict:
 score: 0.85
 worktree: .worktrees/spacedock-ensign-028-tui-list-view-refinement
 issue:
-pr:
+pr: #17
 mod-block: merge:pr-merge
 ---
 
