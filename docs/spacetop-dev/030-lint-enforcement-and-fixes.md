@@ -9,7 +9,7 @@ verdict:
 score: 0.9
 worktree: .worktrees/spacedock-ensign-030-lint-enforcement-and-fixes
 issue:
-pr:
+pr: #19
 mod-block: merge:pr-merge
 ---
 
