@@ -86,6 +86,11 @@ pub fn discover_workflows(root: &Path) -> Result<Vec<DiscoveredWorkflow>, Discov
                     if io_err.kind() == io::ErrorKind::NotFound && depth == 0 {
                         return Ok(vec![]);
                     }
+                    // Sub-entry disappeared mid-walk (broken symlink, concurrent delete)
+                    // — skip and continue rather than aborting the whole scan.
+                    if io_err.kind() == io::ErrorKind::NotFound {
+                        continue;
+                    }
                     return Err(DiscoveryError::Io(io_err));
                 }
                 continue;
@@ -333,6 +338,39 @@ mod tests {
 
         let found = discover_workflows(root).unwrap();
         assert_eq!(found.len(), 2, "expected 2 workflows, got {found:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn broken_symlink_in_subtree_is_skipped_not_fatal() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempdir().unwrap();
+        let root = tmp.path();
+        // A real workflow so we can confirm the walk completes and finds it.
+        write_workflow_readme(&root.join("docs/real"), "Real");
+        // Broken symlink: target does not exist.
+        symlink(root.join("nonexistent-target"), root.join("docs/broken-link")).unwrap();
+
+        let result = discover_workflows(root);
+        assert!(result.is_ok(), "broken symlink must not be fatal, got {result:?}");
+        let found = result.unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].title.as_deref(), Some("Real"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permission_denied_on_root_surfaces_as_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("locked");
+        fs::create_dir_all(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let result = discover_workflows(&root);
+        // Restore permissions before asserting so tempdir cleanup succeeds.
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(result.is_err(), "PermissionDenied on root must return Err, got {result:?}");
     }
 
     #[cfg(unix)]
