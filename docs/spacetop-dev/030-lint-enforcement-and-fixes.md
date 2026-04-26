@@ -1,7 +1,7 @@
 ---
 id: "030"
 title: "Add lint enforcement to CLAUDE.md/AGENTS.md and fix all clippy errors"
-status: implement
+status: review
 source: feature request
 started: 2026-04-26T07:07:02Z
 completed:
