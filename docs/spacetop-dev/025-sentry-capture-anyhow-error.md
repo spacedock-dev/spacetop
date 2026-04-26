@@ -1,7 +1,7 @@
 ---
 id: "025"
 title: "Sentry does not capture anyhow errors returned from main — only panics are reported"
-status: implement
+status: review
 source: bug report
 started: 2026-04-26T04:11:46Z
 completed:
