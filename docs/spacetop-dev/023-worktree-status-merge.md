@@ -184,3 +184,16 @@ cargo test 2>&1 | grep -E "^test result|FAILED|error"
 ### Summary
 
 The plan pins the fix to a single Rust match arm in `merge_worktree_items` (lines 335-337 of `src/parser.rs`), replacing the full `wt_item` substitution with a merged `WorkItem` struct literal that takes FO-owned frontmatter from `main_item` and `body` from `wt_item`. Three new unit tests (one per AC) are specified alongside the existing test helpers, and verification commands are provided for each acceptance criterion.
+
+## Stage Report: implement
+
+- DONE: merge_worktree_items at lines 335-337 of src/parser.rs is changed to produce a merged WorkItem keeping FO-owned fields from main and body from worktree.
+  Commit 38f1cdb: replaced `index.insert(slug, wt_item)` with a `WorkItem` struct literal taking `status`, `title`, `id`, `source`, `started`, `completed`, `verdict`, `score`, `worktree`, `issue`, `pr` from `main_item` and `path`+`body` from `wt_item`. Also updated the `worktree_version_wins_on_hash_mismatch` test to assert the new merged behavior.
+- DONE: Three new unit tests pass: worktree_status_from_main (AC-1), worktree_body_from_worktree (AC-2), no_worktree_unchanged (AC-3).
+  All three appear in `cargo test` output as `parser::tests::worktree_status_from_main ... ok`, `...worktree_body_from_worktree ... ok`, `...no_worktree_unchanged ... ok`.
+- DONE: Full cargo test suite passes.
+  148 passed; 0 failed (commit 38f1cdb).
+
+### Summary
+
+The `(Some(wt), Some(main)) if wt != main` arm in `merge_worktree_items` now builds a merged `WorkItem` instead of blindly inserting `wt_item`. FO-owned frontmatter fields (`status`, `title`, `id`, etc.) come from the main-branch item; `body` and `path` come from the worktree item. Three new tests (AC-1, AC-2, AC-3) validate this merged-view behavior, and the pre-existing `worktree_version_wins_on_hash_mismatch` test was updated to match the corrected semantics. All 148 tests pass.
