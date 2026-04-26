@@ -204,3 +204,16 @@ The plan makes a single minimal change to `src/discovery.rs` lines 83-89: add a 
 ### Summary
 
 Applied the planned minimal fix to `src/discovery.rs`: one new `if` block continuing on `NotFound` at depth >= 1, leaving the depth-0 empty-return and all other IO errors unchanged. Added two `#[cfg(unix)]` tests covering both acceptance criteria. Full suite (151 tests) passes. AC-3 is satisfied implicitly — the skipped error never reaches the anyhow chain that formats user-facing output.
+
+## Stage Report: review
+
+- DONE: NotFound at depth >= 1 is skipped (continue), not propagated — the 021 depth-0 path is preserved.
+  Lines 86-93 of src/discovery.rs: depth-0 guard (`NotFound && depth == 0 → Ok(vec![])`) unchanged; new `if io_err.kind() == NotFound { continue; }` at lines 91-93 catches all remaining NotFound at any depth.
+- DONE: PermissionDenied on root still surfaces as Err — hard errors are not swallowed.
+  After both NotFound guards, `return Err(DiscoveryError::Io(io_err))` handles all other IO errors; `permission_denied_on_root_surfaces_as_error` test (chmod 000 dir) asserts `result.is_err()` and passes.
+- DONE: New tests broken_symlink_in_subtree_is_skipped_not_fatal and permission_denied_on_root_surfaces_as_error pass; full suite passes.
+  151/151 tests pass (cargo test output: "test result: ok. 151 passed; 0 failed"); both named tests appear as `ok`.
+
+### Summary
+
+The implementation is correct and minimal: four production lines added to `src/discovery.rs` plus two `#[cfg(unix)]` test functions. All three checklist items are verified. The fix satisfies AC-3 implicitly — `NotFound` at depth >= 1 issues `continue` before it can reach `DiscoveryError::Io`, so the raw OS errno string never appears in user-facing output. Approved.
