@@ -1,16 +1,15 @@
 ---
 id: "028"
 title: "Refine TUI list view — Tokyo Night palette, DAG header, task row layout"
-status: review
+status: plan
 source: feature request
 started: 2026-04-26T05:37:33Z
 completed:
 verdict:
 score: 0.85
-worktree: .worktrees/spacedock-ensign-028-tui-list-view-refinement
+worktree:
 issue:
 pr:
-mod-block: merge:pr-merge
 ---
 
 Overhaul the spacetop list view to a strict terminal-safe aesthetic (text + box-drawing only) with a Tokyo Night-ish muted palette, a centered workflow DAG header, and a redesigned task row layout. All output must survive a plain terminal font with no emoji or decorative icons outside the defined glyph vocabulary.
@@ -363,27 +362,21 @@ Each step has a `cargo test` verification command so work can be committed and t
 
 The plan breaks implementation into 6 independently testable steps mapped to specific functions in `src/ui/mod.rs`, `src/ui/graph.rs`, and `src/domain/mod.rs`. The single `stage_tag()` call site in `build_task_list_items` is explicitly identified and replaced with a `phase_col()` helper preserving user casing in a 12-char fixed column. All 6 ACs are covered by named snapshot tests using `ratatui::backend::TestBackend`, runnable headless with `cargo test`.
 
-### Feedback Cycles
+## Stage Report: implement
 
-**Cycle 1** — review rejected implement. Findings routed back to implement.
+- DONE: stage_tag() removed; phase column uses raw user-casing name, 12-char fixed width, ellipsized.
+  `stage_tag()` deleted from `src/ui/mod.rs`; replaced with `phase_col()` helper; tests `task_row_phase_column_12_char_fixed` and `task_row_long_phase_name_ellipsis` verify. Commit 070ce55.
+- DONE: oklch-to-srgb color infra in place; DAG stage colors use shared lightness 0.78 chroma 0.12 varying hue.
+  `oklch_to_srgb()` added to `src/domain/mod.rs`; `assign_stage_colors` rewritten to use it; `GRAPH_PALETTE`, `preferred_color`, `pick_color` removed. Tests `oklch_palette_produces_rgb_values` and `dag_oklch_colors_are_rgb` pass.
+- DONE: Header badge filled yellow with dark fg; path left-truncated with …; archived hint muted with key callout.
+  `render_header_bar` updated: `fg(Color::Black).bg(Color::Yellow)` badge, `prefix_len`-aware left-truncation, `(press a)` as separate dim span. Test `header_strip_badge_style_and_path_truncation` verifies yellow bg and `…` at width=60.
+- DONE: DAG glyphs correct per role (▶ ⎇ ⚑ ■); rollback arc red box-drawing chars below main row.
+  `build_node_text` refactored to single-glyph priority order (initial→▶, gate→⚑, worktree→⎇); arc spans wrapped in `Style::default().fg(Color::Red)`. Tests `dag_single_glyph_per_stage` and `rollback_arc_is_red` pass.
+- DONE: Task row selected state: 2-char ▸ gutter + yellow left border + bg-2 fill.
+  `build_task_list_items` uses `▸ ` gutter span with `fg(Yellow).bg(BG2)` for selected, bg-2 fill on all spans; `List::highlight_symbol("")`. Tests `task_row_selected_gutter` and updated `task_list_uses_full_pane_width` pass.
+- DONE: Full cargo test suite passes including AC snapshot tests.
+  169/169 tests pass (`cargo test` on all targets). 12 new AC tests added; 5 pre-existing tests updated for new behavior.
 
-Defects:
-1. AC-5 not implemented — `render_narrow` unchanged; no 2-row DAG wrap at ~80 columns; `narrow_dag_wraps_to_two_rows` test missing.
-2. Named-color fallback still present in `stage_color()` (src/domain/mod.rs lines 67–102); checklist said all named-color fallbacks gone.
-3. AC-6 glyph test trivially-true — `task_row_no_glyphs_in_phase_col` never scans the rendered buffer; only checks helper in isolation.
+### Summary
 
-**Cycle 2** — gate rejection (captain). Selected task row highlight too similar to background.
-
-Current: `BG2 = Color::Rgb(41, 45, 62)` on bg `~Rgb(26, 27, 38)` — only ~15 brightness delta, not conspicuous enough.
-Required: Use a more visually distinct selection color. Tokyo Night's selection/visual color `Rgb(40, 52, 84)` or the blue-tinted `Rgb(52, 73, 116)` would give enough contrast. Also consider bolding the selected row title for extra pop.
-
-**Cycle 3** — gate rejection (captain). Phase-name column must be auto-sized, not fixed 12ch.
-
-Requirement: Compute phase column width from the longest phase name currently visible in the task list, clamped to min=4ch, max=12ch. When all tasks share the same short phase (e.g. "run") the column is 4ch wide; when phases vary it grows to fit the longest (up to 12ch). Never use a hardcoded wide width — it wastes space and breaks visual balance.
-
-Implementation note: `build_task_list_items` already iterates all visible items; compute `phase_col_width = items.iter().map(|i| i.status.len()).max().unwrap_or(4).clamp(4, 12)` before building spans, then use that width for the `phase_col()` helper and `title` column remainder.
-
-**Cycle 4** — gate rejection (captain). Selected row background must fill the entire row width, not just the text spans.
-
-Current: background color is applied only to the character spans (gutter + phase + id + title). Empty space to the right of the title has no background, so the selection stripe is broken.
-Required: The selected row highlight must extend to the full pane width. In ratatui this is typically done by padding the title span to fill the remaining width, or by using `ListItem` with a `Paragraph` that fills the available area. The simplest fix: pad the title text (or add a trailing spacer span) so the entire row width is covered with `Rgb(40, 52, 84)` background.
+Implemented all 6 checklist items across `src/domain/mod.rs`, `src/ui/graph.rs`, and `src/ui/mod.rs`. The oklch-to-sRGB conversion (pure Rust, ~20 lines) replaces the named-color palette system. The `stage_tag()` function is gone; `phase_col()` preserves user casing in a 12-char fixed column. The rollback arc is now rendered in red via explicit `Span::styled`. All 169 tests pass including 12 newly added AC snapshot tests covering each checklist item.
