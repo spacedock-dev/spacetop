@@ -199,3 +199,16 @@ All changes are in the project root or `src/main.rs`. No library crate internals
 ### Summary
 
 The plan lays out four ordered steps covering every artifact prescribed by the stage definition and design spec. The AC-2 verification strategy provides two concrete offline methods (unit test and binary string inspection) so the implement stage can prove dev-build silence without a live Sentry account. No module boundaries are crossed and no library internals need modification.
+
+## Stage Report: implement
+
+- DONE: All four artifacts created/modified: build.rs, .env.example, Cargo.toml (sentry dep), src/main.rs (init block).
+  Commit c565ea0 adds all four files; `sentry = { version = "0.34", ... }` in Cargo.toml, new build.rs, new .env.example, updated src/main.rs with init block.
+- DONE: cargo test passes including the cfg(debug_assertions) unit test for AC-2.
+  `cargo test` output: 150 tests total (149 lib + 1 main `tests::dev_build_does_not_init_sentry`), 0 failed.
+- DONE: cargo build --release succeeds with SENTRY_DSN unset (empty-string fallback, no panic).
+  `SENTRY_DSN= cargo build --release` finished successfully; empty-string fallback in main.rs hits `dsn.is_empty()` branch and skips init.
+
+### Summary
+
+Sentry 0.34 was added to Cargo.toml with `default-features = false` and explicit feature selection (backtrace, contexts, panic, reqwest, rustls). A new `build.rs` forwards `SENTRY_DSN` from the build environment at compile time with an empty-string fallback, and `.env.example` documents the real DSN. The init block in `src/main.rs` is gated by `cfg!(debug_assertions)` so debug builds skip init entirely and release builds use the baked-in DSN with `sentry::release_name!()` satisfying AC-4. All checklist items verified locally.
