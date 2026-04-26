@@ -11,6 +11,7 @@ worktree:
 issue:
 pr: #21
 mod-block: 
+archived: 2026-04-26T08:22:41Z
 ---
 
 Refactor the SpaceTop Rust codebase to make the implementation easier for future maintainers to read, navigate, and change while preserving the current product behavior.
