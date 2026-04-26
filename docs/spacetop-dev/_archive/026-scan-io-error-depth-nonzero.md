@@ -1,16 +1,17 @@
 ---
 id: "026"
 title: "Raw IO error still surfaces when scan root exists but a sub-entry is inaccessible"
-status: review
+status: done
 source: bug report
 started: 2026-04-26T04:11:46Z
-completed:
-verdict:
+completed: 2026-04-26T04:30:34Z
+verdict: PASSED
 score: 0.8
-worktree: .worktrees/spacedock-ensign-026-scan-io-error-depth-nonzero
+worktree: 
 issue:
 pr: #14
-mod-block: merge:pr-merge
+mod-block: 
+archived: 2026-04-26T04:30:34Z
 ---
 
 Task 021 fixed the case where the scan root itself does not exist (WalkDir `NotFound` at depth 0). However the user still sees a raw `(os error 2)` when running spacetop from a directory that exists but contains an inaccessible sub-entry — for example a broken symlink, a deleted directory mid-walk, or a path that becomes unreachable during traversal.
