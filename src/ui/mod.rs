@@ -542,8 +542,13 @@ fn render_preview(
             .height
             .saturating_sub(metadata_height + divider_area.height),
     };
-    // First pass: measure line count with full inner width to decide scrollbar.
-    let body_lines_full = render_markdown_lines(&item.body, usize::MAX, body_inner.width as usize);
+    // First pass: render only enough lines at full inner width to detect overflow.
+    // Limiting to height+1 avoids rendering the entire body twice for long previews.
+    let body_lines_full = render_markdown_lines(
+        &item.body,
+        body_inner.height as usize + 1,
+        body_inner.width as usize,
+    );
     let content_height_full = body_lines_full.len() as u16;
     let show_scrollbar = content_height_full > body_inner.height && body_inner.width > 1;
     let body_area = if show_scrollbar {
@@ -2569,6 +2574,51 @@ mod tests {
                 style_left.bg,
                 Some(Color::DarkGray),
                 "preview_start cell on wrapped code row {row} must have DarkGray background"
+            );
+        }
+    }
+
+    #[test]
+    fn code_block_background_fills_width_when_scrollbar_is_shown() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        // Build a body tall enough to trigger the vertical scrollbar, then a code block.
+        // This is the exact case the two-pass fix addresses: body_area is 1 column
+        // narrower than body_inner when the scrollbar is present.
+        let many_lines = "line\n".repeat(40);
+        let body = format!("{many_lines}```rust\nlet x = 1;\n```");
+        let mut app = app_with_items(vec![item("001", "Scrollbar Code", &body)]);
+        // Enable wrap mode.
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+
+        let width: u16 = 80;
+        let height: u16 = 24;
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+
+        // First draw: populates max_preview_scroll so PageDown can scroll.
+        terminal.draw(|frame| render(frame, &app)).expect("first render");
+
+        // Scroll to the bottom using PageDown repeatedly.
+        for _ in 0..20 {
+            app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+            terminal.draw(|frame| render(frame, &app)).expect("scroll render");
+        }
+
+        let buffer = terminal.backend().buffer();
+        let hits = find_text(buffer, "let x = 1;");
+        assert!(!hits.is_empty(), "code line must be visible after scrolling to bottom");
+        let (_, row) = hits[0];
+
+        // With the scrollbar present the content area is body_inner.width - 1 columns wide.
+        // The rightmost content cell (width - 2; width - 1 is the scrollbar column) must
+        // have DarkGray background.
+        let preview_start = width / 2 + 1;
+        for col in preview_start..width - 1 {
+            let style = buffer[(col, row)].style();
+            assert_eq!(
+                style.bg,
+                Some(Color::DarkGray),
+                "col {col} on code row {row} must have DarkGray background with scrollbar present"
             );
         }
     }
