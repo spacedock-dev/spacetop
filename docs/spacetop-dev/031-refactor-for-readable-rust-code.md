@@ -10,7 +10,7 @@ score: 0.62
 worktree: .worktrees/spacedock-ensign-031-refactor-for-readable-rust-code
 issue:
 pr: #21
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Refactor the SpaceTop Rust codebase to make the implementation easier for future maintainers to read, navigate, and change while preserving the current product behavior.
