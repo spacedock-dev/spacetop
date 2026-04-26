@@ -10,6 +10,7 @@ score: 0.6
 worktree: .worktrees/spacedock-ensign-029-dead-code-phase-col-width
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 `cargo build` emits a dead code warning after PR #17 was merged:
