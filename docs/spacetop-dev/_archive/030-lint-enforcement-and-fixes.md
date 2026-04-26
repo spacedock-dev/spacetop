@@ -1,16 +1,17 @@
 ---
 id: "030"
 title: "Add lint enforcement to CLAUDE.md/AGENTS.md and fix all clippy errors"
-status: review
+status: done
 source: feature request
 started: 2026-04-26T07:07:02Z
-completed:
-verdict:
+completed: 2026-04-26T07:15:18Z
+verdict: PASSED
 score: 0.9
-worktree: .worktrees/spacedock-ensign-030-lint-enforcement-and-fixes
+worktree: 
 issue:
 pr: #19
-mod-block: merge:pr-merge
+mod-block: 
+archived: 2026-04-26T07:15:18Z
 ---
 
 `make lint` now runs `cargo clippy --all-targets --all-features -- -D warnings` (enforced via the Makefile). Agents are not currently instructed to run it before completing a task, causing lint regressions to accumulate undetected (16 errors exist today). This task adds the lint enforcement rule to both AGENTS.md and CLAUDE.md and fixes every current clippy error.
