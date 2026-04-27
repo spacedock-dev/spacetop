@@ -1,7 +1,7 @@
 ---
 id: "034"
 title: Include active done items in workflow done count
-status: implement
+status: review
 source: captain
 started: 2026-04-27T04:29:16Z
 completed:
