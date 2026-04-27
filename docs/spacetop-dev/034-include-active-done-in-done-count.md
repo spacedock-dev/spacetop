@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-034-include-active-done-in-done-count
 issue:
 pr: #24
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 The workflow overview's `done` count currently equals `archived_done_count` whenever the archive cache is populated. If a task has `status: done` on the active workflow (terminal stage reached, but the entity has not yet been moved into `_archive/`), it does not contribute to `#done`. The count should reflect every task that has reached the terminal stage, regardless of whether the entity file has been relocated.
