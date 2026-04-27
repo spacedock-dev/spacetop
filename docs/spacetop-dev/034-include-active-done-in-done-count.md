@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-034-include-active-done-in-done-count
 issue:
-pr:
+pr: #24
 mod-block: merge:pr-merge
 ---
 
