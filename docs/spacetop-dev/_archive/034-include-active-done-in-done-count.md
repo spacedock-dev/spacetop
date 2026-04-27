@@ -1,16 +1,17 @@
 ---
 id: "034"
 title: Include active done items in workflow done count
-status: review
+status: done
 source: captain
 started: 2026-04-27T04:29:16Z
-completed:
-verdict:
+completed: 2026-04-27T05:03:26Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-034-include-active-done-in-done-count
+worktree: 
 issue:
 pr: #24
 mod-block: 
+archived: 2026-04-27T05:03:26Z
 ---
 
 The workflow overview's `done` count currently equals `archived_done_count` whenever the archive cache is populated. If a task has `status: done` on the active workflow (terminal stage reached, but the entity has not yet been moved into `_archive/`), it does not contribute to `#done`. The count should reflect every task that has reached the terminal stage, regardless of whether the entity file has been relocated.
