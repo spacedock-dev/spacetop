@@ -1,7 +1,7 @@
 ---
 id: "005"
 title: Workflow picker supports scrolling and PageUp/PageDown
-status: implement
+status: review
 source: captain
 started: 2026-04-27T05:07:19Z
 completed:
