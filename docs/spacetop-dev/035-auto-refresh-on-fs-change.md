@@ -1,13 +1,13 @@
 ---
 id: "035"
 title: Auto-refresh overview on workflow file changes and post-merge updates
-status: plan
+status: implement
 source: captain
 started: 2026-04-27T09:56:34Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-035-auto-refresh-on-fs-change
 issue:
 pr:
 ---
