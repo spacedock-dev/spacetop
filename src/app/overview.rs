@@ -89,7 +89,7 @@ impl OverviewState {
             max_preview_scroll: Cell::new(usize::MAX),
             preview_scroll_x: 0,
             max_preview_scroll_x: Cell::new(usize::MAX),
-            preview_wrap: false,
+            preview_wrap: true,
             task_page_size: Cell::new(10),
         }
     }
@@ -129,7 +129,7 @@ impl OverviewState {
             max_preview_scroll: Cell::new(usize::MAX),
             preview_scroll_x: 0,
             max_preview_scroll_x: Cell::new(usize::MAX),
-            preview_wrap: false,
+            preview_wrap: true,
             task_page_size: Cell::new(10),
         }
     }
@@ -443,7 +443,6 @@ impl OverviewState {
         self.max_preview_scroll.set(usize::MAX);
         self.preview_scroll_x = 0;
         self.max_preview_scroll_x.set(usize::MAX);
-        self.preview_wrap = false;
     }
 }
 
@@ -475,4 +474,89 @@ impl OverviewState {
 
 fn count_done_items(items: &[WorkItem]) -> usize {
     items.iter().filter(|item| item.status == "done").count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{StageDefinition, WorkflowDefinition};
+
+    fn fixture_item(id: &str) -> WorkItem {
+        WorkItem {
+            path: PathBuf::from(format!("/tmp/{id}.md")),
+            id: id.to_string(),
+            title: format!("item {id}"),
+            status: "design".to_string(),
+            source: Some("test".to_string()),
+            started: None,
+            completed: None,
+            verdict: None,
+            score: None,
+            worktree: None,
+            issue: None,
+            pr: None,
+            body: "body".to_string(),
+        }
+    }
+
+    fn fixture_snapshot() -> WorkflowSnapshot {
+        WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: PathBuf::from("/tmp/ow-test"),
+                stages: vec![StageDefinition {
+                    name: "design".to_string(),
+                    initial: true,
+                    terminal: false,
+                    gate: false,
+                    fresh: false,
+                    feedback_to: None,
+                    worktree: false,
+                    concurrency: None,
+                }],
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+                stage_colors: HashMap::new(),
+            },
+            items: vec![fixture_item("001")],
+        }
+    }
+
+    #[test]
+    fn preview_wrap_default_on_for_loaded_overview() {
+        let state =
+            OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), fixture_snapshot());
+        assert!(
+            state.preview_wrap(),
+            "preview_wrap defaults to true at construction"
+        );
+
+        let mut state = state;
+        state.toggle_preview();
+        assert!(
+            state.preview_wrap(),
+            "preview_wrap remains true once preview is opened"
+        );
+    }
+
+    #[test]
+    fn preview_wrap_default_on_for_empty_overview() {
+        let state = OverviewState::empty(PathBuf::from("/tmp/ow-empty"));
+        assert!(state.preview_wrap());
+    }
+
+    #[test]
+    fn preview_wrap_persists_across_reload() {
+        let mut state =
+            OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), fixture_snapshot());
+        state.toggle_preview();
+        state.toggle_preview_wrap();
+        assert!(!state.preview_wrap(), "wrap toggled off");
+        state.reload_from_snapshot(fixture_snapshot());
+        assert!(
+            !state.preview_wrap(),
+            "wrap toggle persists across reload_from_snapshot"
+        );
+    }
 }

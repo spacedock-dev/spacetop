@@ -1357,13 +1357,25 @@ mod tests {
             PathBuf::from("/tmp/ww-ac1"),
             snapshot_with_body("001", "Wrap test", &body),
         );
-        // Open preview.
+        // Open preview (wrap defaults to on).
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
-        // No-wrap state: max_scroll_x is set after first render.
+        // Wrap-on default: scroll_x clamped to 0.
         terminal.draw(|frame| render(frame, &app)).unwrap();
-        let max_x_before = app.as_overview().unwrap().max_preview_scroll_x.get();
-        // Toggle wrap on.
+        assert_eq!(
+            app.as_overview().unwrap().max_preview_scroll_x.get(),
+            0,
+            "wrap mode clamps scroll_x to 0"
+        );
+        // Toggle wrap off — no-wrap exposes the real horizontal scroll limit.
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let max_x_no_wrap = app.as_overview().unwrap().max_preview_scroll_x.get();
+        assert!(
+            max_x_no_wrap > 0,
+            "no-wrap mode should report a non-zero horizontal scroll limit for a 200-char body"
+        );
+        // Toggle wrap on again — scroll_x clamped back to 0.
         app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
         terminal.draw(|frame| render(frame, &app)).unwrap();
         assert_eq!(
@@ -1371,39 +1383,42 @@ mod tests {
             0,
             "wrap mode clamps scroll_x to 0"
         );
-        // Toggle wrap off.
-        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
-        terminal.draw(|frame| render(frame, &app)).unwrap();
-        assert_eq!(
-            app.as_overview().unwrap().max_preview_scroll_x.get(),
-            max_x_before,
-            "no-wrap restores scroll_x limit"
-        );
     }
 
     #[test]
-    fn word_wrap_resets_when_preview_closed() {
+    fn word_wrap_toggle_persists_across_preview_open_close() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let mut app = App::from_snapshot(
             PathBuf::from("/tmp/ww-ac2"),
-            snapshot_with_body("001", "Reset test", "some body"),
+            snapshot_with_body("001", "Persist test", "some body"),
         );
-        // Open preview, enable wrap.
+        // Open preview — default-on.
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(
+            app.as_overview().unwrap().preview_wrap(),
+            "preview opens with wrap on by default"
+        );
+        // Toggle off.
         app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
-        assert!(app.as_overview().unwrap().preview_wrap());
-        // Close preview — wrap resets via toggle_preview -> reset_preview_scroll.
+        assert!(!app.as_overview().unwrap().preview_wrap());
+        // Close preview — wrap-off persists across pane close.
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(
             !app.as_overview().unwrap().preview_wrap(),
-            "wrap resets on pane close"
+            "wrap toggle persists across pane close"
         );
-        // Re-open: default should be no-wrap.
+        // Re-open — wrap-off still in effect.
         app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(
             !app.as_overview().unwrap().preview_wrap(),
-            "wrap stays off on re-open"
+            "wrap toggle persists across pane re-open"
+        );
+        // Toggle still works in the other direction.
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+        assert!(
+            app.as_overview().unwrap().preview_wrap(),
+            "w keypress still toggles wrap back on"
         );
     }
 
@@ -1526,6 +1541,8 @@ mod tests {
 
         let body = format!("{}HORIZONTALSCROLLTARGET", "X".repeat(220));
         let mut app = app_with_items(vec![item("001", "Wide Preview", &body)]);
+        // Disable wrap so the long line stays on a single row and horizontal scroll applies.
+        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
         let width: u16 = 80;
         let mut terminal = Terminal::new(TestBackend::new(width, 24)).expect("terminal");
 
@@ -3046,12 +3063,9 @@ mod tests {
 
     #[test]
     fn code_block_background_fills_pane_width_in_wrap_mode() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
         let body = "```rust\nlet x = 1;\n```";
-        let mut app = app_with_items(vec![item("001", "Code Wrap", body)]);
-        // app_with_items presses Enter to open preview; enable wrap mode.
-        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+        let app = app_with_items(vec![item("001", "Code Wrap", body)]);
+        // app_with_items presses Enter to open preview; wrap is on by default.
 
         let width: u16 = 80;
         let height: u16 = 24;
@@ -3080,13 +3094,11 @@ mod tests {
 
     #[test]
     fn code_block_long_line_both_wrapped_rows_have_full_background() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-
         // Code line longer than the preview pane width so it wraps to a second row.
         let long_line = "X".repeat(120);
         let body = format!("```rust\n{long_line}\n```");
-        let mut app = app_with_items(vec![item("001", "Long Code Wrap", &body)]);
-        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+        let app = app_with_items(vec![item("001", "Long Code Wrap", &body)]);
+        // wrap is on by default.
 
         let width: u16 = 80;
         let height: u16 = 30;
@@ -3129,8 +3141,7 @@ mod tests {
         let many_lines = "line\n".repeat(40);
         let body = format!("{many_lines}```rust\nlet x = 1;\n```");
         let mut app = app_with_items(vec![item("001", "Scrollbar Code", &body)]);
-        // Enable wrap mode.
-        app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+        // wrap is on by default.
 
         let width: u16 = 80;
         let height: u16 = 24;
