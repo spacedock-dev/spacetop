@@ -62,6 +62,69 @@ fn loads_real_workflow_state_and_derives_stage_counts() {
 }
 
 #[test]
+fn stage_counts_include_archived_done_items_from_the_workflow_archive() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+    let app = App::load(root).expect("workflow should load");
+
+    let counts = app.stage_counts();
+    let done = counts
+        .iter()
+        .find(|count| count.name == "done")
+        .expect("done stage should exist");
+    assert!(
+        done.items > 0,
+        "done count should come from archived workflow items"
+    );
+
+    let expected_active_counts = app
+        .snapshot()
+        .definition
+        .stages
+        .iter()
+        .filter(|stage| stage.name != "done")
+        .map(|stage| {
+            (
+                stage.name.as_str(),
+                app.snapshot()
+                    .items
+                    .iter()
+                    .filter(|item| item.status == stage.name)
+                    .count(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let observed_active_counts = counts
+        .iter()
+        .filter(|count| count.name != "done")
+        .map(|count| (count.name.as_str(), count.items))
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed_active_counts, expected_active_counts);
+}
+
+#[test]
+fn stage_counts_reuse_cached_archived_done_count_after_archive_disappears() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_workflow_with_archive(root, "001");
+
+    let app = App::load(root.to_path_buf()).expect("workflow should load");
+    std::fs::remove_dir_all(root.join("_archive")).expect("archive dir should be removable");
+
+    let counts = app.stage_counts();
+    let done = counts
+        .iter()
+        .find(|count| count.name == "done")
+        .expect("done stage should exist");
+
+    assert_eq!(
+        done.items, 1,
+        "done count should keep using cached archive state after load"
+    );
+}
+
+#[test]
 fn navigation_changes_selection_without_touching_snapshot() {
     let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
 
@@ -664,6 +727,16 @@ fn write_workflow(dir: &Path, task_id: &str) {
         format!(
             "---\nid: {task_id}\ntitle: Task {task_id}\nstatus: plan\n---\n\nbody for {task_id}\n"
         ),
+    )
+    .unwrap();
+}
+
+fn write_workflow_with_archive(dir: &Path, task_id: &str) {
+    std::fs::create_dir_all(dir.join("_archive")).unwrap();
+    write_workflow(dir, task_id);
+    std::fs::write(
+        dir.join("_archive").join("done.md"),
+        "---\nid: 999\ntitle: Archived Done\nstatus: done\ncompleted: 2026-04-27T00:00:00Z\n---\n\narchived body\n",
     )
     .unwrap();
 }

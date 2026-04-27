@@ -27,6 +27,7 @@ pub struct OverviewState {
     pub selected_index: usize,
     pub view_scope: ViewScope,
     pub archived_items: Vec<WorkItem>,
+    pub archived_done_count: Option<usize>,
     pub archive_loaded: bool,
     pub archive_error: Option<String>,
     pub selected_index_archived: usize,
@@ -78,6 +79,7 @@ impl OverviewState {
             selected_index: 0,
             view_scope: ViewScope::Active,
             archived_items: Vec::new(),
+            archived_done_count: None,
             archive_loaded: false,
             archive_error: None,
             selected_index_archived: 0,
@@ -95,11 +97,9 @@ impl OverviewState {
     pub fn load(workflow_dir: PathBuf) -> Result<Self, ParseError> {
         let repo_root = resolve_scan_root(&workflow_dir);
         let snapshot = load_workflow_dir(&workflow_dir, &repo_root)?;
-        Ok(Self::from_snapshot_with_root(
-            workflow_dir,
-            repo_root,
-            snapshot,
-        ))
+        let mut state = Self::from_snapshot_with_root(workflow_dir, repo_root, snapshot);
+        state.refresh_archived_done_count();
+        Ok(state)
     }
 
     pub fn from_snapshot(workflow_dir: PathBuf, snapshot: WorkflowSnapshot) -> Self {
@@ -119,6 +119,7 @@ impl OverviewState {
             selected_index: 0,
             view_scope: ViewScope::Active,
             archived_items: Vec::new(),
+            archived_done_count: None,
             archive_loaded: false,
             archive_error: None,
             selected_index_archived: 0,
@@ -150,8 +151,10 @@ impl OverviewState {
         // `_archive/` too. Dropping the cached list forces a rescan the next
         // time the user toggles to archived scope.
         self.archived_items.clear();
+        self.archived_done_count = None;
         self.archive_loaded = false;
         self.archive_error = None;
+        self.refresh_archived_done_count();
 
         let len = self.snapshot.items.len();
         if len == 0 {
@@ -257,19 +260,14 @@ impl OverviewState {
         if self.archive_loaded {
             return;
         }
-        let allowed: Vec<String> = self
-            .snapshot
-            .definition
-            .stages
-            .iter()
-            .map(|stage| stage.name.clone())
-            .collect();
-        match load_archived_items(&self.workflow_dir, &allowed) {
+        match self.load_archive_items() {
             Ok(items) => {
+                self.archived_done_count = Some(count_done_items(&items));
                 self.archived_items = items;
                 self.archive_error = None;
             }
             Err(err) => {
+                self.archived_done_count = Some(0);
                 self.archived_items = Vec::new();
                 self.archive_error = Some(err.to_string());
             }
@@ -322,6 +320,14 @@ impl OverviewState {
                     .iter()
                     .filter(|item| item.status == stage.name)
                     .count(),
+            })
+            .map(|mut count| {
+                if count.name == "done" {
+                    if let Some(archived_done_count) = self.archived_done_count {
+                        count.items = archived_done_count;
+                    }
+                }
+                count
             })
             .collect()
     }
@@ -439,4 +445,34 @@ impl OverviewState {
         self.max_preview_scroll_x.set(usize::MAX);
         self.preview_wrap = false;
     }
+}
+
+impl OverviewState {
+    fn load_archive_items(&self) -> Result<Vec<WorkItem>, ParseError> {
+        let allowed_statuses = self
+            .snapshot
+            .definition
+            .stages
+            .iter()
+            .map(|stage| stage.name.clone())
+            .collect::<Vec<_>>();
+        load_archived_items(&self.workflow_dir, &allowed_statuses)
+    }
+
+    fn refresh_archived_done_count(&mut self) {
+        match self.load_archive_items() {
+            Ok(items) => {
+                self.archived_done_count = Some(count_done_items(&items));
+                self.archive_error = None;
+            }
+            Err(err) => {
+                self.archived_done_count = Some(0);
+                self.archive_error = Some(err.to_string());
+            }
+        }
+    }
+}
+
+fn count_done_items(items: &[WorkItem]) -> usize {
+    items.iter().filter(|item| item.status == "done").count()
 }
