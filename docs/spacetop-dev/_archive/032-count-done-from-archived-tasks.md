@@ -1,14 +1,17 @@
 ---
 id: 032
 title: Count done from archived tasks in workflow overview
-status: review
+status: done
 source: user request 2026-04-27
 score: 0.4
-worktree: .worktrees/spacedock-ensign-032-count-done-from-archived-tasks
+worktree: 
 issue:
 pr: #23
 started: 2026-04-27T02:26:48Z
 mod-block: 
+completed: 2026-04-27T03:36:48Z
+verdict: PASSED
+archived: 2026-04-27T03:36:51Z
 ---
 
 The workflow overview should not show a nonzero `#done` count for `docs/spacetop-dev` just because completed items exist in `_archive/`. When the workflow is shown in its active scope, `#done` should be `0`.
