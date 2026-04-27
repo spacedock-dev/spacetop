@@ -1,16 +1,17 @@
 ---
 id: "035"
 title: Auto-refresh overview on workflow file changes and post-merge updates
-status: review
+status: done
 source: captain
 started: 2026-04-27T09:56:34Z
-completed:
-verdict:
+completed: 2026-04-27T10:16:55Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-035-auto-refresh-on-fs-change
+worktree: 
 issue:
 pr: #26
 mod-block: 
+archived: 2026-04-27T10:16:59Z
 ---
 
 SpaceTop should detect filesystem changes to workflow entity files and refresh the overview without requiring user input. Two concrete scenarios:
