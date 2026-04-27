@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-035-auto-refresh-on-fs-change
 issue:
-pr:
+pr: #26
 mod-block: merge:pr-merge
 ---
 
