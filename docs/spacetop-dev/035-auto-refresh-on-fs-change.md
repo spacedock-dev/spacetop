@@ -1,9 +1,9 @@
 ---
 id: "035"
 title: Auto-refresh overview on workflow file changes and post-merge updates
-status: design
+status: plan
 source: captain
-started:
+started: 2026-04-27T09:56:34Z
 completed:
 verdict:
 score:
