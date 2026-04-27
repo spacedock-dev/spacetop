@@ -1,7 +1,7 @@
 ---
 id: "035"
 title: Auto-refresh overview on workflow file changes and post-merge updates
-status: implement
+status: review
 source: captain
 started: 2026-04-27T09:56:34Z
 completed:
