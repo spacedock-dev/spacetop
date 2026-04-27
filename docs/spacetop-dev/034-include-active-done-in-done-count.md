@@ -93,3 +93,29 @@ make lint
 ### Summary
 
 This planning pass scopes the fix to a one-line change in `OverviewState::stage_counts` — replace the overwrite with a sum — and leaves the parser/UI untouched. Disjointness between active and archived sources is guaranteed by the existing parser boundary, so summing is safe. Three focused tests (AC-1 active-only, AC-2 archived-only existing test, AC-3 mixed sum) cover the regression surface; the existing cached-after-archive-disappears test continues to constrain the `Option<usize>` cache contract.
+
+## Stage Report: implement
+
+- DONE: src/app/overview.rs::stage_counts sums active terminal items + archived_done_count instead of overwriting; cargo test passes.
+  Changed `count.items = archived_done_count` to `count.items += archived_done_count` in the `done` branch of `stage_counts`.
+- DONE: New tests in src/app/tests.rs cover AC-1 (active-only) and AC-3 (active + archived sum); existing AC-2 archived-only test still passes.
+  Added `stage_counts_active_only_done_contributes_to_count` and `stage_counts_sum_active_and_archived_done_without_double_counting`; all 4 stage_counts tests pass (AC-2 + cached-archive test unchanged).
+- DONE: make lint passes with no clippy warnings.
+  `make lint` finished clean with `-D warnings`.
+
+### Summary
+
+Single-line fix in `OverviewState::stage_counts` switches the `done` branch from overwriting `count.items` with `archived_done_count` to summing them, restoring active terminal-stage items in the `#done` count. Two new tests in `src/app/tests.rs` lock in AC-1 (active-only) and AC-3 (mixed sum without double-counting); AC-2 and the cached-after-archive-disappears test remain green. One pre-existing unrelated UI test failure (`ui::graph::tests::narrow_tier_renders_compact_textual_summary`) was confirmed present on the branch tip before any changes — not caused by this work.
+
+## Stage Report: review
+
+- DONE: Verify the fix at src/app/overview.rs::stage_counts uses += not = and that summing cannot double-count given parser disjointness.
+  Diff at src/app/overview.rs:327 shows `count.items += archived_done_count`; disjointness holds because `load_workflow_dir` skips `_archive/` and `load_archived_items` reads only `_archive/`.
+- DONE: Verify AC-1, AC-2, AC-3 are each backed by passing tests and that make lint is clean on the worktree branch.
+  `cargo test --lib app::tests::stage_counts` reports 4/4 passing (AC-1 active-only, AC-2 archived-only fixture, AC-3 mixed sum, cached-after-disappear); `make lint` clean.
+- DONE: Issue a recommendation (PASSED or REJECTED with reasons) explicitly addressing the pre-existing UI test failure noted by implement (narrow_tier_renders_compact_textual_summary) — confirm it is unrelated to this change.
+  Reproduced `ui::graph::tests::narrow_tier_renders_compact_textual_summary` failure on clean main with no diff applied; failure is in src/ui/graph.rs narrow-tier rendering path, unrelated to OverviewState::stage_counts. Verdict: PASSED.
+
+### Summary
+
+PASSED. The one-line fix (`=` to `+=`) in `OverviewState::stage_counts` correctly restores active `done` items to the `#done` count, and parser-level filesystem disjointness (load_workflow_dir skips `_archive/`; load_archived_items reads only `_archive/`) guarantees the sum cannot double-count. Two new tests pin AC-1 and AC-3; AC-2 and the cache-contract test remain green. The `narrow_tier_renders_compact_textual_summary` failure was reproduced on pristine main and is unrelated to this change — recommend tracking it as a separate defect.
