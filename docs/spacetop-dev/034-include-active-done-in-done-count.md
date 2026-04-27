@@ -1,13 +1,13 @@
 ---
 id: "034"
 title: Include active done items in workflow done count
-status: plan
+status: implement
 source: captain
 started: 2026-04-27T04:29:16Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-034-include-active-done-in-done-count
 issue:
 pr:
 ---
