@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-005-picker-scroll-and-paging
 issue:
-pr:
+pr: #25
 mod-block: merge:pr-merge
 ---
 
