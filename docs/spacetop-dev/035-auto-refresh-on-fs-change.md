@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-035-auto-refresh-on-fs-change
 issue:
 pr: #26
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 SpaceTop should detect filesystem changes to workflow entity files and refresh the overview without requiring user input. Two concrete scenarios:
