@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-036-preview-default-wrap-on
 issue:
 pr: #27
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 When the user opens the entity preview pane, word wrap should be enabled by default. Today `OverviewState` initializes `preview_wrap: false` (`src/app/overview.rs:92`), so long lines extend past the preview pane width and the user has to press `w` every time they open a preview to toggle wrap on.
