@@ -84,7 +84,7 @@ fn render_list(frame: &mut Frame<'_>, area: Rect, state: &PickerState) {
     // Scrollbar only when overflow.
     if total > viewport && viewport > 0 {
         let max_offset = total - viewport;
-        let mut sb_state = ScrollbarState::new(max_offset).position(offset);
+        let mut sb_state = ScrollbarState::new(max_offset + 1).position(offset);
         frame.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(None)
@@ -347,6 +347,43 @@ mod tests {
             .iter()
             .any(|cell| cell.symbol() == "\u{2588}");
         assert!(!has_thumb, "scrollbar should be omitted when N <= H");
+    }
+
+    // Regression (PR #25 review): when selection reaches the end of the list,
+    // the scrollbar thumb must reach the final row of the list area. Using
+    // `ScrollbarState::new(max_offset)` (without the `+ 1`) clamps the thumb
+    // one row short of the bottom — match the convention in src/ui/mod.rs.
+    #[test]
+    fn scrollbar_thumb_reaches_bottom_when_selection_at_end() {
+        let mut state = state_with(40);
+        let total = state.workflows().len();
+        state.selected_index = total - 1;
+
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+
+        // Inner height of the outer block is 18 rows (20 - 2 borders).
+        // Layout: title=3, list=Min(1), footer=1. List area runs from y=4
+        // (after outer top border + 3 title rows) through y=17 (footer at 18).
+        let list_top: u16 = 4;
+        let list_bottom: u16 = 17; // last list row before footer at y=18
+
+        let thumb_rows: Vec<u16> = (0..buffer.area.height)
+            .filter(|y| (0..buffer.area.width).any(|x| buffer[(x, *y)].symbol() == "\u{2588}"))
+            .collect();
+        assert!(!thumb_rows.is_empty(), "scrollbar thumb should be drawn");
+        let thumb_max = *thumb_rows.iter().max().unwrap();
+        assert!(
+            thumb_max >= list_top && thumb_max <= list_bottom,
+            "thumb_max={thumb_max} must lie in list area [{list_top}, {list_bottom}]"
+        );
+        assert_eq!(
+            thumb_max, list_bottom,
+            "thumb should reach the bottom row of the list area when selection is last; got {thumb_max}, expected {list_bottom}"
+        );
     }
 
     // AC-2 (cont): scrollbar thumb position tracks the selected proportion.
