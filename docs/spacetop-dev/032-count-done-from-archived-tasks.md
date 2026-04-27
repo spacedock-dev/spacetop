@@ -58,3 +58,16 @@ make lint
 ### Summary
 
 This stage is a planning pass only. The task body now contains a scoped implementation plan, test strategy, and verification commands for preventing archived `done` items from inflating the active workflow overview.
+
+## Stage Report: implement
+
+- DONE: Implement the fix so the active workflow overview counts `done` from active items only and ignores archived items.
+  Updated `src/app/overview.rs` so `OverviewState::stage_counts()` skips any item whose path contains `_archive`, even if such an item appears in the snapshot.
+- DONE: Add or update focused tests at the lowest practical layer to prove the active count remains `0` when only archived done tasks exist.
+  Added `stage_counts_ignore_items_under_archive_even_if_they_are_present_in_snapshot` in `src/app/tests.rs`; it failed before the code change and now passes with an archived `done` item present in the snapshot.
+- DONE: Run the required verification commands and append a `## Stage Report: implement` section with DONE / SKIPPED / FAILED entries for every checklist item.
+  Ran `cargo test app::tests::stage_counts_ignore_items_under_archive_even_if_they_are_present_in_snapshot -- --exact`, `cargo test app::tests::toggle_scope_key_a_flips_to_archived_and_loads_lazily -- --exact`, `cargo test ui::graph::counts_row_aligns_under_nodes_and_marks_active_stage -- --exact`, and `make lint`.
+
+### Summary
+
+The implementation is minimal and stays in app-state ownership: active stage totals now ignore archived-path items before the UI ever renders them. The targeted regression was added at the app layer, neighboring app/UI tests still pass, and clippy is clean.

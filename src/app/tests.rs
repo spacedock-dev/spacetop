@@ -62,6 +62,85 @@ fn loads_real_workflow_state_and_derives_stage_counts() {
 }
 
 #[test]
+fn stage_counts_ignore_items_under_archive_even_if_they_are_present_in_snapshot() {
+    let app = App::from_snapshot(
+        PathBuf::from("workflow"),
+        WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: PathBuf::from("workflow"),
+                stages: vec![
+                    StageDefinition {
+                        name: "plan".to_string(),
+                        initial: true,
+                        terminal: false,
+                        gate: false,
+                        fresh: false,
+                        feedback_to: None,
+                        worktree: false,
+                        concurrency: None,
+                    },
+                    StageDefinition {
+                        name: "done".to_string(),
+                        initial: false,
+                        terminal: true,
+                        gate: false,
+                        fresh: false,
+                        feedback_to: None,
+                        worktree: false,
+                        concurrency: None,
+                    },
+                ],
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+                stage_colors: HashMap::new(),
+            },
+            items: vec![
+                WorkItem {
+                    path: PathBuf::from("workflow/task-1.md"),
+                    id: "001".to_string(),
+                    title: "Active task".to_string(),
+                    status: "plan".to_string(),
+                    source: Some("test".to_string()),
+                    started: None,
+                    completed: None,
+                    verdict: None,
+                    score: Some(0.5),
+                    worktree: None,
+                    issue: None,
+                    pr: None,
+                    body: "Active body".to_string(),
+                },
+                WorkItem {
+                    path: PathBuf::from("workflow/_archive/task-2.md"),
+                    id: "002".to_string(),
+                    title: "Archived task".to_string(),
+                    status: "done".to_string(),
+                    source: Some("test".to_string()),
+                    started: None,
+                    completed: Some("2026-04-27T00:00:00Z".to_string()),
+                    verdict: Some("PASSED".to_string()),
+                    score: Some(0.5),
+                    worktree: None,
+                    issue: None,
+                    pr: None,
+                    body: "Archived body".to_string(),
+                },
+            ],
+        },
+    );
+
+    let counts = app
+        .stage_counts()
+        .into_iter()
+        .map(|count| (count.name, count.items))
+        .collect::<Vec<_>>();
+
+    assert_eq!(counts, vec![("plan".to_string(), 1), ("done".to_string(), 0)]);
+}
+
+#[test]
 fn navigation_changes_selection_without_touching_snapshot() {
     let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
 

@@ -320,7 +320,7 @@ impl OverviewState {
                     .snapshot
                     .items
                     .iter()
-                    .filter(|item| item.status == stage.name)
+                    .filter(|item| item.status == stage.name && !is_archived_path(&item.path))
                     .count(),
             })
             .collect()
@@ -439,4 +439,9 @@ impl OverviewState {
         self.max_preview_scroll_x.set(usize::MAX);
         self.preview_wrap = false;
     }
+}
+
+fn is_archived_path(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == "_archive")
 }
