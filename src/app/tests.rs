@@ -1098,6 +1098,101 @@ fn keymap_audit_is_disjoint() {
     // share the Char keyspace and can't collide here.
 }
 
+#[test]
+fn reload_from_snapshot_updates_counts_and_clamps_selection() {
+    // AC-3: a watcher-driven reload with a different item set must update
+    // stage_counts and archived_done_count, and clamp selection without
+    // panicking when the visible list shrinks.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(
+        root.join("README.md"),
+        "---\nstages:\n  states:\n    - name: plan\n      initial: true\n    - name: implement\n    - name: done\n      terminal: true\n---\n",
+    )
+    .unwrap();
+    // Two active tasks (plan, implement) + one archived done.
+    std::fs::write(
+        root.join("task-001.md"),
+        "---\nid: 001\ntitle: A\nstatus: plan\n---\n\nbody\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("task-002.md"),
+        "---\nid: 002\ntitle: B\nstatus: implement\n---\n\nbody\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("_archive")).unwrap();
+    std::fs::write(
+        root.join("_archive").join("task-900.md"),
+        "---\nid: 900\ntitle: Z\nstatus: done\ncompleted: 2026-04-27T00:00:00Z\n---\n\nbody\n",
+    )
+    .unwrap();
+
+    let mut app = App::load(root.to_path_buf()).expect("load ok");
+    // Advance selection to the last active item.
+    app.handle_key(key(KeyCode::End));
+    assert_eq!(app.selected_index(), 1);
+
+    let initial_counts: HashMap<String, usize> = app
+        .stage_counts()
+        .iter()
+        .map(|c| (c.name.clone(), c.items))
+        .collect();
+    assert_eq!(initial_counts.get("plan").copied(), Some(1));
+    assert_eq!(initial_counts.get("implement").copied(), Some(1));
+    // Archived done contributes to the done count.
+    assert_eq!(initial_counts.get("done").copied(), Some(1));
+    assert_eq!(
+        app.as_overview().unwrap().archived_done_count,
+        Some(1),
+        "archived done count cached after load"
+    );
+
+    // Simulate a post-merge filesystem change: task-002 moves into the
+    // archive with status flipped to done, and another archived done is
+    // added alongside it. Active list shrinks from 2 → 1.
+    std::fs::remove_file(root.join("task-002.md")).unwrap();
+    std::fs::write(
+        root.join("_archive").join("task-002.md"),
+        "---\nid: 002\ntitle: B\nstatus: done\ncompleted: 2026-04-27T00:00:00Z\n---\n\nbody\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("_archive").join("task-901.md"),
+        "---\nid: 901\ntitle: ZZ\nstatus: done\ncompleted: 2026-04-27T00:00:00Z\n---\n\nbody\n",
+    )
+    .unwrap();
+    // Also flip the remaining active item's status (plan → implement) so
+    // stage_counts shifts demonstrably.
+    std::fs::write(
+        root.join("task-001.md"),
+        "---\nid: 001\ntitle: A\nstatus: implement\n---\n\nbody\n",
+    )
+    .unwrap();
+
+    app.reload().expect("reload ok");
+
+    // Selection must clamp without panic: visible list shrank to 1 entry.
+    assert_eq!(app.snapshot().items.len(), 1);
+    assert_eq!(app.selected_index(), 0);
+
+    let counts: HashMap<String, usize> = app
+        .stage_counts()
+        .iter()
+        .map(|c| (c.name.clone(), c.items))
+        .collect();
+    assert_eq!(counts.get("plan").copied(), Some(0));
+    assert_eq!(counts.get("implement").copied(), Some(1));
+    // archived_done_count must be recomputed: now task-900 + task-002 +
+    // task-901 = 3 archived done.
+    assert_eq!(
+        app.as_overview().unwrap().archived_done_count,
+        Some(3),
+        "archived_done_count refreshed after reload_from_snapshot"
+    );
+    assert_eq!(counts.get("done").copied(), Some(3));
+}
+
 // The `cycle_keys_advance_active_index_in_multi_session` test above
 // already covers `needs_first_load` == true for the first activation
 // and `needs_first_load` == false for a return; that satisfies the
