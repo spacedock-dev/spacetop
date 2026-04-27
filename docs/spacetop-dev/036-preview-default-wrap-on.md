@@ -1,9 +1,9 @@
 ---
 id: "036"
 title: Default-enable word wrap when opening preview mode
-status: design
+status: plan
 source: captain
-started:
+started: 2026-04-27T10:37:06Z
 completed:
 verdict:
 score:
