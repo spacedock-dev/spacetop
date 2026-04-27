@@ -521,6 +521,59 @@ fn picker_q_and_esc_quit_without_transition() {
     assert!(app.as_picker().is_some());
 }
 
+#[test]
+fn picker_pageup_pagedown_step_by_viewport_height() {
+    let mut app = picker_app(fake_workflows(40));
+    // Simulate a viewport of 10 rows (set by the renderer in real use).
+    app.as_picker().unwrap().viewport_height.set(10);
+
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.as_picker().unwrap().selected_index(), 10);
+
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.as_picker().unwrap().selected_index(), 20);
+
+    // Clamp to last when paging past the end.
+    app.handle_key(key(KeyCode::PageDown));
+    app.handle_key(key(KeyCode::PageDown));
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.as_picker().unwrap().selected_index(), 39);
+
+    app.handle_key(key(KeyCode::PageUp));
+    assert_eq!(app.as_picker().unwrap().selected_index(), 29);
+
+    // Saturate to 0 going up past the start.
+    for _ in 0..10 {
+        app.handle_key(key(KeyCode::PageUp));
+    }
+    assert_eq!(app.as_picker().unwrap().selected_index(), 0);
+}
+
+#[test]
+fn picker_paging_safe_on_short_lists() {
+    // 2-element list (the from_picker minimum). Paging shouldn't panic and
+    // must clamp to bounds.
+    let mut app = picker_app(fake_workflows(2));
+    app.as_picker().unwrap().viewport_height.set(10);
+
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.as_picker().unwrap().selected_index(), 1);
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.as_picker().unwrap().selected_index(), 1);
+    app.handle_key(key(KeyCode::PageUp));
+    assert_eq!(app.as_picker().unwrap().selected_index(), 0);
+    app.handle_key(key(KeyCode::PageUp));
+    assert_eq!(app.as_picker().unwrap().selected_index(), 0);
+
+    // Construct an empty PickerState directly (App::from_picker forbids it)
+    // and exercise paging there too.
+    let mut empty = crate::app::PickerState::new(PathBuf::from("/scan-root"), Vec::new());
+    empty.page_selection_down();
+    assert_eq!(empty.selected_index(), 0);
+    empty.page_selection_up();
+    assert_eq!(empty.selected_index(), 0);
+}
+
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
 }

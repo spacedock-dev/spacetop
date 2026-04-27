@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     prelude::{Frame, Line, Modifier, Span, Style},
     style::Color,
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 
 use crate::app::PickerState;
@@ -34,7 +34,7 @@ pub fn render_in(frame: &mut Frame<'_>, area: Rect, state: &PickerState) {
     };
 
     frame.render_widget(title(state), title_area);
-    frame.render_widget(list(state), list_area);
+    render_list(frame, list_area, state);
     if let Some(error_area) = error_area {
         frame.render_widget(error_line(state), error_area);
     }
@@ -55,18 +55,46 @@ fn title(state: &PickerState) -> Paragraph<'_> {
     Paragraph::new(lines).block(Block::default().borders(Borders::BOTTOM))
 }
 
-fn list(state: &PickerState) -> Paragraph<'_> {
+fn render_list(frame: &mut Frame<'_>, area: Rect, state: &PickerState) {
     if state.workflows().is_empty() {
-        return Paragraph::new(Line::from("(no workflows)"));
+        state.viewport_height.set(area.height as usize);
+        state.scroll_offset.set(0);
+        frame.render_widget(Paragraph::new(Line::from("(no workflows)")), area);
+        return;
     }
+
+    let viewport = area.height as usize;
+    state.viewport_height.set(viewport);
+    state.ensure_selection_visible(viewport);
+    let offset = state.scroll_offset.get();
+    let total = state.workflows().len();
     let scan_root = state.scan_root();
+
+    let end = (offset + viewport).min(total);
     let lines: Vec<Line> = state
         .workflows()
         .iter()
         .enumerate()
+        .skip(offset)
+        .take(end.saturating_sub(offset))
         .map(|(index, workflow)| workflow_row(scan_root, workflow, index == state.selected_index()))
         .collect();
-    Paragraph::new(lines)
+    frame.render_widget(Paragraph::new(lines), area);
+
+    // Scrollbar only when overflow.
+    if total > viewport && viewport > 0 {
+        let max_offset = total - viewport;
+        let mut sb_state = ScrollbarState::new(max_offset).position(offset);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .track_symbol(Some("\u{2502}"))
+                .thumb_symbol("\u{2588}"),
+            area,
+            &mut sb_state,
+        );
+    }
 }
 
 fn workflow_row<'a>(
@@ -105,7 +133,7 @@ fn error_line(state: &PickerState) -> Paragraph<'_> {
 
 fn footer<'a>() -> Paragraph<'a> {
     Paragraph::new(Line::from(Span::styled(
-        "↑/↓ or j/k: move · Enter: open · q/Esc: quit",
+        "↑/↓ or j/k: move · PgUp/PgDn: page · Enter: open · q/Esc: quit",
         Style::default().add_modifier(Modifier::DIM),
     )))
 }
@@ -135,6 +163,18 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<Vec<_>>()
             .join("")
+    }
+
+    fn row_strings(buffer: &Buffer) -> Vec<String> {
+        let mut rows = Vec::new();
+        for y in 0..buffer.area.height {
+            let mut row = String::new();
+            for x in 0..buffer.area.width {
+                row.push_str(buffer[(x, y)].symbol());
+            }
+            rows.push(row);
+        }
+        rows
     }
 
     #[test]
@@ -216,5 +256,130 @@ mod tests {
 
         assert_ne!(buffer[(0, 0)].symbol(), " ");
         assert_ne!(buffer[(99, 0)].symbol(), " ");
+    }
+
+    // AC-1: selection scrolls the visible window when N > viewport.
+    #[test]
+    fn list_scrolls_to_keep_selection_visible() {
+        // Small terminal so the list area is a few rows tall.
+        // Inner height = 20 - 2 (outer borders) = 18; minus 3 (title) and 1
+        // (footer) = 14 list rows. Make N comfortably larger.
+        let mut state = state_with(40);
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+
+        // Initially selected index 0 — top of list is visible.
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("docs/w0"));
+        assert!(!rendered.contains("docs/w39"), "last item shouldn't fit");
+
+        // Move selection past the bottom of the viewport and re-render.
+        state.selected_index = 39;
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            rendered.contains("docs/w39"),
+            "selection at end must be visible after scroll"
+        );
+        assert!(
+            !rendered.contains("docs/w0 "),
+            "first item should have scrolled out of view"
+        );
+        // Scroll offset should be > 0 now.
+        assert!(state.scroll_offset.get() > 0);
+
+        // And the selected row carries the REVERSED modifier.
+        let buffer = terminal.backend().buffer();
+        let selected_visible = row_strings(buffer)
+            .iter()
+            .enumerate()
+            .any(|(y, row)| {
+                row.contains("docs/w39")
+                    && buffer[(1, y as u16)].style().add_modifier.contains(Modifier::REVERSED)
+            });
+        assert!(selected_visible, "selected row should be drawn with REVERSED");
+
+        // Move selection back to the top — top edge tracking.
+        state.selected_index = 0;
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("docs/w0"));
+        assert_eq!(state.scroll_offset.get(), 0);
+    }
+
+    // AC-2: scrollbar renders when N > H, omitted when N <= H.
+    #[test]
+    fn scrollbar_renders_only_when_list_overflows() {
+        // Overflow: many items in a small area => scrollbar present.
+        let state = state_with(40);
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        // The scrollbar thumb uses U+2588 (full block); track uses U+2502.
+        let has_thumb = buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() == "\u{2588}");
+        let has_track = buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() == "\u{2502}");
+        assert!(has_thumb, "scrollbar thumb should be drawn when N > H");
+        assert!(has_track, "scrollbar track should be drawn when N > H");
+
+        // Non-overflow: few items in a large area => no scrollbar.
+        let state = state_with(3);
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let has_thumb = buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() == "\u{2588}");
+        assert!(!has_thumb, "scrollbar should be omitted when N <= H");
+    }
+
+    // AC-2 (cont): scrollbar thumb position tracks the selected proportion.
+    #[test]
+    fn scrollbar_thumb_advances_with_selection() {
+        let mut state = state_with(40);
+        let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
+
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let thumb_y_top: Vec<u16> = (0..buffer.area.height)
+            .filter(|y| {
+                (0..buffer.area.width).any(|x| buffer[(x, *y)].symbol() == "\u{2588}")
+            })
+            .collect();
+        assert!(!thumb_y_top.is_empty(), "thumb should render at top");
+
+        state.selected_index = 39;
+        terminal
+            .draw(|frame| render_in(frame, frame.area(), &state))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let thumb_y_bot: Vec<u16> = (0..buffer.area.height)
+            .filter(|y| {
+                (0..buffer.area.width).any(|x| buffer[(x, *y)].symbol() == "\u{2588}")
+            })
+            .collect();
+        assert!(!thumb_y_bot.is_empty(), "thumb should render at bottom");
+        assert!(
+            thumb_y_bot.iter().min() > thumb_y_top.iter().max(),
+            "thumb should move down when selection advances ({thumb_y_top:?} -> {thumb_y_bot:?})"
+        );
     }
 }

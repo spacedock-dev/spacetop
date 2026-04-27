@@ -332,6 +332,8 @@ impl App {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                 KeyCode::Up | KeyCode::Char('k') => state.select_previous(),
+                KeyCode::PageDown => state.page_selection_down(),
+                KeyCode::PageUp => state.page_selection_up(),
                 KeyCode::Home => state.select_first(),
                 KeyCode::End => state.select_last(),
                 KeyCode::Enter => {
@@ -353,6 +355,8 @@ impl App {
                 }
                 KeyCode::Down | KeyCode::Char('j') => picker.select_next(),
                 KeyCode::Up | KeyCode::Char('k') => picker.select_previous(),
+                KeyCode::PageDown => picker.page_selection_down(),
+                KeyCode::PageUp => picker.page_selection_up(),
                 KeyCode::Home => picker.select_first(),
                 KeyCode::End => picker.select_last(),
                 KeyCode::Enter => {
