@@ -6,7 +6,7 @@ source: user request 2026-04-27
 score: 0.4
 worktree: .worktrees/spacedock-ensign-032-count-done-from-archived-tasks
 issue:
-pr:
+pr: #23
 started: 2026-04-27T02:26:48Z
 mod-block: merge:pr-merge
 ---
