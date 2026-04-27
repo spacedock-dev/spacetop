@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-036-preview-default-wrap-on
 issue:
-pr:
+pr: #27
 mod-block: merge:pr-merge
 ---
 
