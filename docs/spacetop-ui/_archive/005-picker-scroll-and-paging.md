@@ -1,16 +1,17 @@
 ---
 id: "005"
 title: Workflow picker supports scrolling and PageUp/PageDown
-status: review
+status: done
 source: captain
 started: 2026-04-27T05:07:19Z
-completed:
-verdict:
+completed: 2026-04-27T09:12:30Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-005-picker-scroll-and-paging
+worktree: 
 issue:
 pr: #25
 mod-block: 
+archived: 2026-04-27T09:12:30Z
 ---
 
 When the workflow picker popup lists more workflows than fit on the screen, the user has no way to see or reach the items below the visible window. The picker should scroll its list as the selection moves past the viewport edge, render a scrollbar so the user can see their position in the list, and respond to PageUp / PageDown for fast navigation through long lists.
