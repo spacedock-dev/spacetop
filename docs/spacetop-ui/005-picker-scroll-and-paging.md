@@ -1,7 +1,7 @@
 ---
 id: "005"
 title: Workflow picker supports scrolling and PageUp/PageDown
-status: review
+status: implement
 source: captain
 started: 2026-04-27T05:07:19Z
 completed:
@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-005-picker-scroll-and-paging
 issue:
 pr: #25
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 When the workflow picker popup lists more workflows than fit on the screen, the user has no way to see or reach the items below the visible window. The picker should scroll its list as the selection moves past the viewport edge, render a scrollbar so the user can see their position in the list, and respond to PageUp / PageDown for fast navigation through long lists.
@@ -27,3 +27,9 @@ Verified by: a render-level test (using ratatui's `TestBackend`) that renders th
 
 **AC-3 — PageUp / PageDown jump by viewport height.**
 Verified by: a unit test driving the picker key handler with PageDown / PageUp events and asserting the selected index advances/retreats by approximately the viewport height (clamped to list bounds), without panicking on empty lists or single-item lists.
+
+### Feedback Cycles
+
+**Cycle 1 — review → implement (PR #25 review).**
+Reviewer: copilot-pull-request-reviewer on PR #25.
+Finding: `src/ui/picker.rs:87` uses `ScrollbarState::new(max_offset)`; the existing convention at `src/ui/mod.rs:665` uses `ScrollbarState::new(max_scroll + 1)`, so the thumb never reaches the bottom row when the list is fully scrolled. Apply the suggested fix and add a regression test that asserts the scrollbar thumb hits the final row when `selected == total - 1`.
