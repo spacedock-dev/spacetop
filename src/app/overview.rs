@@ -324,7 +324,7 @@ impl OverviewState {
             .map(|mut count| {
                 if count.name == "done" {
                     if let Some(archived_done_count) = self.archived_done_count {
-                        count.items = archived_done_count;
+                        count.items += archived_done_count;
                     }
                 }
                 count

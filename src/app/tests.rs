@@ -125,6 +125,76 @@ fn stage_counts_reuse_cached_archived_done_count_after_archive_disappears() {
 }
 
 #[test]
+fn stage_counts_active_only_done_contributes_to_count() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(
+        root.join("README.md"),
+        "---\nstages:\n  states:\n    - name: plan\n      initial: true\n    - name: done\n      terminal: true\n---\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("task-100.md"),
+        "---\nid: 100\ntitle: Task 100\nstatus: done\n---\n\nbody\n",
+    )
+    .unwrap();
+
+    let app = App::load(root.to_path_buf()).expect("workflow should load");
+
+    let counts = app.stage_counts();
+    let done = counts
+        .iter()
+        .find(|count| count.name == "done")
+        .expect("done stage should exist");
+    assert_eq!(
+        done.items, 1,
+        "active terminal item should contribute to #done even when no archive exists"
+    );
+}
+
+#[test]
+fn stage_counts_sum_active_and_archived_done_without_double_counting() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(
+        root.join("README.md"),
+        "---\nstages:\n  states:\n    - name: plan\n      initial: true\n    - name: done\n      terminal: true\n---\n",
+    )
+    .unwrap();
+    // Two active done items.
+    for id in ["100", "101"] {
+        std::fs::write(
+            root.join(format!("task-{id}.md")),
+            format!("---\nid: {id}\ntitle: Task {id}\nstatus: done\n---\n\nbody\n"),
+        )
+        .unwrap();
+    }
+    // Three archived done items (disjoint ids).
+    std::fs::create_dir_all(root.join("_archive")).unwrap();
+    for id in ["200", "201", "202"] {
+        std::fs::write(
+            root.join("_archive").join(format!("task-{id}.md")),
+            format!(
+                "---\nid: {id}\ntitle: Archived {id}\nstatus: done\ncompleted: 2026-04-27T00:00:00Z\n---\n\nbody\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    let app = App::load(root.to_path_buf()).expect("workflow should load");
+
+    let counts = app.stage_counts();
+    let done = counts
+        .iter()
+        .find(|count| count.name == "done")
+        .expect("done stage should exist");
+    assert_eq!(
+        done.items, 5,
+        "done count should sum N active + M archived without double-counting"
+    );
+}
+
+#[test]
 fn navigation_changes_selection_without_touching_snapshot() {
     let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
 
