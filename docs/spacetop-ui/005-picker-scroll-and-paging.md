@@ -1,13 +1,13 @@
 ---
 id: "005"
 title: Workflow picker supports scrolling and PageUp/PageDown
-status: design
+status: implement
 source: captain
-started:
+started: 2026-04-27T05:07:19Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-005-picker-scroll-and-paging
 issue:
 pr:
 ---
