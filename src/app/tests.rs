@@ -62,82 +62,45 @@ fn loads_real_workflow_state_and_derives_stage_counts() {
 }
 
 #[test]
-fn stage_counts_ignore_items_under_archive_even_if_they_are_present_in_snapshot() {
-    let app = App::from_snapshot(
-        PathBuf::from("workflow"),
-        WorkflowSnapshot {
-            definition: WorkflowDefinition {
-                root: PathBuf::from("workflow"),
-                stages: vec![
-                    StageDefinition {
-                        name: "plan".to_string(),
-                        initial: true,
-                        terminal: false,
-                        gate: false,
-                        fresh: false,
-                        feedback_to: None,
-                        worktree: false,
-                        concurrency: None,
-                    },
-                    StageDefinition {
-                        name: "done".to_string(),
-                        initial: false,
-                        terminal: true,
-                        gate: false,
-                        fresh: false,
-                        feedback_to: None,
-                        worktree: false,
-                        concurrency: None,
-                    },
-                ],
-                id_style: None,
-                entity_type: None,
-                entity_label: None,
-                entity_label_plural: None,
-                stage_colors: HashMap::new(),
-            },
-            items: vec![
-                WorkItem {
-                    path: PathBuf::from("workflow/task-1.md"),
-                    id: "001".to_string(),
-                    title: "Active task".to_string(),
-                    status: "plan".to_string(),
-                    source: Some("test".to_string()),
-                    started: None,
-                    completed: None,
-                    verdict: None,
-                    score: Some(0.5),
-                    worktree: None,
-                    issue: None,
-                    pr: None,
-                    body: "Active body".to_string(),
-                },
-                WorkItem {
-                    path: PathBuf::from("workflow/_archive/task-2.md"),
-                    id: "002".to_string(),
-                    title: "Archived task".to_string(),
-                    status: "done".to_string(),
-                    source: Some("test".to_string()),
-                    started: None,
-                    completed: Some("2026-04-27T00:00:00Z".to_string()),
-                    verdict: Some("PASSED".to_string()),
-                    score: Some(0.5),
-                    worktree: None,
-                    issue: None,
-                    pr: None,
-                    body: "Archived body".to_string(),
-                },
-            ],
-        },
+fn stage_counts_include_archived_done_items_from_the_workflow_archive() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+    let app = App::load(root).expect("workflow should load");
+
+    let counts = app.stage_counts();
+    let done = counts
+        .iter()
+        .find(|count| count.name == "done")
+        .expect("done stage should exist");
+    assert!(
+        done.items > 0,
+        "done count should come from archived workflow items"
     );
 
-    let counts = app
-        .stage_counts()
-        .into_iter()
-        .map(|count| (count.name, count.items))
+    let expected_active_counts = app
+        .snapshot()
+        .definition
+        .stages
+        .iter()
+        .filter(|stage| stage.name != "done")
+        .map(|stage| {
+            (
+                stage.name.as_str(),
+                app.snapshot()
+                    .items
+                    .iter()
+                    .filter(|item| item.status == stage.name)
+                    .count(),
+            )
+        })
         .collect::<Vec<_>>();
 
-    assert_eq!(counts, vec![("plan".to_string(), 1), ("done".to_string(), 0)]);
+    let observed_active_counts = counts
+        .iter()
+        .filter(|count| count.name != "done")
+        .map(|count| (count.name.as_str(), count.items))
+        .collect::<Vec<_>>();
+
+    assert_eq!(observed_active_counts, expected_active_counts);
 }
 
 #[test]

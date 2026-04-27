@@ -310,6 +310,7 @@ impl OverviewState {
     }
 
     pub fn stage_counts(&self) -> Vec<StageCount> {
+        let archived_done_count = self.archived_done_count();
         self.snapshot
             .definition
             .stages
@@ -320,8 +321,14 @@ impl OverviewState {
                     .snapshot
                     .items
                     .iter()
-                    .filter(|item| item.status == stage.name && !is_archived_path(&item.path))
+                    .filter(|item| item.status == stage.name)
                     .count(),
+            })
+            .map(|mut count| {
+                if count.name == "done" {
+                    count.items = archived_done_count;
+                }
+                count
             })
             .collect()
     }
@@ -441,7 +448,26 @@ impl OverviewState {
     }
 }
 
-fn is_archived_path(path: &Path) -> bool {
-    path.components()
-        .any(|component| component.as_os_str() == "_archive")
+impl OverviewState {
+    fn archived_done_count(&self) -> usize {
+        if self.archive_loaded {
+            return self
+                .archived_items
+                .iter()
+                .filter(|item| item.status == "done")
+                .count();
+        }
+
+        let allowed_statuses = self
+            .snapshot
+            .definition
+            .stages
+            .iter()
+            .map(|stage| stage.name.clone())
+            .collect::<Vec<_>>();
+
+        load_archived_items(&self.workflow_dir, &allowed_statuses)
+            .map(|items| items.iter().filter(|item| item.status == "done").count())
+            .unwrap_or(0)
+    }
 }

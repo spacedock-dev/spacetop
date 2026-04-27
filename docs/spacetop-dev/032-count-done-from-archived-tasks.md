@@ -71,3 +71,16 @@ This stage is a planning pass only. The task body now contains a scoped implemen
 ### Summary
 
 The implementation is minimal and stays in app-state ownership: active stage totals now ignore archived-path items before the UI ever renders them. The targeted regression was added at the app layer, neighboring app/UI tests still pass, and clippy is clean.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Update the counts logic so `done` is derived from archived items, while the non-terminal stage buckets still reflect active items.
+  `src/app/overview.rs` now leaves active stage buckets on `snapshot.items` and sources the `done` bucket from `_archive/` via `archived_done_count()`.
+- DONE: Update or replace the regression tests so they prove the overview shows archived done work in the `done` count instead of leaving it at zero.
+  Replaced the bad synthetic regression with `stage_counts_include_archived_done_items_from_the_workflow_archive` in `src/app/tests.rs`; it failed before the fix and now passes against the real workflow fixture.
+- DONE: Run the relevant focused tests and `make lint`, then append a fresh `## Stage Report: implement` section that accounts for each checklist item with DONE / SKIPPED / FAILED entries.
+  Ran `cargo test app::tests::stage_counts_include_archived_done_items_from_the_workflow_archive -- --exact`, `cargo test app::tests::toggle_scope_key_a_flips_to_archived_and_loads_lazily -- --exact`, `cargo test ui::graph::counts_row_aligns_under_nodes_and_marks_active_stage -- --exact`, and `make lint`.
+
+### Summary
+
+The counts path now treats archived `done` work as the source for the terminal bucket while leaving the other buckets tied to active items. The fix stayed in app-state logic, the focused regression now proves the real workflow archive contributes to `done`, and lint/test checks are clean.
