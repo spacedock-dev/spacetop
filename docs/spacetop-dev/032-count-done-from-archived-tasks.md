@@ -1,7 +1,7 @@
 ---
 id: 032
 title: Count done from archived tasks in workflow overview
-status: implement
+status: review
 source: user request 2026-04-27
 score: 0.4
 worktree: .worktrees/spacedock-ensign-032-count-done-from-archived-tasks
