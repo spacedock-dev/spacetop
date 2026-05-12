@@ -11,6 +11,7 @@ worktree:
 issue:
 pr: #29
 mod-block: 
+archived: 2026-05-12T02:00:11Z
 ---
 
 Surface the entity's `worktree` frontmatter field in the Preview pane header area so the captain can see at a glance whether a task currently has a live worktree (and where it is on disk) without opening the file.
