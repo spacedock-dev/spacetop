@@ -13,6 +13,36 @@ pub enum ViewScope {
     Archived,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SortMode {
+    #[default]
+    Id,
+    Status,
+}
+
+impl SortMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            SortMode::Id => "id",
+            SortMode::Status => "status",
+        }
+    }
+}
+
+/// Compare two work-item ids: parse the entire id as `u64` and order
+/// numerically when both sides parse, otherwise fall back to lexical
+/// order. Workflow ids are pure numeric (e.g., "037"), so whole-string
+/// parsing is sufficient; equal numeric values are tiebroken lexically
+/// on the full id for stability.
+fn compare_ids(a: &str, b: &str) -> std::cmp::Ordering {
+    let an = a.parse::<u64>().ok();
+    let bn = b.parse::<u64>().ok();
+    match (an, bn) {
+        (Some(x), Some(y)) => x.cmp(&y).then_with(|| a.cmp(b)),
+        _ => a.cmp(b),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StageCount {
     pub name: String,
@@ -39,6 +69,8 @@ pub struct OverviewState {
     pub max_preview_scroll_x: Cell<usize>,
     pub preview_wrap: bool,
     pub task_page_size: Cell<usize>,
+    pub sort_mode: SortMode,
+    pub sorted_active: Vec<WorkItem>,
 }
 
 /// Derive a stable slug from a work-item path. Prefer the file stem; when the
@@ -91,6 +123,8 @@ impl OverviewState {
             max_preview_scroll_x: Cell::new(usize::MAX),
             preview_wrap: true,
             task_page_size: Cell::new(10),
+            sort_mode: SortMode::default(),
+            sorted_active: Vec::new(),
         }
     }
 
@@ -112,7 +146,7 @@ impl OverviewState {
         repo_root: PathBuf,
         snapshot: WorkflowSnapshot,
     ) -> Self {
-        Self {
+        let mut state = Self {
             workflow_dir,
             repo_root,
             snapshot,
@@ -131,7 +165,11 @@ impl OverviewState {
             max_preview_scroll_x: Cell::new(usize::MAX),
             preview_wrap: true,
             task_page_size: Cell::new(10),
-        }
+            sort_mode: SortMode::default(),
+            sorted_active: Vec::new(),
+        };
+        state.rebuild_sorted_active();
+        state
     }
 
     /// Deterministic reload seam: swap the active snapshot in-place while
@@ -141,12 +179,12 @@ impl OverviewState {
     /// invalidated so the next scope toggle reloads them.
     pub fn reload_from_snapshot(&mut self, snapshot: WorkflowSnapshot) {
         let prior_slug = self
-            .snapshot
-            .items
+            .sorted_active
             .get(self.selected_index)
             .and_then(|item| slug_of(&item.path));
 
         self.snapshot = snapshot;
+        self.rebuild_sorted_active();
         // Invalidate archive view — a watcher-driven reload may have touched
         // `_archive/` too. Dropping the cached list forces a rescan the next
         // time the user toggles to archived scope.
@@ -156,13 +194,12 @@ impl OverviewState {
         self.archive_error = None;
         self.refresh_archived_done_count();
 
-        let len = self.snapshot.items.len();
+        let len = self.sorted_active.len();
         if len == 0 {
             self.selected_index = 0;
         } else if let Some(slug) = prior_slug {
             if let Some(pos) = self
-                .snapshot
-                .items
+                .sorted_active
                 .iter()
                 .position(|item| slug_of(&item.path).as_deref() == Some(slug.as_str()))
             {
@@ -235,9 +272,79 @@ impl OverviewState {
 
     pub fn visible_items(&self) -> &[WorkItem] {
         match self.view_scope {
-            ViewScope::Active => &self.snapshot.items,
+            ViewScope::Active => &self.sorted_active,
             ViewScope::Archived => &self.archived_items,
         }
+    }
+
+    pub fn sort_mode(&self) -> SortMode {
+        self.sort_mode
+    }
+
+    /// Cycle the active-scope sort mode (Id -> Status -> Id). Preserves the
+    /// current selection by slug across the re-sort, mirroring the
+    /// reload_from_snapshot pattern. No-op if there are no active items.
+    pub fn cycle_sort_mode(&mut self) {
+        if self.sorted_active.is_empty() {
+            self.selected_index = 0;
+            return;
+        }
+
+        let prior_slug = self
+            .sorted_active
+            .get(self.selected_index)
+            .and_then(|item| slug_of(&item.path));
+
+        self.sort_mode = match self.sort_mode {
+            SortMode::Id => SortMode::Status,
+            SortMode::Status => SortMode::Id,
+        };
+        self.rebuild_sorted_active();
+
+        let len = self.sorted_active.len();
+        if len == 0 {
+            self.selected_index = 0;
+            return;
+        }
+        if let Some(slug) = prior_slug {
+            if let Some(pos) = self
+                .sorted_active
+                .iter()
+                .position(|item| slug_of(&item.path).as_deref() == Some(slug.as_str()))
+            {
+                self.selected_index = pos;
+                return;
+            }
+        }
+        if self.selected_index >= len {
+            self.selected_index = len - 1;
+        }
+    }
+
+    fn rebuild_sorted_active(&mut self) {
+        let mut items: Vec<WorkItem> = self.snapshot.items.clone();
+        match self.sort_mode {
+            SortMode::Id => {
+                items.sort_by(|a, b| compare_ids(&a.id, &b.id));
+            }
+            SortMode::Status => {
+                let stage_count = self.snapshot.definition.stages.len();
+                let stage_index = |status: &str| -> usize {
+                    self.snapshot
+                        .definition
+                        .stages
+                        .iter()
+                        .position(|s| s.name == status)
+                        .unwrap_or(stage_count)
+                };
+                items.sort_by(|a, b| {
+                    let ai = stage_index(&a.status);
+                    let bi = stage_index(&b.status);
+                    ai.cmp(&bi).then_with(|| compare_ids(&a.id, &b.id))
+                });
+            }
+        }
+        self.sorted_active = items;
     }
 
     pub fn archived_items(&self) -> &[WorkItem] {
@@ -544,6 +651,175 @@ mod tests {
     fn preview_wrap_default_on_for_empty_overview() {
         let state = OverviewState::empty(PathBuf::from("/tmp/ow-empty"));
         assert!(state.preview_wrap());
+    }
+
+    fn stage(name: &str) -> StageDefinition {
+        StageDefinition {
+            name: name.to_string(),
+            initial: false,
+            terminal: false,
+            gate: false,
+            fresh: false,
+            feedback_to: None,
+            worktree: false,
+            concurrency: None,
+        }
+    }
+
+    fn item_with_status(id: &str, status: &str) -> WorkItem {
+        let mut item = fixture_item(id);
+        item.status = status.to_string();
+        item
+    }
+
+    fn snapshot_with(items: Vec<WorkItem>, stages: Vec<StageDefinition>) -> WorkflowSnapshot {
+        WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: PathBuf::from("/tmp/ow-test"),
+                stages,
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+                stage_colors: HashMap::new(),
+            },
+            items,
+        }
+    }
+
+    #[test]
+    fn sort_by_id_orders_ascending_across_mixed_status() {
+        let items = vec![
+            item_with_status("010", "implement"),
+            item_with_status("002", "design"),
+            item_with_status("037", "plan"),
+        ];
+        let snap = snapshot_with(
+            items,
+            vec![stage("design"), stage("plan"), stage("implement")],
+        );
+        let state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
+        let ids: Vec<&str> = state.visible_items().iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, vec!["002", "010", "037"]);
+        assert_eq!(state.sort_mode(), SortMode::Id);
+    }
+
+    #[test]
+    fn sort_by_status_uses_workflow_stage_order() {
+        let items = vec![
+            item_with_status("004", "done"),
+            item_with_status("001", "implement"),
+            item_with_status("002", "design"),
+            item_with_status("003", "plan"),
+            item_with_status("005", "design"),
+        ];
+        let snap = snapshot_with(
+            items,
+            vec![
+                stage("design"),
+                stage("plan"),
+                stage("implement"),
+                stage("done"),
+            ],
+        );
+        let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
+        state.cycle_sort_mode();
+        assert_eq!(state.sort_mode(), SortMode::Status);
+        let ids: Vec<&str> = state.visible_items().iter().map(|i| i.id.as_str()).collect();
+        // design (002, 005), plan (003), implement (001), done (004); IDs ascending within stage.
+        assert_eq!(ids, vec!["002", "005", "003", "001", "004"]);
+    }
+
+    #[test]
+    fn sort_by_status_pushes_unknown_status_to_end() {
+        let items = vec![
+            item_with_status("001", "design"),
+            item_with_status("002", "mystery"),
+            item_with_status("003", "plan"),
+        ];
+        let snap = snapshot_with(items, vec![stage("design"), stage("plan")]);
+        let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
+        state.cycle_sort_mode();
+        let ids: Vec<&str> = state.visible_items().iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, vec!["001", "003", "002"]);
+    }
+
+    #[test]
+    fn cycle_sort_mode_preserves_selection_by_slug() {
+        let items = vec![
+            item_with_status("010", "implement"),
+            item_with_status("002", "design"),
+            item_with_status("037", "plan"),
+        ];
+        let snap = snapshot_with(
+            items,
+            vec![stage("design"), stage("plan"), stage("implement")],
+        );
+        let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
+        // Sorted by Id: ["002", "010", "037"]; select "010" at index 1.
+        state.selected_index = 1;
+        assert_eq!(state.selected_item().map(|i| i.id.as_str()), Some("010"));
+        state.cycle_sort_mode();
+        assert_eq!(state.selected_item().map(|i| i.id.as_str()), Some("010"));
+    }
+
+    #[test]
+    fn cycle_sort_mode_default_and_cycles_back() {
+        let state =
+            OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), fixture_snapshot());
+        assert_eq!(state.sort_mode(), SortMode::Id);
+        let mut state = state;
+        state.cycle_sort_mode();
+        assert_eq!(state.sort_mode(), SortMode::Status);
+        state.cycle_sort_mode();
+        assert_eq!(state.sort_mode(), SortMode::Id);
+    }
+
+    #[test]
+    fn reload_from_snapshot_preserves_sort_mode() {
+        let items = vec![
+            item_with_status("010", "implement"),
+            item_with_status("002", "design"),
+        ];
+        let snap = snapshot_with(items, vec![stage("design"), stage("implement")]);
+        let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
+        state.cycle_sort_mode();
+        assert_eq!(state.sort_mode(), SortMode::Status);
+
+        let reload_items = vec![
+            item_with_status("020", "implement"),
+            item_with_status("005", "design"),
+        ];
+        let reload_snap =
+            snapshot_with(reload_items, vec![stage("design"), stage("implement")]);
+        state.reload_from_snapshot(reload_snap);
+        assert_eq!(state.sort_mode(), SortMode::Status);
+        let ids: Vec<&str> = state.visible_items().iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, vec!["005", "020"]);
+    }
+
+    #[test]
+    fn cycling_sort_mode_does_not_mutate_snapshot_items() {
+        let items = vec![
+            item_with_status("010", "implement"),
+            item_with_status("002", "design"),
+            item_with_status("037", "plan"),
+        ];
+        let snap = snapshot_with(
+            items.clone(),
+            vec![stage("design"), stage("plan"), stage("implement")],
+        );
+        let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
+        let original_ids: Vec<String> =
+            state.snapshot().items.iter().map(|i| i.id.clone()).collect();
+        for _ in 0..5 {
+            state.cycle_sort_mode();
+        }
+        let after_ids: Vec<String> =
+            state.snapshot().items.iter().map(|i| i.id.clone()).collect();
+        assert_eq!(original_ids, after_ids);
+        // Also verify the on-disk-derived order is the source-provided order.
+        assert_eq!(original_ids, vec!["010", "002", "037"]);
     }
 
     #[test]

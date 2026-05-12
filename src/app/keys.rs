@@ -76,6 +76,10 @@ pub(crate) fn handle_overview_key(
             state.toggle_preview_wrap();
             OverviewKeyAction::None
         }
+        KeyCode::Char('s') if !state.preview_open() => {
+            state.cycle_sort_mode();
+            OverviewKeyAction::None
+        }
         KeyCode::Right if is_multi => OverviewKeyAction::Switch(session.cycle_next()),
         KeyCode::Left if is_multi => OverviewKeyAction::Switch(session.cycle_prev()),
         KeyCode::Char('P') if is_multi && !pinned => OverviewKeyAction::OpenPickerOverlay,
