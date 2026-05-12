@@ -147,3 +147,17 @@ Added a reusable `worktree_segment` span builder in `build_preview_header_lines`
 ### Summary
 
 PASSED. Implementation matches the design verbatim in render behavior; the worktree segment renders identically to `source` when set and as a dimmed `worktree: —` when unset. Lint clean, all relevant tests green, sole test failure is a pre-existing graph-rendering issue on main untouched by this diff.
+
+### Feedback Cycles
+
+#### Cycle 1 — review → implement (2026-05-12)
+
+Captain rejected the review with one targeted change: the `worktree:` row should display only the basename (final path segment) of the worktree path, not the full relative path. Rationale: in practice every worktree lives under `.worktrees/`, so the prefix adds no information and the long string crowds the Bottom-placement single-line metadata row. The basename alone (e.g. `spacedock-ensign-006-show-worktree-in-preview-header`) is what uniquely identifies a worktree.
+
+Scope of fix:
+- Render `worktree: {basename}` when the field is non-empty. Use `std::path::Path::file_name` (fall back to the raw trimmed string if `file_name` returns `None`, which would only happen for trailing-slash edge cases).
+- Empty-marker behavior is unchanged: still `worktree: —` (dim).
+- Update the existing rendering tests to assert on the basename rather than the full path. AC-1 and AC-3 wording stays the same (the field is "the worktree value" — basename is still that value).
+- All other layout decisions (placement, dim style, position between `source` and `verdict`) stay as-is.
+
+Verification: existing four tests in `src/ui/mod.rs` (the ones added by the implement stage — `bottom_preview_shows_worktree_when_set`, `left_preview_shows_worktree_when_set`, `preview_renders_em_dash_for_empty_worktree`, `archived_preview_includes_worktree_segment`) updated to use basename fixtures and assertions. `cargo test` and `make lint` must remain green.
