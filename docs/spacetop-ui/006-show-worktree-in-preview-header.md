@@ -174,3 +174,16 @@ Verification: existing four tests in `src/ui/mod.rs` (the ones added by the impl
 ### Summary
 
 Switched the `worktree:` segment to render the basename (`Path::file_name`) with a raw-string fallback for trailing-slash edge cases. Tests now use the realistic `.worktrees/ensign-foo` fixture and assert the basename appears while the full path does not. No layout, placement, or empty-marker changes — only the displayed value is shortened.
+
+## Stage Report: review (cycle 1)
+
+- DONE: Basename rendering is correct: `Path::file_name`-based extraction, raw-string fallback for trailing-slash edge cases, full path NOT shown in either PreviewPlacement.
+  Diff at `src/ui/mod.rs:697-704` extracts `Path::new(path).file_name().and_then(|s| s.to_str()).map(str::to_string).unwrap_or_else(|| path.to_string())` and renders `Span::raw(basename)`. Bottom and Left render paths both consume the same `worktree_segment`, so neither shows the full path.
+- DONE: The four existing tests assert basename (`worktree: ensign-foo`) and negative-assert the full path is absent where appropriate; `cargo test` is green (pre-existing unrelated graph-test failure is acceptable per cycle 0 review).
+  `bottom_preview_shows_worktree_when_set` (src/ui/mod.rs:1305-1322) and `left_preview_shows_worktree_when_set` (src/ui/mod.rs:1325-1342) both positive-assert `worktree: ensign-foo` and negative-assert `.worktrees/ensign-foo` is absent. Em-dash and archived tests untouched (path-agnostic). 191/192 lib tests pass; sole failure is the pre-existing `ui::graph::tests::narrow_tier_renders_compact_textual_summary` confirmed unrelated in cycle 0.
+- DONE: `make lint` clean. No new clippy warnings, no `#[allow(...)]` introduced without justification.
+  `cargo clippy --all-targets --all-features -- -D warnings` finishes clean.
+
+### Summary
+
+PASSED (cycle 1). Basename rendering is correctly implemented via `Path::file_name` with a sensible raw-string fallback; the change is localized to the `worktree_segment` builder and does not alter placement, dim styling, or the empty-marker branch. All four worktree tests now both positive- and negative-assert the basename-only contract, lint clean, and surrounding header rendering unaffected.
