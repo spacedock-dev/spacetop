@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use sha1::{Digest, Sha1};
 
@@ -8,25 +8,37 @@ use crate::domain::WorkItem;
 
 use super::{is_markdown_path, is_readme_path, parse_work_item, ParseError};
 
+/// Return the union of worktree root directories that may host a mirrored
+/// workflow tree: `<repo_root>/.worktrees/*` and
+/// `<repo_root>/.claude/worktrees/*`. Both conventions are scanned because
+/// either may be in use on a given checkout. Missing parent directories are
+/// not errors — the helper returns whatever entries exist.
+pub(crate) fn worktree_roots(repo_root: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    for parent in [
+        repo_root.join(".worktrees"),
+        repo_root.join(".claude").join("worktrees"),
+    ] {
+        let Ok(entries) = fs::read_dir(&parent) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                roots.push(path);
+            }
+        }
+    }
+    roots
+}
+
 pub(crate) fn scan_worktrees(
     repo_root: &Path,
     workflow_rel: &Path,
     allowed_statuses: &[String],
 ) -> Result<Vec<WorkItem>, ParseError> {
-    let wt_dir = repo_root.join(".worktrees");
-    if !wt_dir.exists() {
-        return Ok(Vec::new());
-    }
-    let entries = match fs::read_dir(&wt_dir) {
-        Ok(e) => e,
-        Err(_) => return Ok(Vec::new()),
-    };
     let mut all_items = Vec::new();
-    for entry in entries.flatten() {
-        let wt_root = entry.path();
-        if !wt_root.is_dir() {
-            continue;
-        }
+    for wt_root in worktree_roots(repo_root) {
         let candidate = wt_root.join(workflow_rel);
         if !candidate.is_dir() {
             continue;
@@ -81,7 +93,7 @@ fn slug_of_path(path: &Path) -> Option<std::ffi::OsString> {
 
 /// Merge main-branch items with worktree items using SHA-1 hash comparison.
 /// Worktree version wins when the same slug exists in both and hashes differ.
-/// Uses SHA-1 digest (not string equality on body) for content comparison (AC-5).
+/// Uses SHA-1 digest (not string equality on body) for content comparison.
 pub(crate) fn merge_worktree_items(
     main_items: Vec<WorkItem>,
     worktree_items: Vec<WorkItem>,
@@ -102,8 +114,12 @@ pub(crate) fn merge_worktree_items(
             continue;
         };
         let Some(main_item) = index.get(&slug) else {
-            // Worktree-only item (AC-3).
-            index.insert(slug, wt_item);
+            // Worktree-only item: tag the row so the UI can mark it.
+            let wt_path = wt_item.path.clone();
+            let mut tagged = wt_item;
+            tagged.worktree_source = Some(wt_path);
+            tagged.main_body = None;
+            index.insert(slug, tagged);
             continue;
         };
         if let Some(item) = merged_worktree_item(main_item, wt_item) {
@@ -127,7 +143,14 @@ fn merged_worktree_item(main_item: &WorkItem, wt_item: WorkItem) -> Option<WorkI
         (Some(_), Some(_)) => Some(merge_main_frontmatter_with_worktree_body(
             main_item, wt_item,
         )),
-        (Some(_), None) | (None, None) => Some(wt_item),
+        (Some(_), None) | (None, None) => {
+            // Cannot read main copy; fall back to worktree-only treatment.
+            let wt_path = wt_item.path.clone();
+            let mut tagged = wt_item;
+            tagged.worktree_source = Some(wt_path);
+            tagged.main_body = None;
+            Some(tagged)
+        }
     }
 }
 
@@ -136,6 +159,7 @@ fn content_hash(path: &Path) -> Option<[u8; 20]> {
 }
 
 fn merge_main_frontmatter_with_worktree_body(main_item: &WorkItem, wt_item: WorkItem) -> WorkItem {
+    let wt_path = wt_item.path.clone();
     WorkItem {
         path: wt_item.path,
         id: main_item.id.clone(),
@@ -150,5 +174,7 @@ fn merge_main_frontmatter_with_worktree_body(main_item: &WorkItem, wt_item: Work
         issue: main_item.issue.clone(),
         pr: main_item.pr.clone(),
         body: wt_item.body,
+        worktree_source: Some(wt_path),
+        main_body: Some(main_item.body.clone()),
     }
 }

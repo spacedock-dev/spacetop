@@ -134,6 +134,13 @@ pub struct WorkItem {
     pub issue: Option<String>,
     pub pr: Option<String>,
     pub body: String,
+    /// Set to the worktree file path when this row is sourced from a worktree
+    /// (worktree-only item) or has a divergent worktree copy that replaced the
+    /// main body during merge. `None` for plain main-tracked rows.
+    pub worktree_source: Option<PathBuf>,
+    /// Original root body when a divergent worktree body replaced it. `None`
+    /// when bodies match or there is no root copy (worktree-only item).
+    pub main_body: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

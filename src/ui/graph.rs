@@ -1195,6 +1195,8 @@ mod tests {
             issue: None,
             pr: None,
             body: String::new(),
+            worktree_source: None,
+            main_body: None,
         }
     }
 }

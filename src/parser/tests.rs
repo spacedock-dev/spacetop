@@ -745,4 +745,213 @@ fn same_content_hash_keeps_main_item_path() {
     assert_eq!(snapshot.items[0].title, "Identical");
     // When hashes match, the main copy is retained.
     assert!(snapshot.items[0].path.starts_with(&wf));
+    // Identical content: not flagged as worktree-sourced; no main_body.
+    assert!(snapshot.items[0].worktree_source.is_none());
+    assert!(snapshot.items[0].main_body.is_none());
+}
+
+// ---- Task 038: worktree-only marker and body-diff merge data ----
+
+#[test]
+fn worktree_only_item_has_worktree_source_tag() {
+    // AC-1: worktree-only item carries `worktree_source = Some(wt_path)` so
+    // the UI can render a marker distinguishing it from main-tracked rows.
+    let root = unique_temp_dir("wt-only-tag");
+    let wf = root.join("docs/wf");
+    write_minimal_workflow(&wf, None, None);
+    let wt = root.join(".worktrees/wt-1/docs/wf");
+    write_minimal_workflow(&wt, Some("only.md"), Some(&entity_md("050", "Only")));
+
+    let snapshot = load_workflow_dir(&wf, &root).expect("load");
+    assert_eq!(snapshot.items.len(), 1);
+    let item = &snapshot.items[0];
+    assert_eq!(item.title, "Only");
+    let wt_source = item
+        .worktree_source
+        .as_ref()
+        .expect("worktree-only item must carry worktree_source");
+    assert!(
+        wt_source.starts_with(root.join(".worktrees/wt-1")),
+        "worktree_source should point inside the worktree: {wt_source:?}"
+    );
+    // Worktree-only: no main_body (nothing to diff against).
+    assert!(item.main_body.is_none());
+}
+
+#[test]
+fn worktree_divergent_keeps_main_frontmatter_and_records_main_body() {
+    // AC-2: when main and worktree differ, frontmatter (status, title) comes
+    // from main, body comes from worktree, and main_body retains the root
+    // body so the preview can render a diff.
+    let root = unique_temp_dir("wt-divergent");
+    let wf = root.join("docs/wf");
+    write_two_state_workflow(
+        &wf,
+        Some("task.md"),
+        Some(&entity_md_with_status(
+            "060",
+            "Main Title",
+            "done",
+            "main body line",
+        )),
+    );
+    let wt = root.join(".worktrees/wt-1/docs/wf");
+    write_two_state_workflow(
+        &wt,
+        Some("task.md"),
+        Some(&entity_md_with_status(
+            "060",
+            "Worktree Title",
+            "design",
+            "worktree body line",
+        )),
+    );
+
+    let snapshot = load_workflow_dir(&wf, &root).expect("load");
+    assert_eq!(snapshot.items.len(), 1);
+    let item = &snapshot.items[0];
+    assert_eq!(item.status, "done", "status from main");
+    assert_eq!(item.title, "Main Title", "title from main");
+    assert!(
+        item.body.contains("worktree body line"),
+        "body from worktree: {:?}",
+        item.body
+    );
+    assert!(
+        item.main_body
+            .as_deref()
+            .is_some_and(|b| b.contains("main body line")),
+        "main_body should retain root body for diffing, got: {:?}",
+        item.main_body
+    );
+    assert!(
+        item.worktree_source.is_some(),
+        "divergent merge must tag worktree_source"
+    );
+}
+
+#[test]
+fn claude_worktrees_dir_is_scanned_alongside_dot_worktrees() {
+    // AC-1: items mirrored under `.claude/worktrees/*` are picked up the same
+    // way as items under `.worktrees/*`.
+    let root = unique_temp_dir("claude-wt");
+    let wf = root.join("docs/wf");
+    write_minimal_workflow(&wf, None, None);
+    let wt = root.join(".claude/worktrees/wt-1/docs/wf");
+    write_minimal_workflow(&wt, Some("c.md"), Some(&entity_md("070", "Claude WT")));
+
+    let snapshot = load_workflow_dir(&wf, &root).expect("load");
+    assert_eq!(snapshot.items.len(), 1);
+    assert_eq!(snapshot.items[0].title, "Claude WT");
+    assert!(snapshot.items[0].worktree_source.is_some());
+}
+
+#[test]
+fn worktree_scan_handles_no_worktrees_missing_subdir_and_partial_overlap() {
+    // AC-5: three sub-cases — no worktree dirs, worktree missing the workflow
+    // subdir, and a worktree with only an unrelated subset of task files.
+    // Each case must succeed without errors and the merged item list must
+    // match the root-only baseline plus any genuinely new worktree items.
+
+    // (a) no worktrees registered at all.
+    let root_a = unique_temp_dir("ac5-none");
+    let wf_a = root_a.join("docs/wf");
+    write_minimal_workflow(&wf_a, Some("alpha.md"), Some(&entity_md("080", "Alpha")));
+    let snap_a = load_workflow_dir(&wf_a, &root_a).expect("(a) load");
+    assert_eq!(snap_a.items.len(), 1);
+    assert_eq!(snap_a.items[0].title, "Alpha");
+    assert!(snap_a.items[0].worktree_source.is_none());
+
+    // (b) worktree exists but does not contain the workflow directory.
+    let root_b = unique_temp_dir("ac5-missing");
+    let wf_b = root_b.join("docs/wf");
+    write_minimal_workflow(&wf_b, Some("beta.md"), Some(&entity_md("081", "Beta")));
+    fs::create_dir_all(root_b.join(".worktrees/wt-1/unrelated"))
+        .expect("worktree without workflow dir");
+    let snap_b = load_workflow_dir(&wf_b, &root_b).expect("(b) load");
+    assert_eq!(snap_b.items.len(), 1);
+    assert_eq!(snap_b.items[0].title, "Beta");
+    assert!(snap_b.items[0].worktree_source.is_none());
+
+    // (c) worktree exists, has the workflow dir, but the worktree's set of
+    // task files does not overlap with the root.
+    let root_c = unique_temp_dir("ac5-partial");
+    let wf_c = root_c.join("docs/wf");
+    write_minimal_workflow(&wf_c, Some("gamma.md"), Some(&entity_md("082", "Gamma")));
+    let wt_c = root_c.join(".worktrees/wt-1/docs/wf");
+    write_minimal_workflow(&wt_c, Some("delta.md"), Some(&entity_md("083", "Delta")));
+    let snap_c = load_workflow_dir(&wf_c, &root_c).expect("(c) load");
+    let titles: Vec<&str> = snap_c.items.iter().map(|i| i.title.as_str()).collect();
+    assert!(titles.contains(&"Gamma"));
+    assert!(titles.contains(&"Delta"));
+    // gamma stays main-sourced; delta is worktree-only.
+    let gamma = snap_c
+        .items
+        .iter()
+        .find(|i| i.title == "Gamma")
+        .expect("gamma");
+    let delta = snap_c
+        .items
+        .iter()
+        .find(|i| i.title == "Delta")
+        .expect("delta");
+    assert!(gamma.worktree_source.is_none());
+    assert!(delta.worktree_source.is_some());
+}
+
+#[test]
+fn worktree_scan_does_not_mutate_files() {
+    // AC-4: snapshot file mtimes across root + worktrees, run load, assert
+    // mtimes unchanged and no new files were created.
+    let root = unique_temp_dir("ac4-mtime");
+    let wf = root.join("docs/wf");
+    write_minimal_workflow(&wf, Some("task.md"), Some(&entity_md("090", "Stable")));
+    let wt = root.join(".worktrees/wt-1/docs/wf");
+    write_minimal_workflow(
+        &wt,
+        Some("task.md"),
+        Some(&entity_md("090", "Stable WT")),
+    );
+    let claude_wt = root.join(".claude/worktrees/wt-2/docs/wf");
+    write_minimal_workflow(&claude_wt, Some("only.md"), Some(&entity_md("091", "Only")));
+
+    fn snapshot_tree(dir: &Path) -> Vec<(PathBuf, SystemTime, u64)> {
+        let mut out = Vec::new();
+        fn walk(dir: &Path, out: &mut Vec<(PathBuf, SystemTime, u64)>) {
+            let Ok(entries) = fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let meta = fs::metadata(&path).expect("metadata");
+                if meta.is_dir() {
+                    walk(&path, out);
+                } else {
+                    out.push((
+                        path,
+                        meta.modified().expect("mtime"),
+                        meta.len(),
+                    ));
+                }
+            }
+        }
+        walk(dir, &mut out);
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
+
+    let before = snapshot_tree(&root);
+    let _ = load_workflow_dir(&wf, &root).expect("load");
+    let after = snapshot_tree(&root);
+
+    assert_eq!(
+        before.len(),
+        after.len(),
+        "no files should be created or deleted: before={before:?} after={after:?}"
+    );
+    for (a, b) in before.iter().zip(after.iter()) {
+        assert_eq!(a.0, b.0, "file path stable");
+        assert_eq!(a.2, b.2, "file size stable for {:?}", a.0);
+        assert_eq!(a.1, b.1, "file mtime stable for {:?}", a.0);
+    }
 }
