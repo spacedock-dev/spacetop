@@ -8,7 +8,7 @@ worktree: .worktrees/spacedock-ensign-038-show-worktree-tasks-with-diff
 issue:
 pr: #31
 started: 2026-05-12T07:30:23Z
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 The SpaceTop overview currently lists tasks discovered only from the workflow's root directory. When a task is being worked on in an isolated worktree (e.g., `.worktrees/<slug>/docs/spacetop-dev/<slug>.md` or `.claude/worktrees/<name>/docs/spacetop-dev/<slug>.md`), edits to that task's body and frontmatter live on the worktree branch and are invisible to a captain browsing the main checkout. Spacetop should also scan worktree copies of the workflow so worktree-only tasks appear in the list, and so the preview surfaces where the in-flight body diverges from `main`.
