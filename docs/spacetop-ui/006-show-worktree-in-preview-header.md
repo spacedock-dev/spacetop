@@ -3,7 +3,7 @@ id: "006"
 title: Show worktree info in Preview header
 status: design
 source: captain
-started:
+started: 2026-05-12T01:23:24Z
 completed:
 verdict:
 score:
