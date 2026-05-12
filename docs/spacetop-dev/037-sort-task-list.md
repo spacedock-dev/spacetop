@@ -1,7 +1,7 @@
 ---
 id: 037
 title: Sort the task list by ID or by status
-status: implement
+status: review
 source: captain request 2026-05-12
 score:
 worktree: .worktrees/spacedock-ensign-037-sort-task-list
