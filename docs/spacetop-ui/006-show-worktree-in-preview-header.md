@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-006-show-worktree-in-preview-header
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Surface the entity's `worktree` frontmatter field in the Preview pane header area so the captain can see at a glance whether a task currently has a live worktree (and where it is on disk) without opening the file.
