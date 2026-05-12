@@ -20,8 +20,8 @@ Behavior:
 
 ## Acceptance criteria
 
-**AC-1 -- Worktree-only tasks appear in the task list, marked as worktree versions.**
-Verified by: an integration test that builds a fixture with a task file present in a worktree copy of the workflow directory but not in the root workflow dir, runs discovery + overview state construction, and asserts the rendered task list contains the task with a visible "worktree" marker (badge, suffix, or column indicator) distinguishing it from root-tracked tasks.
+**AC-1 -- Worktree-only tasks appear in the task list with a distinguishing marker.**
+Verified by: an integration test that builds a fixture with a task file present in a worktree copy of the workflow directory but not in the root workflow dir, runs discovery + overview state construction, and asserts the rendered task list contains the task with a visible marker (badge, suffix, or column indicator) that distinguishes worktree-sourced rows from root-sourced rows. The exact label/style is chosen during the design stage.
 
 **AC-2 -- When a task exists in both root and worktree, status uses the root copy.**
 Verified by: a unit test in the discovery/parser layer that supplies the same slug from both a root path and a worktree path with different `status:` values in their frontmatter, and asserts the merged task surfaced to the app uses the root copy's `status` (and other frontmatter fields) for list display, while still recording that a worktree copy exists.
