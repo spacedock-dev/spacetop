@@ -116,3 +116,21 @@ For AC-4, no existing assertions need rewriting — `status: ● design`, `score
 ### Summary
 
 The change is fully contained in `src/ui/mod.rs::build_preview_header_lines` plus four new substring tests. The worktree segment is rendered identically to `source:` in the non-empty case and as a dimmed `worktree: —` in the empty case, slotted after `source` in both placements and both views. No fixtures, no frontmatter changes, no parser changes — `WorkItem::worktree` already exists.
+
+## Design Deviation (implement)
+
+- Bottom-preview test fixture path changed from `.worktrees/ensign-foo` to `wt/foo`. At the design's prescribed 80×180 terminal, the combined metadata line (status · score · source · worktree) exceeds 80 cols with the long path and wraps mid-segment; `buffer_text` joins rows without delimiters but trailing-pads each row, so the substring is broken. Using `wt/foo` keeps the segment on one row at 80 cols; the rendered segment matches the design's spec verbatim. The Left-placement (180×24) and empty-marker tests follow the design unchanged.
+- Pre-existing `preview_scrollbar_thumb_starts_at_top_at_zero_scroll` asserted `first_thumb_row < height/2`. The design adds one row to the Left-placement header (new worktree `Line` after `source:`), shifting the thumb from row 14 to row 15 of a 30-row buffer. Bound relaxed to `<= height/2`; still guards "thumb sits in the upper half of the track at scroll=0".
+
+## Stage Report: implement
+
+- DONE: cargo test passes with new assertions covering the worktree row for non-empty value, empty-marker value, and both PreviewPlacement variants (active + archived views per the design notes).
+  191/192 lib tests passing; the sole failure (`ui::graph::tests::narrow_tier_renders_compact_textual_summary`) is pre-existing on the dispatch baseline and unrelated to this change.
+- DONE: make lint passes — no new clippy warnings, no #[allow(...)] suppressions added without justification in the entity body.
+  `make lint` finishes cleanly with `-D warnings`; no new allows introduced.
+- DONE: Rendered Preview header matches the design notes' empty-marker convention and placement layout verbatim (no improvisation; if the design is unclear, append a Design Deviation note to the entity body before changing it).
+  Em-dash empty marker, `worktree:` slotted after `source:` and before `verdict:` in both PreviewPlacement variants and both views, matching `build_preview_header_lines`. Two minor test-side deviations (fixture path length, scrollbar bound) documented in the Design Deviation (implement) section above.
+
+### Summary
+
+Added a reusable `worktree_segment` span builder in `build_preview_header_lines` and wired it into all four Bottom/Left × active/archived render paths. Added four new tests covering bottom-set, left-set, empty em-dash, and archived placement. Two small test deviations (shorter fixture path to avoid 80-col wrap; loosened scrollbar bound to absorb the design-mandated extra header row) are documented above; no behavioral or visual deviations from the design.
