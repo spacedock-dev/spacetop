@@ -141,3 +141,16 @@ Sort is implemented as a presentation layer over `OverviewState` via a `SortMode
 ### Summary
 
 Implemented sort as a presentation concern over `OverviewState`: `SortMode` enum with `Id` (default) and `Status` modes, cached `sorted_active` vec rebuilt on snapshot or mode change. Status mode uses workflow README stage order with ID-ascending tiebreaker; unknown statuses sort to the end. `'s'` cycles modes (preview-gated); header shows `[sort: id]/[sort: status]` badge; footer adds `s: sort` pill. Selection is preserved by slug across re-sorts and across reloads. Snapshot.items is never mutated, preserving the read-only invariant.
+
+## Stage Report: review
+
+- DONE: All 4 acceptance criteria in the entity body have at least one concrete evidence citation (test name, file path, command output) from the implement stage report or the diff.
+  AC-1 (`sort_by_id_orders_ascending_across_mixed_status` — `src/app/overview.rs:684`); AC-2 (`sort_by_status_uses_workflow_stage_order` — `src/app/overview.rs:701`, `sort_by_status_pushes_unknown_status_to_end` — `src/app/overview.rs:727`); AC-3 (`pressing_s_cycles_sort_mode` and `pressing_s_does_not_cycle_sort_when_preview_open` in `src/app/tests.rs`, `header_bar_shows_sort_badge` in `src/ui/mod.rs`, `cycle_sort_mode_default_and_cycles_back` — `src/app/overview.rs:760`); AC-4 (`cycling_sort_mode_does_not_mutate_snapshot_items` — `src/app/overview.rs:795`). All 11 sort/badge tests pass locally.
+- DONE: Read-only invariant verified: no writes to docs/spacetop-dev/ entity files from any TUI code path introduced by this diff.
+  `git diff main...HEAD -- src/ | grep -E "fs::|File::|write|create"` (excluding comments/tests) returned no matches. Sort is computed over a cloned `Vec<WorkItem>` in `rebuild_sorted_active` (`src/app/overview.rs:317`); `snapshot.items` is never mutated, codified by `cycling_sort_mode_does_not_mutate_snapshot_items`.
+- DONE: `make lint` is clean on the worktree HEAD and `cargo test` regressions (if any) are pre-existing on main, not introduced by this branch.
+  `make lint` → `Finished dev profile`, no warnings. `cargo test` → 201 passed, 1 failed (`ui::graph::tests::narrow_tier_renders_compact_textual_summary`). Independently reproduced the same failure on a fresh `main` checkout at `/tmp/st-main-check` (`test result: FAILED. 0 passed; 1 failed`). Branch does not touch `src/ui/graph.rs` (verified via `git diff main...HEAD -- src/ui/graph.rs` → empty).
+
+### Summary
+
+Review verdict: PASSED. The implementation matches the plan, all four ACs are covered by named passing tests, `make lint` is clean, and the only test failure is a confirmed pre-existing regression on `main` in `src/ui/graph.rs` unrelated to this branch. Read-only invariant is preserved both by construction (sort operates on a cloned vec) and by an explicit codified test.
