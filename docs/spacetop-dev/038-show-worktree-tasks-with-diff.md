@@ -6,7 +6,7 @@ source: captain request 2026-05-12
 score:
 worktree: .worktrees/spacedock-ensign-038-show-worktree-tasks-with-diff
 issue:
-pr:
+pr: #31
 started: 2026-05-12T07:30:23Z
 mod-block: merge:pr-merge
 ---
