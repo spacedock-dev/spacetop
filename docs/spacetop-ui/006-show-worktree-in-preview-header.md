@@ -134,3 +134,16 @@ The change is fully contained in `src/ui/mod.rs::build_preview_header_lines` plu
 ### Summary
 
 Added a reusable `worktree_segment` span builder in `build_preview_header_lines` and wired it into all four Bottom/Left × active/archived render paths. Added four new tests covering bottom-set, left-set, empty em-dash, and archived placement. Two small test deviations (shorter fixture path to avoid 80-col wrap; loosened scrollbar bound to absorb the design-mandated extra header row) are documented above; no behavioral or visual deviations from the design.
+
+## Stage Report: review
+
+- DONE: Verdict (PASSED or REJECTED) is stated explicitly, with the diff inspected for logic errors, regressions, and dead/unreachable code.
+  PASSED. Diff (`bc1b3f1`) is contained to `src/ui/mod.rs`: a single `worktree_segment` builder near L687-L704 plus four wiring sites (Bottom/Left × active/archived) and four new tests. No dead code, no unreachable branches; `Some("")` and `None` are correctly collapsed by `.filter(|s| !s.is_empty())` after `str::trim`.
+- DONE: Each AC-1..AC-4 in the entity body has a cited evidence line — which test assertion, file:line, or rendered-buffer check demonstrates it — or is explicitly flagged as unverified.
+  AC-1: `bottom_preview_shows_worktree_when_set` (src/ui/mod.rs:1301-1314) and `left_preview_shows_worktree_when_set` (src/ui/mod.rs:1316-1329) both assert the literal `worktree: <path>` substring. AC-2: `preview_renders_em_dash_for_empty_worktree` (src/ui/mod.rs:1331-1347) asserts `worktree: \u{2014}` plus the surrounding `status: ● design` row remains intact. AC-3: AC-1's two tests cover both PreviewPlacement variants for active view; `archived_preview_includes_worktree_segment` (src/ui/mod.rs:1349-1369) covers archived. AC-4: `make lint` exits clean under `-D warnings`; 191/192 lib tests pass; sole failure (`ui::graph::tests::narrow_tier_renders_compact_textual_summary`) reproduces on `main` (verified by running it against the main worktree) and is unrelated.
+- DONE: Rendered output matches the design notes' empty-marker and placement layout; any deviation is named and either justified or routed back to implement via REJECTED.
+  Em-dash `\u{2014}` with the whole `worktree: —` segment dimmed; slotted after `source` and before `verdict` in archived, last in active Bottom, dedicated Line after `source` in Left. Two documented test-side deviations (fixture path `wt/foo` and scrollbar bound `<=`) are pragmatic adjustments to test harnesses, not visual deviations; accepted.
+
+### Summary
+
+PASSED. Implementation matches the design verbatim in render behavior; the worktree segment renders identically to `source` when set and as a dimmed `worktree: —` when unset. Lint clean, all relevant tests green, sole test failure is a pre-existing graph-rendering issue on main untouched by this diff.
