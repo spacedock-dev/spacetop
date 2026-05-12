@@ -215,3 +215,16 @@ Out of scope: any change to the `worktree_segment` rendering or the four worktre
 ### Summary
 
 Tightened the scrollbar test's bound back to the strict `<` form that matches its "upper half" failure message, and bumped the test fixture's terminal height from 30 to 32 — the smallest increment that keeps the thumb strictly above the midpoint after the new `worktree:` header row consumes one extra line. No changes to `worktree_segment` or the four worktree-related tests.
+
+## Stage Report: review (cycle 2)
+
+- DONE: Verdict (PASSED or REJECTED) is stated explicitly. Re-run cargo test and make lint yourself; do not trust the prior report.
+  PASSED. Re-ran `cargo test` from inside the worktree: 191/192 lib tests pass; sole failure is the pre-existing unrelated `ui::graph::tests::narrow_tier_renders_compact_textual_summary` (same baseline failure observed in cycles 0/1). Re-ran `make lint`: `cargo clippy --all-targets --all-features -- -D warnings` finishes clean.
+- DONE: The scrollbar test now uses the strict bound matching its message, and the fixture height is the minimal bump (height=32 is justified vs. height=31).
+  `preview_scrollbar_thumb_starts_at_top_at_zero_scroll` (src/ui/mod.rs:2884, 2898) now reads `let height: u16 = 32;` and asserts `first_thumb_row < height / 2` with the original "must sit in the upper half" message — message and bound now agree. Height=32 verified minimal: temporarily setting `height = 31` reproduces the failure (`thumb must sit in the upper half of the track (got row 15)`), since 15 is not strictly less than 31/2=15; at height=32, 15 < 32/2=16 holds.
+- DONE: No regressions: worktree_segment rendering and its four tests unchanged; PR #29 diff still satisfies AC-1..AC-4.
+  Cycle 2 diff (`ec687a8..HEAD`) touches only the entity doc and the scrollbar test fixture (two-line code change at src/ui/mod.rs:2884 and :2898). `worktree_segment` (src/ui/mod.rs:687-712 region) and the four worktree tests (`bottom_preview_shows_worktree_when_set`, `left_preview_shows_worktree_when_set`, `preview_renders_em_dash_for_empty_worktree`, `archived_preview_includes_worktree_segment`) are untouched and pass in the re-run; AC-1..AC-4 from cycle 1 review remain satisfied.
+
+### Summary
+
+PASSED (cycle 2). The cycle 2 fix correctly restores the strict `<` bound that matches the "upper half" failure message and bumps the test fixture height by the minimal increment (30 → 32) needed to absorb the extra header row introduced by the worktree segment. Verified empirically that height=31 fails the strict bound while height=32 passes, confirming the implementer chose the smallest viable height. The `worktree_segment` rendering and its four tests are untouched, AC-1..AC-4 remain satisfied, lint is clean, and the sole remaining test failure is the pre-existing unrelated graph test confirmed across cycles 0/1/2.
