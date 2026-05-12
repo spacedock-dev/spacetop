@@ -1,13 +1,13 @@
 ---
 id: "006"
 title: Show worktree info in Preview header
-status: design
+status: implement
 source: captain
 started: 2026-05-12T01:23:24Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-006-show-worktree-in-preview-header
 issue:
 pr:
 ---
