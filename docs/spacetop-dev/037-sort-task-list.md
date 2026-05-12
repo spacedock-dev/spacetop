@@ -128,3 +128,16 @@ Each AC maps to test names:
 
 Sort is implemented as a presentation layer over `OverviewState` via a `SortMode` enum and a cached `sorted_active` vec rebuilt on snapshot/mode change; numeric ID comparator with lexical fallback is reused as the status-tier tiebreaker. Keybinding `s` cycles modes (default `Id`); a header badge and footer pill expose the active mode. Read-only invariant is preserved by construction — `snapshot.items` is never mutated — and verified by test 9 in addition to the structural choice of locating all sort logic in `src/app/overview.rs`.
 
+
+## Stage Report: implement
+
+- DONE: SortMode + cached sorted view live in src/app/overview.rs and are tested without a terminal backend (per the plan-stage report).
+  `SortMode` enum, `sorted_active: Vec<WorkItem>`, `cycle_sort_mode`, and `rebuild_sorted_active` all in `src/app/overview.rs`; tests 1-6 + immutability test in `#[cfg(test)] mod tests` (no terminal backend). Commit 6c69b4b.
+- DONE: Keybinding `s` cycles sort modes (gated off when preview is open) and the active mode is visible via the header badge and footer pill described in the plan.
+  `KeyCode::Char('s') if !state.preview_open()` in `src/app/keys.rs`. Header badge `[sort: id]/[sort: status]` with `(press s)` hint added in `render_header_bar`; `s: sort` pill added to `status_footer_hints` (active-scope path); help popup entry added with bumped `popup_h`. Verified by `pressing_s_cycles_sort_mode`, `pressing_s_does_not_cycle_sort_when_preview_open`, and `header_bar_shows_sort_badge`.
+- DONE: `cargo test` and `make lint` both pass at the end of the worktree commit history.
+  `make lint` passes cleanly. `cargo test` shows 201 passed; the single remaining failure (`ui::graph::tests::narrow_tier_renders_compact_textual_summary`) is a pre-existing failure on the same branch before my changes, confirmed via `git stash` baseline run.
+
+### Summary
+
+Implemented sort as a presentation concern over `OverviewState`: `SortMode` enum with `Id` (default) and `Status` modes, cached `sorted_active` vec rebuilt on snapshot or mode change. Status mode uses workflow README stage order with ID-ascending tiebreaker; unknown statuses sort to the end. `'s'` cycles modes (preview-gated); header shows `[sort: id]/[sort: status]` badge; footer adds `s: sort` pill. Selection is preserved by slug across re-sorts and across reloads. Snapshot.items is never mutated, preserving the read-only invariant.
