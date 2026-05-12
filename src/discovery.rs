@@ -29,6 +29,7 @@ pub enum DiscoveryError {
 pub const PRUNED_DIR_NAMES: &[&str] = &[
     ".git",
     ".worktrees",
+    ".claude",
     "node_modules",
     "vendor",
     "dist",

@@ -625,6 +625,8 @@ fn snapshot_with_items(count: usize) -> WorkflowSnapshot {
                 issue: None,
                 pr: None,
                 body: format!("Body excerpt for task {index}."),
+                worktree_source: None,
+                main_body: None,
             })
             .collect(),
     }
@@ -667,6 +669,8 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
                 issue: None,
                 pr: None,
                 body: String::new(),
+                worktree_source: None,
+                main_body: None,
             })
             .collect(),
     }
@@ -782,6 +786,8 @@ fn reload_from_snapshot_preserves_view_scope() {
         issue: None,
         pr: None,
         body: String::new(),
+        worktree_source: None,
+        main_body: None,
     }];
     overview.archive_loaded = true;
 

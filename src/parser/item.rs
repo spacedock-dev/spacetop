@@ -51,6 +51,8 @@ fn parse_work_item_contents(
         issue: optional_text(raw.issue),
         pr: optional_text(raw.pr),
         body: body.to_string(),
+        worktree_source: None,
+        main_body: None,
     })
 }
 

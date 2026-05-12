@@ -603,6 +603,8 @@ mod tests {
             issue: None,
             pr: None,
             body: "body".to_string(),
+            worktree_source: None,
+            main_body: None,
         }
     }
 
