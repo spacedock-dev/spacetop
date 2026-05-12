@@ -154,3 +154,35 @@ Implemented sort as a presentation concern over `OverviewState`: `SortMode` enum
 ### Summary
 
 Review verdict: PASSED. The implementation matches the plan, all four ACs are covered by named passing tests, `make lint` is clean, and the only test failure is a confirmed pre-existing regression on `main` in `src/ui/graph.rs` unrelated to this branch. Read-only invariant is preserved both by construction (sort operates on a cloned vec) and by an explicit codified test.
+
+### PR Review Fixup
+
+Copilot left 5 comments on PR #30. Fixes 1-3 applied in commit `13ec9e3`; 4-5 declined with reasoning.
+
+**Fixed**
+
+- Comment 3224759595 — help popup advertised `s` unconditionally. Updated the help line to `cycle sort mode (when preview closed)` so it matches the `!preview_open` gate in `src/app/keys.rs`.
+- Comment 3224759632 — `compare_ids` doc comment said "parse leading digits" but the impl is `a.parse::<u64>()` (whole-string). Rewrote the doc to describe the whole-string parse plus lexical fallback; impl unchanged (workflow IDs are pure numeric, e.g. "037").
+- Comment 3224759647 — `cycle_sort_mode` claimed "no-op if there are no active items" but still toggled `self.sort_mode`. Added an early-return before the mode toggle when `self.sorted_active.is_empty()`, preserving the selected-index reset.
+
+**Declined**
+
+- Comment 3224759667 — replace cloned `WorkItem`s in `sorted_active` with a `Vec<usize>`. Declined: `WorkItem.body` is small in this codebase, the owned clone keeps the selection-by-slug preservation path simple, and an index list would complicate surrounding code without a measured win.
+- Comment 3224759689 — replace linear `stage_index` `.position()` scan with a `HashMap`. Declined: stage counts are O(5) (design/plan/implement/review/done); a linear scan beats `HashMap` construction at that scale.
+
+**GitHub reply text (posted verbatim)**
+
+- 3224759595:
+  > Fixed in 13ec9e3. Help line now reads `cycle sort mode (when preview closed)` so it reflects the `!preview_open` gate in `keys.rs`.
+
+- 3224759632:
+  > Fixed in 13ec9e3 — updated the doc comment to match the impl. The parse is whole-string (`a.parse::<u64>()`), which is fine here because workflow IDs are pure numeric (e.g., "037"); equal numeric values are tiebroken lexically. Left the impl unchanged.
+
+- 3224759647:
+  > Fixed in 13ec9e3. `cycle_sort_mode` now early-returns before toggling `self.sort_mode` when `sorted_active.is_empty()`, so the docstring's no-op claim is accurate. The selected-index reset path is unchanged.
+
+- 3224759667:
+  > Declining this one. `WorkItem.body` is small in this codebase, and the owned clone keeps the selection-by-slug preservation path simple. Threading a `Vec<usize>` through the rebuild + selection-restore code would add complexity without a measured win for the workflow sizes we see in practice.
+
+- 3224759689:
+  > Declining. Stage counts are O(5) here (design/plan/implement/review/done) — a linear `.position()` scan beats `HashMap` construction at that scale, both in wallclock and in code clarity. Happy to revisit if stage counts grow materially.
