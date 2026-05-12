@@ -29,9 +29,11 @@ impl SortMode {
     }
 }
 
-/// Compare two work-item ids: parse leading digits and order numerically
-/// when both sides parse, otherwise fall back to lexical order. A shared
-/// numeric prefix is tiebroken lexically on the full id for stability.
+/// Compare two work-item ids: parse the entire id as `u64` and order
+/// numerically when both sides parse, otherwise fall back to lexical
+/// order. Workflow ids are pure numeric (e.g., "037"), so whole-string
+/// parsing is sufficient; equal numeric values are tiebroken lexically
+/// on the full id for stability.
 fn compare_ids(a: &str, b: &str) -> std::cmp::Ordering {
     let an = a.parse::<u64>().ok();
     let bn = b.parse::<u64>().ok();
@@ -283,6 +285,11 @@ impl OverviewState {
     /// current selection by slug across the re-sort, mirroring the
     /// reload_from_snapshot pattern. No-op if there are no active items.
     pub fn cycle_sort_mode(&mut self) {
+        if self.sorted_active.is_empty() {
+            self.selected_index = 0;
+            return;
+        }
+
         let prior_slug = self
             .sorted_active
             .get(self.selected_index)

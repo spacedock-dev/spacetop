@@ -390,7 +390,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("  End            jump to last item"),
         Line::from("  Enter          toggle preview mode"),
         Line::from("  a              toggle active / archived view"),
-        Line::from("  s              cycle sort mode (id / status)"),
+        Line::from("  s              cycle sort mode (when preview closed)"),
         Line::from("  ?              toggle this help popup"),
         Line::from("  Esc            close help"),
     ];
