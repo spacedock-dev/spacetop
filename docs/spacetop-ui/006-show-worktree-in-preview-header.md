@@ -202,3 +202,16 @@ Preferred fix:
 Fallback (only if the fixture cannot be cleanly adjusted): update the message and threshold to agree, but document explicitly that the test now permits the midpoint, and add a comment naming why.
 
 Out of scope: any change to the `worktree_segment` rendering or the four worktree-related tests — only the scrollbar test fixture.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Scrollbar test assertion uses the strict bound `first_thumb_row < height / 2` (matching the "upper half" failure message), with the test fixture's terminal height adjusted minimally to keep the original semantics intact.
+  `preview_scrollbar_thumb_starts_at_top_at_zero_scroll` in `src/ui/mod.rs` now uses `height: u16 = 32` (was 30) and asserts `first_thumb_row < height / 2`. 32 is the minimum: at height=31 the thumb lands on row 15 (=31/2), failing the strict bound; at height=32, row 15 < 16 holds. The failure message is unchanged.
+- DONE: cargo test passes — the scrollbar test plus all four worktree tests plus pre-existing tests. Do not touch worktree_segment rendering or its tests.
+  191/192 lib tests pass; only failure is the pre-existing unrelated `ui::graph::tests::narrow_tier_renders_compact_textual_summary` (same failure as cycle 0/1 baseline). All four worktree tests and the scrollbar test pass with the strict bound. No changes to `worktree_segment` or its tests.
+- DONE: make lint clean under -D warnings.
+  `cargo clippy --all-targets --all-features -- -D warnings` finishes clean.
+
+### Summary
+
+Tightened the scrollbar test's bound back to the strict `<` form that matches its "upper half" failure message, and bumped the test fixture's terminal height from 30 to 32 — the smallest increment that keeps the thumb strictly above the midpoint after the new `worktree:` header row consumes one extra line. No changes to `worktree_segment` or the four worktree-related tests.

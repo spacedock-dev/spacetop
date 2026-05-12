@@ -2881,7 +2881,7 @@ mod tests {
             .join("\n\n");
         let app = app_with_items(vec![item("001", "Scrollable", &body)]);
         let width: u16 = 160;
-        let height: u16 = 30;
+        let height: u16 = 32;
 
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
         terminal.draw(|frame| render(frame, &app)).unwrap();
@@ -2895,7 +2895,7 @@ mod tests {
             .expect("scrollbar thumb must be visible at scroll=0");
 
         assert!(
-            first_thumb_row <= height / 2,
+            first_thumb_row < height / 2,
             "at scroll=0, thumb must sit in the upper half of the track (got row {first_thumb_row})"
         );
     }
