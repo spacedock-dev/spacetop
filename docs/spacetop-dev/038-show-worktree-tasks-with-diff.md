@@ -1,7 +1,7 @@
 ---
 id: 038
 title: Show worktree-only tasks and body diffs in the task list
-status: implement
+status: review
 source: captain request 2026-05-12
 score:
 worktree: .worktrees/spacedock-ensign-038-show-worktree-tasks-with-diff
