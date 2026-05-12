@@ -6,7 +6,7 @@ source: captain request 2026-05-12
 score:
 worktree: .worktrees/spacedock-ensign-037-sort-task-list
 issue:
-pr:
+pr: #30
 started: 2026-05-12T07:16:26Z
 mod-block: merge:pr-merge
 ---
