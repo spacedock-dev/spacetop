@@ -1193,6 +1193,27 @@ fn reload_from_snapshot_updates_counts_and_clamps_selection() {
     assert_eq!(counts.get("done").copied(), Some(3));
 }
 
+#[test]
+fn pressing_s_cycles_sort_mode() {
+    use super::SortMode;
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    assert_eq!(app.as_overview().unwrap().sort_mode(), SortMode::Id);
+    app.handle_key(key(KeyCode::Char('s')));
+    assert_eq!(app.as_overview().unwrap().sort_mode(), SortMode::Status);
+    app.handle_key(key(KeyCode::Char('s')));
+    assert_eq!(app.as_overview().unwrap().sort_mode(), SortMode::Id);
+}
+
+#[test]
+fn pressing_s_does_not_cycle_sort_when_preview_open() {
+    use super::SortMode;
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.as_overview().unwrap().preview_open());
+    app.handle_key(key(KeyCode::Char('s')));
+    assert_eq!(app.as_overview().unwrap().sort_mode(), SortMode::Id);
+}
+
 // The `cycle_keys_advance_active_index_in_multi_session` test above
 // already covers `needs_first_load` == true for the first activation
 // and `needs_first_load` == false for a return; that satisfies the

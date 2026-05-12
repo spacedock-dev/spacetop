@@ -196,8 +196,12 @@ fn render_header_bar(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
         ),
     };
 
+    let sort_badge_text = format!("[sort: {}]", state.sort_mode().label());
+    let sort_key_hint = "(press s)";
+
     // Fixed portions of the header line (excluding path).
-    // "Workflow " + badge + "  " + archived label + "  " + "(press a)" + " "
+    // "Workflow " + badge + "  " + archived label + "(press a)" + "  "
+    //   + sort badge + " " + "(press s)" + " "
     let archived_label = match state.archived_count() {
         Some(n) => format!("archived: {n}  "),
         None => "archived: ".to_string(),
@@ -208,6 +212,10 @@ fn render_header_bar(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
         + 2 // "  " gap
         + archived_label.chars().count()
         + key_hint.chars().count()
+        + 2 // "  " gap before sort badge
+        + sort_badge_text.chars().count()
+        + 1 // " " between sort badge and hint
+        + sort_key_hint.chars().count()
         + 1; // trailing space before path
 
     let full_path = state.workflow_dir().display().to_string();
@@ -230,6 +238,10 @@ fn render_header_bar(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
         + 2 // "  " gap
         + archived_label.chars().count()
         + key_hint.chars().count()
+        + 2 // "  " gap before sort badge
+        + sort_badge_text.chars().count()
+        + 1 // " " between sort badge and hint
+        + sort_key_hint.chars().count()
         + 1 // " " before path
         + path_str.chars().count();
     let trailing_spaces = (area.width as usize).saturating_sub(used);
@@ -240,6 +252,10 @@ fn render_header_bar(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
         Span::raw("  "),
         Span::styled(archived_label, dim),
         Span::styled(key_hint, dim),
+        Span::raw("  "),
+        Span::styled(sort_badge_text, dim.add_modifier(Modifier::BOLD)),
+        Span::raw(" "),
+        Span::styled(sort_key_hint, dim),
         Span::raw(" "),
         Span::styled(path_str, dim),
         Span::styled(" ".repeat(trailing_spaces), dim),
@@ -333,6 +349,7 @@ fn status_footer_hints(session: &OverviewSession) -> Vec<&'static str> {
         hints.push("w: word wrap");
     } else {
         hints.push("PgUp/PgDn: page list");
+        hints.push("s: sort");
     }
     hints.push("q: quit");
     hints
@@ -346,11 +363,11 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .unwrap_or(false);
     let popup_w = area.width.min(64);
     let popup_h = area.height.min(if is_multi {
-        22
+        23
     } else if preview_open {
         20
     } else {
-        18
+        19
     });
     let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
     let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
@@ -373,6 +390,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("  End            jump to last item"),
         Line::from("  Enter          toggle preview mode"),
         Line::from("  a              toggle active / archived view"),
+        Line::from("  s              cycle sort mode (id / status)"),
         Line::from("  ?              toggle this help popup"),
         Line::from("  Esc            close help"),
     ];
@@ -2037,7 +2055,10 @@ mod tests {
         // The badge should have yellow background (filled style).
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
         let app = App::load(root).expect("workflow should load");
-        let width: u16 = 60; // narrow enough to trigger path truncation
+        // Narrow enough to trigger path truncation. The header prefix grew with
+        // the sort badge, so this needs to be a bit wider than before to leave
+        // room for the truncated path itself.
+        let width: u16 = 100;
         let mut terminal = Terminal::new(TestBackend::new(width, 20)).expect("terminal");
         terminal.draw(|frame| render(frame, &app)).expect("render");
         let buffer = terminal.backend().buffer();
@@ -2061,6 +2082,34 @@ mod tests {
         assert!(
             rendered.contains('\u{2026}'),
             "path must be left-truncated with '…' at width={width}"
+        );
+    }
+
+    #[test]
+    fn header_bar_shows_sort_badge() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let mut app = app_with_items(vec![
+            item("002", "Two", "b"),
+            item("010", "Ten", "b"),
+        ]);
+        // app_with_items opens preview; close it so 's' is not gated off.
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let width: u16 = 200;
+        let mut terminal = Terminal::new(TestBackend::new(width, 20)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            rendered.contains("[sort: id]"),
+            "header must show [sort: id] initially, got: {rendered}"
+        );
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+        let mut terminal = Terminal::new(TestBackend::new(width, 20)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            rendered.contains("[sort: status]"),
+            "header must show [sort: status] after cycling, got: {rendered}"
         );
     }
 
