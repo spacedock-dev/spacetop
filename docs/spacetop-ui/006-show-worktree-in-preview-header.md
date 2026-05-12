@@ -1,13 +1,13 @@
 ---
 id: "006"
 title: Show worktree info in Preview header
-status: review
+status: done
 source: captain
 started: 2026-05-12T01:23:24Z
-completed:
-verdict:
+completed: 2026-05-12T02:00:06Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-006-show-worktree-in-preview-header
+worktree: 
 issue:
 pr: #29
 mod-block: 
