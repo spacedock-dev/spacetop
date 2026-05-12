@@ -1,10 +1,10 @@
 ---
 id: 038
 title: Show worktree-only tasks and body diffs in the task list
-status: plan
+status: implement
 source: captain request 2026-05-12
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-038-show-worktree-tasks-with-diff
 issue:
 pr:
 started: 2026-05-12T07:30:23Z
@@ -35,3 +35,120 @@ Verified by: the existing read-only invariant tests (or a new assertion) confirm
 
 **AC-5 -- Worktree discovery handles the absence of worktree directories and missing per-worktree workflow paths gracefully.**
 Verified by: a discovery-layer test that exercises (a) a repository with no worktrees registered, (b) a worktree that does not contain the workflow directory at all, and (c) a worktree containing an unrelated subset of task files; asserts no errors are raised and the task list matches the root view in each case (no spurious rows, no panics, no IO errors surfaced to the user).
+
+## Plan
+
+### Worktree enumeration approach
+
+Continue scanning the filesystem (no `git worktree list` shell-out). The current
+implementation in `src/parser/worktree.rs::scan_worktrees` only walks
+`<repo_root>/.worktrees/*`. Extend it to also walk
+`<repo_root>/.claude/worktrees/*`. Both conventions are documented in CLAUDE.md
+context and either may be in use on a given checkout. Rationale: avoids adding a
+runtime git dependency, keeps tests hermetic (no `git init` required in
+fixtures), and matches the existing prune list in `src/discovery.rs` which
+already excludes `.worktrees` from workflow discovery. We will also extend that
+prune list to include `.claude` so a worktree's mirrored workflow does not
+appear as a second top-level workflow in the picker.
+
+The walk remains strictly read-only — `scan_worktrees` only calls `fs::read_dir`
+and `fs::read_to_string` (via `parse_work_item`). No `OpenOptions::write`,
+`fs::write`, `fs::create_dir`, or `fs::remove*` calls are added on any code
+path. AC-4 is preserved by construction; a test asserts the worktree paths'
+file mtimes are unchanged after a full `load_workflow_dir` round-trip.
+
+### Testable units & file ownership
+
+Three units, each independently testable without a terminal:
+
+1. **Worktree enumeration & parsing (parser layer)** — `src/parser/worktree.rs`.
+   - Add a `worktree_roots(repo_root) -> Vec<PathBuf>` helper that returns the
+     union of `.worktrees/*` and `.claude/worktrees/*` directory entries (each
+     unique by canonical path, missing parents OK).
+   - Change `scan_worktrees` to iterate `worktree_roots(repo_root)` instead of
+     hardcoded `.worktrees`. Each returned `WorkItem` carries the worktree path
+     in `item.path` exactly as today.
+
+2. **WorkItem source tagging & body-diff data (domain + merge)** —
+   `src/domain/mod.rs` + `src/parser/worktree.rs`.
+   - Extend `WorkItem` with two non-breaking optional fields:
+     - `worktree_source: Option<PathBuf>` — set to the worktree file path when
+       this row is sourced from (or has a divergent copy in) a worktree.
+     - `main_body: Option<String>` — original root body when a divergent
+       worktree body replaced it during merge; `None` when bodies match or
+       there is no root copy.
+   - Update `merge_worktree_items`:
+     - Worktree-only items keep their own body and set
+       `worktree_source = Some(item.path.clone())`, `main_body = None`.
+     - When both exist with matching hashes: keep root item unchanged
+       (`worktree_source = None`, `main_body = None`) — no marker, no diff.
+     - When both exist with divergent hashes:
+       `merge_main_frontmatter_with_worktree_body` already keeps main
+       frontmatter and uses worktree body. Extend it to also populate
+       `main_body = Some(<root body>)` and `worktree_source = Some(<wt path>)`.
+
+3. **List marker + preview diff rendering (UI layer)** — `src/ui/mod.rs`.
+   - In `render_task_list` (around line 418), when `item.worktree_source.is_some()`,
+     prefix the title cell with a single-character marker (proposed: `⎇ `,
+     mirroring the existing stage worktree glyph in `src/ui/graph.rs`). The
+     marker style uses the same `Modifier::DIM` palette already in use for
+     supplementary spans.
+   - In `render_preview` (around line 556), when `item.main_body.is_some()`,
+     render a unified-diff view of `main_body` (old) vs `item.body` (new)
+     instead of the plain markdown body. Use a small pure-function helper
+     `render_diff_lines(old: &str, new: &str, width: usize) -> Vec<Line>` that
+     wraps the `similar` crate's `TextDiff::from_lines(...).unified_diff()`
+     output into ratatui `Line`s with conventional colors
+     (`+` green / `-` red / context dim). Place this helper in a new
+     `src/ui/diff.rs` module so it is unit-testable without a terminal frame.
+   - Add `similar = "2"` to `[dependencies]` in `Cargo.toml`. `similar` is the
+     maintained, widely-used diff crate (used by insta, cargo, ratatui's own
+     examples); no terminal coupling.
+
+This separation keeps parser/state work in pure modules (`parser`, `domain`),
+isolates the diff renderer in a new pure helper (`ui::diff`), and confines TUI
+wiring to two existing render functions.
+
+### Focused tests per AC
+
+| AC   | Test location | Test name (proposed) | Verifies |
+|------|---------------|----------------------|----------|
+| AC-1 | `src/parser/tests.rs` (extend `worktree_only_items_shown`) + new `src/ui/mod.rs` test | `worktree_only_item_has_worktree_source_tag` + `task_row_renders_worktree_marker_when_sourced_from_worktree` | merged item carries `worktree_source = Some(...)` and rendered task row contains the `⎇` marker on that row but not on root-sourced rows. |
+| AC-2 | `src/parser/tests.rs` (existing `worktree_status_from_main` already covers this; extend to also assert `worktree_source.is_some()` and `main_body` populated) | `worktree_divergent_keeps_main_frontmatter_and_records_main_body` | merged item's `status`/`title` come from root frontmatter while `body == worktree body` and `main_body == Some(root body)`. |
+| AC-3 | `src/ui/diff.rs` (new) + `src/ui/mod.rs` | `render_diff_lines_emits_unified_hunks_with_add_remove_styling` + `preview_renders_diff_when_main_body_present` + `preview_falls_back_to_body_when_main_body_none` | diff helper produces `+`/`-` lines for divergent inputs; preview rendering uses diff path only when `main_body.is_some()`. |
+| AC-4 | `src/parser/tests.rs` | `worktree_scan_does_not_mutate_files` | snapshot mtimes of every file in root + worktree fixtures, run `load_workflow_dir`, assert mtimes unchanged and no new files exist. |
+| AC-5 | `src/parser/tests.rs` | `worktree_scan_handles_(a)_no_worktree_dirs_(b)_missing_workflow_subdir_(c)_partial_overlap` | three sub-cases per the AC; each asserts `Ok(_)` and that the merged item list equals the root-only baseline (no spurious entries, no errors). Add a `claude_worktrees_dir_is_scanned_alongside_dot_worktrees` test asserting both conventions are picked up. |
+
+### Verification commands
+
+The implementer must run, in order, before marking the implement stage complete:
+
+1. `cargo test` — all unit + integration tests pass (new tests above + existing
+   suite unchanged).
+2. `make lint` — `cargo clippy --all-targets --all-features -- -D warnings`
+   passes with zero diagnostics. New code must not introduce `#[allow(...)]`.
+3. `cargo run -- -w docs/spacetop-dev` (smoke) — open the live workflow in a
+   checkout that has at least one `.worktrees/<slug>/` mirror and visually
+   confirm the marker appears and the preview shows a diff. (Smoke step is
+   recommended, not gating; tests cover the contract.)
+
+### Read-only invariant preservation
+
+Explicit guardrails the implementer must hold:
+
+- No new code path writes to disk. The merge function operates on
+  already-parsed `WorkItem` values and an in-memory `HashMap`.
+- The diff renderer reads `item.main_body` and `item.body` (both already
+  in-memory strings); it never re-reads files.
+- The expanded worktree enumeration only adds `fs::read_dir` calls on
+  `.claude/worktrees`; no `canonicalize` writes, no symlink creation, no
+  temp-file usage.
+- AC-4 is enforced by an explicit mtime-stability test (see table above), not
+  only by code review.
+
+## Stage Report: plan
+
+- DONE: Plan separates worktree discovery, parser/merge logic, and preview-diff rendering into distinct testable units, naming the module/file each piece lands in. — Three units called out under "Testable units & file ownership": parser layer (`src/parser/worktree.rs`), domain+merge (`src/domain/mod.rs` + `src/parser/worktree.rs`), and UI (`src/ui/mod.rs` + new `src/ui/diff.rs`).
+- DONE: Plan specifies the verification commands the implementer will run (at minimum `cargo test` and `make lint`) and names the focused tests it expects to add for AC-1 through AC-5. — "Verification commands" lists `cargo test`, `make lint`, and an optional smoke run; "Focused tests per AC" table maps each AC to a named test in a specific file.
+- DONE: Plan addresses how to enumerate worktree workflow copies (e.g., `git worktree list --porcelain` vs scanning `.worktrees/`/`.claude/worktrees/`) and explicitly preserves the read-only invariant. — "Worktree enumeration approach" picks filesystem scanning of both `.worktrees/*` and `.claude/worktrees/*` with rationale; "Read-only invariant preservation" section enumerates the four guardrails plus an mtime-stability test.
+
