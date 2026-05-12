@@ -636,18 +636,20 @@ fn render_preview(
         .as_deref()
         .map(|main| diff::render_diff_lines(main, &item.body));
 
-    // First pass: render only enough lines at full inner width to detect overflow.
-    // Limiting to height+1 avoids rendering the entire body twice for long previews.
-    let body_lines_full = if let Some(lines) = diff_lines.as_ref() {
-        lines.clone()
+    // First pass: determine content height for overflow detection.
+    // In the diff path, derive height directly from `diff_lines.len()` to
+    // avoid cloning the entire Vec<Line>. In the markdown path, render only
+    // height+1 lines so we don't render the whole body twice for long previews.
+    let (content_height_full, body_lines_full) = if let Some(lines) = diff_lines.as_ref() {
+        (lines.len() as u16, None)
     } else {
-        render_markdown_lines(
+        let lines = render_markdown_lines(
             &item.body,
             body_inner.height as usize + 1,
             body_inner.width as usize,
-        )
+        );
+        (lines.len() as u16, Some(lines))
     };
-    let content_height_full = body_lines_full.len() as u16;
     let show_scrollbar = content_height_full > body_inner.height && body_inner.width > 1;
     let body_area = if show_scrollbar {
         Rect {
@@ -667,7 +669,7 @@ fn render_preview(
     } else if show_scrollbar {
         render_markdown_lines(&item.body, usize::MAX, body_area.width as usize)
     } else {
-        body_lines_full
+        body_lines_full.expect("markdown path always produces body_lines_full")
     };
     let content_height = body_lines.len() as u16;
 

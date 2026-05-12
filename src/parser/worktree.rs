@@ -13,6 +13,14 @@ use super::{is_markdown_path, is_readme_path, parse_work_item, ParseError};
 /// `<repo_root>/.claude/worktrees/*`. Both conventions are scanned because
 /// either may be in use on a given checkout. Missing parent directories are
 /// not errors — the helper returns whatever entries exist.
+///
+/// Ordering is deterministic: `.worktrees/*` is scanned before
+/// `.claude/worktrees/*`, and within each parent the children are sorted
+/// lexicographically by path. Because [`merge_worktree_items`] overwrites
+/// existing entries by slug as it iterates, later roots win — so given a
+/// slug present in both conventions, the `.claude/worktrees/*` copy wins,
+/// and within a parent the lexicographically-greatest child wins. This
+/// guarantees stable merges across platforms and across runs.
 pub(crate) fn worktree_roots(repo_root: &Path) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     for parent in [
@@ -22,12 +30,13 @@ pub(crate) fn worktree_roots(repo_root: &Path) -> Vec<PathBuf> {
         let Ok(entries) = fs::read_dir(&parent) else {
             continue;
         };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                roots.push(path);
-            }
-        }
+        let mut children: Vec<PathBuf> = entries
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+        children.sort();
+        roots.extend(children);
     }
     roots
 }
@@ -176,5 +185,40 @@ fn merge_main_frontmatter_with_worktree_body(main_item: &WorkItem, wt_item: Work
         body: wt_item.body,
         worktree_source: Some(wt_path),
         main_body: Some(main_item.body.clone()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worktree_roots_orders_deterministically_with_claude_after_plain() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = dir.path();
+        // Create children in a non-sorted order to avoid relying on insertion
+        // order. fs::read_dir gives platform-dependent order; the function
+        // must sort.
+        for name in ["c-task", "a-task", "b-task"] {
+            fs::create_dir_all(repo.join(".worktrees").join(name)).expect("mkdir worktrees child");
+        }
+        for name in ["zeta", "alpha", "mu"] {
+            fs::create_dir_all(repo.join(".claude").join("worktrees").join(name))
+                .expect("mkdir claude worktrees child");
+        }
+
+        let first = worktree_roots(repo);
+        let second = worktree_roots(repo);
+        assert_eq!(first, second, "worktree_roots must be deterministic");
+
+        let expected: Vec<PathBuf> = vec![
+            repo.join(".worktrees/a-task"),
+            repo.join(".worktrees/b-task"),
+            repo.join(".worktrees/c-task"),
+            repo.join(".claude/worktrees/alpha"),
+            repo.join(".claude/worktrees/mu"),
+            repo.join(".claude/worktrees/zeta"),
+        ];
+        assert_eq!(first, expected);
     }
 }

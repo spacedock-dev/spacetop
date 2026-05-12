@@ -14,13 +14,13 @@ pub fn render_diff_lines(old: &str, new: &str) -> Vec<Line<'static>> {
     for change in diff.iter_all_changes() {
         let raw = change.value();
         let text = raw.strip_suffix('\n').unwrap_or(raw).to_string();
-        let (prefix, style) = match change.tag() {
+        let (prefix, style): (&'static str, Style) = match change.tag() {
             ChangeTag::Insert => ("+", Style::default().fg(Color::Green)),
             ChangeTag::Delete => ("-", Style::default().fg(Color::Red)),
             ChangeTag::Equal => (" ", Style::default().add_modifier(Modifier::DIM)),
         };
         lines.push(Line::from(vec![
-            Span::styled(prefix.to_string(), style),
+            Span::styled(prefix, style),
             Span::styled(text, style),
         ]));
     }
