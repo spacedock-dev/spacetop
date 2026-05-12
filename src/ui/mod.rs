@@ -1,3 +1,4 @@
+mod diff;
 mod graph;
 mod picker;
 
@@ -530,12 +531,23 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
                 Style::default()
             };
 
+            let dim_style = Style::default().add_modifier(Modifier::DIM);
+            // Worktree marker: "⎇ " for rows sourced from a worktree (either
+            // worktree-only or divergent from main), "  " otherwise. Kept as a
+            // fixed-width 2-char column so titles stay aligned across rows.
+            let (wt_marker, wt_marker_style) = if item.worktree_source.is_some() {
+                ("\u{2387} ", dim_style)
+            } else {
+                ("  ", Style::default())
+            };
+
             let mut spans: Vec<Span<'_>> = vec![
                 Span::styled(gutter_text, gutter_style),
                 Span::styled(phase, stage_style),
                 Span::raw(" "),
                 Span::styled(id_str, id_style),
                 Span::raw("  "),
+                Span::styled(wt_marker, wt_marker_style),
                 Span::styled(item.title.clone(), title_style),
             ];
 
@@ -615,13 +627,26 @@ fn render_preview(
             .height
             .saturating_sub(metadata_height + divider_area.height),
     };
+    // When a worktree copy of this task has a body that diverges from the
+    // root (main) copy, render a unified diff between the two bodies instead
+    // of the plain markdown body. Otherwise fall back to the normal markdown
+    // rendering path.
+    let diff_lines: Option<Vec<Line<'static>>> = item
+        .main_body
+        .as_deref()
+        .map(|main| diff::render_diff_lines(main, &item.body));
+
     // First pass: render only enough lines at full inner width to detect overflow.
     // Limiting to height+1 avoids rendering the entire body twice for long previews.
-    let body_lines_full = render_markdown_lines(
-        &item.body,
-        body_inner.height as usize + 1,
-        body_inner.width as usize,
-    );
+    let body_lines_full = if let Some(lines) = diff_lines.as_ref() {
+        lines.clone()
+    } else {
+        render_markdown_lines(
+            &item.body,
+            body_inner.height as usize + 1,
+            body_inner.width as usize,
+        )
+    };
     let content_height_full = body_lines_full.len() as u16;
     let show_scrollbar = content_height_full > body_inner.height && body_inner.width > 1;
     let body_area = if show_scrollbar {
@@ -637,7 +662,9 @@ fn render_preview(
     // Second pass: re-render only when the scrollbar narrows the render area.
     // This ensures code block lines are padded to body_area.width (not body_inner.width)
     // so they do not overflow the render area and leave background gaps in wrap mode.
-    let body_lines = if show_scrollbar {
+    let body_lines = if let Some(lines) = diff_lines {
+        lines
+    } else if show_scrollbar {
         render_markdown_lines(&item.body, usize::MAX, body_area.width as usize)
     } else {
         body_lines_full
@@ -1428,6 +1455,8 @@ mod tests {
             issue: None,
             pr: None,
             body: body.to_string(),
+            worktree_source: None,
+            main_body: None,
         }
     }
 
@@ -3287,5 +3316,104 @@ mod tests {
                 "col {col} on code row {row} must have DarkGray background with scrollbar present"
             );
         }
+    }
+
+    // ---- Task 038: worktree marker in task list + diff in preview ----
+
+    fn item_with_worktree_source(id: &str, title: &str, body: &str) -> WorkItem {
+        let mut it = item(id, title, body);
+        it.worktree_source = Some(PathBuf::from(format!("/tmp/wt/{id}.md")));
+        it
+    }
+
+    #[test]
+    fn task_row_renders_worktree_marker_when_sourced_from_worktree() {
+        // AC-1: worktree-sourced row carries the `⎇` marker; main-only row does not.
+        let app = app_with_items(vec![
+            item("001", "Main task", "Body"),
+            item_with_worktree_source("002", "Worktree task", "Body"),
+        ]);
+        let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let buffer = terminal.backend().buffer();
+
+        let wt_hits = find_text(buffer, "Worktree task");
+        let main_hits = find_text(buffer, "Main task");
+        assert!(!wt_hits.is_empty(), "worktree task row should be rendered");
+        assert!(!main_hits.is_empty(), "main task row should be rendered");
+
+        // The marker glyph `⎇` (U+2387) must appear on the worktree row only.
+        let (wt_x, wt_y) = wt_hits[0];
+        let (_, main_y) = main_hits[0];
+
+        // Marker sits immediately before the title — scan a few cells back.
+        let marker = '\u{2387}';
+        let mut wt_has_marker = false;
+        for x in 0..wt_x {
+            if buffer[(x, wt_y)].symbol().chars().any(|c| c == marker) {
+                wt_has_marker = true;
+                break;
+            }
+        }
+        assert!(wt_has_marker, "worktree row should contain ⎇ marker");
+
+        let mut main_has_marker = false;
+        for x in 0..buffer.area.width {
+            if buffer[(x, main_y)].symbol().chars().any(|c| c == marker) {
+                main_has_marker = true;
+                break;
+            }
+        }
+        assert!(
+            !main_has_marker,
+            "main-only row must NOT contain ⎇ marker"
+        );
+    }
+
+    #[test]
+    fn preview_renders_diff_when_main_body_present() {
+        // AC-3: when `main_body.is_some()`, the preview body area shows a
+        // unified diff with `+`/`-` lines from the divergent content.
+        let mut it = item("050", "Divergent", "alpha\nNEW LINE\ngamma\n");
+        it.main_body = Some("alpha\nOLD LINE\ngamma\n".to_string());
+        let app = app_with_items(vec![it]);
+        let mut terminal = Terminal::new(TestBackend::new(140, 30)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let buffer = terminal.backend().buffer();
+        let text = buffer_text(buffer);
+
+        assert!(
+            text.contains("+NEW LINE"),
+            "preview should contain '+NEW LINE' from diff; rendered: {text}"
+        );
+        assert!(
+            text.contains("-OLD LINE"),
+            "preview should contain '-OLD LINE' from diff; rendered: {text}"
+        );
+    }
+
+    #[test]
+    fn preview_falls_back_to_body_when_main_body_none() {
+        // AC-3: when `main_body` is None, the preview renders the body as
+        // plain markdown (no `+`/`-` diff prefix lines).
+        let app = app_with_items(vec![item(
+            "051",
+            "Plain",
+            "alpha\nbeta\ngamma\n",
+        )]);
+        let mut terminal = Terminal::new(TestBackend::new(140, 30)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let buffer = terminal.backend().buffer();
+        let text = buffer_text(buffer);
+
+        assert!(
+            text.contains("beta"),
+            "preview should still render body content"
+        );
+        // No diff prefixes should leak when main_body is None.
+        assert!(
+            !text.contains("+beta") && !text.contains("-beta"),
+            "preview should not show diff markers when main_body is None"
+        );
     }
 }
