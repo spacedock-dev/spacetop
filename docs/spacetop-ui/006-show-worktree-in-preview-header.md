@@ -1,7 +1,7 @@
 ---
 id: "006"
 title: Show worktree info in Preview header
-status: implement
+status: review
 source: captain
 started: 2026-05-12T01:23:24Z
 completed:
