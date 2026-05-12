@@ -687,6 +687,27 @@ fn build_preview_header_lines<'a>(
         .map(|score| format!("{score:.2}"))
         .unwrap_or_else(|| "n/a".to_string());
     let source = item.source.as_deref().unwrap_or("n/a");
+    let worktree_segment: Vec<Span<'_>> = {
+        let trimmed = item
+            .worktree
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        match trimmed {
+            Some(path) => {
+                let basename = std::path::Path::new(path)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| path.to_string());
+                vec![Span::styled("worktree: ", dim), Span::raw(basename)]
+            }
+            None => vec![
+                Span::styled("worktree: ", dim),
+                Span::styled("\u{2014}", dim),
+            ],
+        }
+    };
     let mut lines: Vec<Line<'_>> = Vec::new();
 
     // Combined section header + title: "Preview  ·  #id  Title" so that both
@@ -735,6 +756,8 @@ fn build_preview_header_lines<'a>(
                 spans.push(Span::styled("source: ", dim));
                 spans.push(Span::raw(source.to_string()));
                 spans.push(Span::raw("  \u{00B7}  "));
+                spans.extend(worktree_segment.clone());
+                spans.push(Span::raw("  \u{00B7}  "));
                 spans.push(Span::styled("verdict: ", dim));
                 spans.push(Span::styled(verdict.to_string(), verdict_style));
                 lines.push(Line::from(spans));
@@ -749,6 +772,7 @@ fn build_preview_header_lines<'a>(
                     Span::styled("source: ", dim),
                     Span::raw(source.to_string()),
                 ]));
+                lines.push(Line::from(worktree_segment.clone()));
                 lines.push(Line::from(vec![
                     Span::styled("verdict: ", dim),
                     Span::styled(verdict.to_string(), verdict_style),
@@ -766,6 +790,8 @@ fn build_preview_header_lines<'a>(
                 spans.push(Span::raw("  \u{00B7}  "));
                 spans.push(Span::styled("source: ", dim));
                 spans.push(Span::raw(source.to_string()));
+                spans.push(Span::raw("  \u{00B7}  "));
+                spans.extend(worktree_segment.clone());
                 lines.push(Line::from(spans));
             }
             PreviewPlacement::Left => {
@@ -778,6 +804,7 @@ fn build_preview_header_lines<'a>(
                     Span::styled("source: ", dim),
                     Span::raw(source.to_string()),
                 ]));
+                lines.push(Line::from(worktree_segment.clone()));
             }
         }
     }
@@ -1273,6 +1300,86 @@ mod tests {
         assert!(rendered.contains("status: ● design"));
         assert!(rendered.contains("score: 0.75"));
         assert!(rendered.contains("source: captain"));
+    }
+
+    #[test]
+    fn bottom_preview_shows_worktree_when_set() {
+        let mut work_item = item("001", "WT", "Body");
+        work_item.worktree = Some(".worktrees/ensign-foo".to_string());
+        let app = app_with_items(vec![work_item]);
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 180)).expect("tall terminal");
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(
+            rendered.contains("worktree: ensign-foo"),
+            "expected worktree basename in bottom preview, got: {rendered}"
+        );
+        assert!(
+            !rendered.contains(".worktrees/ensign-foo"),
+            "bottom preview must render basename only, not full path"
+        );
+    }
+
+    #[test]
+    fn left_preview_shows_worktree_when_set() {
+        let mut work_item = item("001", "WT", "Body");
+        work_item.worktree = Some(".worktrees/ensign-foo".to_string());
+        let app = app_with_items(vec![work_item]);
+
+        let mut terminal = Terminal::new(TestBackend::new(180, 24)).expect("wide terminal");
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(
+            rendered.contains("worktree: ensign-foo"),
+            "expected worktree basename in left preview, got: {rendered}"
+        );
+        assert!(
+            !rendered.contains(".worktrees/ensign-foo"),
+            "left preview must render basename only, not full path"
+        );
+    }
+
+    #[test]
+    fn preview_renders_em_dash_for_empty_worktree() {
+        let work_item = item("001", "WT", "Body");
+        let app = app_with_items(vec![work_item]);
+
+        let mut terminal = Terminal::new(TestBackend::new(80, 180)).expect("tall terminal");
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(
+            rendered.contains("worktree: \u{2014}"),
+            "expected em-dash empty marker, got: {rendered}"
+        );
+        assert!(
+            rendered.contains("status: ● design"),
+            "surrounding header should remain intact"
+        );
+    }
+
+    #[test]
+    fn archived_preview_includes_worktree_segment() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let mut app = App::load(root).expect("workflow should load");
+        app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        let mut terminal =
+            Terminal::new(TestBackend::new(180, 30)).expect("test terminal should be created");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            rendered.contains("worktree:"),
+            "archived preview should include worktree segment, got: {rendered}"
+        );
     }
 
     fn app_with_items(items: Vec<WorkItem>) -> App {
@@ -2774,7 +2881,7 @@ mod tests {
             .join("\n\n");
         let app = app_with_items(vec![item("001", "Scrollable", &body)]);
         let width: u16 = 160;
-        let height: u16 = 30;
+        let height: u16 = 32;
 
         let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
         terminal.draw(|frame| render(frame, &app)).unwrap();
