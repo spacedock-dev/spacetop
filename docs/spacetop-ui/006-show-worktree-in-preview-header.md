@@ -187,3 +187,18 @@ Switched the `worktree:` segment to render the basename (`Path::file_name`) with
 ### Summary
 
 PASSED (cycle 1). Basename rendering is correctly implemented via `Path::file_name` with a sensible raw-string fallback; the change is localized to the `worktree_segment` builder and does not alter placement, dim styling, or the empty-marker branch. All four worktree tests now both positive- and negative-assert the basename-only contract, lint clean, and surrounding header rendering unaffected.
+
+#### Cycle 2 — PR #29 review → implement (2026-05-12)
+
+PR #29 reviewer flagged the scrollbar assertion adjustment in `bc1b3f1`: the assertion was relaxed from `<` to `<=` (`first_thumb_row <= height / 2`) but the failure message still asserts the thumb "must sit in the upper half of the track" — the two no longer describe the same requirement, masking a regression where the thumb lands exactly at the midpoint.
+
+Root cause: adding the new `worktree:` row to the Preview header consumed one extra line in the test's rendered buffer, which pushed `first_thumb_row` from strictly-upper-half to the midpoint at the test fixture's terminal height. The implementer relaxed the bound instead of compensating the fixture.
+
+Preferred fix:
+- Restore the strict bound: `first_thumb_row < height / 2` (matches the "upper half" message).
+- Increase the test fixture's terminal height enough that the new header line does not push the thumb to the midpoint. Pick the smallest height that keeps the original semantics — do not blow up the fixture more than needed.
+- Re-run `cargo test` to confirm the strict bound still holds with the adjusted fixture.
+
+Fallback (only if the fixture cannot be cleanly adjusted): update the message and threshold to agree, but document explicitly that the test now permits the midpoint, and add a comment naming why.
+
+Out of scope: any change to the `worktree_segment` rendering or the four worktree-related tests — only the scrollbar test fixture.
