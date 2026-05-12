@@ -694,10 +694,14 @@ fn build_preview_header_lines<'a>(
             .map(str::trim)
             .filter(|s| !s.is_empty());
         match trimmed {
-            Some(path) => vec![
-                Span::styled("worktree: ", dim),
-                Span::raw(path.to_string()),
-            ],
+            Some(path) => {
+                let basename = std::path::Path::new(path)
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| path.to_string());
+                vec![Span::styled("worktree: ", dim), Span::raw(basename)]
+            }
             None => vec![
                 Span::styled("worktree: ", dim),
                 Span::styled("\u{2014}", dim),
@@ -1301,7 +1305,7 @@ mod tests {
     #[test]
     fn bottom_preview_shows_worktree_when_set() {
         let mut work_item = item("001", "WT", "Body");
-        work_item.worktree = Some("wt/foo".to_string());
+        work_item.worktree = Some(".worktrees/ensign-foo".to_string());
         let app = app_with_items(vec![work_item]);
 
         let mut terminal = Terminal::new(TestBackend::new(80, 180)).expect("tall terminal");
@@ -1309,8 +1313,12 @@ mod tests {
         let rendered = buffer_text(terminal.backend().buffer());
 
         assert!(
-            rendered.contains("worktree: wt/foo"),
-            "expected worktree segment in bottom preview, got: {rendered}"
+            rendered.contains("worktree: ensign-foo"),
+            "expected worktree basename in bottom preview, got: {rendered}"
+        );
+        assert!(
+            !rendered.contains(".worktrees/ensign-foo"),
+            "bottom preview must render basename only, not full path"
         );
     }
 
@@ -1325,8 +1333,12 @@ mod tests {
         let rendered = buffer_text(terminal.backend().buffer());
 
         assert!(
-            rendered.contains("worktree: .worktrees/ensign-foo"),
-            "expected worktree segment in left preview, got: {rendered}"
+            rendered.contains("worktree: ensign-foo"),
+            "expected worktree basename in left preview, got: {rendered}"
+        );
+        assert!(
+            !rendered.contains(".worktrees/ensign-foo"),
+            "left preview must render basename only, not full path"
         );
     }
 

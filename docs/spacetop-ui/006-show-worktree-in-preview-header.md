@@ -161,3 +161,16 @@ Scope of fix:
 - All other layout decisions (placement, dim style, position between `source` and `verdict`) stay as-is.
 
 Verification: existing four tests in `src/ui/mod.rs` (the ones added by the implement stage — `bottom_preview_shows_worktree_when_set`, `left_preview_shows_worktree_when_set`, `preview_renders_em_dash_for_empty_worktree`, `archived_preview_includes_worktree_segment`) updated to use basename fixtures and assertions. `cargo test` and `make lint` must remain green.
+
+## Stage Report: implement (cycle 1)
+
+- DONE: `worktree:` row renders only the basename (final path segment) of the path when set, falling back to the trimmed raw string only if `Path::file_name` returns None. Empty-marker behavior (`worktree: —` dim) unchanged.
+  `build_preview_header_lines` now derives `basename` via `std::path::Path::new(path).file_name().and_then(|s| s.to_str()).map(str::to_string).unwrap_or_else(|| path.to_string())` before rendering. Em-dash branch untouched.
+- DONE: The four worktree-related tests in src/ui/mod.rs are updated to assert on basename (not full path) and `cargo test` is green.
+  `bottom_preview_shows_worktree_when_set` and `left_preview_shows_worktree_when_set` now use fixture `.worktrees/ensign-foo` and assert `worktree: ensign-foo` is present plus negative-assert the full path absent. Em-dash and archived tests unchanged (path-agnostic). 191/192 lib tests pass; sole failure is the pre-existing `narrow_tier_renders_compact_textual_summary` graph test unrelated to this diff.
+- DONE: `make lint` passes — no new clippy warnings.
+  `cargo clippy --all-targets --all-features -- -D warnings` finishes clean.
+
+### Summary
+
+Switched the `worktree:` segment to render the basename (`Path::file_name`) with a raw-string fallback for trailing-slash edge cases. Tests now use the realistic `.worktrees/ensign-foo` fixture and assert the basename appears while the full path does not. No layout, placement, or empty-marker changes — only the displayed value is shortened.
