@@ -163,6 +163,35 @@ ESC ] 7 ; file:// <host> <encoded-cwd> ESC \
 
 Planned a four-file implementation: state intent in `src/app/keys.rs` + `src/app.rs`, a new `src/editor.rs` resolver with an injectable launcher trait, terminal lifecycle + OSC 7 emission in `src/lib.rs`, and header/help/footer copy in `src/ui/mod.rs`. Key decisions: blocking editor spawn (matches lazygit/gitui), OSC 7 emitted pre-raw-mode and pre-alt-screen with `IsTerminal` as the only guard, empty-host `file://` URL with RFC 3986 path-byte percent encoding, and a `strip_prefix(workflow_dir)`-with-absolute-fallback for the header path so worktree-resident entities still render correctly. No new dependencies; `o` confirmed unbound; every AC has a named test or explicit `make lint` gate.
 
+## Stage Report: implement
+
+- [x] `o` keybind in `src/app/keys.rs`: `OverviewKeyAction::OpenSelectedFile(PathBuf)` added; arm `KeyCode::Char('o') if state.preview_open()` reads `state.selected_item().map(|w| w.path.clone())`; silent no-op when preview closed.
+  See `src/app/keys.rs:13` (variant) and `src/app/keys.rs:82-85` (arm).
+- [x] `App::pending_open_file` + `take_pending_open_file()` drain; new variant wired in `apply_overview_key_action`; field initialized in all four constructors.
+  See `src/app.rs:40` (field), `src/app.rs:166-168` (drain), `src/app.rs:429-431` (wiring), and constructors at `src/app.rs:44,56,68,80,91`.
+- [x] `src/editor.rs` exports `EditorCommand`, `EditorEnv` + `StdEnv`, `EditorLauncher` + `StdLauncher`, and `resolve_editor` with `$VISUAL → $EDITOR → platform default` precedence; whitespace-split program + args; `StdLauncher` runs `Command::new(program).args(args).arg(file).status()` (blocking).
+  See `src/editor.rs:29-116`; precedence at `src/editor.rs:104-116`; platform default uses `cfg!(target_os = "macos")` at `src/editor.rs:71-81`.
+- [x] `suspend_terminal` / `resume_terminal` over an internal `TerminalControl` trait + `emit_osc7<W: Write>(w, is_tty, cwd)` writing `\x1b]7;file://<empty-host><pct-encoded>\x1b\\` when `is_tty`, nothing otherwise; encoding preserves `A-Za-z0-9-._~/`.
+  See `src/lib.rs:277-316` (suspend/resume + trait) and `src/lib.rs:326-367` (`emit_osc7` + safe-byte set).
+- [x] `emit_osc7` called against `io::stdout()` with `stdout.is_terminal()` before `enable_raw_mode()` and `EnterAlternateScreen` in `run_terminal`; pending-open drain suspends → `StdLauncher.launch(&resolve_editor(&StdEnv), &path)` → resumes → `terminal.clear()?`.
+  See `src/lib.rs:117-122` (OSC 7 pre-raw) and `src/lib.rs:217-229` (drain).
+- [x] Preview header renders path relative to `state.workflow_dir()` via `strip_prefix`; falls back to absolute path on `Err`.
+  See `src/ui/mod.rs:876-880`.
+- [x] Help popup adds `o              open file in $EDITOR` line inside `if preview_open` block; `popup_h` bumped by 1 in that branch (20→21, multi 23→24); footer adds `"o: open"` when `preview_open` is true.
+  See `src/ui/mod.rs:355-357` (footer), `src/ui/mod.rs:369-383` (popup_h), and `src/ui/mod.rs:413` (help line).
+- [x] Named tests per AC pass: `o_with_preview_open_emits_open_file_intent` (AC-1), `suspend_resume_call_sequence` (AC-2), `o_with_preview_closed_is_noop` (AC-3), `resolve_editor_visual_editor_default_precedence` (AC-4), `emit_osc7_writes_bytes_when_tty` + `emit_osc7_skips_when_not_tty` (AC-5), `help_popup_documents_open_file_keybind_when_preview_open` (AC-6).
+  `cargo test --lib -- <8 names>` → 8 passed; 0 failed.
+- [x] `make lint` and `cargo test` evidence captured; no `#[allow(...)]` added.
+  `make lint` closing line: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 0.81s` (clean, `-D warnings`). `cargo test --lib` summary: `220 passed; 1 failed` — the one failure (`ui::graph::tests::narrow_tier_renders_compact_textual_summary`) reproduces on the pre-dispatch commit `ab6cb1b` and we did not modify `src/ui/graph.rs`, so it is pre-existing and out of scope.
+- [x] Code committed on stage branch `spacedock-ensign/039-open-entity-file-from-preview`.
+  Commit `60aa7b2` "feat(039): open entity file from preview (o keybind + OSC 7)" — 5 files changed, 580 insertions(+), 4 deletions(-).
+- [x] Stage report appended to entity file body (this section); report commit follows.
+  See commit history after this write.
+
+### Summary
+
+Implemented the `o` keybind + OSC 7 startup emit exactly as the plan specifies, in four layers: `OverviewKeyAction::OpenSelectedFile` state intent in `src/app/keys.rs` + `src/app.rs`, a new `src/editor.rs` with `EditorEnv`/`EditorLauncher` seams and a pure `resolve_editor` precedence resolver, terminal suspend/resume + `emit_osc7` over a `TerminalControl` seam in `src/lib.rs` (OSC 7 emitted before raw mode and the alt screen), and preview-header relative-path + help/footer copy in `src/ui/mod.rs`. All eight AC-tagged unit tests pass; `make lint` is clean with `-D warnings`. The pre-existing `narrow_tier_renders_compact_textual_summary` failure reproduces on the dispatch commit and is unrelated to this change.
+
 ### Feedback Cycles
 
 **Cycle 1 — 2026-05-14, review → implement.**
