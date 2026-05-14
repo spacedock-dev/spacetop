@@ -1,7 +1,7 @@
 ---
 id: 039
 title: Open entity file from preview (o keybind + OSC 7)
-status: review
+status: implement
 source: captain conversation — preview pane shows long markdown content that's hard to read in the TUI; absolute paths don't fit the header, so users can't Cmd+click them either
 started: 2026-05-14T09:25:30Z
 completed:
@@ -161,3 +161,8 @@ ESC ] 7 ; file:// <host> <encoded-cwd> ESC \
 ### Summary
 
 Planned a four-file implementation: state intent in `src/app/keys.rs` + `src/app.rs`, a new `src/editor.rs` resolver with an injectable launcher trait, terminal lifecycle + OSC 7 emission in `src/lib.rs`, and header/help/footer copy in `src/ui/mod.rs`. Key decisions: blocking editor spawn (matches lazygit/gitui), OSC 7 emitted pre-raw-mode and pre-alt-screen with `IsTerminal` as the only guard, empty-host `file://` URL with RFC 3986 path-byte percent encoding, and a `strip_prefix(workflow_dir)`-with-absolute-fallback for the header path so worktree-resident entities still render correctly. No new dependencies; `o` confirmed unbound; every AC has a named test or explicit `make lint` gate.
+
+### Feedback Cycles
+
+**Cycle 1 — 2026-05-14, review → implement.**
+Captain rejected at the review gate. Observed defect (screenshot from a live spacetop session on entity 039 at status=review): the **preview header's `path:` line renders as empty** — the label "path:" is shown with no value after it. The implement worker introduced the bug at `src/ui/mod.rs:876-880` when switching from the previous always-absolute render to `strip_prefix(state.workflow_dir())` with absolute fallback. Likely root cause to investigate: `Path::strip_prefix` returning `Ok` with an empty relative result (e.g. when `item.path == state.workflow_dir()` or some path-normalization edge case), or `item.path` and `workflow_dir` having mismatched normalization (trailing slash, symlinks, canonicalization). Fix and add a regression test that constructs an `OverviewState` + `WorkItem` whose rendered preview header contains a non-empty path string in both the in-workflow-root case and the out-of-root (worktree-resident) case.
