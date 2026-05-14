@@ -1,9 +1,9 @@
 ---
 id: 039
 title: Open entity file from preview (o keybind + OSC 7)
-status: design
+status: plan
 source: captain conversation — preview pane shows long markdown content that's hard to read in the TUI; absolute paths don't fit the header, so users can't Cmd+click them either
-started:
+started: 2026-05-14T09:25:30Z
 completed:
 verdict:
 score:
