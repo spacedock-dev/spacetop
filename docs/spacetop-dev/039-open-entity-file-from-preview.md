@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-039-open-entity-file-from-preview
 issue:
-pr:
+pr: #32
 mod-block: merge:pr-merge
 ---
 
