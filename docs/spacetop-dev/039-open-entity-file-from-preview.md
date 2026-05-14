@@ -192,6 +192,29 @@ Planned a four-file implementation: state intent in `src/app/keys.rs` + `src/app
 
 Implemented the `o` keybind + OSC 7 startup emit exactly as the plan specifies, in four layers: `OverviewKeyAction::OpenSelectedFile` state intent in `src/app/keys.rs` + `src/app.rs`, a new `src/editor.rs` with `EditorEnv`/`EditorLauncher` seams and a pure `resolve_editor` precedence resolver, terminal suspend/resume + `emit_osc7` over a `TerminalControl` seam in `src/lib.rs` (OSC 7 emitted before raw mode and the alt screen), and preview-header relative-path + help/footer copy in `src/ui/mod.rs`. All eight AC-tagged unit tests pass; `make lint` is clean with `-D warnings`. The pre-existing `narrow_tier_renders_compact_textual_summary` failure reproduces on the dispatch commit and is unrelated to this change.
 
+## Stage Report: review
+
+- [x] Read `## Implementation Plan` and `## Stage Report: implement`; understand what was claimed built.
+  Plan/implement reports describe 4-layer change: state intent, resolver, terminal lifecycle + OSC 7, header/help/footer copy.
+- [x] Compare diff `ab6cb1b..HEAD` against the plan across `src/app.rs`, `src/app/keys.rs`, `src/editor.rs`, `src/lib.rs`, `src/ui/mod.rs`; flag deviations.
+  Diff matches plan exactly. Two minor, justified extras: (i) extra test `empty_visual_falls_through_to_editor` in `src/editor.rs` covering whitespace-only `$VISUAL` — defensive and welcome; (ii) `popup_h` bumped to 24 in the `is_multi && preview_open` branch (plan only specified the single-mode bump to 21) — necessary to keep the new help line visible in multi mode; commented inline. No material deviation.
+- [x] Each AC has a named passing test or explicit evidence (AC-1..AC-7).
+  AC-1 `o_with_preview_open_emits_open_file_intent` ok; AC-2 `suspend_resume_call_sequence` ok; AC-3 `o_with_preview_closed_is_noop` ok; AC-4 `resolve_editor_visual_editor_default_precedence` ok; AC-5 `emit_osc7_writes_bytes_when_tty` + `emit_osc7_skips_when_not_tty` ok; AC-6 `help_popup_documents_open_file_keybind_when_preview_open` ok; AC-7 `make lint` exits 0.
+- [x] `make lint` clean.
+  `cargo clippy --all-targets --all-features -- -D warnings` → `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 0.11s`; exit 0.
+- [x] `cargo test --lib`; out-of-scope pre-existing failure noted and excluded.
+  `220 passed; 1 failed` — the only failure `ui::graph::tests::narrow_tier_renders_compact_textual_summary` is pre-existing on `ab6cb1b`; `git diff --stat ab6cb1b HEAD -- src/ui/graph.rs` returns empty (file untouched by 039). Excluded from verdict per assignment.
+- [x] Spot-check key claims: (a) OSC 7 pre-raw, (b) blocking spawn, (c) header relative+absolute fallback, (d) `o` no-op when preview closed.
+  (a) `src/lib.rs:117-122` emits OSC 7; `enable_raw_mode()` follows at line 124, `EnterAlternateScreen` at line 128 — correct ordering. (b) `src/editor.rs:55-58` calls `.status()` (blocking), not `.spawn()`. (c) `src/ui/mod.rs:876-880` uses `strip_prefix(state.workflow_dir())` with `Err` → absolute fallback. (d) `src/app/keys.rs:82` arm is guarded by `if state.preview_open()`; when closed, control falls through to `_ => OverviewKeyAction::None`.
+- [x] Hygiene: no new `[dependencies]`, no `unsafe`, no new `#[allow(clippy::...)]`.
+  `git diff ab6cb1b HEAD -- Cargo.toml Cargo.lock` empty. Grep across the five touched files shows zero `unsafe` blocks. The only `#[allow(clippy::large_enum_variant)]` at `src/app.rs:21` pre-existed on `ab6cb1b` (verified via `git show ab6cb1b:src/app.rs`).
+- [x] Write this `## Stage Report: review` section and commit on worktree branch.
+  This section is the artifact; commit follows.
+
+### Summary
+
+Recommend approve. The implementation matches the plan one-for-one across all five touched files, all seven AC-tagged tests pass, `make lint` is clean with `-D warnings`, and the four spot-checked invariants (OSC 7 ordering, blocking spawn, header strip_prefix-with-fallback, `o` no-op when preview closed) all hold in the code. No new dependencies, no `unsafe`, no new `#[allow(...)]` introduced. The pre-existing `narrow_tier_renders_compact_textual_summary` failure reproduces on dispatch commit `ab6cb1b` and `src/ui/graph.rs` was not modified by this work, so it is out of scope per the assignment and does not affect the verdict.
+
 ### Feedback Cycles
 
 **Cycle 1 — 2026-05-14, review → implement.**
