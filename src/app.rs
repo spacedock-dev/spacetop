@@ -37,6 +37,7 @@ pub struct App {
     help_open: bool,
     pending_switch: Option<WorkflowSwitch>,
     pending_overlay_open: bool,
+    pending_open_file: Option<PathBuf>,
 }
 
 impl App {
@@ -48,6 +49,7 @@ impl App {
             help_open: false,
             pending_switch: None,
             pending_overlay_open: false,
+            pending_open_file: None,
         }
     }
 
@@ -59,6 +61,7 @@ impl App {
             help_open: false,
             pending_switch: None,
             pending_overlay_open: false,
+            pending_open_file: None,
         })
     }
 
@@ -70,6 +73,7 @@ impl App {
             help_open: false,
             pending_switch: None,
             pending_overlay_open: false,
+            pending_open_file: None,
         }
     }
 
@@ -80,6 +84,7 @@ impl App {
             help_open: false,
             pending_switch: None,
             pending_overlay_open: false,
+            pending_open_file: None,
         }
     }
 
@@ -94,6 +99,7 @@ impl App {
             help_open: false,
             pending_switch: None,
             pending_overlay_open: false,
+            pending_open_file: None,
         }
     }
 
@@ -152,6 +158,13 @@ impl App {
     /// calls [`App::open_picker_overlay_with`].
     pub fn take_pending_overlay_open(&mut self) -> bool {
         std::mem::replace(&mut self.pending_overlay_open, false)
+    }
+
+    /// Drain any pending "open file in $EDITOR" intent recorded by the `o`
+    /// keybind. The event loop suspends the TUI, blocks on the editor, then
+    /// resumes — the actual I/O lives in `run_terminal`, not on `App`.
+    pub fn take_pending_open_file(&mut self) -> Option<PathBuf> {
+        self.pending_open_file.take()
     }
 
     /// Open a picker overlay with the given (possibly re-discovered)
@@ -412,6 +425,9 @@ impl App {
             }
             OverviewKeyAction::OpenPickerOverlay => {
                 self.pending_overlay_open = true;
+            }
+            OverviewKeyAction::OpenSelectedFile(path) => {
+                self.pending_open_file = Some(path);
             }
         }
     }

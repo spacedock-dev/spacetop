@@ -2,11 +2,12 @@ pub mod app;
 pub mod cli;
 pub mod discovery;
 pub mod domain;
+pub mod editor;
 pub mod parser;
 pub mod ui;
 pub mod watcher;
 
-use std::io;
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
@@ -19,6 +20,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
 use ratatui::{backend::CrosstermBackend, Terminal};
 use watcher::{WatcherBackend, WatcherConfig, WorkflowWatcher};
 
@@ -109,6 +111,16 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
 }
 
 fn run_terminal(mut app: App) -> anyhow::Result<()> {
+    // OSC 7 must land on the primary screen, before raw mode is enabled and
+    // before EnterAlternateScreen, so terminals that support Smart Selection
+    // on relative paths can resolve them against the right cwd.
+    {
+        let mut stdout = io::stdout();
+        let is_tty = stdout.is_terminal();
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let _ = emit_osc7(&mut stdout, is_tty, &cwd);
+    }
+
     enable_raw_mode().context("failed to enable terminal raw mode")?;
     let _restore = TerminalRestore;
 
@@ -196,6 +208,25 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
             }
             watcher_state = start_watcher_for(&mut app);
         }
+
+        // 5. Drain pending "open file in $EDITOR" intent: suspend the TUI,
+        // block on the editor process, resume, force a redraw next iter.
+        // Errors are intentionally swallowed — they would otherwise tear
+        // down the TUI for an issue (e.g. editor not installed) that the
+        // user can recover from by just returning to spacetop.
+        if let Some(path) = app.take_pending_open_file() {
+            let mut stdout = io::stdout();
+            if let Err(err) = suspend_terminal(&mut CrosstermTerminalControl(&mut stdout)) {
+                app.set_refresh_error(format!("editor: suspend failed ({err})"));
+            } else {
+                let cmd = resolve_editor(&StdEnv);
+                let _ = StdLauncher.launch(&cmd, &path);
+                if let Err(err) = resume_terminal(&mut CrosstermTerminalControl(&mut stdout)) {
+                    app.set_refresh_error(format!("editor: resume failed ({err})"));
+                }
+                let _ = terminal.clear();
+            }
+        }
     }
 
     drop(watcher_state);
@@ -238,6 +269,115 @@ impl Drop for TerminalRestore {
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
     }
+}
+
+/// Seam for the terminal lifecycle operations used by suspend/resume. The
+/// production impl ([`CrosstermTerminalControl`]) shells out to crossterm;
+/// tests record an in-memory call sequence to assert ordering (AC-2).
+trait TerminalControl {
+    fn disable_raw_mode(&mut self) -> io::Result<()>;
+    fn leave_alt(&mut self) -> io::Result<()>;
+    fn enter_alt(&mut self) -> io::Result<()>;
+    fn enable_raw_mode(&mut self) -> io::Result<()>;
+}
+
+struct CrosstermTerminalControl<'a>(&'a mut io::Stdout);
+
+impl TerminalControl for CrosstermTerminalControl<'_> {
+    fn disable_raw_mode(&mut self) -> io::Result<()> {
+        disable_raw_mode()
+    }
+    fn leave_alt(&mut self) -> io::Result<()> {
+        execute!(self.0, LeaveAlternateScreen)
+    }
+    fn enter_alt(&mut self) -> io::Result<()> {
+        execute!(self.0, EnterAlternateScreen)
+    }
+    fn enable_raw_mode(&mut self) -> io::Result<()> {
+        enable_raw_mode()
+    }
+}
+
+/// Suspend the TUI by leaving raw mode and the alt screen, in that order, so
+/// the external editor inherits a normal cooked-mode primary screen.
+fn suspend_terminal<T: TerminalControl + ?Sized>(t: &mut T) -> io::Result<()> {
+    t.disable_raw_mode()?;
+    t.leave_alt()?;
+    Ok(())
+}
+
+/// Resume the TUI by re-entering the alt screen and re-enabling raw mode, in
+/// that order. The caller is expected to follow up with `terminal.clear()`
+/// so the next draw repaints the full buffer.
+fn resume_terminal<T: TerminalControl + ?Sized>(t: &mut T) -> io::Result<()> {
+    t.enter_alt()?;
+    t.enable_raw_mode()?;
+    Ok(())
+}
+
+/// Emit an OSC 7 sequence (`ESC ] 7 ; file://<host><cwd> ESC \`) when
+/// `is_tty` is true. The host portion is empty by convention — iTerm2,
+/// Ghostty and friends treat `file:///abs/path` as "this host" and the
+/// empty form avoids a `hostname` crate dependency.
+///
+/// Path bytes are percent-encoded per RFC 3986: the unreserved set
+/// `A-Za-z0-9-._~` plus the path separator `/` are preserved; all other
+/// bytes become `%XX`. When `is_tty` is false, nothing is written.
+fn emit_osc7<W: Write>(w: &mut W, is_tty: bool, cwd: &Path) -> io::Result<()> {
+    if !is_tty {
+        return Ok(());
+    }
+    w.write_all(b"\x1b]7;file://")?;
+    write_percent_encoded_path(w, cwd)?;
+    w.write_all(b"\x1b\\")?;
+    Ok(())
+}
+
+/// Percent-encode `path` per the OSC 7 contract documented on
+/// [`emit_osc7`]. Operates on raw bytes so non-UTF-8 paths still emit a
+/// well-formed URL.
+fn write_percent_encoded_path<W: Write>(w: &mut W, path: &Path) -> io::Result<()> {
+    let bytes = path_as_bytes(path);
+    for &b in bytes {
+        if is_osc7_safe_byte(b) {
+            w.write_all(std::slice::from_ref(&b))?;
+        } else {
+            let hi = HEX[(b >> 4) as usize];
+            let lo = HEX[(b & 0x0f) as usize];
+            w.write_all(&[b'%', hi, lo])?;
+        }
+    }
+    Ok(())
+}
+
+const HEX: &[u8; 16] = b"0123456789ABCDEF";
+
+/// RFC 3986 unreserved set (`A-Za-z0-9-._~`) plus the path separator `/`.
+fn is_osc7_safe_byte(b: u8) -> bool {
+    matches!(b,
+        b'A'..=b'Z'
+        | b'a'..=b'z'
+        | b'0'..=b'9'
+        | b'-'
+        | b'.'
+        | b'_'
+        | b'~'
+        | b'/'
+    )
+}
+
+#[cfg(unix)]
+fn path_as_bytes(path: &Path) -> &[u8] {
+    use std::os::unix::ffi::OsStrExt;
+    path.as_os_str().as_bytes()
+}
+
+#[cfg(not(unix))]
+fn path_as_bytes(path: &Path) -> &[u8] {
+    // `Path::to_str` returns `None` for non-UTF-8 paths; fall back to a
+    // lossy view that's still emittable. Spacetop's primary platforms are
+    // Unix-like, so this branch is best-effort.
+    path.to_str().map(str::as_bytes).unwrap_or(b"")
 }
 
 #[cfg(test)]
@@ -328,5 +468,77 @@ mod tests {
         assert!(msg.starts_with("spacetop: no Spacedock workflows found under "));
         assert!(msg.contains("/some/root"));
         assert!(msg.contains("Pass --workflow-dir <path>"));
+    }
+
+    /// Test helper: records the order of [`TerminalControl`] calls in a
+    /// shared `Vec<&'static str>` so assertions can inspect ordering.
+    struct MockTerminalControl {
+        log: Vec<&'static str>,
+    }
+
+    impl MockTerminalControl {
+        fn new() -> Self {
+            Self { log: Vec::new() }
+        }
+    }
+
+    impl TerminalControl for MockTerminalControl {
+        fn disable_raw_mode(&mut self) -> io::Result<()> {
+            self.log.push("disable_raw_mode");
+            Ok(())
+        }
+        fn leave_alt(&mut self) -> io::Result<()> {
+            self.log.push("leave_alt");
+            Ok(())
+        }
+        fn enter_alt(&mut self) -> io::Result<()> {
+            self.log.push("enter_alt");
+            Ok(())
+        }
+        fn enable_raw_mode(&mut self) -> io::Result<()> {
+            self.log.push("enable_raw_mode");
+            Ok(())
+        }
+    }
+
+    /// AC-2: suspend leaves raw mode + alt screen (in that order), and
+    /// resume re-enters the alt screen + raw mode (in that order). Asserts
+    /// the call sequence on the [`TerminalControl`] seam.
+    #[test]
+    fn suspend_resume_call_sequence() {
+        let mut term = MockTerminalControl::new();
+        suspend_terminal(&mut term).expect("suspend ok");
+        resume_terminal(&mut term).expect("resume ok");
+        assert_eq!(
+            term.log,
+            vec![
+                "disable_raw_mode",
+                "leave_alt",
+                "enter_alt",
+                "enable_raw_mode",
+            ]
+        );
+    }
+
+    /// AC-5 (TTY branch): emits the expected OSC 7 byte sequence including
+    /// percent-encoded path bytes, e.g. space → `%20`.
+    #[test]
+    fn emit_osc7_writes_bytes_when_tty() {
+        let mut buf: Vec<u8> = Vec::new();
+        emit_osc7(&mut buf, true, Path::new("/a b")).expect("write ok");
+        assert_eq!(buf, b"\x1b]7;file:///a%20b\x1b\\");
+
+        // Also verify a path with only safe bytes is passed through verbatim.
+        let mut buf2: Vec<u8> = Vec::new();
+        emit_osc7(&mut buf2, true, Path::new("/Users/test/dir")).expect("write ok");
+        assert_eq!(buf2, b"\x1b]7;file:///Users/test/dir\x1b\\");
+    }
+
+    /// AC-5 (non-TTY branch): writer stays empty.
+    #[test]
+    fn emit_osc7_skips_when_not_tty() {
+        let mut buf: Vec<u8> = Vec::new();
+        emit_osc7(&mut buf, false, Path::new("/some/path")).expect("write ok");
+        assert!(buf.is_empty(), "expected no OSC 7 bytes when not a TTY");
     }
 }

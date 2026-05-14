@@ -352,6 +352,9 @@ fn status_footer_hints(session: &OverviewSession) -> Vec<&'static str> {
         hints.push("PgUp/PgDn: page list");
         hints.push("s: sort");
     }
+    if preview_open {
+        hints.push("o: open");
+    }
     hints.push("q: quit");
     hints
 }
@@ -364,9 +367,17 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .unwrap_or(false);
     let popup_w = area.width.min(64);
     let popup_h = area.height.min(if is_multi {
-        23
+        // The is_multi branch already had slack for the multi-mode lines
+        // ("P: pick workflow", switch hints); bumping by 1 when preview is
+        // open keeps the new "o: open file" row visible.
+        if preview_open {
+            24
+        } else {
+            23
+        }
     } else if preview_open {
-        20
+        // +1 over the prior 20 to accommodate the new "o: open file" line.
+        21
     } else {
         19
     });
@@ -399,6 +410,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         lines.push(Line::from("  PageUp         scroll preview up"));
         lines.push(Line::from("  PageDown       scroll preview down"));
         lines.push(Line::from("  w              toggle word wrap"));
+        lines.push(Line::from("  o              open file in $EDITOR"));
     } else {
         lines.push(Line::from("  PageUp         page list up"));
         lines.push(Line::from("  PageDown       page list down"));
@@ -855,7 +867,17 @@ fn build_preview_header_lines<'a>(
             }
         }
     }
-    lines.push(Line::from(format!("path: {}", item.path.display())));
+    // Render the entity path relative to the workflow root so it fits the
+    // preview header and stays Smart-Selection-clickable in terminals that
+    // resolve relative paths against OSC 7. Fall back to the absolute path
+    // for entities whose path sits outside the workflow root (e.g. worktree
+    // copies), preserving the disambiguating context the absolute path
+    // carries.
+    let path_text = match item.path.strip_prefix(state.workflow_dir()) {
+        Ok(rel) => rel.display().to_string(),
+        Err(_) => item.path.display().to_string(),
+    };
+    lines.push(Line::from(format!("path: {path_text}")));
 
     // Body divider: "── body " + "─" repeated to fill pane width.
     // This replaces the previous blank separator line (same line count, but
@@ -1405,6 +1427,43 @@ mod tests {
         assert!(
             rendered.contains("status: ● design"),
             "surrounding header should remain intact"
+        );
+    }
+
+    /// AC-6: the help popup documents the new `o` keybinding when the
+    /// preview pane is open.
+    #[test]
+    fn help_popup_documents_open_file_keybind_when_preview_open() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = app_with_items(vec![item("001", "Help test", "body")]);
+        // Open preview, then open the help popup.
+        // (app_with_items already opens the preview, but be explicit so
+        // future refactors don't silently break this test.)
+        if !app.as_overview().is_some_and(|s| s.preview_open()) {
+            app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+        assert!(app.help_open());
+
+        let mut terminal =
+            Terminal::new(TestBackend::new(140, 30)).expect("test terminal should be created");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(
+            rendered.contains("open file in $EDITOR"),
+            "help popup should document the `o` keybind, got: {rendered}"
+        );
+        // Also check the leading `o` key column itself is present in the
+        // popup (rather than only the description text).
+        assert!(
+            find_text(terminal.backend().buffer(), "o ")
+                .into_iter()
+                .any(|(_, _)| true),
+            "help popup should render the `o` key column"
         );
     }
 
