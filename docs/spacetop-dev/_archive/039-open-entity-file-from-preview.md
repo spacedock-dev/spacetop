@@ -11,6 +11,7 @@ worktree:
 issue:
 pr: #32
 mod-block: 
+archived: 2026-05-15T01:42:07Z
 ---
 
 When the preview pane is open on a work item, the user has no quick way to open that item's markdown file in a real editor. The full absolute path in the header (`src/ui/mod.rs:858`) gets truncated, which also defeats iTerm2/Ghostty Smart Selection on the rendered text. ratatui doesn't support inline OSC 8 hyperlinks reliably, so embedding clickable links inside the buffer isn't viable.
