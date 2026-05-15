@@ -1,13 +1,13 @@
 ---
 id: 039
 title: Open entity file from preview (o keybind + OSC 7)
-status: review
+status: done
 source: captain conversation — preview pane shows long markdown content that's hard to read in the TUI; absolute paths don't fit the header, so users can't Cmd+click them either
 started: 2026-05-14T09:25:30Z
-completed:
-verdict:
+completed: 2026-05-15T01:41:56Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-039-open-entity-file-from-preview
+worktree: 
 issue:
 pr: #32
 mod-block: 
