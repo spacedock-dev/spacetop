@@ -1,10 +1,10 @@
 ---
 id: 033
 title: Bootstrap clippy for fresh environments before running `make lint`
-status: plan
+status: implement
 source: user request 2026-04-27
 score: 0.6
-worktree:
+worktree: .worktrees/spacedock-ensign-033-bootstrap-clippy-for-fresh-env
 issue:
 pr:
 started: 2026-05-15T01:59:22Z
