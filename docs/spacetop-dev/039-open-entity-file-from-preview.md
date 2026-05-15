@@ -163,7 +163,103 @@ ESC ] 7 ; file:// <host> <encoded-cwd> ESC \
 
 Planned a four-file implementation: state intent in `src/app/keys.rs` + `src/app.rs`, a new `src/editor.rs` resolver with an injectable launcher trait, terminal lifecycle + OSC 7 emission in `src/lib.rs`, and header/help/footer copy in `src/ui/mod.rs`. Key decisions: blocking editor spawn (matches lazygit/gitui), OSC 7 emitted pre-raw-mode and pre-alt-screen with `IsTerminal` as the only guard, empty-host `file://` URL with RFC 3986 path-byte percent encoding, and a `strip_prefix(workflow_dir)`-with-absolute-fallback for the header path so worktree-resident entities still render correctly. No new dependencies; `o` confirmed unbound; every AC has a named test or explicit `make lint` gate.
 
+## Stage Report: implement
+
+- [x] `o` keybind in `src/app/keys.rs`: `OverviewKeyAction::OpenSelectedFile(PathBuf)` added; arm `KeyCode::Char('o') if state.preview_open()` reads `state.selected_item().map(|w| w.path.clone())`; silent no-op when preview closed.
+  See `src/app/keys.rs:13` (variant) and `src/app/keys.rs:82-85` (arm).
+- [x] `App::pending_open_file` + `take_pending_open_file()` drain; new variant wired in `apply_overview_key_action`; field initialized in all four constructors.
+  See `src/app.rs:40` (field), `src/app.rs:166-168` (drain), `src/app.rs:429-431` (wiring), and constructors at `src/app.rs:44,56,68,80,91`.
+- [x] `src/editor.rs` exports `EditorCommand`, `EditorEnv` + `StdEnv`, `EditorLauncher` + `StdLauncher`, and `resolve_editor` with `$VISUAL → $EDITOR → platform default` precedence; whitespace-split program + args; `StdLauncher` runs `Command::new(program).args(args).arg(file).status()` (blocking).
+  See `src/editor.rs:29-116`; precedence at `src/editor.rs:104-116`; platform default uses `cfg!(target_os = "macos")` at `src/editor.rs:71-81`.
+- [x] `suspend_terminal` / `resume_terminal` over an internal `TerminalControl` trait + `emit_osc7<W: Write>(w, is_tty, cwd)` writing `\x1b]7;file://<empty-host><pct-encoded>\x1b\\` when `is_tty`, nothing otherwise; encoding preserves `A-Za-z0-9-._~/`.
+  See `src/lib.rs:277-316` (suspend/resume + trait) and `src/lib.rs:326-367` (`emit_osc7` + safe-byte set).
+- [x] `emit_osc7` called against `io::stdout()` with `stdout.is_terminal()` before `enable_raw_mode()` and `EnterAlternateScreen` in `run_terminal`; pending-open drain suspends → `StdLauncher.launch(&resolve_editor(&StdEnv), &path)` → resumes → `terminal.clear()?`.
+  See `src/lib.rs:117-122` (OSC 7 pre-raw) and `src/lib.rs:217-229` (drain).
+- [x] Preview header renders path relative to `state.workflow_dir()` via `strip_prefix`; falls back to absolute path on `Err`.
+  See `src/ui/mod.rs:876-880`.
+- [x] Help popup adds `o              open file in $EDITOR` line inside `if preview_open` block; `popup_h` bumped by 1 in that branch (20→21, multi 23→24); footer adds `"o: open"` when `preview_open` is true.
+  See `src/ui/mod.rs:355-357` (footer), `src/ui/mod.rs:369-383` (popup_h), and `src/ui/mod.rs:413` (help line).
+- [x] Named tests per AC pass: `o_with_preview_open_emits_open_file_intent` (AC-1), `suspend_resume_call_sequence` (AC-2), `o_with_preview_closed_is_noop` (AC-3), `resolve_editor_visual_editor_default_precedence` (AC-4), `emit_osc7_writes_bytes_when_tty` + `emit_osc7_skips_when_not_tty` (AC-5), `help_popup_documents_open_file_keybind_when_preview_open` (AC-6).
+  `cargo test --lib -- <8 names>` → 8 passed; 0 failed.
+- [x] `make lint` and `cargo test` evidence captured; no `#[allow(...)]` added.
+  `make lint` closing line: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 0.81s` (clean, `-D warnings`). `cargo test --lib` summary: `220 passed; 1 failed` — the one failure (`ui::graph::tests::narrow_tier_renders_compact_textual_summary`) reproduces on the pre-dispatch commit `ab6cb1b` and we did not modify `src/ui/graph.rs`, so it is pre-existing and out of scope.
+- [x] Code committed on stage branch `spacedock-ensign/039-open-entity-file-from-preview`.
+  Commit `60aa7b2` "feat(039): open entity file from preview (o keybind + OSC 7)" — 5 files changed, 580 insertions(+), 4 deletions(-).
+- [x] Stage report appended to entity file body (this section); report commit follows.
+  See commit history after this write.
+
+### Summary
+
+Implemented the `o` keybind + OSC 7 startup emit exactly as the plan specifies, in four layers: `OverviewKeyAction::OpenSelectedFile` state intent in `src/app/keys.rs` + `src/app.rs`, a new `src/editor.rs` with `EditorEnv`/`EditorLauncher` seams and a pure `resolve_editor` precedence resolver, terminal suspend/resume + `emit_osc7` over a `TerminalControl` seam in `src/lib.rs` (OSC 7 emitted before raw mode and the alt screen), and preview-header relative-path + help/footer copy in `src/ui/mod.rs`. All eight AC-tagged unit tests pass; `make lint` is clean with `-D warnings`. The pre-existing `narrow_tier_renders_compact_textual_summary` failure reproduces on the dispatch commit and is unrelated to this change.
+
+## Stage Report: review
+
+- [x] Read `## Implementation Plan` and `## Stage Report: implement`; understand what was claimed built.
+  Plan/implement reports describe 4-layer change: state intent, resolver, terminal lifecycle + OSC 7, header/help/footer copy.
+- [x] Compare diff `ab6cb1b..HEAD` against the plan across `src/app.rs`, `src/app/keys.rs`, `src/editor.rs`, `src/lib.rs`, `src/ui/mod.rs`; flag deviations.
+  Diff matches plan exactly. Two minor, justified extras: (i) extra test `empty_visual_falls_through_to_editor` in `src/editor.rs` covering whitespace-only `$VISUAL` — defensive and welcome; (ii) `popup_h` bumped to 24 in the `is_multi && preview_open` branch (plan only specified the single-mode bump to 21) — necessary to keep the new help line visible in multi mode; commented inline. No material deviation.
+- [x] Each AC has a named passing test or explicit evidence (AC-1..AC-7).
+  AC-1 `o_with_preview_open_emits_open_file_intent` ok; AC-2 `suspend_resume_call_sequence` ok; AC-3 `o_with_preview_closed_is_noop` ok; AC-4 `resolve_editor_visual_editor_default_precedence` ok; AC-5 `emit_osc7_writes_bytes_when_tty` + `emit_osc7_skips_when_not_tty` ok; AC-6 `help_popup_documents_open_file_keybind_when_preview_open` ok; AC-7 `make lint` exits 0.
+- [x] `make lint` clean.
+  `cargo clippy --all-targets --all-features -- -D warnings` → `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 0.11s`; exit 0.
+- [x] `cargo test --lib`; out-of-scope pre-existing failure noted and excluded.
+  `220 passed; 1 failed` — the only failure `ui::graph::tests::narrow_tier_renders_compact_textual_summary` is pre-existing on `ab6cb1b`; `git diff --stat ab6cb1b HEAD -- src/ui/graph.rs` returns empty (file untouched by 039). Excluded from verdict per assignment.
+- [x] Spot-check key claims: (a) OSC 7 pre-raw, (b) blocking spawn, (c) header relative+absolute fallback, (d) `o` no-op when preview closed.
+  (a) `src/lib.rs:117-122` emits OSC 7; `enable_raw_mode()` follows at line 124, `EnterAlternateScreen` at line 128 — correct ordering. (b) `src/editor.rs:55-58` calls `.status()` (blocking), not `.spawn()`. (c) `src/ui/mod.rs:876-880` uses `strip_prefix(state.workflow_dir())` with `Err` → absolute fallback. (d) `src/app/keys.rs:82` arm is guarded by `if state.preview_open()`; when closed, control falls through to `_ => OverviewKeyAction::None`.
+- [x] Hygiene: no new `[dependencies]`, no `unsafe`, no new `#[allow(clippy::...)]`.
+  `git diff ab6cb1b HEAD -- Cargo.toml Cargo.lock` empty. Grep across the five touched files shows zero `unsafe` blocks. The only `#[allow(clippy::large_enum_variant)]` at `src/app.rs:21` pre-existed on `ab6cb1b` (verified via `git show ab6cb1b:src/app.rs`).
+- [x] Write this `## Stage Report: review` section and commit on worktree branch.
+  This section is the artifact; commit follows.
+
+### Summary
+
+Recommend approve. The implementation matches the plan one-for-one across all five touched files, all seven AC-tagged tests pass, `make lint` is clean with `-D warnings`, and the four spot-checked invariants (OSC 7 ordering, blocking spawn, header strip_prefix-with-fallback, `o` no-op when preview closed) all hold in the code. No new dependencies, no `unsafe`, no new `#[allow(...)]` introduced. The pre-existing `narrow_tier_renders_compact_textual_summary` failure reproduces on dispatch commit `ab6cb1b` and `src/ui/graph.rs` was not modified by this work, so it is out of scope per the assignment and does not affect the verdict.
+
 ### Feedback Cycles
 
 **Cycle 1 — 2026-05-14, review → implement.**
 Captain rejected at the review gate. Observed defect (screenshot from a live spacetop session on entity 039 at status=review): the **preview header's `path:` line renders as empty** — the label "path:" is shown with no value after it. The implement worker introduced the bug at `src/ui/mod.rs:876-880` when switching from the previous always-absolute render to `strip_prefix(state.workflow_dir())` with absolute fallback. Likely root cause to investigate: `Path::strip_prefix` returning `Ok` with an empty relative result (e.g. when `item.path == state.workflow_dir()` or some path-normalization edge case), or `item.path` and `workflow_dir` having mismatched normalization (trailing slash, symlinks, canonicalization). Fix and add a regression test that constructs an `OverviewState` + `WorkItem` whose rendered preview header contains a non-empty path string in both the in-workflow-root case and the out-of-root (worktree-resident) case.
+
+## Stage Report: implement (cycle 1 fix)
+
+- [x] Read the `### Feedback Cycles` section (cycle 1) added to the entity file on main.
+  Captain rejected at review: preview header `path:` line renders visually EMPTY for entity 039 at status=review.
+- [x] Reproduce the bug.
+  Built spacetop from the worktree and rendered the live preview via a transient example binary (deleted before commit) that calls `decide_app` + `render` against a `TestBackend(width=200, height=50)` buffer. Output at preview-pane width ~100 (Left placement) showed `path:` alone on one row with the long absolute fallback path wrapping to the next row — exactly the captain's screenshot.
+- [x] Diagnose the root cause in `src/ui/mod.rs:876-880`.
+  Hypothesis (a) — `Path::strip_prefix` returning `Ok("")` — is a real defensive concern (verified that `Path::strip_prefix` returns `Ok("")` when the two paths are equal), but is NOT what produces the live bug. The actual root cause is the rendering path: `Paragraph::new(header_lines).wrap(Wrap { trim: true })` performs *word* wrapping on whitespace; a long absolute path has no internal whitespace, so ratatui breaks at the single space between the label `path:` and the value, putting the label alone on one row and the value on the next. To the user the label appears EMPTY. Confirmed by inspecting the rendered cell grid row-by-row before the fix.
+- [x] Add a regression test in `src/ui/mod.rs` `#[cfg(test)]` covering BOTH the in-root case (relative path expected) and the out-of-root case (absolute fallback with truncation).
+  New test `path_line_stays_visible_for_long_paths` builds an `App::from_snapshot` with a workflow_dir of `/repo/docs/wf` and two items — one in-root (`/repo/docs/wf/039-foo.md`) and one worktree-resident (`/repo/.worktrees/SLUG/docs/wf/040-bar.md`) — opens the preview on each, and uses a `find_text`-based row scan helper (`assert_path_row_non_empty`) to assert that the rendered row beginning with "path:" carries a non-empty visible value on the SAME row. Also asserts that the truncated form retains the basename and uses a leading ellipsis. Plus three unit tests for the new `fit_path_to_width` helper covering pass-through, truncation with ample width (full basename retained), and the tiny-pane collapse-to-ellipsis edge case.
+- [x] Fix the bug. Preserve the design intent.
+  Two-part fix: (i) defensively treat `Ok(rel)` from `strip_prefix` as a failure when `rel.as_os_str().is_empty()`, falling through to the absolute path (so the equal-paths edge case can never render an empty value); (ii) introduce `fit_path_to_width(value, pane_width)` next to `line_width` that truncates the rendered value from the LEFT with a leading `…` so the basename stays visible and the line fits on one row. Both the relative and absolute branches go through the same fit. Design intent preserved: relative-when-in-root, absolute fallback otherwise.
+- [x] Run `make lint` and `cargo test --lib`.
+  `make lint`: clean (`-D warnings`). `cargo test --lib`: `225 passed; 1 failed` — the one failure is the pre-existing `ui::graph::tests::narrow_tier_renders_compact_textual_summary` (graph.rs untouched by 039, confirmed via `git diff ab6cb1b HEAD -- src/ui/graph.rs` returning empty).
+- [x] Append this report and commit; commit the fix in a separate commit.
+  Fix commit `ab3bd75` "fix(039): keep preview header path on one line via width-fit truncation" — 1 file changed, 232 insertions(+), 5 deletions(-). Report commit follows.
+
+### Summary
+
+Diagnosed the cycle-1 review defect: the empty `path:` line was a rendering interaction with ratatui's word-wrap, not a `strip_prefix` normalization bug. Long absolute fallback paths (worktree-resident entities) wrapped at the single space after the label, hiding the value on the next row. Fixed by introducing `fit_path_to_width` to truncate the rendered value with a leading ellipsis so the basename stays visible on the same row as the label, and by treating an empty `strip_prefix` result as a fallback to the absolute path as defense-in-depth. New regression test `path_line_stays_visible_for_long_paths` (plus three `fit_path_to_width` unit tests) gates both the in-root and out-of-root cases. `make lint` clean; lib tests `225 passed; 1 failed` (pre-existing, out of scope).
+
+## Stage Report: review (cycle 1)
+
+- [x] Read the implement cycle-1 fix section and understood the claimed diagnosis (ratatui `Wrap { trim: true }` word-wrap at the single space after `path:` label) and fix shape (`fit_path_to_width` with leading-`…` truncation + defensive empty-`strip_prefix` fallback).
+  See `## Stage Report: implement (cycle 1 fix)` above.
+- [x] Inspected diff `04f209c..HEAD`: only `src/ui/mod.rs` and the entity file changed (`git diff --stat 04f209c..HEAD` → 2 files; 253 insertions, 5 deletions). Two new commits on the worktree branch: `ab3bd75` (fix) and `1db1bda` (report). Diff matches described diagnosis: introduces `fit_path_to_width` helper, calls it after `strip_prefix`, adds an `if !rel.as_os_str().is_empty()` guard on the `Ok(rel)` arm so equal paths fall through to the absolute branch.
+  Diff confirms no production code touched outside `src/ui/mod.rs`.
+- [x] Read `fit_path_to_width` (`src/ui/mod.rs:1161-1175`) and its call site (`src/ui/mod.rs:878-889`). Verified the four properties by reading the code and hand-tracing an 80-char path in a 40-wide pane: `label_chars=6`, `available=34`, `value_chars=80>34`, `available>1`, `skip=80-33=47`, result is `…` + last 33 chars (34 total), basename preserved at the tail. (a) Short paths pass through unchanged via `value_chars <= available` early return. (b) Long paths get a single leading `…` via `format!("\u{2026}{tail}")`. (c) Truncation keeps the trailing `available-1` chars so the basename stays at the end. (d) Tiny pane (`available <= 1`) collapses gracefully to just `…`.
+  Helper code matches all four claims.
+- [x] Verified each new regression test asserts what it claims: `path_line_stays_visible_for_long_paths` drives `App::from_snapshot` with both an in-root item (`/repo/docs/wf/039-foo.md`) and a worktree-resident item (long absolute path), opens the preview, and scans the rendered buffer row containing `path:` to assert a non-empty value follows the label on the SAME row — exactly the live bug the captain saw. `fit_path_to_width_keeps_short_path_unchanged` asserts identity for short input. `fit_path_to_width_truncates_long_path_with_leading_ellipsis` asserts `chars().count() == 34` for a 75-char path in width 40 and that the result starts with `…` and ends with `from-preview.md`. `fit_path_to_width_keeps_basename_when_room_is_ample` asserts the full basename remains visible at width 80. `fit_path_to_width_collapses_to_ellipsis_when_pane_is_tiny` asserts width 6 collapses to just `…`. All four would have caught the original bug if present pre-fix.
+  Test bodies reviewed in `src/ui/mod.rs:1469-1659`.
+- [x] All six original AC tests still pass: `cargo test --lib 2>&1 | grep` showed `o_with_preview_open_emits_open_file_intent ... ok`, `o_with_preview_closed_is_noop ... ok`, `resolve_editor_visual_editor_default_precedence ... ok`, `emit_osc7_skips_when_not_tty ... ok`, `suspend_resume_call_sequence ... ok`, `emit_osc7_writes_bytes_when_tty ... ok`, `help_popup_documents_open_file_keybind_when_preview_open ... ok`. None regressed.
+  `cargo test --lib` summary: `225 passed; 1 failed` — the one failure `ui::graph::tests::narrow_tier_renders_compact_textual_summary` is out of scope per assignment.
+- [x] Ran `make lint` from the worktree. Closing line: `Finished \`dev\` profile [unoptimized + debuginfo] target(s) in 0.26s`. Exit 0.
+  Clean with `-D warnings`.
+- [x] Hygiene re-check: `git diff 04f209c..HEAD -- Cargo.toml Cargo.lock` is empty (no new dependencies). Grep for `unsafe` and `#[allow(clippy` in the diff returned no matches — no new `unsafe`, no new clippy allows.
+  Code stays inside project guardrails.
+- [x] Wrote this `## Stage Report: review (cycle 1)` section; commit follows.
+  This section is the artifact.
+
+### Summary
+
+Recommend approve, with the caveat that this is a code-level verification only — the captain should re-run spacetop against entity 039 (or any worktree-resident entity with a long absolute path) to visually confirm the `path:` line now renders with the basename visible on the same row as the label. The code-level fix is sound: `fit_path_to_width` correctly truncates from the left with a leading `…` so the basename remains visible, the call site passes the actual inner pane width, and the defensive `is_empty()` guard on `strip_prefix` closes the equal-paths edge case. The new regression test `path_line_stays_visible_for_long_paths` exercises the live rendering path via `TestBackend` for both in-root and out-of-root items and would have failed against the pre-fix code. `make lint` is clean; the six original AC tests plus four new tests all pass; no new dependencies, `unsafe`, or clippy allows.

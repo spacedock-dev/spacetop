@@ -352,6 +352,9 @@ fn status_footer_hints(session: &OverviewSession) -> Vec<&'static str> {
         hints.push("PgUp/PgDn: page list");
         hints.push("s: sort");
     }
+    if preview_open {
+        hints.push("o: open");
+    }
     hints.push("q: quit");
     hints
 }
@@ -364,9 +367,17 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .unwrap_or(false);
     let popup_w = area.width.min(64);
     let popup_h = area.height.min(if is_multi {
-        23
+        // The is_multi branch already had slack for the multi-mode lines
+        // ("P: pick workflow", switch hints); bumping by 1 when preview is
+        // open keeps the new "o: open file" row visible.
+        if preview_open {
+            24
+        } else {
+            23
+        }
     } else if preview_open {
-        20
+        // +1 over the prior 20 to accommodate the new "o: open file" line.
+        21
     } else {
         19
     });
@@ -399,6 +410,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         lines.push(Line::from("  PageUp         scroll preview up"));
         lines.push(Line::from("  PageDown       scroll preview down"));
         lines.push(Line::from("  w              toggle word wrap"));
+        lines.push(Line::from("  o              open file in $EDITOR"));
     } else {
         lines.push(Line::from("  PageUp         page list up"));
         lines.push(Line::from("  PageDown       page list down"));
@@ -855,7 +867,26 @@ fn build_preview_header_lines<'a>(
             }
         }
     }
-    lines.push(Line::from(format!("path: {}", item.path.display())));
+    // Render the entity path relative to the workflow root so it fits the
+    // preview header and stays Smart-Selection-clickable in terminals that
+    // resolve relative paths against OSC 7. Fall back to the absolute path
+    // for entities whose path sits outside the workflow root (e.g. worktree
+    // copies), preserving the disambiguating context the absolute path
+    // carries. Defensively reject an empty relative result (`strip_prefix`
+    // returns `Ok("")` when the two paths are equal — render the absolute
+    // path in that edge case so the value is never visibly empty).
+    let path_full = match item.path.strip_prefix(state.workflow_dir()) {
+        Ok(rel) if !rel.as_os_str().is_empty() => rel.display().to_string(),
+        _ => item.path.display().to_string(),
+    };
+    // The header paragraph wraps with `Wrap { trim: true }`, which performs
+    // word-wrapping at whitespace boundaries. A long path (no internal
+    // whitespace) wraps at the single space after `path:` — leaving the
+    // label alone on one row and the value on the next. To users, the label
+    // appears EMPTY. Truncate the value with a leading ellipsis so the
+    // basename stays visible and the line fits on one row.
+    let path_text = fit_path_to_width(&path_full, inner_width as usize);
+    lines.push(Line::from(format!("path: {path_text}")));
 
     // Body divider: "── body " + "─" repeated to fill pane width.
     // This replaces the previous blank separator line (same line count, but
@@ -1116,6 +1147,33 @@ fn line_width(line: &Line<'_>) -> usize {
         .sum()
 }
 
+/// Truncate `value` so that `"path: " + value` fits on a single row of the
+/// given total `pane_width`. When truncation is required, drop characters from
+/// the LEFT and replace them with a leading ellipsis (`…`) so the basename
+/// stays visible. Returns the value unchanged when it already fits, and
+/// returns just the ellipsis when even one character would not fit.
+///
+/// This exists because the preview header is rendered with
+/// `Paragraph::new(...).wrap(Wrap { trim: true })`, which word-wraps at the
+/// single space between the label and a long path — putting the label alone
+/// on one row and the value on the next row, making the label appear empty.
+/// See `path_line_stays_visible_for_long_paths` for the regression test.
+fn fit_path_to_width(value: &str, pane_width: usize) -> String {
+    let label_chars = "path: ".chars().count(); // = 6
+    let available = pane_width.saturating_sub(label_chars);
+    let value_chars = value.chars().count();
+    if value_chars <= available {
+        return value.to_string();
+    }
+    if available <= 1 {
+        return "\u{2026}".to_string();
+    }
+    // Keep the trailing `(available - 1)` chars and prefix with `…`.
+    let skip = value_chars - (available - 1);
+    let tail: String = value.chars().skip(skip).collect();
+    format!("\u{2026}{tail}")
+}
+
 fn wrapped_lines_height(lines: &[Line<'_>], width: u16) -> u16 {
     let width = usize::from(width.max(1));
     lines
@@ -1145,7 +1203,7 @@ mod tests {
         Terminal,
     };
 
-    use super::render;
+    use super::{fit_path_to_width, render};
     use crate::app::App;
     use crate::domain::{StageDefinition, WorkItem, WorkflowDefinition, WorkflowSnapshot};
 
@@ -1405,6 +1463,234 @@ mod tests {
         assert!(
             rendered.contains("status: ● design"),
             "surrounding header should remain intact"
+        );
+    }
+
+    #[test]
+    fn fit_path_to_width_keeps_short_path_unchanged() {
+        let s = fit_path_to_width("039-foo.md", 40);
+        assert_eq!(s, "039-foo.md");
+    }
+
+    #[test]
+    fn fit_path_to_width_truncates_long_path_with_leading_ellipsis() {
+        let long = "/repo/.worktrees/SLUG/docs/spacetop-dev/039-open-entity-file-from-preview.md";
+        let s = fit_path_to_width(long, 40);
+        // pane=40, label="path: "=6, available=34, so the result is 34 chars
+        // (1 ellipsis + 33 tail).
+        assert_eq!(s.chars().count(), 34);
+        assert!(s.starts_with('\u{2026}'));
+        // Truncate from the LEFT so the END of the path stays visible —
+        // important because the basename carries the identifying info.
+        assert!(
+            s.ends_with("from-preview.md"),
+            "truncated path should keep the trailing portion of the basename; got {s:?}"
+        );
+    }
+
+    #[test]
+    fn fit_path_to_width_keeps_basename_when_room_is_ample() {
+        // With a wider pane the entire basename fits even when the path is
+        // truncated, so the user can identify the file at a glance.
+        let long = "/repo/.worktrees/SLUG/docs/spacetop-dev/039-open-entity-file-from-preview.md";
+        let s = fit_path_to_width(long, 80); // available = 74
+        assert!(
+            s.starts_with('\u{2026}'),
+            "should still mark truncation; got {s:?}"
+        );
+        assert!(
+            s.ends_with("039-open-entity-file-from-preview.md"),
+            "with ample pane width the full basename should remain visible; got {s:?}"
+        );
+    }
+
+    #[test]
+    fn fit_path_to_width_collapses_to_ellipsis_when_pane_is_tiny() {
+        let s = fit_path_to_width("any/path.md", 6); // label uses all the width
+        assert_eq!(s, "\u{2026}");
+    }
+
+    /// Regression for cycle-1 review feedback on 039: the preview header's
+    /// `path:` line rendered visually EMPTY when the entity was a
+    /// worktree-resident copy and the absolute fallback path was longer than
+    /// the preview pane width. The header paragraph wraps with
+    /// `Wrap { trim: true }`, which word-wraps at the single space between
+    /// the label and a long path — leaving the label alone on one row and
+    /// the value on the next. This test exercises BOTH cases:
+    ///   (i) in-workflow-root items → relative path expected, fits inline.
+    ///   (ii) out-of-root (worktree-resident) items → absolute fallback, but
+    ///        truncated with a leading ellipsis so it still fits on one row
+    ///        and the basename stays visible.
+    /// Either way, the rendered row that begins with "path:" must carry a
+    /// non-empty visible value.
+    #[test]
+    fn path_line_stays_visible_for_long_paths() {
+        use crate::domain::{StageDefinition, WorkflowDefinition, WorkflowSnapshot};
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let workflow_dir = PathBuf::from("/repo/docs/wf");
+
+        // (i) In-root item: path is /repo/docs/wf/039-foo.md, workflow_dir is
+        //     /repo/docs/wf, so strip_prefix yields "039-foo.md" — short and
+        //     visible on the same row as the "path:" label.
+        let in_root = WorkItem {
+            path: PathBuf::from("/repo/docs/wf/039-foo.md"),
+            id: "039".to_string(),
+            title: "In root".to_string(),
+            status: "design".to_string(),
+            source: Some("x".to_string()),
+            started: None,
+            completed: None,
+            verdict: None,
+            score: None,
+            worktree: None,
+            issue: None,
+            pr: None,
+            body: "Body".to_string(),
+            worktree_source: None,
+            main_body: None,
+        };
+
+        // (ii) Out-of-root item: a worktree-resident copy whose absolute path
+        //      is well over the preview pane width — exercises the absolute
+        //      fallback + width-fit truncation.
+        let mut out_of_root = in_root.clone();
+        out_of_root.id = "040".to_string();
+        out_of_root.title = "Out of root".to_string();
+        out_of_root.path = PathBuf::from(
+            "/repo/.worktrees/spacedock-ensign-039-open-entity-file-from-preview/docs/wf/040-bar.md",
+        );
+
+        let snapshot = WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: workflow_dir.clone(),
+                stages: vec![StageDefinition {
+                    name: "design".to_string(),
+                    initial: true,
+                    terminal: false,
+                    gate: false,
+                    fresh: false,
+                    feedback_to: None,
+                    worktree: false,
+                    concurrency: None,
+                }],
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+                stage_colors: std::collections::HashMap::new(),
+            },
+            items: vec![in_root, out_of_root],
+        };
+        let mut app = App::from_snapshot(workflow_dir.clone(), snapshot);
+        // Open the preview on the first (in-root) item.
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        let mut terminal =
+            Terminal::new(TestBackend::new(120, 30)).expect("test terminal should be created");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let buffer = terminal.backend().buffer();
+        assert_path_row_non_empty(buffer, "in-root");
+        let rendered = buffer_text(buffer);
+        assert!(
+            rendered.contains("path: 039-foo.md"),
+            "in-root item should render relative path on the same row, got: {rendered}"
+        );
+
+        // Now move down to the out-of-root item; preview follows the
+        // selection.
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let buffer = terminal.backend().buffer();
+        assert_path_row_non_empty(buffer, "out-of-root");
+        // The truncated absolute path must still surface the basename so the
+        // user can identify the file at a glance.
+        let rendered = buffer_text(buffer);
+        assert!(
+            rendered.contains("040-bar.md"),
+            "out-of-root item should still show the basename in the path row, got: {rendered}"
+        );
+        // The leading ellipsis marker is the truncation signal.
+        assert!(
+            rendered.contains('\u{2026}'.to_string().as_str()),
+            "out-of-root long path should be truncated with a leading ellipsis, got: {rendered}"
+        );
+    }
+
+    /// Helper: locate the row whose first non-empty content begins with
+    /// "path:" and assert that some visible character follows the label on
+    /// the same row. Fails the test with a helpful message otherwise.
+    fn assert_path_row_non_empty(buffer: &ratatui::buffer::Buffer, label: &str) {
+        let hits = find_text(buffer, "path:");
+        assert!(
+            !hits.is_empty(),
+            "({label}) expected to find a 'path:' label in the rendered preview"
+        );
+        let (x, y) = hits[0];
+        let after = x + "path:".chars().count() as u16;
+        let mut non_empty_seen = false;
+        for col in after..buffer.area.width {
+            let cell = &buffer[(col, y)];
+            let sym = cell.symbol();
+            if sym.is_empty() {
+                continue;
+            }
+            // Skip the single space between label and value.
+            if sym == " " {
+                continue;
+            }
+            non_empty_seen = true;
+            break;
+        }
+        let row_text: String = (0..buffer.area.width)
+            .map(|cx| buffer[(cx, y)].symbol().to_string())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            non_empty_seen,
+            "({label}) 'path:' row at y={y} has no visible value after the label; \
+             row text: {row_text:?}"
+        );
+    }
+
+    /// AC-6: the help popup documents the new `o` keybinding when the
+    /// preview pane is open.
+    #[test]
+    fn help_popup_documents_open_file_keybind_when_preview_open() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let mut app = app_with_items(vec![item("001", "Help test", "body")]);
+        // Open preview, then open the help popup.
+        // (app_with_items already opens the preview, but be explicit so
+        // future refactors don't silently break this test.)
+        if !app.as_overview().is_some_and(|s| s.preview_open()) {
+            app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+        assert!(app.help_open());
+
+        let mut terminal =
+            Terminal::new(TestBackend::new(140, 30)).expect("test terminal should be created");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(
+            rendered.contains("open file in $EDITOR"),
+            "help popup should document the `o` keybind, got: {rendered}"
+        );
+        // Also check the leading `o` key column itself is present in the
+        // popup (rather than only the description text).
+        assert!(
+            find_text(terminal.backend().buffer(), "o ")
+                .into_iter()
+                .any(|(_, _)| true),
+            "help popup should render the `o` key column"
         );
     }
 
