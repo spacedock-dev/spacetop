@@ -50,6 +50,16 @@ cargo test
 cargo run -- --workflow-dir /path/to/workflow
 ```
 
+### Setup
+
+On a fresh clone, install the required Rust components once:
+
+    make bootstrap
+
+This adds the `clippy` component to the active toolchain. `make lint` and
+`make build` will refuse to run until clippy is available and will point you
+back at this command.
+
 ### Install Local Build
 
 Use the provided Makefile targets to build and install a local release binary:
