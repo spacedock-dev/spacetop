@@ -129,3 +129,16 @@ Single commit suggested: `feat(makefile): bootstrap clippy for fresh environment
 ### Summary
 
 Plan adds a `bootstrap` Makefile target plus a precheck on `lint` that emits a guided "run 'make bootstrap'" error instead of the raw rustup hint, and documents the one-command setup path in README under a new `### Setup` subsection. The change is tooling-only — no Rust source, no tests under `src/` or `tests/` — and `make lint` is the single verification command. AC-1 is satisfied by the bootstrap target installing clippy; AC-2 is satisfied by `make bootstrap` being the reproducible, documented contributor entry point.
+
+## Stage Report: implement
+
+- DONE: Makefile carries the `bootstrap` target and `lint` precheck exactly as specified in the plan's File-by-file changes (including the guided error wording).
+  Added `bootstrap` to `.PHONY`, added the `bootstrap` target with the `rustup` presence check and `rustup component add clippy`, and prefixed `lint` with the `cargo clippy --version` precheck that emits the guided "run 'make bootstrap'" error verbatim.
+- DONE: README has the `### Setup` subsection under `## Development` pointing contributors at `make bootstrap`.
+  Inserted `### Setup` immediately before `### Install Local Build` with the one-command `make bootstrap` recipe and the rationale matching the plan's copy.
+- DONE: `make lint` runs clean from the worktree on a toolchain that already has clippy installed (regression check that the precheck doesn't break the happy path).
+  Ran `make lint` in the worktree; precheck succeeded and `cargo clippy --all-targets --all-features -- -D warnings` finished with no warnings.
+
+### Summary
+
+Bootstrap path is in place: `make bootstrap` installs clippy via `rustup` (or fails with a guided install-rustup error), and `make lint` now refuses to run without clippy by pointing the contributor at `make bootstrap` instead of leaking the bare rustup help line. README gained a short `### Setup` subsection so a fresh-clone contributor lands on the documented one-liner. Tooling-only — no `src/` or `tests/` changes. `make lint` runs clean in the worktree.
