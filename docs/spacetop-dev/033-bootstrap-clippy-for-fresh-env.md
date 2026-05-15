@@ -142,3 +142,20 @@ Plan adds a `bootstrap` Makefile target plus a precheck on `lint` that emits a g
 ### Summary
 
 Bootstrap path is in place: `make bootstrap` installs clippy via `rustup` (or fails with a guided install-rustup error), and `make lint` now refuses to run without clippy by pointing the contributor at `make bootstrap` instead of leaking the bare rustup help line. README gained a short `### Setup` subsection so a fresh-clone contributor lands on the documented one-liner. Tooling-only — no `src/` or `tests/` changes. `make lint` runs clean in the worktree.
+
+## Stage Report: review
+
+- DONE: Verify the Makefile changes match the plan exactly: bootstrap target with rustup presence check + clippy install, lint precheck with the guided 'run make bootstrap' error, .PHONY updated.
+  Diff vs `main` shows `.PHONY` extended with `bootstrap`; new `bootstrap` target has the `command -v rustup` presence check with the verbatim "Install Rust via https://rustup.rs" error and then `rustup component add clippy`; `lint` is prefixed with `cargo clippy --version` precheck emitting the verbatim "run 'make bootstrap' (or 'rustup component add clippy') and retry." guidance and exiting 1, matching the plan's File-by-file changes character-for-character.
+- DONE: Confirm README has the new `### Setup` subsection positioned before `### Install Local Build` and that it points contributors at `make bootstrap`.
+  README diff inserts `### Setup` immediately before `### Install Local Build`; copy points contributors at `make bootstrap` and explains that `make lint`/`make build` will refuse to run until clippy is available, matching AC-2's reproducible-bootstrap-path requirement.
+- DONE: Re-run `make lint` from the worktree to confirm the happy path is clean (no regression on toolchains that already have clippy).
+  `make lint` in the worktree printed only the `cargo clippy --all-targets --all-features -- -D warnings` invocation and finished clean (`Finished dev profile ... 0.34s`); precheck did not block the toolchain-has-clippy happy path.
+
+### Verdict
+
+**PASSED.** AC-1 (clippy bootstrapped before lint) is delivered by the `bootstrap` target plus the lint precheck that converts the bare rustup hint into a guided "run 'make bootstrap'" error. AC-2 (reproducible contributor path) is delivered by the documented `make bootstrap` one-liner in README under `### Setup`. The change is tooling-only, no Rust source touched, and `make lint` remains green on a toolchain that already has clippy.
+
+### Summary
+
+Review confirms Makefile and README diffs match the plan exactly, both acceptance criteria have working evidence, and the `make lint` happy path is unaffected. Recommending PASSED → done.
