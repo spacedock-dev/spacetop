@@ -1,14 +1,16 @@
 ---
 id: 033
 title: Bootstrap clippy for fresh environments before running `make lint`
-status: review
+status: done
 source: user request 2026-04-27
 score: 0.6
-worktree: .worktrees/spacedock-ensign-033-bootstrap-clippy-for-fresh-env
+worktree: 
 issue:
 pr: #33
 started: 2026-05-15T01:59:22Z
 mod-block: 
+completed: 2026-05-15T02:13:17Z
+verdict: PASSED
 ---
 
 On a fresh Rust environment, `make lint` fails because the active toolchain does not have `cargo-clippy` installed. The setup flow should bootstrap the required component or fail with a clearer guided path before the lint target runs.
