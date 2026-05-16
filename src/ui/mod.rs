@@ -669,7 +669,7 @@ fn render_preview(
     let diff_lines: Option<Vec<Line<'static>>> = item
         .main_body
         .as_deref()
-        .map(|main| diff::render_diff_lines(main, &item.body));
+        .map(|main| diff::render_diff_lines_with_width(main, &item.body, body_inner.width));
 
     // First pass: determine content height for overflow detection.
     // In the diff path, derive height directly from `diff_lines.len()` to
