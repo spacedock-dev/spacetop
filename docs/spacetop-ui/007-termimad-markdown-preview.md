@@ -1,7 +1,7 @@
 ---
 id: "007"
 title: Render preview-pane markdown with termimad
-status: implement
+status: review
 source: captain
 started: 2026-05-16T08:59:16Z
 completed:
