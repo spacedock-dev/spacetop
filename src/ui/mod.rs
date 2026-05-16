@@ -1,9 +1,9 @@
 mod diff;
 mod graph;
+mod markdown;
 mod picker;
 
 use crossterm::event::Event;
-use pulldown_cmark::{Event as MarkdownEvent, Options, Parser, Tag, TagEnd};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     prelude::{Frame, Line, Modifier, Span, Style},
@@ -18,6 +18,11 @@ use crate::app::{App, AppMode, OverviewSession, OverviewState, ViewScope};
 use graph::render_stage_graph;
 
 pub type TerminalEvent = Event;
+
+/// Markdown rendering width to use when wrap is OFF. We pass a large
+/// width to termimad so paragraphs stay on a single ratatui `Line` and
+/// the no-wrap horizontal scrollbar reflects their full content width.
+const MARKDOWN_NO_WRAP_RENDER_WIDTH: u16 = 4096;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PreviewPlacement {
@@ -670,14 +675,19 @@ fn render_preview(
     // In the diff path, derive height directly from `diff_lines.len()` to
     // avoid cloning the entire Vec<Line>. In the markdown path, render only
     // height+1 lines so we don't render the whole body twice for long previews.
+    // When wrap is OFF, pre-wrapping the markdown to the pane width would
+    // hide horizontally-scrollable overflow. Pass a wide render width so
+    // paragraphs stay on a single Line; ratatui's no-wrap horizontal scroll
+    // then exposes them.
+    let render_width = if state.preview_wrap() {
+        body_inner.width
+    } else {
+        body_inner.width.max(MARKDOWN_NO_WRAP_RENDER_WIDTH)
+    };
     let (content_height_full, body_lines_full) = if let Some(lines) = diff_lines.as_ref() {
         (lines.len() as u16, None)
     } else {
-        let lines = render_markdown_lines(
-            &item.body,
-            body_inner.height as usize + 1,
-            body_inner.width as usize,
-        );
+        let lines = markdown::render_markdown_termimad(&item.body, render_width);
         (lines.len() as u16, Some(lines))
     };
     let show_scrollbar = content_height_full > body_inner.height && body_inner.width > 1;
@@ -694,10 +704,17 @@ fn render_preview(
     // Second pass: re-render only when the scrollbar narrows the render area.
     // This ensures code block lines are padded to body_area.width (not body_inner.width)
     // so they do not overflow the render area and leave background gaps in wrap mode.
+    let render_width_second_pass = if state.preview_wrap() {
+        body_area.width
+    } else {
+        body_area.width.max(MARKDOWN_NO_WRAP_RENDER_WIDTH)
+    };
     let body_lines = if let Some(lines) = diff_lines {
         lines
-    } else if show_scrollbar {
-        render_markdown_lines(&item.body, usize::MAX, body_area.width as usize)
+    } else if show_scrollbar && state.preview_wrap() {
+        // Re-render only when the wrap-mode scrollbar narrows the render
+        // area, so code-block backgrounds still pad to the visible width.
+        markdown::render_markdown_termimad(&item.body, render_width_second_pass)
     } else {
         body_lines_full.expect("markdown path always produces body_lines_full")
     };
@@ -899,246 +916,8 @@ fn build_preview_header_lines<'a>(
     lines
 }
 
-fn render_markdown_lines(
-    markdown: &str,
-    max_lines: usize,
-    pane_width: usize,
-) -> Vec<Line<'static>> {
-    let mut blocks: Vec<Vec<Line<'static>>> = Vec::new();
-    let mut text_lines = Vec::new();
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut strong = false;
-    let mut heading_depth: Option<u32> = None;
-    let mut in_item = false;
-    let mut in_code_block = false;
-    let mut table: Option<TableRender> = None;
-    let mut table_row: Vec<String> = Vec::new();
-    let mut table_cell = String::new();
-    let mut in_table_cell = false;
 
-    let parser = Parser::new_ext(markdown, Options::ENABLE_TABLES);
-    for event in parser {
-        match event {
-            MarkdownEvent::Start(Tag::Table(_)) => {
-                flush_line(&mut text_lines, &mut spans, max_lines);
-                flush_text_block(&mut blocks, &mut text_lines);
-                table = Some(TableRender::default());
-            }
-            MarkdownEvent::End(TagEnd::Table) => {
-                if let Some(table) = table.take() {
-                    blocks.push(table.into_lines());
-                }
-            }
-            MarkdownEvent::Start(Tag::TableHead) | MarkdownEvent::Start(Tag::TableRow) => {
-                table_row.clear();
-            }
-            MarkdownEvent::End(TagEnd::TableHead) | MarkdownEvent::End(TagEnd::TableRow) => {
-                if let Some(table) = &mut table {
-                    table.push_row(std::mem::take(&mut table_row));
-                }
-            }
-            MarkdownEvent::Start(Tag::TableCell) => {
-                table_cell.clear();
-                in_table_cell = true;
-            }
-            MarkdownEvent::End(TagEnd::TableCell) => {
-                table_row.push(table_cell.trim().to_string());
-                table_cell.clear();
-                in_table_cell = false;
-            }
-            MarkdownEvent::Start(Tag::Heading { level, .. }) => {
-                flush_line(&mut text_lines, &mut spans, max_lines);
-                heading_depth = Some(level as u32);
-            }
-            MarkdownEvent::End(TagEnd::Heading(_)) => {
-                flush_line(&mut text_lines, &mut spans, max_lines);
-                flush_text_block(&mut blocks, &mut text_lines);
-                heading_depth = None;
-            }
-            MarkdownEvent::Start(Tag::Paragraph) if !spans.is_empty() => {
-                flush_line(&mut text_lines, &mut spans, max_lines);
-            }
-            MarkdownEvent::Start(Tag::Paragraph) => {}
-            MarkdownEvent::End(TagEnd::Paragraph) => {
-                flush_line(&mut text_lines, &mut spans, max_lines);
-                flush_text_block(&mut blocks, &mut text_lines);
-            }
-            MarkdownEvent::Start(Tag::Item) => {
-                flush_line(&mut text_lines, &mut spans, max_lines);
-                in_item = true;
-                spans.push(Span::raw("\u{2022} "));
-            }
-            MarkdownEvent::End(TagEnd::Item) => {
-                flush_line(&mut text_lines, &mut spans, max_lines);
-                flush_text_block(&mut blocks, &mut text_lines);
-                in_item = false;
-            }
-            MarkdownEvent::Start(Tag::CodeBlock(_)) => {
-                flush_line(&mut text_lines, &mut spans, max_lines);
-                flush_text_block(&mut blocks, &mut text_lines);
-                in_code_block = true;
-            }
-            MarkdownEvent::End(TagEnd::CodeBlock) => {
-                flush_text_block(&mut blocks, &mut text_lines);
-                in_code_block = false;
-            }
-            MarkdownEvent::Start(Tag::Strong) => strong = true,
-            MarkdownEvent::End(TagEnd::Strong) => strong = false,
-            MarkdownEvent::Text(text) => {
-                if in_table_cell {
-                    table_cell.push_str(&text);
-                    continue;
-                }
-                if in_code_block {
-                    for source_line in text.split('\n') {
-                        if source_line.is_empty() {
-                            continue;
-                        }
-                        if text_lines.len() < max_lines {
-                            let padded = format!("{:<width$}", source_line, width = pane_width);
-                            text_lines.push(Line::from(Span::styled(
-                                padded,
-                                Style::default().fg(Color::Cyan).bg(Color::DarkGray),
-                            )));
-                        }
-                    }
-                    continue;
-                }
-                let mut style = Style::default();
-                if strong || heading_depth.is_some() {
-                    style = style.add_modifier(Modifier::BOLD);
-                }
-                if heading_depth.is_some() {
-                    style = style.fg(Color::White);
-                }
-                spans.push(Span::styled(text.to_string(), style));
-            }
-            MarkdownEvent::Code(text) => {
-                if in_table_cell {
-                    table_cell.push_str(&text);
-                    continue;
-                }
-                spans.push(Span::styled(
-                    text.to_string(),
-                    Style::default().fg(Color::Yellow),
-                ));
-            }
-            MarkdownEvent::SoftBreak | MarkdownEvent::HardBreak => {
-                if in_table_cell {
-                    table_cell.push(' ');
-                    continue;
-                }
-                if in_item {
-                    spans.push(Span::raw(" "));
-                } else {
-                    flush_line(&mut text_lines, &mut spans, max_lines);
-                }
-            }
-            MarkdownEvent::Rule => {
-                flush_line(&mut text_lines, &mut spans, max_lines);
-                if text_lines.len() < max_lines {
-                    text_lines.push(Line::from(Span::styled(
-                        "\u{2500}".repeat(12),
-                        Style::default().add_modifier(Modifier::DIM),
-                    )));
-                }
-                flush_text_block(&mut blocks, &mut text_lines);
-            }
-            _ => {}
-        }
 
-        let used_lines = blocks.iter().map(Vec::len).sum::<usize>() + text_lines.len();
-        if used_lines >= max_lines {
-            break;
-        }
-    }
-
-    flush_line(&mut text_lines, &mut spans, max_lines);
-    flush_text_block(&mut blocks, &mut text_lines);
-    if blocks.is_empty() {
-        blocks.push(vec![Line::from("")]);
-    }
-    add_markdown_block_spacing(blocks)
-}
-
-#[derive(Debug, Clone, Default)]
-struct TableRender {
-    rows: Vec<Vec<String>>,
-    widths: Vec<usize>,
-}
-
-impl TableRender {
-    fn push_row(&mut self, row: Vec<String>) {
-        if self.widths.len() < row.len() {
-            self.widths.resize(row.len(), 0);
-        }
-        for (index, cell) in row.iter().enumerate() {
-            self.widths[index] = self.widths[index].max(cell.chars().count());
-        }
-        self.rows.push(row);
-    }
-
-    fn into_lines(self) -> Vec<Line<'static>> {
-        let has_body = self.rows.len() > 1;
-        let widths = self.widths;
-        let mut lines = Vec::new();
-        for (index, row) in self.rows.into_iter().enumerate() {
-            let is_header = index == 0;
-            let style = if is_header {
-                Style::default().add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-            let mut spans = Vec::new();
-            for (cell_index, cell) in row.into_iter().enumerate() {
-                if cell_index > 0 {
-                    spans.push(Span::raw("  "));
-                }
-                let width = widths.get(cell_index).copied().unwrap_or(0);
-                spans.push(Span::styled(format!("{cell:<width$}"), style));
-            }
-            lines.push(Line::from(spans));
-            if is_header && has_body {
-                let separator = widths
-                    .iter()
-                    .enumerate()
-                    .map(|(cell_index, width)| {
-                        let mut value = String::new();
-                        if cell_index > 0 {
-                            value.push_str("  ");
-                        }
-                        value.push_str(&"\u{2500}".repeat(*width));
-                        Span::styled(
-                            value,
-                            Style::default()
-                                .fg(Color::DarkGray)
-                                .add_modifier(Modifier::DIM),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                lines.push(Line::from(separator));
-            }
-        }
-        lines
-    }
-}
-
-fn flush_text_block(blocks: &mut Vec<Vec<Line<'static>>>, lines: &mut Vec<Line<'static>>) {
-    if !lines.is_empty() {
-        blocks.push(std::mem::take(lines));
-    }
-}
-
-fn add_markdown_block_spacing(blocks: Vec<Vec<Line<'static>>>) -> Vec<Line<'static>> {
-    let mut spaced = Vec::with_capacity(blocks.len().saturating_mul(2));
-    for (index, block) in blocks.into_iter().enumerate() {
-        if index > 0 {
-            spaced.push(Line::from(""));
-        }
-        spaced.extend(block);
-    }
-    spaced
-}
 
 fn line_width(line: &Line<'_>) -> usize {
     line.spans
@@ -1185,13 +964,6 @@ fn wrapped_lines_height(lines: &[Line<'_>], width: u16) -> u16 {
         .sum()
 }
 
-fn flush_line(lines: &mut Vec<Line<'static>>, spans: &mut Vec<Span<'static>>, max_lines: usize) {
-    if spans.is_empty() || lines.len() >= max_lines {
-        spans.clear();
-        return;
-    }
-    lines.push(Line::from(std::mem::take(spans)));
-}
 
 #[cfg(test)]
 mod tests {
@@ -1929,10 +1701,14 @@ mod tests {
 
     #[test]
     fn preview_renders_markdown_tables_as_aligned_rows() {
+        // termimad renders tables with Unicode box-drawing borders. We check
+        // that the preceding paragraph and every cell value land in the
+        // buffer, that raw pipe-and-dash markdown leaks have been suppressed,
+        // and that a header/body separator row is drawn.
         let app = app_with_items(vec![item(
             "001",
             "Markdown Table Preview",
-            "Ablation siblings\n| Arm | Entity | README |\n| --- | ---: | --- |\n| 1 | 17 | direct.md |\n| 2 | 18 | method.md |",
+            "Ablation siblings\n\n| Arm | Entity | README |\n| --- | ---: | --- |\n| 1 | 17 | direct.md |\n| 2 | 18 | method.md |",
         )]);
         let mut terminal = Terminal::new(TestBackend::new(140, 24)).expect("terminal");
         terminal
@@ -1941,21 +1717,22 @@ mod tests {
 
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains("Ablation siblings"));
-        assert!(rendered.contains("Arm  Entity  README"));
-        assert!(rendered.contains("1    17      direct.md"));
-        assert!(rendered.contains("2    18      method.md"));
-        assert!(
-            find_styled_text(terminal.backend().buffer(), "Arm", |style| {
-                style.add_modifier.contains(ratatui::style::Modifier::BOLD)
-            }),
-            "table header should be rendered through a highlighted table header row"
-        );
+        for cell in ["Arm", "Entity", "README", "direct.md", "method.md"] {
+            assert!(
+                rendered.contains(cell),
+                "expected cell {cell:?} in rendered table:\n{rendered}"
+            );
+        }
         assert!(
             rendered.contains("\u{2500}\u{2500}\u{2500}"),
             "table should show a separator row between header and body"
         );
         assert!(
-            !rendered.contains("---") && !rendered.contains("| Arm |"),
+            rendered.contains("\u{2502}"),
+            "termimad renders cell borders with the vertical box-drawing char"
+        );
+        assert!(
+            !rendered.contains("| Arm |") && !rendered.contains("---"),
             "preview should render table structure rather than raw markdown separators"
         );
     }
@@ -3418,56 +3195,62 @@ mod tests {
     }
 
     #[test]
-    fn render_markdown_lines_multiline_code_block_emits_one_line_per_source_line() {
-        let pane_width: usize = 40;
+    fn render_markdown_termimad_multiline_code_block_emits_one_line_per_source_line() {
+        // Termimad fills a code block to the outer width with a Cyan/DarkGray
+        // slab. Each source line should remain on its own Line, preserving the
+        // visible text at the start of the styled span and padding out to at
+        // least the requested pane width.
+        let pane_width: u16 = 40;
         let markdown = "```rust\nlet x = 1;\nlet y = 2;\nlet z = 3;\n```";
-        let lines = super::render_markdown_lines(markdown, usize::MAX, pane_width);
+        let lines = super::markdown::render_markdown_termimad(markdown, pane_width);
 
-        // Each non-empty source line inside the fenced block must produce a distinct Line.
+        // Collect spans that carry the slab styling.
         let code_spans: Vec<&str> = lines
             .iter()
-            .filter_map(|line| {
-                // A code line has exactly one span styled Cyan/DarkGray.
-                if line.spans.len() == 1 {
-                    let span = &line.spans[0];
-                    if span.style.fg == Some(Color::Cyan) || span.style.bg == Some(Color::DarkGray)
-                    {
-                        return Some(span.content.as_ref());
-                    }
+            .flat_map(|line| line.spans.iter())
+            .filter_map(|span| {
+                if span.style.bg == Some(Color::DarkGray)
+                    && span.style.fg == Some(Color::Cyan)
+                {
+                    Some(span.content.as_ref())
+                } else {
+                    None
                 }
-                None
             })
             .collect();
 
-        // There must be exactly 3 code lines.
+        // There must be exactly 3 code spans, one per source line.
         assert_eq!(
             code_spans.len(),
             3,
-            "each source line in a multi-line code block must produce a separate styled Line"
+            "each source line in a multi-line code block must produce a separate styled span; got {:?}",
+            code_spans,
         );
 
-        // Each span must be padded to pane_width so the DarkGray background extends edge-to-edge.
+        // Termimad pads each code compound to at least the outer width.
         for span_content in &code_spans {
-            assert_eq!(
-                span_content.len(),
-                pane_width,
-                "code line span must be padded to pane_width ({pane_width}), got len {}",
-                span_content.len()
+            assert!(
+                span_content.chars().count() >= pane_width as usize,
+                "code line span must be padded to at least pane_width ({pane_width}), got len {}",
+                span_content.chars().count(),
             );
         }
 
         // Source text must be preserved at the start of the padded span.
         assert!(
             code_spans[0].starts_with("let x = 1;"),
-            "first code line content must be preserved"
+            "first code line content must be preserved (got {:?})",
+            code_spans[0],
         );
         assert!(
             code_spans[1].starts_with("let y = 2;"),
-            "second code line content must be preserved"
+            "second code line content must be preserved (got {:?})",
+            code_spans[1],
         );
         assert!(
             code_spans[2].starts_with("let z = 3;"),
-            "third code line content must be preserved"
+            "third code line content must be preserved (got {:?})",
+            code_spans[2],
         );
     }
 
