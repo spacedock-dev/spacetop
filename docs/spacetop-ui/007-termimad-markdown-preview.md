@@ -1,13 +1,13 @@
 ---
 id: "007"
 title: Render preview-pane markdown with termimad
-status: design
+status: implement
 source: captain
-started:
+started: 2026-05-16T08:59:16Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-007-termimad-markdown-preview
 issue:
 pr:
 ---
