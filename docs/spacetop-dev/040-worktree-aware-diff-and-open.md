@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-040-worktree-aware-diff-and-open
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 The preview-pane diff and the `o` (open in editor) action both need to treat the worktree copy as the active version of an entity when one exists.
