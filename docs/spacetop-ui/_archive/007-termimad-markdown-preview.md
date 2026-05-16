@@ -1,15 +1,16 @@
 ---
 id: "007"
 title: Render preview-pane markdown with termimad
-status: implement
+status: done
 source: captain
 started: 2026-05-16T08:59:16Z
-completed:
-verdict:
+completed: 2026-05-16T09:26:03Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-007-termimad-markdown-preview
+worktree: 
 issue:
-pr:
+pr: #34
+archived: 2026-05-16T09:26:11Z
 ---
 
 Replace the current hand-rolled markdown rendering used in the preview pane with the [`termimad`](https://crates.io/crates/termimad) Rust crate.
