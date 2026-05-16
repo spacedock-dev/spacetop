@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-007-termimad-markdown-preview
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Replace the current hand-rolled markdown rendering used in the preview pane with the [`termimad`](https://crates.io/crates/termimad) Rust crate.
