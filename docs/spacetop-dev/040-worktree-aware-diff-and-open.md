@@ -1,13 +1,13 @@
 ---
 id: "040"
 title: Worktree-aware diff orientation and 'o' open target
-status: plan
+status: implement
 source: captain
 started: 2026-05-16T08:44:53Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-040-worktree-aware-diff-and-open
 issue:
 pr:
 ---
