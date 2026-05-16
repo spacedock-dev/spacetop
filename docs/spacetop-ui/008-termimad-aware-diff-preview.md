@@ -1,13 +1,13 @@
 ---
 id: "008"
 title: Render markdown inside the diff preview (worktree vs main)
-status: design
+status: implement
 source: captain
-started:
+started: 2026-05-16T09:30:15Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-008-termimad-aware-diff-preview
 issue:
 pr:
 ---
