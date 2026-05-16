@@ -1,16 +1,17 @@
 ---
 id: "040"
 title: Worktree-aware diff orientation and 'o' open target
-status: review
+status: done
 source: captain
 started: 2026-05-16T08:44:53Z
-completed:
-verdict:
+completed: 2026-05-16T08:56:49Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-040-worktree-aware-diff-and-open
+worktree: 
 issue:
 pr:
 mod-block: 
+archived: 2026-05-16T08:56:58Z
 ---
 
 The preview-pane diff and the `o` (open in editor) action both need to treat the worktree copy as the active version of an entity when one exists.
