@@ -57,3 +57,21 @@ Verified by: `make lint` (clippy `-D warnings`) and `cargo test` from the repo r
 ### Summary
 
 Chose approach (B) diff-then-render: line-diff the markdown sources with `similar`, group adjacent same-tag changes into chunks, and feed each chunk through `render_markdown_termimad` before prefixing a styled gutter span. A small `fence_context` pre-pass tracks per-line code-fence state on each side so that chunks falling inside a fenced code block are re-wrapped with `\`\`\`lang … \`\`\`` before rendering — without this, an insert/delete chunk that lives inside a code fence loses its enclosing delimiters and termimad falls back to plain text. The diff selection at the call site is identical (`main_body.is_some()`); only the renderer behind it changed, so the 007 non-diff path is untouched.
+
+## Stage Report: review
+
+- DONE: AC-1 + AC-2 — Markdown styling + styled gutter test exists, exercises headings + inline code + fenced code block across context/add/remove, and passes
+  `render_diff_lines_styles_markdown_across_context_add_remove` at `src/ui/diff.rs:275` asserts bold heading (context), DarkGray-bg inline code on both `-old_code` and `+new_code` lines, Cyan-on-DarkGray slab on `-let removed = 1;` / `+let added = 2;`, AND per-line gutter span (`+`/`-`/` `) with Green/Red/Dim styling; runs green (`cargo test --lib ui::diff::tests`: 5 passed).
+- DONE: AC-3 + AC-4 — Diff routing unchanged at `src/ui/mod.rs`; non-diff path from 007 untouched; width-aware wrapping test passes
+  `src/ui/mod.rs:669-672` still routes via `item.main_body.as_deref().map(...)`; only the call changed to `diff::render_diff_lines_with_width(main, &item.body, body_inner.width)`. Regression tests `preview_renders_diff_when_main_body_present` and `preview_falls_back_to_body_when_main_body_none` pass unmodified. AC-4 covered by `render_diff_lines_wraps_wide_content_for_scrollbar` at `src/ui/diff.rs:434` (800-char body wrapped to width 40 produces >10 lines).
+- DONE: AC-5 — `make lint` clean and `cargo test` green modulo documented pre-existing failure
+  `make lint` clean (clippy `-D warnings`, no warnings). `cargo test` final tally: `233 passed; 1 failed`, the single failure being `ui::graph::tests::narrow_tier_renders_compact_textual_summary` flagged in the assignment as pre-existing.
+
+### Risk probe findings
+
+- Fence-context toggling: `fence_context` (src/ui/diff.rs:33) correctly toggles `in_fence` on each ` ``` ` line; the fence delimiter line itself is marked `in_fence: false`, and the language token from the opener is captured and carried until the closer. Unclosed fences keep `in_fence: true` to EOF, which is a reasonable fallback (chunks still get re-wrapped with the captured language).
+- Width-wrapping gutter survival: each `Line` produced by termimad is iterated independently and prefixed with the gutter span (src/ui/diff.rs:171-180). The AC-2 test asserts EVERY line in the rendered diff carries a gutter span, which implicitly proves wrapped visual lines each receive their own gutter. The 800-char wrap test confirms multi-line outputs from a single source line.
+- 007 width seam: the diff path at `mod.rs:672` does NOT consult `preview_wrap()` / `MARKDOWN_NO_WRAP_RENDER_WIDTH` — diffs always wrap to `body_inner.width`. The non-diff markdown path retains the wrap-off horizontal-scroll behavior. This is a deliberate divergence (gutter alignment makes wrapping the natural choice for diffs) and AC-4 does not require horizontal scroll in the diff path; flagged as a minor follow-up if users later want no-wrap diff scrolling.
+- Regression tests `preview_renders_diff_when_main_body_present` / `preview_falls_back_to_body_when_main_body_none` are intact and not weakened — assertions on `+NEW LINE` / `-OLD LINE` text still hold.
+
+Recommendation: PASSED — ready for captain approval and merge.
