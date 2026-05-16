@@ -1,9 +1,9 @@
 ---
 id: "040"
 title: Worktree-aware diff orientation and 'o' open target
-status: design
+status: plan
 source: captain
-started:
+started: 2026-05-16T08:44:53Z
 completed:
 verdict:
 score:
