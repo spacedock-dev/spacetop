@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-008-termimad-aware-diff-preview
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 When an entity's worktree body diverges from the main copy, the preview pane currently renders a plain-text unified diff (gray context, green `+`, red `-`) via `render_diff_lines` in `src/ui/diff.rs`. After task 007, non-diff bodies render through `termimad` with full markdown styling — but the diff path still produces unstyled text. This task closes that gap so divergent bodies remain readable as markdown while still highlighting what changed.
