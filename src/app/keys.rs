@@ -80,7 +80,13 @@ pub(crate) fn handle_overview_key(
             OverviewKeyAction::None
         }
         KeyCode::Char('o') if state.preview_open() => match state.selected_item() {
-            Some(item) => OverviewKeyAction::OpenSelectedFile(item.path.clone()),
+            Some(item) => {
+                let target = item
+                    .worktree_source
+                    .clone()
+                    .unwrap_or_else(|| item.path.clone());
+                OverviewKeyAction::OpenSelectedFile(target)
+            }
             None => OverviewKeyAction::None,
         },
         KeyCode::Char('s') if !state.preview_open() => {
@@ -110,6 +116,13 @@ mod tests {
     }
 
     fn single_session_with_item(path: PathBuf) -> OverviewSession {
+        single_session_with_item_worktree(path, None)
+    }
+
+    fn single_session_with_item_worktree(
+        path: PathBuf,
+        worktree_source: Option<PathBuf>,
+    ) -> OverviewSession {
         let root = PathBuf::from("/tmp/spacetop-keys-test");
         let snapshot = WorkflowSnapshot {
             definition: WorkflowDefinition {
@@ -144,7 +157,7 @@ mod tests {
                 issue: None,
                 pr: None,
                 body: String::new(),
-                worktree_source: None,
+                worktree_source,
                 main_body: None,
             }],
         };
@@ -165,6 +178,46 @@ mod tests {
         let action = handle_overview_key(&mut session, key(KeyCode::Char('o')));
         match action {
             OverviewKeyAction::OpenSelectedFile(path) => assert_eq!(path, expected_path),
+            _ => panic!("expected OpenSelectedFile intent"),
+        }
+    }
+
+    /// AC-2 (worktree branch): `o` on an item with `worktree_source = Some(_)`
+    /// emits an OpenSelectedFile intent carrying the worktree-resident path,
+    /// not the main-branch path.
+    #[test]
+    fn o_with_worktree_source_opens_worktree_path() {
+        let main_path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let worktree_path =
+            PathBuf::from("/tmp/spacetop-keys-test/.worktrees/wt/task-001.md");
+        let mut session = single_session_with_item_worktree(
+            main_path.clone(),
+            Some(worktree_path.clone()),
+        );
+        session.active_state_mut().toggle_preview();
+        assert!(session.active_state().preview_open());
+
+        let action = handle_overview_key(&mut session, key(KeyCode::Char('o')));
+        match action {
+            OverviewKeyAction::OpenSelectedFile(path) => {
+                assert_eq!(path, worktree_path);
+                assert_ne!(path, main_path);
+            }
+            _ => panic!("expected OpenSelectedFile intent"),
+        }
+    }
+
+    /// AC-2 (None branch): `o` on an item with `worktree_source = None`
+    /// falls back to the main-branch path.
+    #[test]
+    fn o_without_worktree_source_opens_main_path() {
+        let main_path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item_worktree(main_path.clone(), None);
+        session.active_state_mut().toggle_preview();
+
+        let action = handle_overview_key(&mut session, key(KeyCode::Char('o')));
+        match action {
+            OverviewKeyAction::OpenSelectedFile(path) => assert_eq!(path, main_path),
             _ => panic!("expected OpenSelectedFile intent"),
         }
     }
