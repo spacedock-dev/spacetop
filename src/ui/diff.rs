@@ -66,6 +66,27 @@ mod tests {
         assert_eq!(plus_line.spans[0].style.fg, Some(Color::Green));
     }
 
+    /// AC-1: locks in the call-site contract that `render_diff_lines(old, new)`
+    /// treats `new` as additions (`+`) and `old` as removals (`-`). The preview
+    /// renderer passes `main_body` as `old` and the worktree-divergent body as
+    /// `new`, so worktree-unique content must render with `+` and main-unique
+    /// content with `-`.
+    #[test]
+    fn render_diff_lines_treats_new_as_plus_old_as_minus() {
+        let old = "shared\nONLY_IN_MAIN\nshared2\n";
+        let new = "shared\nONLY_IN_WORKTREE\nshared2\n";
+        let lines = render_diff_lines(old, new);
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        assert!(
+            texts.iter().any(|t| t == "-ONLY_IN_MAIN"),
+            "main-only content must render with '-' prefix, got: {texts:?}"
+        );
+        assert!(
+            texts.iter().any(|t| t == "+ONLY_IN_WORKTREE"),
+            "worktree-only content must render with '+' prefix, got: {texts:?}"
+        );
+    }
+
     #[test]
     fn render_diff_lines_identical_bodies_emits_only_context() {
         let body = "same\nlines\n";

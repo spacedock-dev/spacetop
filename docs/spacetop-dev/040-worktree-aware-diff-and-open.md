@@ -120,3 +120,24 @@ Run from repo root inside the dispatched worktree (`.worktrees/spacedock-ensign-
 ### Summary
 
 Plan keeps production changes minimal: a single line in `src/app/keys.rs:83` to prefer `worktree_source` over `path` when emitting `OpenSelectedFile`. The diff orientation in `src/ui/mod.rs:667` is already correct given the `render_diff_lines(old, new)` contract — it only needs a regression test in `src/ui/diff.rs`. No new API surface on `WorkItem` or `App`; the consumer at `src/app.rs:430` and `src/lib.rs:217` is untouched.
+
+## Stage Report: implement
+
+- DONE: AC-1 regression test passes: a test in `src/ui/diff.rs` asserts `render_diff_lines(old, new)` renders `new` content with `+` and `old` content with `-` (lock in current orientation).
+  `src/ui/diff.rs::tests::render_diff_lines_treats_new_as_plus_old_as_minus` — passes (`cargo test --lib -- render_diff_lines_treats_new_as_plus_old_as_minus`).
+- DONE: AC-2 production change + tests: pressing `o` on an item whose `worktree_source` is `Some(_)` queues the worktree-resident path; with `None` it queues the main path. Cover both branches with tests.
+  Production change at `src/app/keys.rs:82-90` (prefer `worktree_source` via `clone().unwrap_or_else(|| item.path.clone())`). Tests `o_with_worktree_source_opens_worktree_path` and `o_without_worktree_source_opens_main_path` in `src/app/keys.rs` — both pass.
+- DONE: AC-3 lint and tests green: `make lint` (or equivalent) exits 0, and `cargo test` from the worktree root passes.
+  `make lint` exits 0 (clippy clean with `-D warnings`). All four targeted tests pass. Note: one pre-existing failure (`ui::graph::tests::narrow_tier_renders_compact_textual_summary`) reproduces on the dispatch commit before my changes — unrelated to this task; flagged but not addressed.
+
+### Summary
+
+Implemented per plan: single production change in `src/app/keys.rs` to route `o` to `worktree_source` when present, plus a regression test in `src/ui/diff.rs` that locks in the diff orientation contract used at `src/ui/mod.rs:667`. Extended the `keys.rs` test fixture with a `single_session_with_item_worktree` helper so both worktree/None branches are covered. Pre-existing `narrow_tier_renders_compact_textual_summary` failure was confirmed present on the dispatch commit and is out of scope.
+
+## Stage Report: review
+
+- DONE: AC-1 regression test present and passing. `src/ui/diff.rs:75-86` defines `render_diff_lines_treats_new_as_plus_old_as_minus`, which asserts `-ONLY_IN_MAIN` and `+ONLY_IN_WORKTREE` are emitted. `cargo test --lib -- render_diff_lines_treats_new_as_plus_old_as_minus` → `1 passed; 0 failed`. The test correctly locks the contract used at `src/ui/mod.rs:667` (`diff::render_diff_lines(main, &item.body)`).
+- DONE: AC-2 production change correct and both branches tested. `src/app/keys.rs:83-89` reads `item.worktree_source.clone().unwrap_or_else(|| item.path.clone())` — prefers `Some(_)` and falls back to `path` on `None`. Tests `o_with_worktree_source_opens_worktree_path` (`src/app/keys.rs:185-208`) and `o_without_worktree_source_opens_main_path` (`src/app/keys.rs:212-223`) both pass; pre-existing `o_with_preview_open_emits_open_file_intent` still passes as a regression check on the `None` branch.
+- DONE: AC-3 lint and tests green. `make lint` → `Finished dev profile … target(s) in 1.00s` with no warnings (clippy `-D warnings`). `cargo test` → `228 passed; 1 failed`. The single failure is `ui::graph::tests::narrow_tier_renders_compact_textual_summary` at `src/ui/graph.rs:861` (`missing narrow arrow`). Confirmed pre-existing by checking out `src/` at dispatch commit `3078e40` and reproducing the same panic — unrelated to this task's diff (`src/app/keys.rs` + `src/ui/diff.rs` only).
+
+Recommendation: PASSED — ready for captain approval and merge.
