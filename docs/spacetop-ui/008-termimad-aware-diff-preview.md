@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-008-termimad-aware-diff-preview
 issue:
-pr:
+pr: #35
 mod-block: merge:pr-merge
 ---
 
