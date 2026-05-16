@@ -1,15 +1,16 @@
 ---
 id: "008"
 title: Render markdown inside the diff preview (worktree vs main)
-status: implement
+status: done
 source: captain
 started: 2026-05-16T09:30:15Z
-completed:
-verdict:
+completed: 2026-05-16T12:17:39Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-008-termimad-aware-diff-preview
+worktree: 
 issue:
-pr:
+pr: #35
+archived: 2026-05-16T12:17:46Z
 ---
 
 When an entity's worktree body diverges from the main copy, the preview pane currently renders a plain-text unified diff (gray context, green `+`, red `-`) via `render_diff_lines` in `src/ui/diff.rs`. After task 007, non-diff bodies render through `termimad` with full markdown styling — but the diff path still produces unstyled text. This task closes that gap so divergent bodies remain readable as markdown while still highlighting what changed.
