@@ -76,3 +76,20 @@ Verified by: `make lint` (clippy with `-D warnings`) and `cargo test` from the r
 - `cargo test --lib ui::` — passed except pre-existing `ui::graph::tests::narrow_tier_renders_compact_textual_summary`.
 - `cargo test` (full) — 231 passed, 1 pre-existing failure (as above).
 - `make lint` — clean, no clippy warnings.
+
+## Stage Report: review
+
+- DONE: AC-1 — Termimad-distinctive styling test exists and passes.
+  `src/ui/markdown.rs:106` `renders_termimad_distinctive_styling` asserts heading BOLD modifier, inline-code `Color::DarkGray` bg, and code-block `Cyan`-on-`DarkGray` slab spans; `cargo test` shows it passing.
+- DONE: AC-2 — Wrapping + scrollbar tests pass.
+  `src/ui/markdown.rs:162` `wide_content_wraps_to_multiple_lines` plus existing `preview_draws_scrollbar_when_content_overflows`, `preview_right_key_horizontally_scrolls_long_lines`, `word_wrap_toggle_changes_body_render`, `code_block_long_line_both_wrapped_rows_have_full_background`, `code_block_background_fills_pane_width_in_wrap_mode` all green; the wide-render-when-wrap-off seam at `src/ui/mod.rs:682-711` correctly preserves horizontal scroll behavior (no-wrap renders at `MARKDOWN_NO_WRAP_RENDER_WIDTH = 4096` so `max_preview_scroll_x` stays non-zero, and the second-pass re-render is gated on wrap-on so the trick is not undone).
+- DONE: AC-3 — Diff preview path unchanged.
+  `src/ui/mod.rs:669-672` still wraps `render_diff_lines` behind `item.main_body.as_deref().map(...)`; `preview_renders_diff_when_main_body_present` and `preview_falls_back_to_body_when_main_body_none` pass; `src/ui/diff.rs` tests unchanged and green.
+- DONE: AC-4 — `make lint` and `cargo test` green (modulo pre-existing graph test).
+  `make lint` → clean (no clippy warnings). `cargo test` → 231 passed, 1 failed = `ui::graph::tests::narrow_tier_renders_compact_textual_summary`. Confirmed pre-existing: the same assertion `"missing narrow arrow"` exists at dispatch commit `30b7d08:src/ui/graph.rs:863`, unrelated to markdown rendering. `pulldown_cmark` is fully gone from `src/`, `tests/`, and `Cargo.toml` (grep empty); `ratskin = "0.3"` and `termimad = "0.34"` added at `Cargo.toml:13-14`. The `preview_renders_markdown_tables_as_aligned_rows` rewrite (`src/ui/mod.rs:1703`) is not a weakening — it still asserts every cell value, no raw markdown leaks (`| Arm |`, `---`), plus presence of Unicode `│` borders and `─` separator rows, which is strictly more structural than the old "two-space columns" check.
+
+### Summary
+
+Implementation cleanly swaps in `ratskin`/`termimad` for the preview body path; the diff path and existing wrap/scroll/code-block contracts are preserved through a thoughtful render-width seam and trailing-padding trim. Lint is clean, test failures are pre-existing, and pulldown-cmark is genuinely dead (noting CLAUDE.md still lists it as preferred — a doc drift the FO can flag).
+
+Recommendation: PASSED — ready for captain approval and merge.
