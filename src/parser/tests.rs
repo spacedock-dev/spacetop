@@ -907,11 +907,7 @@ fn worktree_scan_does_not_mutate_files() {
     let wf = root.join("docs/wf");
     write_minimal_workflow(&wf, Some("task.md"), Some(&entity_md("090", "Stable")));
     let wt = root.join(".worktrees/wt-1/docs/wf");
-    write_minimal_workflow(
-        &wt,
-        Some("task.md"),
-        Some(&entity_md("090", "Stable WT")),
-    );
+    write_minimal_workflow(&wt, Some("task.md"), Some(&entity_md("090", "Stable WT")));
     let claude_wt = root.join(".claude/worktrees/wt-2/docs/wf");
     write_minimal_workflow(&claude_wt, Some("only.md"), Some(&entity_md("091", "Only")));
 
@@ -927,11 +923,7 @@ fn worktree_scan_does_not_mutate_files() {
                 if meta.is_dir() {
                     walk(&path, out);
                 } else {
-                    out.push((
-                        path,
-                        meta.modified().expect("mtime"),
-                        meta.len(),
-                    ));
+                    out.push((path, meta.modified().expect("mtime"), meta.len()));
                 }
             }
         }

@@ -192,12 +192,9 @@ mod tests {
     #[test]
     fn o_with_worktree_source_opens_worktree_path() {
         let main_path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
-        let worktree_path =
-            PathBuf::from("/tmp/spacetop-keys-test/.worktrees/wt/task-001.md");
-        let mut session = single_session_with_item_worktree(
-            main_path.clone(),
-            Some(worktree_path.clone()),
-        );
+        let worktree_path = PathBuf::from("/tmp/spacetop-keys-test/.worktrees/wt/task-001.md");
+        let mut session =
+            single_session_with_item_worktree(main_path.clone(), Some(worktree_path.clone()));
         session.active_state_mut().toggle_preview();
         assert!(session.active_state().preview_open());
 
