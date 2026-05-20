@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -48,6 +49,7 @@ pub fn parse_workflow_readme(path: &Path) -> Result<WorkflowDefinition, ParseErr
     }
 
     let stage_colors = crate::domain::assign_stage_colors(&stages);
+    let stage_prose = parse_stage_prose(&contents);
     Ok(WorkflowDefinition {
         root: path.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
         stages,
@@ -56,7 +58,117 @@ pub fn parse_workflow_readme(path: &Path) -> Result<WorkflowDefinition, ParseErr
         entity_label: raw.entity_label,
         entity_label_plural: raw.entity_label_plural,
         stage_colors,
+        stage_prose,
     })
+}
+
+/// Pure prose extractor for the per-stage `### {stage}` blocks under
+/// the README's `## Stages` section. The input is the full README text
+/// (YAML frontmatter is stripped here using `split_frontmatter`); the
+/// output is a name → raw markdown body map. The body is the raw
+/// substring between the `### {stage}` line and the next line that
+/// begins with `#`, `##`, or `###` followed by whitespace (i.e. a
+/// heading of equal-or-higher level).
+///
+/// Behavior:
+/// - No `fs::*`, no `&Path`. Pure `(&str) -> HashMap`.
+/// - The stage name is the heading text trimmed of whitespace AND any
+///   surrounding backticks (so `### \`design\`` becomes key `"design"`).
+/// - The body is stored verbatim, preserving newlines, with no
+///   normalisation or rewriting. Trailing newlines that immediately
+///   precede the next heading are trimmed so the body's final visible
+///   text isn't followed by an empty paragraph.
+/// - Stage names appearing in prose but not in frontmatter are silently
+///   retained in the returned map. The renderer ignores them.
+/// - If the input has no frontmatter the whole document is scanned.
+pub(crate) fn parse_stage_prose(readme_contents: &str) -> HashMap<String, String> {
+    use super::frontmatter::{split_frontmatter, SplitFrontmatter};
+
+    let body = match split_frontmatter(readme_contents) {
+        Some(SplitFrontmatter::Ok { body, .. }) => body,
+        _ => readme_contents,
+    };
+
+    let mut out: HashMap<String, String> = HashMap::new();
+    let mut current: Option<(String, String)> = None;
+
+    for line in body.lines() {
+        if let Some(rest) = stage_heading_name(line) {
+            // Close the previous block if any.
+            if let Some((name, mut prose)) = current.take() {
+                trim_trailing_blank_lines(&mut prose);
+                out.insert(name, prose);
+            }
+            current = Some((rest.to_string(), String::new()));
+            continue;
+        }
+        // A heading of any level (h1/h2/h3+) closes the current stage.
+        // We already handled `### …` above as a stage heading; any other
+        // `#`-prefixed heading closes whatever stage we were collecting.
+        if is_any_heading(line) {
+            if let Some((name, mut prose)) = current.take() {
+                trim_trailing_blank_lines(&mut prose);
+                out.insert(name, prose);
+            }
+            continue;
+        }
+        if let Some((_, prose)) = current.as_mut() {
+            prose.push_str(line);
+            prose.push('\n');
+        }
+    }
+    if let Some((name, mut prose)) = current.take() {
+        trim_trailing_blank_lines(&mut prose);
+        out.insert(name, prose);
+    }
+    out
+}
+
+/// Returns `Some(name)` when `line` is exactly an `### {name}` ATX
+/// heading. The returned name is trimmed of surrounding whitespace and
+/// any wrapping backticks. Returns `None` otherwise.
+fn stage_heading_name(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix("### ")?;
+    // Reject anything that opens another heading marker after the level-3
+    // prefix (e.g. `#### foo` would have been caught earlier; this is
+    // defence in depth).
+    if rest.starts_with('#') {
+        return None;
+    }
+    let trimmed = rest.trim();
+    // Strip surrounding backticks: `### \`design\`` → `design`.
+    let unticked = trimmed.trim_matches('`').trim();
+    if unticked.is_empty() {
+        return None;
+    }
+    Some(unticked)
+}
+
+/// Returns true if the line looks like an ATX markdown heading at any
+/// level (`#`, `##`, `###`, …) — i.e. starts with one or more `#`
+/// characters followed by a space.
+fn is_any_heading(line: &str) -> bool {
+    let mut chars = line.chars();
+    let mut saw_hash = false;
+    for c in chars.by_ref() {
+        if c == '#' {
+            saw_hash = true;
+            continue;
+        }
+        return saw_hash && c == ' ';
+    }
+    false
+}
+
+fn trim_trailing_blank_lines(s: &mut String) {
+    while s.ends_with("\n\n") {
+        s.pop();
+    }
+    // Drop the single trailing newline so re-serialisation matches the
+    // input's final line layout when the body ends with a newline.
+    if s.ends_with('\n') {
+        s.pop();
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,4 +213,108 @@ struct RawStage {
     feedback_to: Option<String>,
     worktree: Option<bool>,
     concurrency: Option<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// AC-3: extractor returns one entry per `### {stage}` block with
+    /// body bytes byte-equal to the source between the heading and the
+    /// next equal-or-higher heading (minus the trailing newline normaliser).
+    #[test]
+    fn prose_extracts_stage_body_verbatim() {
+        let readme = "---\nstages:\n  states:\n    - name: alpha\n---\n\
+            # Title\n\
+            ## Stages\n\
+            ### alpha\n\
+            alpha-body-line-1\n\
+            alpha-body-line-2\n\
+            \n\
+            ### beta\n\
+            beta-body-line\n";
+        let out = parse_stage_prose(readme);
+        assert_eq!(
+            out.get("alpha").map(String::as_str),
+            Some("alpha-body-line-1\nalpha-body-line-2")
+        );
+        assert_eq!(out.get("beta").map(String::as_str), Some("beta-body-line"));
+    }
+
+    /// AC-3: a frontmatter-declared stage with no `### {stage}` prose
+    /// block returns no entry — and produces no panic.
+    #[test]
+    fn prose_missing_block_is_silent() {
+        let readme = "---\nstages:\n  states:\n    - name: alpha\n---\n\n# Title\n\n## Stages\n\n(no stage blocks here)\n";
+        let out = parse_stage_prose(readme);
+        assert!(out.is_empty(), "expected no prose entries, got: {out:?}");
+    }
+
+    /// AC-3: a prose block whose name does not match any frontmatter
+    /// stage is retained in the returned map (the renderer ignores it).
+    /// No panic, no error.
+    #[test]
+    fn prose_unknown_stage_is_retained_or_ignored() {
+        let readme = "---\nstages:\n  states:\n    - name: alpha\n---\n\
+            ## Stages\n\
+            ### ghost\n\
+            ghost-body\n";
+        let out = parse_stage_prose(readme);
+        assert_eq!(out.get("ghost").map(String::as_str), Some("ghost-body"));
+    }
+
+    /// AC-3: load the real workflow README and verify the `plan` stage
+    /// body contains the substring "Approved design notes" (which is
+    /// inside the Inputs bullet of the `plan` stage).
+    #[test]
+    fn prose_extracts_real_readme_plan_stage() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let contents = std::fs::read_to_string(root.join("README.md")).expect("read README");
+        let out = parse_stage_prose(&contents);
+        let plan = out
+            .get("plan")
+            .expect("plan stage prose must be extracted");
+        assert!(
+            plan.contains("Approved design notes"),
+            "plan prose missing 'Approved design notes'; got: {plan}"
+        );
+        // The other stages also have prose.
+        for stage in ["design", "implement", "review", "done"] {
+            assert!(
+                out.contains_key(stage),
+                "missing prose for stage {stage}; map has: {:?}",
+                out.keys().collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// AC-4: the prose extractor's signature is structurally pure —
+    /// it takes only `&str` and returns a `HashMap`. The function body
+    /// also does no `fs::*` work. This test is the compile-time guard:
+    /// if the signature drifts (e.g. someone adds a `&Path`), this
+    /// trait-object coercion fails to compile.
+    #[test]
+    fn parse_stage_prose_signature_is_pure() {
+        let f: fn(&str) -> HashMap<String, String> = parse_stage_prose;
+        let _ = f(""); // exercise the coerced signature
+    }
+
+    /// `parse_workflow_readme` wires the prose extractor into the
+    /// returned `WorkflowDefinition`. The real workflow README must
+    /// carry prose for every frontmatter-declared stage.
+    #[test]
+    fn parse_workflow_readme_populates_stage_prose() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let wf = parse_workflow_readme(&root.join("README.md")).expect("parse");
+        for stage in &wf.stages {
+            assert!(
+                wf.stage_prose.contains_key(&stage.name),
+                "stage {} should have prose populated",
+                stage.name
+            );
+        }
+        let plan = wf.stage_prose.get("plan").expect("plan prose");
+        assert!(plan.contains("Approved design notes"));
+    }
 }

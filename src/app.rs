@@ -28,6 +28,16 @@ pub enum AppMode {
         underlying: OverviewSession,
         picker: PickerState,
     },
+    /// Full-pane workflow-definition view scoped to the active workflow.
+    /// The underlying overview session is preserved verbatim so `Esc`
+    /// restores it including the active tab, selection, scope, sort
+    /// mode, and preview state. `scroll` is the body scroll offset in
+    /// rows (clamped at render time to the max scroll for the content
+    /// height).
+    Definition {
+        underlying: OverviewSession,
+        scroll: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -130,6 +140,21 @@ impl App {
         match &self.mode {
             AppMode::Overview(session) => Some(session),
             AppMode::PickerOverlay { underlying, .. } => Some(underlying),
+            AppMode::Definition { underlying, .. } => Some(underlying),
+            _ => None,
+        }
+    }
+
+    /// True while the definition view is active.
+    pub fn is_definition(&self) -> bool {
+        matches!(self.mode, AppMode::Definition { .. })
+    }
+
+    /// Body scroll offset of the definition view. Returns `None` when the
+    /// definition view is not active.
+    pub fn definition_scroll(&self) -> Option<usize> {
+        match &self.mode {
+            AppMode::Definition { scroll, .. } => Some(*scroll),
             _ => None,
         }
     }
@@ -218,6 +243,7 @@ impl App {
         match &self.mode {
             AppMode::Overview(session) => session.active_state(),
             AppMode::PickerOverlay { underlying, .. } => underlying.active_state(),
+            AppMode::Definition { underlying, .. } => underlying.active_state(),
             AppMode::Picker(_) => panic!("called overview accessor while in picker mode"),
         }
     }
@@ -268,6 +294,9 @@ impl App {
             AppMode::PickerOverlay { underlying, .. } => {
                 underlying.active_state().last_refresh_error()
             }
+            AppMode::Definition { underlying, .. } => {
+                underlying.active_state().last_refresh_error()
+            }
             AppMode::Picker(_) => None,
         }
     }
@@ -276,6 +305,9 @@ impl App {
         match &mut self.mode {
             AppMode::Overview(session) => session.active_state_mut().set_refresh_error(message),
             AppMode::PickerOverlay { underlying, .. } => {
+                underlying.active_state_mut().set_refresh_error(message)
+            }
+            AppMode::Definition { underlying, .. } => {
                 underlying.active_state_mut().set_refresh_error(message)
             }
             AppMode::Picker(_) => {}
@@ -288,6 +320,9 @@ impl App {
             AppMode::PickerOverlay { underlying, .. } => {
                 underlying.active_state_mut().reload_from_snapshot(snapshot)
             }
+            AppMode::Definition { underlying, .. } => {
+                underlying.active_state_mut().reload_from_snapshot(snapshot)
+            }
             AppMode::Picker(_) => {}
         }
     }
@@ -296,6 +331,7 @@ impl App {
         match &mut self.mode {
             AppMode::Overview(session) => session.active_state_mut().reload(),
             AppMode::PickerOverlay { underlying, .. } => underlying.active_state_mut().reload(),
+            AppMode::Definition { underlying, .. } => underlying.active_state_mut().reload(),
             AppMode::Picker(_) => Ok(()),
         }
     }
@@ -353,6 +389,35 @@ impl App {
                     if let Some(next_mode) = picker_enter_transition(state) {
                         self.mode = next_mode;
                     }
+                }
+                _ => {}
+            },
+            AppMode::Definition { underlying, scroll } => match key.code {
+                KeyCode::Char('?') => self.help_open = true,
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('D') => {
+                    let restored = std::mem::replace(
+                        underlying,
+                        OverviewSession::single(OverviewState::empty(PathBuf::new()), true),
+                    );
+                    self.mode = AppMode::Overview(restored);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    *scroll = scroll.saturating_add(1);
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    *scroll = scroll.saturating_sub(1);
+                }
+                KeyCode::PageDown => {
+                    *scroll = scroll.saturating_add(10);
+                }
+                KeyCode::PageUp => {
+                    *scroll = scroll.saturating_sub(10);
+                }
+                KeyCode::Home => {
+                    *scroll = 0;
+                }
+                KeyCode::End => {
+                    *scroll = usize::MAX;
                 }
                 _ => {}
             },
@@ -429,7 +494,28 @@ impl App {
             OverviewKeyAction::OpenSelectedFile(path) => {
                 self.pending_open_file = Some(path);
             }
+            OverviewKeyAction::OpenDefinition => self.open_definition(),
         }
+    }
+
+    /// Transition `AppMode::Overview(session)` → `AppMode::Definition`,
+    /// stashing the underlying session verbatim so `Esc` can restore it.
+    fn open_definition(&mut self) {
+        let session = match std::mem::replace(
+            &mut self.mode,
+            AppMode::Picker(PickerState::new(PathBuf::new(), Vec::new())),
+        ) {
+            AppMode::Overview(s) => s,
+            other => {
+                // We were not in Overview — restore the prior mode and bail.
+                self.mode = other;
+                return;
+            }
+        };
+        self.mode = AppMode::Definition {
+            underlying: session,
+            scroll: 0,
+        };
     }
 }
 

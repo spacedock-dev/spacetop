@@ -1,3 +1,4 @@
+mod definition;
 mod diff;
 mod graph;
 mod markdown;
@@ -55,6 +56,12 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             let inner = picker_centered(frame.area(), picker);
             frame.render_widget(Clear, inner);
             picker::render_in(frame, inner, picker);
+        }
+        AppMode::Definition { underlying, scroll } => {
+            // Full-pane workflow definition view scoped to the active tab.
+            // No tab strip, no graph ribbon, no status footer.
+            let definition = &underlying.active_state().snapshot().definition;
+            definition::render_in(frame, frame.area(), definition, *scroll);
         }
     }
 
@@ -356,6 +363,7 @@ fn status_footer_hints(session: &OverviewSession) -> Vec<&'static str> {
     } else {
         hints.push("PgUp/PgDn: page list");
         hints.push("s: sort");
+        hints.push("D: definition");
     }
     if preview_open {
         hints.push("o: open");
@@ -374,17 +382,19 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
     let popup_h = area.height.min(if is_multi {
         // The is_multi branch already had slack for the multi-mode lines
         // ("P: pick workflow", switch hints); bumping by 1 when preview is
-        // open keeps the new "o: open file" row visible.
+        // open keeps the new "o: open file" row visible. The Definition
+        // keybind adds one more line in every branch.
         if preview_open {
-            24
+            25
         } else {
-            23
+            24
         }
     } else if preview_open {
-        // +1 over the prior 20 to accommodate the new "o: open file" line.
-        21
+        // +1 over the prior 20 for the new "o: open file" line, plus +1
+        // for the new "D: definition" line.
+        22
     } else {
-        19
+        20
     });
     let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
     let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
@@ -408,6 +418,7 @@ fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("  Enter          toggle preview mode"),
         Line::from("  a              toggle active / archived view"),
         Line::from("  s              cycle sort mode (when preview closed)"),
+        Line::from("  D              open workflow definition"),
         Line::from("  ?              toggle this help popup"),
         Line::from("  Esc            close help"),
     ];
@@ -1063,6 +1074,7 @@ mod tests {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: std::collections::HashMap::new(),
+                stage_prose: std::collections::HashMap::new(),
             },
             items: vec![item("001", "Hidden Preview", "Body")],
         };
@@ -1351,6 +1363,7 @@ mod tests {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: std::collections::HashMap::new(),
+                stage_prose: std::collections::HashMap::new(),
             },
             items: vec![in_root, out_of_root],
         };
@@ -1507,6 +1520,7 @@ mod tests {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: std::collections::HashMap::new(),
+                stage_prose: std::collections::HashMap::new(),
             },
             items,
         };
@@ -1557,6 +1571,7 @@ mod tests {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: std::collections::HashMap::new(),
+                stage_prose: std::collections::HashMap::new(),
             },
             items: vec![item(id, title, body)],
         }
@@ -2017,6 +2032,7 @@ mod tests {
                     entity_label: None,
                     entity_label_plural: None,
                     stage_colors: std::collections::HashMap::new(),
+                    stage_prose: std::collections::HashMap::new(),
                 },
                 items: vec![{
                     let mut i = item("001", "Long phase task", "Body");
@@ -2465,6 +2481,26 @@ mod tests {
         );
     }
 
+    /// AC-1 (task 041): the help popup lists the new `D` keybind that
+    /// opens the workflow-definition view.
+    #[test]
+    fn help_popup_lists_definition_keybind() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
+        let mut app = App::load(root).expect("workflow should load");
+        app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+
+        let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("render should succeed");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(
+            rendered.contains("D              open workflow definition"),
+            "help popup should list `D` binding; rendered=\n{rendered}"
+        );
+    }
+
     #[test]
     fn help_popup_renders_in_picker_mode() {
         use crate::discovery::DiscoveredWorkflow;
@@ -2653,6 +2689,7 @@ mod tests {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: std::collections::HashMap::new(),
+                stage_prose: std::collections::HashMap::new(),
             },
             items: Vec::new(),
         };

@@ -101,6 +101,7 @@ impl OverviewState {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: HashMap::new(),
+                stage_prose: HashMap::new(),
             },
             items: Vec::new(),
         };
@@ -627,6 +628,7 @@ mod tests {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: HashMap::new(),
+                stage_prose: HashMap::new(),
             },
             items: vec![fixture_item("001")],
         }
@@ -684,6 +686,7 @@ mod tests {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: HashMap::new(),
+                stage_prose: HashMap::new(),
             },
             items,
         }
