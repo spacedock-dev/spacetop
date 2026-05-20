@@ -103,3 +103,18 @@ Verified by: a `grep -r "fs::write\|OpenOptions" src/parser/ src/discovery.rs` i
 
 **AC-5 — Single-workflow and multi-workflow sessions both support `D`; in multi mode `D` scopes to the active tab and `Esc` returns to the tabbed overview with the same active tab.**
 Verified by: a render test on a 3-workflow fixture cycles to the middle tab, presses `D`, asserts the Definition view's header carries the middle workflow's basename, presses `Esc`, and asserts `OverviewSession::active_index()` is still the middle index with the same per-tab `selected_index` as before.
+
+## Stage Report: design
+
+- DONE: Name the user flow for opening the workflow-definition view from the overview (key/trigger, render surface — full-page vs overlay, exit/return behavior) and justify the pick against at least one rejected alternative.
+  Captured in `## Target user flow` and `## Chosen UX: full-pane Definition mode with D toggle and Esc return`; rejected alternatives include modal overlay, preview-pane reuse, picker-coupled access, inline expander, and `$EDITOR` open.
+- DONE: Spell out which stage-definition fields (`initial` / `terminal` / `gate` / `fresh` / `worktree` / `feedback-to` / `concurrency`) and which README prose sections the view must surface, so AC-2 and AC-3 become concretely testable.
+  Captured in `## Content surfaced (concrete contract for AC-2 and AC-3)` with a per-field rendering table and the `parse_stage_prose` extractor contract for the `### {stage}` Inputs/Outputs/Good/Bad bullets.
+- DONE: Confirm the design respects the read-only invariant from CLAUDE.md — no new write paths in discovery.rs / parser.rs — and identify (by name) the rendering and app-state modules the new mode will touch.
+  Captured in `## Constraints` — touches `src/app.rs` (new `AppMode` variant), `src/app/keys.rs` (new key intent), new `src/ui/definition.rs` wired from `src/ui/mod.rs`, and a pure `&str → HashMap` extension in `src/parser/readme.rs`; no `fs::write` paths added.
+
+### Summary
+
+Designed a full-pane `AppMode::Definition` reachable via `D` from Overview and dismissed via `Esc`, with a Stages table surfacing every `StageDefinition` field plus per-stage README prose rendered through the existing termimad pipeline. Refined the seeded AC list from 4 to 5 — kept AC-1..AC-4 (tightened verification language and the parser-extension contract) and added AC-5 to pin down multi-workflow tab semantics. Read-only invariant preserved: the only parser addition is a pure `&str → HashMap` prose extractor; no new write paths.
+
+AC coverage: AC-1 covered by `## Target user flow` + key binding choice in `## Chosen UX`; AC-2 covered by the field table in `## Content surfaced`; AC-3 covered by the `parse_stage_prose` contract in the same section; AC-4 covered by `## Constraints` (module ownership + read-only guarantee); AC-5 covered by the `### Multi-workflow interaction` subsection of `## Target user flow`. Commit: `264fdf8`.
