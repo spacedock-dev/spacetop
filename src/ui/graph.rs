@@ -654,6 +654,7 @@ mod tests {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: std::collections::HashMap::new(),
+                stage_prose: std::collections::HashMap::new(),
             },
             items: vec![make_item("001", "plan", "Plan task")],
         };
@@ -825,6 +826,7 @@ mod tests {
                 entity_label: None,
                 entity_label_plural: None,
                 stage_colors: std::collections::HashMap::new(),
+                stage_prose: std::collections::HashMap::new(),
             },
             items: Vec::new(),
         };
@@ -849,11 +851,35 @@ mod tests {
     fn narrow_tier_renders_compact_textual_summary() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var(ASCII_ENV_VAR);
-        let app = real_workflow();
-        // Width chosen so the wide ribbon doesn't fit but the compact narrow
-        // form does — see pick_width_tier(). With TOP+BOTTOM-only borders,
-        // inner_width equals area.width directly (no left/right columns
-        // consumed), so the threshold dropped by 2 vs. the old ALL-border code.
+        // Use a synthetic workflow with the same shape as the real one
+        // (5 stages, 4 markers) but no items — so all counts are 0 and
+        // `narrow_summary` lands at exactly 56 chars. The wide ribbon
+        // needs 57 chars (▶ design + ──► + plan + ──► + ⎇ implement +
+        // ──► + ⚑ review + ──► + done ■). At width=56 the narrow tier
+        // is selected.
+        //
+        // Decoupling from `real_workflow()` avoids flakes when the
+        // archive accumulates and pushes `done(N)` past one digit.
+        let snapshot = WorkflowSnapshot {
+            definition: WorkflowDefinition {
+                root: PathBuf::from("/tmp/narrow-tier"),
+                stages: vec![
+                    stage("design", true, false, false, false, None),
+                    stage("plan", false, false, false, false, None),
+                    stage("implement", false, false, false, true, None),
+                    stage("review", false, false, true, false, None),
+                    stage("done", false, true, false, false, None),
+                ],
+                id_style: None,
+                entity_type: None,
+                entity_label: None,
+                entity_label_plural: None,
+                stage_colors: std::collections::HashMap::new(),
+                stage_prose: std::collections::HashMap::new(),
+            },
+            items: Vec::new(),
+        };
+        let app = App::from_snapshot(PathBuf::from("/tmp/narrow-tier"), snapshot);
         let rendered = render_to_string(&app, 56, 10);
         for name in ["design", "plan", "implement", "review", "done"] {
             assert!(rendered.contains(name), "missing stage {name}");

@@ -93,6 +93,11 @@ pub struct WorkflowDefinition {
     /// Graph-aware color assignment: stage name → color.
     /// Populated at parse time by `assign_stage_colors`. Empty until populated.
     pub stage_colors: HashMap<String, Color>,
+    /// Per-stage README prose extracted from the `### {stage}` blocks under
+    /// the `## Stages` heading. Populated at parse time by
+    /// `parse_stage_prose`. Empty for fixtures and synthetic definitions
+    /// constructed in tests.
+    pub stage_prose: HashMap<String, String>,
 }
 
 impl WorkflowDefinition {

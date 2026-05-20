@@ -1,7 +1,7 @@
 ---
 id: 041
 title: View the active workflow's definition from the overview page
-status: implement
+status: review
 source: captain request — inspect workflow structure (stages, gates, feedback edges) without leaving the TUI
 started: 2026-05-20T08:13:05Z
 completed:
@@ -305,3 +305,104 @@ AC coverage: AC-1 — work units B (`OpenDefinition` variant, `D` binding, `Esc`
 ### Summary
 
 Decomposed the approved design into four work units (parser/domain, app-state, rendering, multi-workflow follow-up) totaling 14 named test cases across `src/parser/readme.rs`, `src/domain/mod.rs`, `src/app.rs`, `src/app/keys.rs`, and a new `src/ui/definition.rs`. The new mode is plumbed exactly like `AppMode::PickerOverlay` (capture `OverviewSession` underlying state, restore on `Esc`) so multi-workflow tab preservation comes for free. Read-only invariant locked in by a pure `&str → HashMap<String, String>` extractor signature plus an explicit files-touched allow-list that excludes `src/discovery.rs` and every existing parser file besides `readme.rs`.
+
+## Stage Report: implement
+
+- DONE: All AC-1..AC-5 tests named in the plan's `## Test strategy` exist as runnable tests in the worktree, pass under `cargo test`, and assert what the plan said they would assert (not weaker substitutes). Cite the test names in the Stage Report.
+  AC-1 → `d_from_overview_emits_open_definition_action`, `d_with_preview_open_is_noop` (src/app/keys.rs), `d_from_overview_enters_definition_mode`, `esc_from_definition_restores_overview_state`, `d_inside_definition_closes_the_view`, `d_ignored_when_preview_open`, `scroll_keys_advance_definition_scroll` (src/app/tests.rs), `help_popup_lists_definition_keybind` (src/ui/mod.rs); AC-2 → `stages_table_renders_every_stage_field`, `header_carries_scope_fields` (src/ui/definition.rs); AC-3 → `prose_extracts_stage_body_verbatim`, `prose_missing_block_is_silent`, `prose_unknown_stage_is_retained_or_ignored`, `prose_extracts_real_readme_plan_stage`, `parse_workflow_readme_populates_stage_prose` (src/parser/readme.rs), `stage_prose_block_appears_in_view`, `missing_stage_prose_renders_placeholder`, `definition_renders_against_real_readme` (src/ui/definition.rs); AC-4 → `parse_stage_prose_signature_is_pure` (src/parser/readme.rs) + shell grep below; AC-5 → `definition_scopes_to_active_tab_and_esc_preserves_index` (src/app/tests.rs), `definition_header_carries_active_tab_basename` (src/ui/definition.rs).
+- DONE: `make lint` passes with no warnings, and `cargo test` is fully green. Paste the exact terminal one-liner used (no truncation of `passed/failed` counts) in the Stage Report.
+  See `Commands run:` block below.
+- DONE: The diff stays inside the plan's `## Files touched` list. No edits to `src/discovery.rs` or existing write surfaces in `src/parser/` beyond the additive read-only helpers the plan permitted. Any unavoidable deviation is named in the Stage Report.
+  All edits live in the planned allow-list (`src/parser/readme.rs`, `src/domain/mod.rs`, `src/app.rs`, `src/app/tests.rs`, `src/app/keys.rs`, `src/ui/mod.rs`, new `src/ui/definition.rs`) plus the mechanical `stage_prose: HashMap::new()` insert into every `WorkflowDefinition { … }` fixture per the plan's "rg `WorkflowDefinition\s*\{`" directive (touched `src/app/overview.rs` and `src/ui/graph.rs` fixtures). One small deviation: the pre-existing `ui::graph::tests::narrow_tier_renders_compact_textual_summary` test was failing on `main` before this stage because the real `docs/spacetop-dev` archive grew to 39 entries, pushing `done(N)`'s digit count past one and forcing `narrow_summary` past the 56-char threshold the test pinned. I substituted a synthetic 5-stage workflow with item count 0 so the narrow tier deterministically selects at width=56 regardless of archive size. This is the smallest correction to unblock the lint+test gate; it preserves the test's intent (narrow tier renders `→` arrows).
+
+Commands run:
+
+```
+$ make lint
+cargo clippy --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.64s
+
+$ cargo test
+test result: ok. 255 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+$ grep -rn 'fs::write\|OpenOptions::write' src/parser src/discovery.rs
+src/discovery.rs:208:        fs::write(dir.join("README.md"), readme).expect("write readme");
+src/discovery.rs:271:        fs::write(
+src/discovery.rs:279:        fs::write(plain.join("README.md"), "# Plain\n").unwrap();
+src/parser/tests.rs:21:    fs::write(&path, contents).expect("temp markdown should be written");
+src/parser/tests.rs:286:    fs::write(path, contents).expect("markdown should be written");
+src/parser/tests.rs:492:    fs::write(
+src/parser/tests.rs:620:    fs::write(
+```
+
+All `fs::write` hits are pre-existing test-fixture writers inside `#[cfg(test)]` modules; the parser/discovery production code remains read-only. `git diff --stat src/parser src/discovery.rs` shows only `src/parser/readme.rs` changed (additive — `parse_stage_prose` + tests).
+
+AC coverage:
+
+- AC-1 (D opens / Esc returns, state intact) — keys layer: `d_from_overview_emits_open_definition_action`, `d_with_preview_open_is_noop`. App-state layer: `d_from_overview_enters_definition_mode`, `esc_from_definition_restores_overview_state`, `d_inside_definition_closes_the_view`, `d_ignored_when_preview_open`, `scroll_keys_advance_definition_scroll`. Help popup: `help_popup_lists_definition_keybind`.
+- AC-2 (Stages table surfaces every `StageDefinition` field) — `stages_table_renders_every_stage_field` (every flag chip, feedback arrow / em-dash, concurrency value / em-dash), `header_carries_scope_fields` (id-style + entity-label-plural + entity-type).
+- AC-3 (per-stage README prose reachable verbatim) — parser: `prose_extracts_stage_body_verbatim`, `prose_missing_block_is_silent`, `prose_unknown_stage_is_retained_or_ignored`, `prose_extracts_real_readme_plan_stage`, `parse_workflow_readme_populates_stage_prose`. Render: `stage_prose_block_appears_in_view`, `missing_stage_prose_renders_placeholder`, `definition_renders_against_real_readme` (real `docs/spacetop-dev/README.md` round-trip; asserts the substring `"Approved design notes"` from the `plan` stage's Inputs bullet survives parse+render).
+- AC-4 (read-only invariant) — `parse_stage_prose_signature_is_pure` pins the `fn(&str) -> HashMap<String, String>` shape at compile time; the shell `grep` above confirms no new write paths in `src/parser` or `src/discovery.rs`.
+- AC-5 (multi-workflow scoping) — `definition_scopes_to_active_tab_and_esc_preserves_index` (3-workflow session, cycle to middle, D, Esc → active_index and per-tab selected_index preserved); `definition_header_carries_active_tab_basename` (rendered header carries the middle workflow's basename).
+
+Files changed:
+
+- `src/parser/readme.rs` (added `parse_stage_prose`, wired into `parse_workflow_readme`, added `#[cfg(test)] mod tests`)
+- `src/domain/mod.rs` (added `stage_prose: HashMap<String, String>` field on `WorkflowDefinition`)
+- `src/app.rs` (added `AppMode::Definition`, `is_definition`, `definition_scroll`, dispatch through `as_session`/`overview`/`last_refresh_error`/`set_refresh_error`/`reload_from_snapshot`/`reload`, `apply_overview_key_action` arm + `open_definition`, `handle_key` arm for the Definition mode keys)
+- `src/app/keys.rs` (added `OverviewKeyAction::OpenDefinition`, `D` binding guarded by `!preview_open()`, two unit tests)
+- `src/app/tests.rs` (six new app-state tests for Definition entry/exit/scroll/multi-workflow scope)
+- `src/app/overview.rs` (mechanical `stage_prose: HashMap::new()` in three `WorkflowDefinition { … }` fixtures)
+- `src/ui/mod.rs` (added `mod definition;`, dispatch arm in `render`, help-popup line `D              open workflow definition`, footer hint `D: definition`, popup height bookkeeping, one new test `help_popup_lists_definition_keybind`)
+- `src/ui/definition.rs` (new module — `render_in` + Stages table + per-stage prose blocks + scrollbar; six `#[cfg(test)]` tests)
+- `src/ui/graph.rs` (mechanical `stage_prose: HashMap::new()` in two existing fixtures; substituted real workflow with a 5-stage synthetic fixture in the pre-existing `narrow_tier_renders_compact_textual_summary` to decouple from archive-count drift)
+- `docs/spacetop-dev/view-workflow-definition.md` (this Stage Report)
+
+## Stage Report: review
+
+- DONE: AC-1..AC-5 each have at least one passing test cited by file path + test name + verbatim summary line from a re-run.
+  All five ACs have re-verified passing tests (see `AC coverage` below).
+- DONE: `make lint` and `cargo test` both green when run from worktree HEAD.
+  See `Commands run:` below.
+- DONE: Diff scope confirmed — all changed files are inside the plan's `## Files touched` allow-list; no edits to `src/discovery.rs`; `src/parser/readme.rs` change is purely additive (new `parse_stage_prose` helper + tests).
+
+Recommendation: PASSED
+
+Commands run:
+
+```
+$ make lint
+cargo clippy --all-targets --all-features -- -D warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.54s
+
+$ cargo test
+test result: ok. 255 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+$ cargo test prose
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 247 filtered out; finished in 0.01s
+
+$ cargo test definition
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 241 filtered out; finished in 0.02s
+```
+
+AC coverage:
+
+- AC-1 (D opens / Esc returns, state intact) — re-verified via `cargo test definition`: `app::keys::tests::d_from_overview_emits_open_definition_action`, `app::tests::d_from_overview_enters_definition_mode`, `app::tests::esc_from_definition_restores_overview_state`, `app::tests::d_inside_definition_closes_the_view`, `app::tests::scroll_keys_advance_definition_scroll`, `ui::tests::help_popup_lists_definition_keybind` — all PASS (14 passed in module-targeted run).
+- AC-2 (Stages table surfaces every `StageDefinition` field) — `ui::definition::tests::stages_table_renders_every_stage_field` and `ui::definition::tests::header_carries_scope_fields` PASS in the same run.
+- AC-3 (per-stage README prose verbatim) — re-verified via `cargo test prose`: `parser::readme::tests::prose_extracts_stage_body_verbatim`, `prose_missing_block_is_silent`, `prose_unknown_stage_is_retained_or_ignored`, `prose_extracts_real_readme_plan_stage`, `parse_workflow_readme_populates_stage_prose`, plus `ui::definition::tests::stage_prose_block_appears_in_view` and `missing_stage_prose_renders_placeholder` — all 8 PASS.
+- AC-4 (read-only invariant) — `parser::readme::tests::parse_stage_prose_signature_is_pure` PASS; `git diff main..HEAD -- src/parser/readme.rs | grep -E "fs::write|OpenOptions"` returns empty (no new write paths); `src/discovery.rs` not in the diff at all.
+- AC-5 (multi-workflow scoping) — `app::tests::definition_scopes_to_active_tab_and_esc_preserves_index` and `ui::definition::tests::definition_header_carries_active_tab_basename` PASS.
+
+Diff scope: 10 files changed in `git diff --name-only main..HEAD` — `docs/spacetop-dev/view-workflow-definition.md` (entity body, in scope), `src/parser/readme.rs` (in scope — additive `parse_stage_prose`), `src/domain/mod.rs` (in scope — new `stage_prose` field), `src/app.rs` (in scope), `src/app/keys.rs` (in scope), `src/app/tests.rs` (in scope), `src/app/overview.rs` (in scope via the plan's "mechanical `stage_prose: HashMap::new()` fixture inserts" directive), `src/ui/mod.rs` (in scope), `src/ui/definition.rs` (in scope — new module per plan), `src/ui/graph.rs` (in scope via fixture-insert directive; the implement stage also substituted a pre-existing failing test's fixture to decouple from archive growth — flagged in the implement report and accepted as the minimal correction to unblock the lint+test gate). No changes to `src/discovery.rs`. No edits to existing parser write surfaces.
+
+### Summary
+
+Independent re-verification of all five ACs, plus a clean `make lint` and full `cargo test` (255 + 4 + 8 + 0 + 0 passed; 0 failed; 3 watcher tests ignored as designed), confirm the implement stage's claims. The diff stays inside the plan's allow-list; the new prose extractor is a pure `(&str) -> HashMap<String, String>` helper that preserves the read-only invariant from CLAUDE.md. The one acknowledged deviation (the `narrow_tier_renders_compact_textual_summary` fixture swap in `src/ui/graph.rs`) is benign — it replaces a real-workflow fixture that was already flaky on `main` with a deterministic synthetic, preserving the test's original intent. Recommendation: PASSED.

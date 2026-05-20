@@ -609,6 +609,7 @@ fn snapshot_with_items(count: usize) -> WorkflowSnapshot {
             entity_label: None,
             entity_label_plural: None,
             stage_colors: HashMap::new(),
+            stage_prose: HashMap::new(),
         },
         items: (0..count)
             .map(|index| WorkItem {
@@ -651,6 +652,7 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
             entity_label: None,
             entity_label_plural: None,
             stage_colors: HashMap::new(),
+            stage_prose: HashMap::new(),
         },
         items: paths
             .iter()
@@ -1225,3 +1227,122 @@ fn pressing_s_does_not_cycle_sort_when_preview_open() {
 // and `needs_first_load` == false for a return; that satisfies the
 // "first activation loads exactly once" plan item without a hand-rolled
 // counting fake.
+
+// --- Definition view tests (task 041) ---
+
+/// AC-1: `D` from Overview transitions to `AppMode::Definition` with
+/// the underlying session preserved verbatim.
+#[test]
+fn d_from_overview_enters_definition_mode() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    assert!(matches!(app.mode(), AppMode::Overview(_)));
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(
+        matches!(app.mode(), AppMode::Definition { .. }),
+        "expected Definition mode after D"
+    );
+    assert_eq!(app.definition_scroll(), Some(0));
+}
+
+/// AC-1: `Esc` from the Definition view restores the underlying
+/// Overview state — selection, view scope, sort mode, and preview
+/// open flag must all survive verbatim.
+#[test]
+fn esc_from_definition_restores_overview_state() {
+    use super::SortMode;
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    // Move selection, cycle sort, capture probes.
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Char('s')));
+    let probe_index = app.selected_index();
+    let probe_scope = app.view_scope();
+    let probe_sort = app.as_overview().unwrap().sort_mode();
+    let probe_preview = app.as_overview().unwrap().preview_open();
+    assert_eq!(probe_index, 1);
+    assert_eq!(probe_sort, SortMode::Status);
+
+    // Open Definition, then Esc back.
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(matches!(app.mode(), AppMode::Definition { .. }));
+    app.handle_key(key(KeyCode::Esc));
+
+    assert!(matches!(app.mode(), AppMode::Overview(_)));
+    assert_eq!(app.selected_index(), probe_index);
+    assert_eq!(app.view_scope(), probe_scope);
+    assert_eq!(app.as_overview().unwrap().sort_mode(), probe_sort);
+    assert_eq!(app.as_overview().unwrap().preview_open(), probe_preview);
+}
+
+/// AC-1: pressing `D` again from inside the Definition view closes
+/// the view (it's also a toggle).
+#[test]
+fn d_inside_definition_closes_the_view() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(app.is_definition());
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(!app.is_definition());
+    assert!(matches!(app.mode(), AppMode::Overview(_)));
+}
+
+/// AC-1: `D` is ignored while the preview pane is open — preview
+/// open guards the binding (parallel to the `s` sort binding).
+#[test]
+fn d_ignored_when_preview_open() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.as_overview().unwrap().preview_open());
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(
+        matches!(app.mode(), AppMode::Overview(_)),
+        "preview_open must guard D"
+    );
+}
+
+/// AC-1: navigation keys inside Definition mode advance scroll
+/// without escaping the mode.
+#[test]
+fn scroll_keys_advance_definition_scroll() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+    app.handle_key(key(KeyCode::Char('D')));
+    assert_eq!(app.definition_scroll(), Some(0));
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.definition_scroll(), Some(2));
+    app.handle_key(key(KeyCode::Up));
+    assert_eq!(app.definition_scroll(), Some(1));
+    app.handle_key(key(KeyCode::PageDown));
+    assert_eq!(app.definition_scroll(), Some(11));
+    app.handle_key(key(KeyCode::PageUp));
+    assert_eq!(app.definition_scroll(), Some(1));
+    app.handle_key(key(KeyCode::Home));
+    assert_eq!(app.definition_scroll(), Some(0));
+    app.handle_key(key(KeyCode::End));
+    assert_eq!(app.definition_scroll(), Some(usize::MAX));
+}
+
+/// AC-5: in a multi-workflow session, opening Definition on the
+/// middle tab and pressing Esc returns to the same active tab with
+/// the per-tab `selected_index` unchanged.
+#[test]
+fn definition_scopes_to_active_tab_and_esc_preserves_index() {
+    let (session, _holder, _roots) = multi_session(3);
+    let mut app = App::from_session(session);
+    // Cycle to middle tab.
+    app.handle_key(key(KeyCode::Right));
+    let _ = app.take_pending_switch();
+    app.materialize_active();
+    assert_eq!(app.as_session().unwrap().active_index(), 1);
+    let probe_selected = app.selected_index();
+
+    // Open Definition; verify it scopes to the active session.
+    app.handle_key(key(KeyCode::Char('D')));
+    assert!(app.is_definition());
+    assert_eq!(app.as_session().unwrap().active_index(), 1);
+
+    // Esc returns; tab + selection intact.
+    app.handle_key(key(KeyCode::Esc));
+    assert!(matches!(app.mode(), AppMode::Overview(_)));
+    assert_eq!(app.as_session().unwrap().active_index(), 1);
+    assert_eq!(app.selected_index(), probe_selected);
+}
