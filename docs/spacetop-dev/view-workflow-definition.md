@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-view-workflow-definition
 issue:
-pr:
+pr: #36
 mod-block: merge:pr-merge
 ---
 
