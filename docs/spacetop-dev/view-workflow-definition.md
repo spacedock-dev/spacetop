@@ -104,6 +104,178 @@ Verified by: a `grep -r "fs::write\|OpenOptions" src/parser/ src/discovery.rs` i
 **AC-5 — Single-workflow and multi-workflow sessions both support `D`; in multi mode `D` scopes to the active tab and `Esc` returns to the tabbed overview with the same active tab.**
 Verified by: a render test on a 3-workflow fixture cycles to the middle tab, presses `D`, asserts the Definition view's header carries the middle workflow's basename, presses `Esc`, and asserts `OverviewSession::active_index()` is still the middle index with the same per-tab `selected_index` as before.
 
+## Implementation plan
+
+This plan is for a separate implement-stage worker running in a worktree. It is broken into three work units (parser/domain, app-state, rendering) that can be implemented top-to-bottom or in parallel against module boundaries. Each step names the file it touches and the unit of code it adds. All design decisions (full-pane `AppMode::Definition`, `D` opens, `Esc` returns, scroll keys, content surfaced) are fixed by the `## Chosen UX` and `## Content surfaced` sections above — the implementer does not redecide them.
+
+### Work unit A — Parser / domain (prose extractor)
+
+Goal: surface the per-stage README prose (`### {stage}` Inputs/Outputs/Good/Bad bullets) on `WorkflowDefinition` without adding any write paths.
+
+1. **`src/parser/readme.rs` — add `parse_stage_prose`.**
+   New pure function:
+   ```rust
+   pub(crate) fn parse_stage_prose(readme_contents: &str) -> HashMap<String, String>
+   ```
+   Behavior:
+   - Strip frontmatter using `extract_frontmatter` (already in `super::frontmatter`) and operate on the markdown body only.
+   - Walk lines; whenever a line matches `^###\s+(.+?)\s*$`, capture the trimmed stage name and collect every subsequent line into the body until the next line matches `^(#|##|###)\s` (heading of equal-or-higher level). The body is stored as the raw substring (preserving newlines) with no normalization, no rewriting.
+   - Stage names found in prose but not declared in frontmatter are silently retained in the map (the renderer ignores them; storing them costs nothing).
+   - Stage names declared in frontmatter but absent from prose simply have no entry — the renderer must tolerate a missing key.
+   - No `fs::*`, no `&Path`. Signature is `(&str) -> HashMap<String, String>`.
+2. **`src/domain/mod.rs` — extend `WorkflowDefinition`.**
+   Add a new field: `pub stage_prose: HashMap<String, String>` next to `stage_colors`. Default to empty `HashMap::new()`. Update **every** existing constructor / fixture in tests that builds `WorkflowDefinition` literally (search via `rg "WorkflowDefinition\s*\{" src/` — at least `app/keys.rs::tests`, `ui/mod.rs::tests`, `app/tests.rs`, possibly `parser/tests.rs`) to add `stage_prose: HashMap::new()`. No accessor method required; renderer reads the field directly.
+3. **`src/parser/readme.rs::parse_workflow_readme` — wire the extractor.**
+   After computing `stage_colors`, call `parse_stage_prose(&contents)` and populate the new field on the returned `WorkflowDefinition`. The function is already reading `contents` from disk; the extension is one extra line plus the field on the struct literal.
+4. **`src/parser/readme.rs` unit tests (`#[cfg(test)] mod tests`).** Add a tests module (or extend the existing tests via `parser/tests.rs` if shared) with fixtures covering:
+   - extractor returns one entry per `### {stage}` block with byte-equal body (`prose_extracts_stage_body_verbatim`);
+   - frontmatter-only stage (no prose) yields no entry, no panic (`prose_missing_block_is_silent`);
+   - prose-only stage (no frontmatter declaration) is non-fatal (`prose_unknown_stage_is_retained_or_ignored` — assertion is "no panic, output map ok");
+   - integration test against `docs/spacetop-dev/README.md` confirms the `plan` stage body contains the substring "Approved design notes" (`prose_extracts_real_readme_plan_stage`).
+
+### Work unit B — App-state (`AppMode::Definition`)
+
+Goal: capture the user intent to open / close the Definition view, with full preservation of the underlying `OverviewSession` (including the active tab in multi mode).
+
+1. **`src/app.rs` — extend `AppMode`.**
+   Add a new variant:
+   ```rust
+   Definition {
+       underlying: OverviewSession,
+       scroll: usize,
+   }
+   ```
+   Place it alongside `PickerOverlay` (which already follows the `underlying: OverviewSession` shape).
+2. **`src/app.rs` — accessors.**
+   - `App::as_session()` already covers `Overview` and `PickerOverlay`; extend it to also expose the underlying session when in `Definition` mode (so the status footer and any external probe still sees the active workflow).
+   - Add `App::is_definition(&self) -> bool` for tests and for `render()` to dispatch.
+   - The back-compat accessor `App::overview()` currently `panic!`s for non-overview modes; extend the match arms so `Definition { underlying, .. }` returns `underlying.active_state()` — preserves preview header rendering during a transient frame between close and overview re-entry, and lets existing tests that probe `selected_index()` etc. still work.
+3. **`src/app/keys.rs` — emit a new intent for `D`.**
+   Add `OpenDefinition` to `OverviewKeyAction` and bind:
+   ```rust
+   KeyCode::Char('D') if !state.preview_open() => OverviewKeyAction::OpenDefinition,
+   ```
+   (`!state.preview_open()` mirrors the `s` binding's guard so the `D` key cannot fire while the preview pane is consuming keys.)
+4. **`src/app.rs::apply_overview_key_action` — handle `OpenDefinition`.**
+   Pull the active session out of `self.mode` (mirroring `open_picker_overlay_with`'s `mem::replace` pattern) and install `AppMode::Definition { underlying: session, scroll: 0 }`.
+5. **`src/app.rs::handle_key` — service the Definition mode.**
+   Add a match arm for `AppMode::Definition { underlying, scroll }` that handles:
+   - `KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('D')` → restore the underlying session (re-wrap into `AppMode::Overview`), keeping the active tab index and per-tab state intact.
+   - `KeyCode::Char('?')` → set `help_open = true` (mirrors the picker pattern).
+   - `KeyCode::Down | KeyCode::Char('j')` → `*scroll = scroll.saturating_add(1)`.
+   - `KeyCode::Up | KeyCode::Char('k')` → `*scroll = scroll.saturating_sub(1)`.
+   - `KeyCode::PageDown` → `*scroll = scroll.saturating_add(10)`.
+   - `KeyCode::PageUp` → `*scroll = scroll.saturating_sub(10)`.
+   - `KeyCode::Home` → `*scroll = 0`.
+   - `KeyCode::End` → `*scroll = usize::MAX` (the renderer clamps to `content_height - body_height`).
+6. **`src/app.rs::tests` — extend with three cases.**
+   - `d_from_overview_enters_definition_mode` — calls `App::handle_key(KeyCode::Char('D'))` on an overview, asserts `matches!(app.mode(), AppMode::Definition { .. })`.
+   - `esc_from_definition_restores_overview_state` — opens definition, mutates a probe (e.g. moves the underlying selection before opening — actually we capture `selected_index` before opening, press `D`, press `Esc`, assert `selected_index` / `view_scope` / `sort_mode` / `preview_open` are unchanged).
+   - `d_ignored_when_preview_open` — preview open + `D` keeps mode as `Overview`.
+
+### Work unit C — Rendering (`src/ui/definition.rs`)
+
+Goal: full-pane render of the Stages table and per-stage prose, driven by `WorkflowDefinition` + `stage_prose` + scroll offset. No I/O on the render path.
+
+1. **`src/ui/definition.rs` — new module.**
+   Public entry point:
+   ```rust
+   pub fn render_in(
+       frame: &mut Frame<'_>,
+       area: Rect,
+       definition: &WorkflowDefinition,
+       scroll: usize,
+   )
+   ```
+   Internal layout (vertical):
+   - **Row 0 (1 line)** — header: `Workflow Definition  ·  {basename}  ·  {entity_label_plural || "entities"}`; right-aligned dim path. Mirror `render_header_bar`'s casing/dim scheme.
+   - **Row 1 (1 line)** — workflow-scope sub-line: `id-style: {id_style || "—"}  ·  entity-type: {entity_type || "—"}  ·  entity-label: {entity_label || "—"}`. Dim styling.
+   - **Stages table block** — minimum 2 rows + (stages.len()) rows. Columns: `Stage` (left, stage color), `Flags` (left, list of chips like `[initial] [gate]` separated by spaces; chips rendered with dim brackets and normal text), `Feedback` (left, `→ {target}` colored with `definition.stage_color_for(target)` or em-dash), `Concurrency` (right, number or em-dash). Header row in dim.
+   - **Stage detail blocks** — for each stage in `definition.stages.iter()`, render:
+     1. one blank line (visual separator);
+     2. a heading line: `### {name}` in the stage color, bold;
+     3. the prose body — looked up via `definition.stage_prose.get(&stage.name)` — rendered through `crate::ui::markdown::render_markdown_termimad(body, area.width)` to a `Vec<Line>`. When the lookup misses, emit one dim line `"(no description in README)"`.
+   The function flattens all of the above into a single `Vec<Line<'_>>`, renders a single `Paragraph::new(lines).scroll((scroll as u16, 0)).wrap(Wrap { trim: false })` into the body area (everything below row 0/1), and renders a vertical `Scrollbar` on the right edge when content overflows. (Reuse the scrollbar wiring pattern from `render_preview`.)
+2. **`src/ui/mod.rs::render` — dispatch.**
+   Add a `mod definition;` declaration at the top. Extend the top-level `match app.mode()` to:
+   ```rust
+   AppMode::Definition { underlying, scroll } => {
+       definition::render_in(frame, frame.area(), &underlying.active_state().snapshot().definition, *scroll);
+   }
+   ```
+   The `Definition` view owns the entire frame area — no tab strip, no graph ribbon, no status footer. (Tab strip suppression is automatic because we no longer call `render_overview`.)
+3. **`src/ui/mod.rs::render_help_popup` — add `D` line.**
+   Extend the `lines` vec with a new entry:
+   ```rust
+   lines.push(Line::from("  D              open workflow definition"));
+   ```
+   placed near `s` (sort). Bump `popup_h` height bookkeeping (`+1` for both branches).
+4. **`src/ui/mod.rs::status_footer_hints` — add `D: definition` pill.**
+   Append `"D: definition"` to the hint list when `!preview_open` (matches the design intent that `D` is an Overview-mode entry point).
+5. **`src/ui/definition.rs` tests (`#[cfg(test)] mod tests`).** Use `TestBackend` with a synthetic `WorkflowDefinition` plus a populated `stage_prose` map. Tests:
+   - `stages_table_renders_every_stage_field` — 5-stage fixture exercising every flag combination; asserts each stage name, each `true` flag chip, each `feedback_to` arrow / em-dash, each `concurrency` value / em-dash, and header-line scope fields appear in the rendered buffer.
+   - `stage_prose_block_appears_in_view` — fixture with prose for `plan`; assert the body substring "Approved design notes" is present.
+   - `missing_stage_prose_renders_placeholder` — fixture with prose missing for one stage; assert the dim "no description in README" placeholder appears for that stage.
+   - `definition_renders_against_real_readme` — load `docs/spacetop-dev/README.md` via `App::load`, transition to `AppMode::Definition`, render, and assert each frontmatter-declared stage name appears in the buffer.
+
+### Work unit D — Multi-workflow / AC-5 coverage
+
+This is small enough to fold into work unit B+C but is called out separately because it carries its own AC.
+
+1. **`src/app.rs::tests` — `definition_scopes_to_active_tab_and_esc_preserves_index`.**
+   Build an `OverviewSession::from_discovery` with three discovered workflows; cycle to index 1 via `KeyCode::Right`; press `D`; press `Esc`. Assert `session.active_index() == 1` both before and after the cycle, and the per-tab `selected_index` is unchanged.
+2. **`src/ui/definition.rs::tests` — header carries active tab basename.**
+   Same 3-workflow fixture; cycle to middle; render with `AppMode::Definition`; assert the header line includes the middle workflow's basename.
+
+## Test strategy
+
+| AC   | Test file                          | Test name                                                | Asserts                                                                                                                       |
+|------|------------------------------------|----------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| AC-1 | `src/app/keys.rs::tests`           | `d_from_overview_emits_open_definition_action`           | `KeyCode::Char('D')` on an overview (preview closed) yields `OverviewKeyAction::OpenDefinition`.                              |
+| AC-1 | `src/app.rs::tests`                | `d_from_overview_enters_definition_mode`                 | `App::handle_key('D')` transitions `App::mode()` to `AppMode::Definition`.                                                    |
+| AC-1 | `src/app.rs::tests`                | `esc_from_definition_restores_overview_state`            | After open + close, `selected_index`, `view_scope`, `sort_mode`, `preview_open` are bit-for-bit unchanged from before open.   |
+| AC-1 | `src/ui/mod.rs::tests`             | `help_popup_lists_definition_keybind`                    | Rendered help popup buffer contains `"D"` and `"open workflow definition"` on the same row.                                   |
+| AC-2 | `src/ui/definition.rs::tests`      | `stages_table_renders_every_stage_field`                 | 5-stage fixture; every flag chip / feedback target / concurrency value / em-dash visible in `TestBackend` buffer.             |
+| AC-2 | `src/ui/definition.rs::tests`      | `header_carries_scope_fields`                            | `id_style`, `entity_label_plural` strings appear in the header / sub-line.                                                    |
+| AC-3 | `src/parser/readme.rs::tests`      | `prose_extracts_stage_body_verbatim`                     | Fixture prose under `### {stage}` is byte-equal to the value returned by `parse_stage_prose` for that key.                    |
+| AC-3 | `src/parser/readme.rs::tests`      | `prose_missing_block_is_silent`                          | Frontmatter-declared stage with no `### {stage}` block returns no entry, no panic.                                            |
+| AC-3 | `src/parser/readme.rs::tests`      | `prose_extracts_real_readme_plan_stage`                  | Loading `docs/spacetop-dev/README.md` and looking up the `plan` stage yields a body containing `"Approved design notes"`.     |
+| AC-3 | `src/ui/definition.rs::tests`      | `stage_prose_block_appears_in_view`                      | Rendered view contains `"Approved design notes"` from the `plan` stage's Inputs bullet.                                       |
+| AC-4 | `src/parser/readme.rs::tests`      | `parse_stage_prose_signature_is_pure`                    | Compile-time: signature is `fn(&str) -> HashMap<String, String>`; no `Path`, no `fs::*` calls inside the function body.       |
+| AC-4 | shell at verification time         | `grep -rn 'fs::write\|OpenOptions' src/parser src/discovery.rs` | Returns the same set of hits as `git show HEAD~1:src/parser` (no new write paths introduced).                            |
+| AC-5 | `src/app.rs::tests`                | `definition_scopes_to_active_tab_and_esc_preserves_index`| 3-workflow session; middle tab; `D`; `Esc`; `active_index() == 1` retained, per-tab `selected_index` retained.                |
+| AC-5 | `src/ui/definition.rs::tests`      | `definition_header_carries_active_tab_basename`          | Rendered header contains the basename of the active tab's workflow root.                                                      |
+
+Verification commands the implement-stage worker will run before reporting done:
+
+- `make lint` — clears `cargo clippy --all-targets --all-features -- -D warnings` (CLAUDE.md mandatory gate).
+- `cargo test` — full suite must pass.
+- `cargo test parse_stage_prose` — targeted parser tests.
+- `cargo test --test '*' definition` and `cargo test definition` — targeted module tests.
+- `cargo test d_from_overview esc_from_definition d_ignored_when_preview_open definition_scopes_to_active_tab` — targeted app-state tests.
+- `grep -rn 'fs::write\|OpenOptions::write' src/parser src/discovery.rs` — must return only pre-existing hits.
+
+## Files touched
+
+Files the implement-stage worker is permitted to create or modify (everything else is out of scope):
+
+- `src/parser/readme.rs` — add `parse_stage_prose` + tests + call site in `parse_workflow_readme`.
+- `src/parser/tests.rs` — extend if shared fixtures land here.
+- `src/domain/mod.rs` — add `stage_prose` field to `WorkflowDefinition`; update fixtures inside its `#[cfg(test)] mod tests`.
+- `src/app.rs` — extend `AppMode`, `as_session`, `overview` accessor, `handle_key`, `apply_overview_key_action`; add tests at `src/app/tests.rs`.
+- `src/app/tests.rs` — new test cases for definition mode entry / exit / scope.
+- `src/app/keys.rs` — add `OpenDefinition` variant + `D` binding + unit test.
+- `src/ui/mod.rs` — `mod definition;`, dispatch arm, help popup line, footer hint, height bookkeeping.
+- `src/ui/definition.rs` — new module (render + tests).
+- Any test fixtures that literally construct `WorkflowDefinition { … }` need `stage_prose: HashMap::new()` added; identify via `rg "WorkflowDefinition\s*\{" src/` (expected: `src/app/keys.rs::tests`, `src/ui/mod.rs::tests`, `src/app/tests.rs`). These are mechanical edits, not behavior changes.
+
+Files explicitly off-limits (read-only invariant):
+
+- `src/discovery.rs` — untouched; the definition view is a presentational read of already-parsed data, not a new discovery surface.
+- `src/parser/frontmatter.rs`, `src/parser/item.rs`, `src/parser/snapshot.rs`, `src/parser/archive.rs`, `src/parser/worktree.rs` — no mutation needed; the new prose extractor lives inside `src/parser/readme.rs` as a pure helper and does not require touching the other parser surfaces.
+- Any file under `agents/`, `references/`, or workflow `README.md` scaffolding — protected per CLAUDE.md / scaffolding guardrails.
+- No new `fs::write` / `OpenOptions::write` paths anywhere in the codebase. The new prose extractor's signature `(&str) -> HashMap<String, String>` is the structural guarantee of read-only behavior.
+
 ## Stage Report: design
 
 - DONE: Name the user flow for opening the workflow-definition view from the overview (key/trigger, render surface — full-page vs overlay, exit/return behavior) and justify the pick against at least one rejected alternative.
@@ -118,3 +290,18 @@ Verified by: a render test on a 3-workflow fixture cycles to the middle tab, pre
 Designed a full-pane `AppMode::Definition` reachable via `D` from Overview and dismissed via `Esc`, with a Stages table surfacing every `StageDefinition` field plus per-stage README prose rendered through the existing termimad pipeline. Refined the seeded AC list from 4 to 5 — kept AC-1..AC-4 (tightened verification language and the parser-extension contract) and added AC-5 to pin down multi-workflow tab semantics. Read-only invariant preserved: the only parser addition is a pure `&str → HashMap` prose extractor; no new write paths.
 
 AC coverage: AC-1 covered by `## Target user flow` + key binding choice in `## Chosen UX`; AC-2 covered by the field table in `## Content surfaced`; AC-3 covered by the `parse_stage_prose` contract in the same section; AC-4 covered by `## Constraints` (module ownership + read-only guarantee); AC-5 covered by the `### Multi-workflow interaction` subsection of `## Target user flow`. Commit: `264fdf8`.
+
+## Stage Report: plan
+
+- DONE: Produce a step-by-step implementation plan that separates parser/domain work, app-state work, and rendering work — each step naming the file(s) it touches and the unit it adds.
+  See `## Implementation plan` — three work units (A: Parser/domain in `src/parser/readme.rs` + `src/domain/mod.rs`, B: App-state in `src/app.rs` + `src/app/keys.rs`, C: Rendering in new `src/ui/definition.rs` wired from `src/ui/mod.rs`), plus a small AC-5 multi-workflow follow-up; each step names its file and the symbol it adds.
+- DONE: Spell out a test strategy mapping each AC (AC-1..AC-5) to a concrete test and name the verification commands the implement-stage worker will run.
+  See `## Test strategy` — a per-AC table mapping AC-1..AC-5 to `#[cfg(test)]` test names with file locations and the exact assertions, plus the verification command list (`make lint`, `cargo test`, targeted `cargo test parse_stage_prose` / `cargo test definition` / `cargo test d_from_overview esc_from_definition`, and the `grep` for new write paths).
+- DONE: Confirm the read-only invariant — list every file the implement stage may modify and explicitly state that `src/discovery.rs` and existing write surfaces stay untouched.
+  See `## Files touched` — explicit allow-list of permitted files plus an off-limits list that names `src/discovery.rs` and every existing `src/parser/*.rs` surface besides `readme.rs`; the new prose extractor is a pure `(&str) -> HashMap<String, String>` helper, not a mutation of existing parser internals.
+
+AC coverage: AC-1 — work units B (`OpenDefinition` variant, `D` binding, `Esc` exit) and tests `d_from_overview_emits_open_definition_action` / `d_from_overview_enters_definition_mode` / `esc_from_definition_restores_overview_state` / `help_popup_lists_definition_keybind`. AC-2 — work unit C step 1 (Stages table with every `StageDefinition` field) and tests `stages_table_renders_every_stage_field` / `header_carries_scope_fields`. AC-3 — work unit A (`parse_stage_prose` + `stage_prose` field) and work unit C step 1 (per-stage prose blocks); tests `prose_extracts_stage_body_verbatim` / `prose_missing_block_is_silent` / `prose_extracts_real_readme_plan_stage` / `stage_prose_block_appears_in_view`. AC-4 — work unit A pure-function contract, `## Files touched` allow/deny lists; tests `parse_stage_prose_signature_is_pure` and the verification-time `grep`. AC-5 — work unit D and tests `definition_scopes_to_active_tab_and_esc_preserves_index` / `definition_header_carries_active_tab_basename`.
+
+### Summary
+
+Decomposed the approved design into four work units (parser/domain, app-state, rendering, multi-workflow follow-up) totaling 14 named test cases across `src/parser/readme.rs`, `src/domain/mod.rs`, `src/app.rs`, `src/app/keys.rs`, and a new `src/ui/definition.rs`. The new mode is plumbed exactly like `AppMode::PickerOverlay` (capture `OverviewSession` underlying state, restore on `Esc`) so multi-workflow tab preservation comes for free. Read-only invariant locked in by a pure `&str → HashMap<String, String>` extractor signature plus an explicit files-touched allow-list that excludes `src/discovery.rs` and every existing parser file besides `readme.rs`.
