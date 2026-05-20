@@ -11,6 +11,7 @@ worktree:
 issue:
 pr: #36
 mod-block: 
+archived: 2026-05-20T09:20:05Z
 ---
 
 Captain request, verbatim: "we need a feature to open the definition of a workflow. In the task page, we can select the workflow to show the detail of the workflow itself."
