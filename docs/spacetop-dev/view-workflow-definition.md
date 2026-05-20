@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-view-workflow-definition
 issue:
 pr:
-mod-block:
+mod-block: merge:pr-merge
 ---
 
 Captain request, verbatim: "we need a feature to open the definition of a workflow. In the task page, we can select the workflow to show the detail of the workflow itself."
