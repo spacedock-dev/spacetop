@@ -1,13 +1,13 @@
 ---
 id: 041
 title: View the active workflow's definition from the overview page
-status: plan
+status: implement
 source: captain request — inspect workflow structure (stages, gates, feedback edges) without leaving the TUI
 started: 2026-05-20T08:13:05Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-view-workflow-definition
 issue:
 pr:
 mod-block:
