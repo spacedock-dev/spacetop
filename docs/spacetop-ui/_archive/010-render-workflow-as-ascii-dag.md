@@ -11,6 +11,7 @@ worktree:
 issue:
 pr: #40
 mod-block: 
+archived: 2026-05-21T07:41:07Z
 ---
 
 Today the workflow pane (after task 009) renders stages as a wrapped linear sequence: `pending → scoping → ideate → review → … `, possibly wrapped onto multiple rows with `↪` continuation arrows. This reads as a strip, not a directed acyclic graph. Workflows with feedback edges (e.g. `review` with `feedback-to: implement`) get a small "rollback on reject" annotation line at the bottom, but the feedback edge itself is not drawn.
