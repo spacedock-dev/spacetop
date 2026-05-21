@@ -50,3 +50,13 @@ Verified by: `make lint` (clippy `-D warnings`) and `cargo test` from the repo r
 ### Summary
 
 Replaced the fixed 2-row Narrow split and one-stage-per-line VeryNarrow renderer with width/height-aware layouts: Narrow greedily wraps the compact form across N rows, VeryNarrow packs cells into a multi-column grid sized to the pane and emits a named overflow indicator if the grid still can't hold every stage. All 19 pre-existing graph tests pass unchanged; five new tests cover the 12-stage research workflow across every width tier and the extreme-overflow fallback.
+
+### Feedback Cycles
+
+#### Cycle 1 — captain rejection at implement (2026-05-21)
+
+Captain reviewed the rendered output against the 12-stage `dataagentbench/docs/research/` workflow and rejected. Concrete asks:
+
+1. **Stage names must be colored per stage** in every tier — the existing Wide tier colors each node via `definition.stage_color_for(&col.stage_name)` (and applies `Modifier::REVERSED` for the active stage). The new Narrow and VeryNarrow renderers render stage names as plain text, losing the per-stage color identity. Apply the same `stage_color_for` styling to stage-name spans in `build_narrow_row` / VeryNarrow cell rendering (and keep the active-stage REVERSED modifier).
+2. **Arrow relations between stages must remain visible across all tiers.** Wide uses ` → ` between nodes; the prior 2-row Narrow used the same. The new wrapping Narrow rendering and the multi-column VeryNarrow grid drop the connective arrows entirely, so the workflow topology no longer reads as a directed sequence — it looks like a flat list. Restore an inter-stage arrow glyph (`g.forward_arrow` / `g.narrow_arrow`) between adjacent stage cells in both the wrapped Narrow rows and the VeryNarrow grid (within a row, and ideally a wrap indicator at row breaks so the reader can follow the sequence across rows).
+
