@@ -1,7 +1,7 @@
 ---
 id: "043"
 title: Stage-heading parser drops prose when the README uses `### `stage` (qualifier)` form
-status: implement
+status: review
 source: captain
 started: 2026-05-21T07:55:59Z
 completed:
