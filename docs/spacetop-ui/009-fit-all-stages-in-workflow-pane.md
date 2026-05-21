@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-009-fit-all-stages-in-workflow-pane
 issue:
 pr: #38
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Workflows with many stages (for example `/Users/kent/dev/InfuseAI/GitHub/dataagentbench/docs/research/`, which declares 12 states: `pending`, `scoping`, `ideate`, `review`, `smoke`, `run`, `analyze`, `promote`, `expanded`, `ideated`, `done`, `rejected`) overflow the workflow pane. The current renderer in `src/ui/graph.rs` picks one of three `WidthTier` modes:
