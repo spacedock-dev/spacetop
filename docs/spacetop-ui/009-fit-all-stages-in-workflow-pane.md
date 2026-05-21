@@ -73,3 +73,11 @@ Captain reviewed the rendered output against the 12-stage `dataagentbench/docs/r
 ### Summary
 
 Restored per-stage color + BOLD (and active-stage REVERSED) on every stage span in the new Narrow and VeryNarrow renderers by routing the existing `WorkflowDefinition::stage_color_for` through their span construction. Reinstated inter-stage arrows within rows for both tiers and added trailing/leading wrap arrows at row breaks so the directed sequence reads continuously across wraps. The wrapping/multi-column layout from cycle 1 (f00f57b) is untouched — only styling and connective glyphs were layered on top.
+
+#### Cycle 2 — captain rejection at implement (2026-05-21)
+
+Color + arrows from Cycle 1 are confirmed fixed. Two new concrete asks against the live rendering of the 12-stage `dataagentbench/docs/research/` workflow:
+
+1. **Workflow graph should use the entire pane width.** The current VeryNarrow multi-column grid is right-aligned with a large empty gap on the left half of the workflow pane (visible in the captain's screenshot at ~109-col total width — the grid only occupies columns ~50→109 while columns 0→50 are blank). Distribute the columns to span the inner width, with reasonable horizontal padding for legibility (left-align with even inter-column spacing, or distribute remaining slack across the gaps — whichever reads cleaner). Apply the same "use the full pane width" property to the Narrow (wrapped-rows) tier as well.
+2. **Reserve space for the feedback (rollback) arrow.** The `research` workflow declares `review` with `feedback-to: implement`, but the rendered output in VeryNarrow shows no rollback-on-reject annotation. In Narrow, `feedback_annotations` emits `↩ rollback on reject: review → implement` as a trailing line; that same annotation must render in VeryNarrow (and reserve vertical space for it in the layout calculations so the multi-column grid does not silently consume the row the annotation would have used). Equivalently: the grid height budget must account for the feedback-annotation lines before deciding how many stage rows fit, and the annotation must appear styled as a feedback rollback (matching the Narrow rendering convention).
+
