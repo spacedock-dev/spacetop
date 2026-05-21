@@ -87,6 +87,7 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
             active_stage.as_deref(),
             &glyphs,
             inner_width,
+            definition,
         ),
         WidthTier::VeryNarrow => render_very_narrow(
             stages,
@@ -95,6 +96,7 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
             &glyphs,
             inner_width,
             inner_height,
+            definition,
         ),
     };
 
@@ -524,59 +526,110 @@ fn render_narrow<'a>(
     active: Option<&str>,
     g: &'a GlyphSet,
     inner_width: usize,
+    definition: &WorkflowDefinition,
 ) -> Vec<Line<'a>> {
     // Wrap the compact `name(count) → name(count) → …` form across however many
     // rows are needed to fit within `inner_width`. The previous fixed two-row
     // split silently dropped stages from view when the workflow had enough
     // stages that even half the list overflowed one row (AC-1, AC-2).
+    //
+    // Per-stage styling mirrors the Wide tier: each stage name is colored via
+    // `stage_color_for` + BOLD, and the active stage layers REVERSED on top.
+    // Inter-stage arrows (` → `) live in DarkGray to keep them readable as
+    // connective tissue without competing with the stage colors. At row
+    // breaks we emit a trailing arrow on the wrapping row and a leading
+    // arrow on the next row so the directed sequence still reads across
+    // wraps (the captain feedback in cycle 1).
     let arrow_sep = format!(" {} ", g.narrow_arrow);
     let arrow_w = visible_width(&arrow_sep);
+    let wrap_trailing = format!(" {}", g.narrow_arrow);
+    let wrap_trailing_w = visible_width(&wrap_trailing);
+    let wrap_leading = format!("{} ", g.narrow_arrow);
+    let wrap_leading_w = visible_width(&wrap_leading);
 
-    let segments: Vec<(String, usize, &str)> = stages
+    struct Segment<'s> {
+        stage_name: &'s str,
+        count_suffix: String,
+        node_text: String,
+        is_active: bool,
+        total_width: usize,
+    }
+
+    let segments: Vec<Segment<'_>> = stages
         .iter()
         .enumerate()
         .map(|(i, stage)| {
             let count = counts.get(i).copied().unwrap_or(0);
-            let node = build_node_text(stage, g);
-            let segment = format!("{node}({count})");
-            let width = visible_width(&segment);
-            (segment, width, stage.name.as_str())
+            let node_text = build_node_text(stage, g);
+            let count_suffix = format!("({count})");
+            let total_width = visible_width(&node_text) + visible_width(&count_suffix);
+            let is_active = active.map(|s| s == stage.name).unwrap_or(false);
+            Segment {
+                stage_name: stage.name.as_str(),
+                count_suffix,
+                node_text,
+                is_active,
+                total_width,
+            }
         })
         .collect();
 
+    let connector_style = Style::default().fg(Color::DarkGray);
+
     let mut lines: Vec<Line<'a>> = Vec::new();
-    let mut row = String::new();
+    let mut row_spans: Vec<Span<'a>> = Vec::new();
     let mut row_width = 0usize;
     let mut row_has_stage = false;
+    let mut row_index = 0usize;
 
-    for (segment, seg_w, _name) in segments.iter() {
+    let segment_count = segments.len();
+    for (idx, seg) in segments.into_iter().enumerate() {
+        // Decide whether this segment forces a wrap. We need room for the
+        // segment, and (if not the first in the row) the inter-stage arrow,
+        // and (if the row will wrap after this segment) the trailing wrap
+        // indicator. We approximate by counting the inter-stage arrow only.
         let needed = if row_has_stage {
-            arrow_w + seg_w
+            arrow_w + seg.total_width
         } else {
-            *seg_w
+            seg.total_width
         };
-        // If the inner_width is implausibly small to ever fit, still emit one
-        // stage per row rather than spinning forever.
         if row_has_stage && row_width + needed > inner_width {
-            lines.push(Line::from(row.clone()));
-            row.clear();
+            // Wrap: emit a trailing arrow on the current row to signal the
+            // sequence continues, then push the row and start the next row
+            // with a leading arrow.
+            if row_width + wrap_trailing_w <= inner_width {
+                row_spans.push(Span::styled(wrap_trailing.clone(), connector_style));
+            }
+            lines.push(Line::from(std::mem::take(&mut row_spans)));
             row_width = 0;
             row_has_stage = false;
+            row_index += 1;
+            // Leading wrap indicator on the continuation row.
+            if wrap_leading_w + seg.total_width <= inner_width {
+                row_spans.push(Span::styled(wrap_leading.clone(), connector_style));
+                row_width += wrap_leading_w;
+            }
         }
         if row_has_stage {
-            row.push_str(&arrow_sep);
+            row_spans.push(Span::styled(arrow_sep.clone(), connector_style));
             row_width += arrow_w;
         }
-        row.push_str(segment);
-        row_width += seg_w;
+        let mut stage_style = Style::default()
+            .fg(definition.stage_color_for(seg.stage_name))
+            .add_modifier(Modifier::BOLD);
+        if seg.is_active {
+            stage_style = stage_style.add_modifier(Modifier::REVERSED);
+        }
+        row_spans.push(Span::styled(seg.node_text, stage_style));
+        row_spans.push(Span::styled(seg.count_suffix, Style::default()));
+        row_width += seg.total_width;
         row_has_stage = true;
-        // Ignore active styling here — same as the prior implementation, the
-        // narrow tier uses plain text rows. Active highlighting happens in the
-        // very-narrow tier per row instead.
-        let _ = active;
+        let _ = idx;
+        let _ = segment_count;
+        let _ = row_index;
     }
     if row_has_stage {
-        lines.push(Line::from(row));
+        lines.push(Line::from(row_spans));
     }
 
     let fb_parts = feedback_annotations(stages, g);
@@ -630,6 +683,7 @@ fn render_very_narrow<'a>(
     g: &'a GlyphSet,
     inner_width: usize,
     inner_height: usize,
+    definition: &WorkflowDefinition,
 ) -> Vec<Line<'a>> {
     // Build the per-stage cell text once, in stage order.
     let cells: Vec<String> = stages
@@ -645,12 +699,17 @@ fn render_very_narrow<'a>(
         return Vec::new();
     }
 
+    // Inter-cell glue: a narrow arrow (` → `) between adjacent cells within a
+    // row, and a trailing/leading arrow at row breaks to keep the directed
+    // sequence legible across wraps (captain feedback cycle 1).
+    let arrow_sep = format!(" {} ", g.narrow_arrow);
+    let col_gap = visible_width(&arrow_sep);
+
     // Decide a multi-column layout that fits as many stages as possible inside
     // the pane. We reserve one line for a potential overflow indicator. We
     // search column counts from many to few so we maximise stages-per-row when
     // the pane is short.
     let widest_cell = cells.iter().map(|s| visible_width(s)).max().unwrap_or(1);
-    let col_gap = 2usize; // two spaces between columns
     let max_cols_by_width = if inner_width == 0 {
         1
     } else {
@@ -701,28 +760,46 @@ fn render_very_narrow<'a>(
     // Lay out row-major: cell (r, c) is stages[r * cols + c]. Row-major reads
     // left-to-right like the wide ribbon, preserving stage order.
     let col_width = widest_cell;
+    let connector_style = Style::default().fg(Color::DarkGray);
+    let wrap_trailing = format!(" {}", g.narrow_arrow);
+    let wrap_leading = format!("{} ", g.narrow_arrow);
     let mut lines: Vec<Line<'a>> = Vec::with_capacity(visible_rows + 1);
     for r in 0..visible_rows {
         let mut spans: Vec<Span<'a>> = Vec::new();
+        // Leading wrap indicator on continuation rows so the directed
+        // sequence reads across row breaks.
+        if r > 0 {
+            spans.push(Span::styled(wrap_leading.clone(), connector_style));
+        }
+        let mut last_idx_in_row: Option<usize> = None;
         for c in 0..chosen_cols {
             let idx = r * chosen_cols + c;
             if idx >= cells.len() || idx >= visible_cells {
                 break;
             }
             if c > 0 {
-                spans.push(Span::raw(" ".repeat(col_gap)));
+                spans.push(Span::styled(arrow_sep.clone(), connector_style));
             }
             let cell = &cells[idx];
             let pad = col_width.saturating_sub(visible_width(cell));
             let is_active = active.map(|s| s == stages[idx].name).unwrap_or(false);
-            let style = if is_active {
-                Style::default().add_modifier(Modifier::REVERSED)
-            } else {
-                Style::default()
-            };
+            let mut style = Style::default()
+                .fg(definition.stage_color_for(&stages[idx].name))
+                .add_modifier(Modifier::BOLD);
+            if is_active {
+                style = style.add_modifier(Modifier::REVERSED);
+            }
             spans.push(Span::styled(cell.clone(), style));
             if pad > 0 {
                 spans.push(Span::raw(" ".repeat(pad)));
+            }
+            last_idx_in_row = Some(idx);
+        }
+        // Trailing wrap indicator when more stages follow on subsequent rows.
+        if let Some(last) = last_idx_in_row {
+            let more_in_grid = last + 1 < visible_cells && last + 1 < cells.len();
+            if more_in_grid {
+                spans.push(Span::styled(wrap_trailing.clone(), connector_style));
             }
         }
         lines.push(Line::from(spans));

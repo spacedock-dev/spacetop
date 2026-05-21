@@ -521,10 +521,20 @@ fn narrow_dag_wraps_to_two_rows() {
         stage("done", false, true, false, false, None),
     ];
     let counts = vec![1usize, 2, 3, 4, 5, 0];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/narrow-wrap"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
     // Choose an inner_width that fits roughly half the stages per row.
     // alpha(1), beta(2), gamma(3), delta(4), epsilon(5), done(0) with markers
     // and arrows; ~40 cols should split into about two rows.
-    let lines = render_narrow(&stages, &counts, None, &g, 40);
+    let lines = render_narrow(&stages, &counts, None, &g, 40, &definition);
     // Must produce at least 2 lines.
     assert!(
         lines.len() >= 2,
@@ -708,6 +718,152 @@ fn very_narrow_overflow_indicator_names_hidden_stages() {
     assert!(
         rendered.contains("hidden:"),
         "expected '+N hidden:' overflow indicator at extreme size; got:\n{rendered}"
+    );
+}
+
+/// Cycle 1 feedback: every stage-name span in the wrapped Narrow renderer
+/// must carry the per-stage `stage_color_for` color plus BOLD, matching the
+/// Wide-tier convention. We assert this at the level of the styled spans
+/// returned from `render_narrow` so the assertion is robust to terminal
+/// fallthrough.
+#[test]
+fn narrow_tier_colors_each_stage_name_per_stage() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/narrow-colors"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    let lines = render_narrow(&stages, &counts, Some("review"), &g, 60, &definition);
+
+    // Collect (span_content, span_style) pairs across all rows.
+    let mut found_colored: usize = 0;
+    let mut active_seen_reversed = false;
+    let mut found_arrow = false;
+    for line in &lines {
+        for span in &line.spans {
+            // Inter-stage arrow.
+            if span.content.contains('\u{2192}') {
+                found_arrow = true;
+            }
+            // Stage-name spans look like "design", "▶ design", "done ■", etc.
+            // Match a span whose content contains any RESEARCH_STAGES name and
+            // assert it carries the per-stage color + BOLD.
+            for name in RESEARCH_STAGES {
+                if span.content.contains(name) && !span.content.starts_with('(') {
+                    let expected = definition.stage_color_for(name);
+                    if span.style.fg == Some(expected)
+                        && span.style.add_modifier.contains(Modifier::BOLD)
+                    {
+                        found_colored += 1;
+                        if *name == "review"
+                            && span.style.add_modifier.contains(Modifier::REVERSED)
+                        {
+                            active_seen_reversed = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        found_colored >= RESEARCH_STAGES.len(),
+        "expected every research stage name span to carry per-stage color+BOLD, \
+         found {found_colored} of {} (lines={lines:?})",
+        RESEARCH_STAGES.len()
+    );
+    assert!(
+        active_seen_reversed,
+        "active stage 'review' span must carry Modifier::REVERSED on top of color+BOLD"
+    );
+    assert!(
+        found_arrow,
+        "narrow tier must render inter-stage arrows (→) between stages"
+    );
+}
+
+/// Cycle 1 feedback: every stage-name span in the multi-column VeryNarrow
+/// grid must carry the per-stage `stage_color_for` color plus BOLD, and the
+/// grid must include inter-stage arrows within rows.
+#[test]
+fn very_narrow_tier_colors_each_stage_name_per_stage() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/vnarrow-colors"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // 40 cols, height 20 — every stage fits in the grid without overflow.
+    let lines = render_very_narrow(&stages, &counts, Some("analyze"), &g, 40, 20, &definition);
+
+    let mut found_colored: usize = 0;
+    let mut active_seen_reversed = false;
+    let mut found_arrow = false;
+    for line in &lines {
+        for span in &line.spans {
+            if span.content.contains('\u{2192}') {
+                found_arrow = true;
+            }
+            for name in RESEARCH_STAGES {
+                if span.content.contains(name) {
+                    let expected = definition.stage_color_for(name);
+                    if span.style.fg == Some(expected)
+                        && span.style.add_modifier.contains(Modifier::BOLD)
+                    {
+                        found_colored += 1;
+                        if *name == "analyze"
+                            && span.style.add_modifier.contains(Modifier::REVERSED)
+                        {
+                            active_seen_reversed = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        found_colored >= RESEARCH_STAGES.len(),
+        "expected every research stage name cell to carry per-stage color+BOLD, \
+         found {found_colored} of {} (lines={lines:?})",
+        RESEARCH_STAGES.len()
+    );
+    assert!(
+        active_seen_reversed,
+        "active stage 'analyze' cell must carry Modifier::REVERSED on top of color+BOLD"
+    );
+    assert!(
+        found_arrow,
+        "very-narrow grid must render inter-stage arrows (→) within rows"
     );
 }
 
