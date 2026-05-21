@@ -540,6 +540,11 @@ fn render_narrow<'a>(
     // breaks we emit a trailing arrow on the wrapping row and a leading
     // arrow on the next row so the directed sequence still reads across
     // wraps (the captain feedback in cycle 1).
+    //
+    // Cycle 2 captain feedback: each finished row also has its slack
+    // distributed across the inter-stage arrows so the row content spans
+    // the full inner_width (no large empty gap on the right with the
+    // centered Paragraph alignment).
     let arrow_sep = format!(" {} ", g.narrow_arrow);
     let arrow_w = visible_width(&arrow_sep);
     let wrap_trailing = format!(" {}", g.narrow_arrow);
@@ -574,62 +579,119 @@ fn render_narrow<'a>(
         })
         .collect();
 
-    let connector_style = Style::default().fg(Color::DarkGray);
-
-    let mut lines: Vec<Line<'a>> = Vec::new();
-    let mut row_spans: Vec<Span<'a>> = Vec::new();
-    let mut row_width = 0usize;
-    let mut row_has_stage = false;
-    let mut row_index = 0usize;
-
-    let segment_count = segments.len();
-    for (idx, seg) in segments.into_iter().enumerate() {
-        // Decide whether this segment forces a wrap. We need room for the
-        // segment, and (if not the first in the row) the inter-stage arrow,
-        // and (if the row will wrap after this segment) the trailing wrap
-        // indicator. We approximate by counting the inter-stage arrow only.
-        let needed = if row_has_stage {
-            arrow_w + seg.total_width
-        } else {
-            seg.total_width
-        };
-        if row_has_stage && row_width + needed > inner_width {
-            // Wrap: emit a trailing arrow on the current row to signal the
-            // sequence continues, then push the row and start the next row
-            // with a leading arrow.
-            if row_width + wrap_trailing_w <= inner_width {
-                row_spans.push(Span::styled(wrap_trailing.clone(), connector_style));
-            }
-            lines.push(Line::from(std::mem::take(&mut row_spans)));
-            row_width = 0;
-            row_has_stage = false;
-            row_index += 1;
-            // Leading wrap indicator on the continuation row.
-            if wrap_leading_w + seg.total_width <= inner_width {
-                row_spans.push(Span::styled(wrap_leading.clone(), connector_style));
-                row_width += wrap_leading_w;
-            }
-        }
-        if row_has_stage {
-            row_spans.push(Span::styled(arrow_sep.clone(), connector_style));
-            row_width += arrow_w;
-        }
-        let mut stage_style = Style::default()
-            .fg(definition.stage_color_for(seg.stage_name))
-            .add_modifier(Modifier::BOLD);
-        if seg.is_active {
-            stage_style = stage_style.add_modifier(Modifier::REVERSED);
-        }
-        row_spans.push(Span::styled(seg.node_text, stage_style));
-        row_spans.push(Span::styled(seg.count_suffix, Style::default()));
-        row_width += seg.total_width;
-        row_has_stage = true;
-        let _ = idx;
-        let _ = segment_count;
-        let _ = row_index;
+    // Pre-pack the segments into rows (record indices only) so each row's
+    // total width and the number of inter-stage gaps can be known before we
+    // emit spans. We need that knowledge to widen each row's gaps to span
+    // inner_width — the existing renderer emitted spans as it walked, which
+    // left a large trailing void with `Alignment::Center`.
+    struct RowPlan {
+        first_seg: usize,
+        last_seg: usize,
+        has_wrap_leading: bool,
+        has_wrap_trailing: bool,
+        content_width: usize,
     }
-    if row_has_stage {
-        lines.push(Line::from(row_spans));
+
+    let mut rows: Vec<RowPlan> = Vec::new();
+    let mut cur_first: usize = 0;
+    let mut cur_last: Option<usize> = None;
+    let mut cur_width: usize = 0;
+    let mut cur_leading = false;
+    for (i, seg) in segments.iter().enumerate() {
+        let need_arrow = cur_last.is_some();
+        let candidate = if need_arrow {
+            cur_width + arrow_w + seg.total_width
+        } else {
+            cur_width + seg.total_width
+        };
+        if need_arrow && candidate > inner_width {
+            // Wrap. Close out the current row with a trailing wrap arrow if
+            // there's room.
+            let has_trailing = cur_width + wrap_trailing_w <= inner_width;
+            let final_width = cur_width + if has_trailing { wrap_trailing_w } else { 0 };
+            rows.push(RowPlan {
+                first_seg: cur_first,
+                last_seg: cur_last.unwrap(),
+                has_wrap_leading: cur_leading,
+                has_wrap_trailing: has_trailing,
+                content_width: final_width,
+            });
+            // Start the next row, optionally with a leading wrap arrow.
+            cur_first = i;
+            cur_last = None;
+            cur_width = 0;
+            cur_leading = wrap_leading_w + seg.total_width <= inner_width;
+            if cur_leading {
+                cur_width += wrap_leading_w;
+            }
+        }
+        if cur_last.is_some() {
+            cur_width += arrow_w;
+        }
+        cur_width += seg.total_width;
+        cur_last = Some(i);
+    }
+    if let Some(last) = cur_last {
+        rows.push(RowPlan {
+            first_seg: cur_first,
+            last_seg: last,
+            has_wrap_leading: cur_leading,
+            has_wrap_trailing: false,
+            content_width: cur_width,
+        });
+    }
+
+    let connector_style = Style::default().fg(Color::DarkGray);
+    let mut lines: Vec<Line<'a>> = Vec::with_capacity(rows.len() + 1);
+
+    for plan in &rows {
+        // Distribute slack across the inter-stage arrows in this row so the
+        // row spans inner_width. Each gap absorbs `slack / gap_count` extra
+        // spaces; the first `slack % gap_count` gaps absorb one more.
+        let segs_in_row = plan.last_seg - plan.first_seg + 1;
+        let gap_count = segs_in_row.saturating_sub(1);
+        let slack = inner_width.saturating_sub(plan.content_width);
+        let base_extra = slack.checked_div(gap_count).unwrap_or(0);
+        let extra_remainder = slack.checked_rem(gap_count).unwrap_or(0);
+
+        let mut spans: Vec<Span<'a>> = Vec::new();
+        if plan.has_wrap_leading {
+            spans.push(Span::styled(wrap_leading.clone(), connector_style));
+        }
+        for i in 0..segs_in_row {
+            if i > 0 {
+                let extra = base_extra + usize::from(i <= extra_remainder);
+                let sep = if extra == 0 {
+                    arrow_sep.clone()
+                } else {
+                    format!(" {}{} ", " ".repeat(extra), g.narrow_arrow)
+                };
+                spans.push(Span::styled(sep, connector_style));
+            }
+            let seg = &segments[plan.first_seg + i];
+            let mut stage_style = Style::default()
+                .fg(definition.stage_color_for(seg.stage_name))
+                .add_modifier(Modifier::BOLD);
+            if seg.is_active {
+                stage_style = stage_style.add_modifier(Modifier::REVERSED);
+            }
+            spans.push(Span::styled(seg.node_text.clone(), stage_style));
+            spans.push(Span::styled(seg.count_suffix.clone(), Style::default()));
+        }
+        if plan.has_wrap_trailing {
+            spans.push(Span::styled(wrap_trailing.clone(), connector_style));
+        }
+        // If there are no gaps to absorb slack (single-segment row) or the
+        // gap count is zero, fall back to right-padding the row so the
+        // Paragraph's center alignment becomes a no-op (visible_width ==
+        // inner_width => left-anchored at column 0).
+        if gap_count == 0 {
+            let pad = inner_width.saturating_sub(plan.content_width);
+            if pad > 0 {
+                spans.push(Span::raw(" ".repeat(pad)));
+            }
+        }
+        lines.push(Line::from(spans));
     }
 
     let fb_parts = feedback_annotations(stages, g);
@@ -699,6 +761,18 @@ fn render_very_narrow<'a>(
         return Vec::new();
     }
 
+    // Cycle 2 captain feedback: feedback-annotation lines (e.g.
+    // `↩ rollback on reject: review → implement`) must be rendered in the
+    // VeryNarrow tier too, AND the grid height budget must subtract those
+    // lines BEFORE choosing how many stage rows fit — otherwise the grid
+    // silently consumes the row the annotation needs.
+    let fb_parts = feedback_annotations(stages, g);
+    // The feedback annotations are emitted as a single line joined by ", "
+    // (matching the Narrow tier rendering). Reserve one line for it.
+    let feedback_rows = usize::from(!fb_parts.is_empty());
+    let grid_height_budget = inner_height.saturating_sub(feedback_rows);
+    let grid_height_budget = grid_height_budget.max(1);
+
     // Inter-cell glue: a narrow arrow (` → `) between adjacent cells within a
     // row, and a trailing/leading arrow at row breaks to keep the directed
     // sequence legible across wraps (captain feedback cycle 1).
@@ -718,32 +792,38 @@ fn render_very_narrow<'a>(
     let max_cols = max_cols_by_width.min(stages.len());
 
     // For each candidate column count, compute the row count and pick the
-    // smallest layout that fits within inner_height. Prefer fewer columns
-    // (more readable) when several fit.
+    // largest column count that still fits within grid_height_budget. We
+    // prefer using more of the pane width over fewer columns (captain
+    // feedback cycle 2): a 12-stage workflow at width 100 with height 12
+    // would otherwise pick 1 column and leave the entire right half blank.
     let mut chosen_cols = 1usize;
     let mut chosen_rows = stages.len();
-    for cols in 1..=max_cols {
+    let mut found = false;
+    for cols in (1..=max_cols).rev() {
         let rows = stages.len().div_ceil(cols);
-        if rows <= inner_height {
+        if rows <= grid_height_budget {
             chosen_cols = cols;
             chosen_rows = rows;
+            found = true;
             break;
         }
-        // Track the densest layout in case nothing fits — we'll need it to
-        // decide overflow.
-        chosen_cols = cols;
-        chosen_rows = rows;
+    }
+    if !found {
+        // Nothing fits — fall through to overflow logic with the densest
+        // (max_cols) layout so we hide as little as possible.
+        chosen_cols = max_cols;
+        chosen_rows = stages.len().div_ceil(chosen_cols);
     }
 
     // If even the densest tried layout doesn't fit, fall back to the maximum
     // columns and let overflow logic trim. We may also need to leave a line
     // for the overflow indicator.
-    if chosen_rows > inner_height {
+    if chosen_rows > grid_height_budget {
         chosen_cols = max_cols;
         chosen_rows = stages.len().div_ceil(chosen_cols);
     }
 
-    let visible_rows = chosen_rows.min(inner_height);
+    let visible_rows = chosen_rows.min(grid_height_budget);
     let visible_cells = visible_rows * chosen_cols;
     let need_overflow = visible_cells < stages.len();
 
@@ -757,28 +837,60 @@ fn render_very_narrow<'a>(
         (visible_rows, visible_cells, need_overflow)
     };
 
-    // Lay out row-major: cell (r, c) is stages[r * cols + c]. Row-major reads
-    // left-to-right like the wide ribbon, preserving stage order.
+    // Cycle 2 captain feedback: distribute the horizontal slack between the
+    // chosen columns so the grid spans the entire pane width (no large
+    // left-side empty gap under the centered Paragraph alignment).
+    //
+    // Layout math is per-row because rows differ on whether they carry a
+    // wrap_leading (continuation rows) and/or a wrap_trailing (rows that
+    // are followed by more rows in the grid). For each row we compute:
+    //   baseline = wrap_leading_w + N*widest_cell + (N-1)*col_gap + wrap_trailing_w
+    // and distribute (inner_width - baseline) across the inter-cell gaps.
+    // If there are zero gaps (single-cell row), the slack right-pads.
     let col_width = widest_cell;
     let connector_style = Style::default().fg(Color::DarkGray);
     let wrap_trailing = format!(" {}", g.narrow_arrow);
+    let wrap_trailing_w = visible_width(&wrap_trailing);
     let wrap_leading = format!("{} ", g.narrow_arrow);
+    let wrap_leading_w = visible_width(&wrap_leading);
     let mut lines: Vec<Line<'a>> = Vec::with_capacity(visible_rows + 1);
     for r in 0..visible_rows {
+        // How many cells does this row hold?
+        let row_first_idx = r * chosen_cols;
+        let row_last_excl = ((r + 1) * chosen_cols).min(visible_cells).min(cells.len());
+        let n_in_row = row_last_excl.saturating_sub(row_first_idx);
+        if n_in_row == 0 {
+            continue;
+        }
+        let has_lead = r > 0;
+        // A trailing wrap arrow is added only when more stages follow within
+        // the visible portion of the grid.
+        let has_trail = row_last_excl < visible_cells && row_last_excl < cells.len();
+        let lead_w = if has_lead { wrap_leading_w } else { 0 };
+        let trail_w = if has_trail { wrap_trailing_w } else { 0 };
+        let baseline =
+            lead_w + n_in_row * col_width + n_in_row.saturating_sub(1) * col_gap + trail_w;
+        let slack = inner_width.saturating_sub(baseline);
+        let gap_count = n_in_row.saturating_sub(1);
+        let base_extra_gap = slack.checked_div(gap_count).unwrap_or(0);
+        let extra_gap_remainder = slack.checked_rem(gap_count).unwrap_or(0);
+
         let mut spans: Vec<Span<'a>> = Vec::new();
         // Leading wrap indicator on continuation rows so the directed
         // sequence reads across row breaks.
-        if r > 0 {
+        if has_lead {
             spans.push(Span::styled(wrap_leading.clone(), connector_style));
         }
-        let mut last_idx_in_row: Option<usize> = None;
-        for c in 0..chosen_cols {
-            let idx = r * chosen_cols + c;
-            if idx >= cells.len() || idx >= visible_cells {
-                break;
-            }
+        for c in 0..n_in_row {
+            let idx = row_first_idx + c;
             if c > 0 {
-                spans.push(Span::styled(arrow_sep.clone(), connector_style));
+                let extra = base_extra_gap + usize::from(c <= extra_gap_remainder);
+                let sep = if extra == 0 {
+                    arrow_sep.clone()
+                } else {
+                    format!(" {}{} ", " ".repeat(extra), g.narrow_arrow)
+                };
+                spans.push(Span::styled(sep, connector_style));
             }
             let cell = &cells[idx];
             let pad = col_width.saturating_sub(visible_width(cell));
@@ -793,13 +905,16 @@ fn render_very_narrow<'a>(
             if pad > 0 {
                 spans.push(Span::raw(" ".repeat(pad)));
             }
-            last_idx_in_row = Some(idx);
         }
-        // Trailing wrap indicator when more stages follow on subsequent rows.
-        if let Some(last) = last_idx_in_row {
-            let more_in_grid = last + 1 < visible_cells && last + 1 < cells.len();
-            if more_in_grid {
-                spans.push(Span::styled(wrap_trailing.clone(), connector_style));
+        if has_trail {
+            spans.push(Span::styled(wrap_trailing.clone(), connector_style));
+        }
+        // Single-cell rows (n_in_row == 1): right-pad to span inner_width.
+        if gap_count == 0 {
+            let total = lead_w + col_width + trail_w;
+            let pad_right = inner_width.saturating_sub(total);
+            if pad_right > 0 {
+                spans.push(Span::raw(" ".repeat(pad_right)));
             }
         }
         lines.push(Line::from(spans));
@@ -839,9 +954,9 @@ fn render_very_narrow<'a>(
         )));
     }
 
-    // Feedback annotations: include if any room remains for them. Helpful when
-    // the workflow has rejection paths.
-    let fb_parts = feedback_annotations(stages, g);
+    // Feedback annotations live on a reserved trailing line so the
+    // ↩ rollback notice is always visible when the workflow declares
+    // `feedback-to:` paths (matches Narrow tier behaviour).
     if !fb_parts.is_empty() {
         lines.push(Line::from(fb_parts.join(", ")));
     }

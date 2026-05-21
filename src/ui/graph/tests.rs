@@ -867,6 +867,217 @@ fn very_narrow_tier_colors_each_stage_name_per_stage() {
     );
 }
 
+/// Cycle 2 captain feedback (ask #1): the wrapped Narrow renderer must
+/// distribute its slack across the inter-stage gaps so every row spans the
+/// inner pane width. We exercise `render_narrow` directly (the 12-stage
+/// fixture's narrow_summary is so long that `pick_width_tier` would route
+/// it to VeryNarrow rather than Narrow at realistic widths — the captain's
+/// ask still applies to the Narrow renderer code path, which is reachable
+/// for any workflow whose narrow_summary fits but whose wide ribbon doesn't).
+#[test]
+fn narrow_tier_uses_full_pane_width() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/narrow-fullwidth"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // Force wrapping by choosing an inner_width well below the narrow_summary
+    // width (~154 chars for the 12-stage research fixture).
+    let inner_width = 80usize;
+    let lines = render_narrow(&stages, &counts, None, &g, inner_width, &definition);
+    // Skip the trailing feedback-annotation line (if any) by only checking
+    // lines that contain at least one stage name.
+    let stage_lines: Vec<&Line<'_>> = lines
+        .iter()
+        .filter(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+        })
+        .collect();
+    assert!(
+        stage_lines.len() >= 2,
+        "narrow renderer must wrap onto multiple rows at inner_width=80; \
+         got {} stage-bearing rows",
+        stage_lines.len()
+    );
+    let budget = 4usize;
+    for (i, line) in stage_lines.iter().enumerate() {
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let trim_end = text.trim_end();
+        let last_content_col = trim_end.chars().count();
+        // The full visible_width must reach near inner_width (the slack
+        // distributor leaves at most one leftover col per row after gap
+        // expansion).
+        let slack_cols = inner_width.saturating_sub(last_content_col);
+        assert!(
+            slack_cols <= budget,
+            "narrow row {i} leaves {slack_cols} trailing whitespace cols \
+             (budget={budget}, inner_width={inner_width}); row={text:?}"
+        );
+        // And the total line width must span the pane (gap distribution +
+        // any trailing padding combined).
+        let total_width: usize = line.spans.iter().map(|s| visible_width(&s.content)).sum();
+        assert_eq!(
+            total_width, inner_width,
+            "narrow row {i} total visible_width={total_width} does not span inner_width={inner_width}"
+        );
+    }
+}
+
+/// Cycle 2 captain feedback (ask #1): the VeryNarrow multi-column grid must
+/// distribute its slack across columns so the grid spans the inner pane
+/// width. We exercise `render_very_narrow` directly with the 12-stage
+/// research fixture and assert that every line spans inner_width.
+#[test]
+fn very_narrow_tier_uses_full_pane_width() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/vnarrow-fullwidth"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    let inner_width = 40usize;
+    let inner_height = 18usize;
+    let lines = render_very_narrow(
+        &stages,
+        &counts,
+        None,
+        &g,
+        inner_width,
+        inner_height,
+        &definition,
+    );
+    // Identify the rows that contain stage names (skip any overflow/feedback
+    // tail lines).
+    let stage_lines: Vec<&Line<'_>> = lines
+        .iter()
+        .filter(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+                && !text.contains("rollback on reject")
+                && !text.starts_with('+')
+        })
+        .collect();
+    assert!(
+        !stage_lines.is_empty(),
+        "expected stage-bearing lines in very-narrow output"
+    );
+    for (i, line) in stage_lines.iter().enumerate() {
+        let total_width: usize = line.spans.iter().map(|s| visible_width(&s.content)).sum();
+        assert_eq!(
+            total_width, inner_width,
+            "very-narrow row {i} total visible_width={total_width} does not span inner_width={inner_width}"
+        );
+        // And the rightmost non-space cell must land close to inner_width.
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let trim_end = text.trim_end();
+        let last_content_col = trim_end.chars().count();
+        let slack_cols = inner_width.saturating_sub(last_content_col);
+        // Each row ends in either the last cell content or a trailing wrap
+        // arrow; the only trailing whitespace is the right-pad of the last
+        // cell up to col_width. The widest cell is ~14 chars; allow a small
+        // budget reflecting the natural cell padding (worst case ~9 for
+        // narrow stage names like "run (0)" inside a 14-char column).
+        let budget = 12usize;
+        assert!(
+            slack_cols <= budget,
+            "very-narrow row {i} leaves {slack_cols} trailing whitespace cols \
+             (budget={budget}); row={text:?}"
+        );
+    }
+}
+
+/// Cycle 2 captain feedback (ask #2): the VeryNarrow tier must render the
+/// `↩ rollback on reject: review → implement` annotation when the workflow
+/// declares a `feedback-to:` path. The grid height budget must reserve room
+/// for this line BEFORE deciding how many stage rows fit.
+#[test]
+fn very_narrow_tier_renders_feedback_rollback_annotation() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    // Build a research-like 12-stage workflow with `review` declaring
+    // `feedback-to: implement` (matches the real research workflow).
+    let root = PathBuf::from("/tmp/spacetop-research-rb");
+    let names = [
+        "pending", "scoping", "ideate", "implement", "review", "smoke",
+        "run", "analyze", "promote", "expanded", "ideated", "done",
+    ];
+    let stages: Vec<StageDefinition> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done";
+            // `review` points its feedback edge back at `implement`.
+            let fb = if *n == "review" {
+                Some("implement")
+            } else {
+                None
+            };
+            stage(n, initial, terminal, false, false, fb)
+        })
+        .collect();
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+    };
+    let app = App::from_snapshot(root, snapshot);
+    // 40x20 forces VeryNarrow with a grid that has room for the annotation.
+    let rendered = render_to_string(&app, 40, 20);
+    assert!(
+        rendered.contains("rollback on reject"),
+        "VeryNarrow tier must render the feedback rollback annotation; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains("review") && rendered.contains("implement"),
+        "rollback annotation must name source and target stages; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{21B6}'),
+        "rollback annotation must use the ↩ feedback glyph; rendered=\n{rendered}"
+    );
+}
+
 #[allow(dead_code)]
 fn make_item(id: &str, status: &str, title: &str) -> WorkItem {
     WorkItem {
