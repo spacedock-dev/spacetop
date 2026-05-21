@@ -1,13 +1,13 @@
 ---
 id: "042"
 title: One malformed-frontmatter entity crashes the entire workflow load
-status: plan
+status: implement
 source: captain
 started: 2026-05-21T04:42:27Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-042-malformed-frontmatter-crashes-workflow-load
 issue:
 pr:
 ---
