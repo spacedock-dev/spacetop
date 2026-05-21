@@ -17,6 +17,38 @@ use crate::domain::{StageDefinition, WorkflowDefinition};
 
 const ASCII_ENV_VAR: &str = "SPACETOP_ASCII";
 const MAX_FEEDBACK_ROWS: usize = 2;
+/// Number of blank padding lines inserted between consecutive stage rows in
+/// the wrapped Narrow tier and the VeryNarrow multi-column grid (cycle 3
+/// captain feedback). Pure spacers — no glyph.
+const INTER_ROW_PADDING_LINES: usize = 3;
+
+/// Compute the usable horizontal budget for the stage graph: roughly 90% of
+/// the inner pane width, with a floor that lets very narrow panes still
+/// consume what they can (cycle 3 captain feedback). The remaining 10%
+/// becomes a left/right margin around the rendered graph.
+fn usable_inner_width(inner_width: usize) -> usize {
+    if inner_width < 20 {
+        // For tiny panes (<20 cols), do not steal columns for a margin —
+        // every cell already counts. Returns inner_width so margins are 0.
+        inner_width
+    } else {
+        // inner_width * 9 / 10, with a hard guarantee that the budget is at
+        // least 1 col less than inner_width so margins are non-zero on
+        // realistic pane sizes (inner_width >= 20 => usable <= 18).
+        let budget = inner_width.saturating_mul(9) / 10;
+        budget.min(inner_width.saturating_sub(2)).max(1)
+    }
+}
+
+/// Returns `(left, right)` horizontal margin widths so that
+/// `left + usable_width + right == inner_width`. The slack splits evenly,
+/// with any odd extra column going to the right margin.
+fn horizontal_margins(inner_width: usize, usable_width: usize) -> (usize, usize) {
+    let slack = inner_width.saturating_sub(usable_width);
+    let left = slack / 2;
+    let right = slack - left;
+    (left, right)
+}
 
 /// Render the workflow stage graph into `area`.
 ///
@@ -70,7 +102,11 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
     // height minus the two horizontal borders.
     let inner_width = area.width as usize;
     let inner_height = (area.height as usize).saturating_sub(2).max(1);
-    let tier = pick_width_tier(inner_width, stages, &counts, &glyphs);
+    // Cycle 3: the wrapping tiers render into roughly 90% of inner_width with
+    // the remaining 10% used as left+right margin. Thread the same budget
+    // through `pick_width_tier` so the tier decision and the renderer agree.
+    let usable_width = usable_inner_width(inner_width);
+    let tier = pick_width_tier(usable_width, stages, &counts, &glyphs);
 
     let definition = &state.snapshot().definition;
     let lines = match tier {
@@ -545,6 +581,14 @@ fn render_narrow<'a>(
     // distributed across the inter-stage arrows so the row content spans
     // the full inner_width (no large empty gap on the right with the
     // centered Paragraph alignment).
+    // Cycle 3: render into ~90% of inner_width with the remaining 10% used
+    // as left+right margin. All wrap/slack math operates on `usable_width`;
+    // the line is then framed by left/right blank spans so the total visible
+    // width still equals `inner_width` (the Paragraph uses Alignment::Center
+    // — making the line exactly inner_width keeps centering a no-op).
+    let usable_width = usable_inner_width(inner_width);
+    let (left_margin, right_margin) = horizontal_margins(inner_width, usable_width);
+
     let arrow_sep = format!(" {} ", g.narrow_arrow);
     let arrow_w = visible_width(&arrow_sep);
     let wrap_trailing = format!(" {}", g.narrow_arrow);
@@ -604,10 +648,10 @@ fn render_narrow<'a>(
         } else {
             cur_width + seg.total_width
         };
-        if need_arrow && candidate > inner_width {
+        if need_arrow && candidate > usable_width {
             // Wrap. Close out the current row with a trailing wrap arrow if
             // there's room.
-            let has_trailing = cur_width + wrap_trailing_w <= inner_width;
+            let has_trailing = cur_width + wrap_trailing_w <= usable_width;
             let final_width = cur_width + if has_trailing { wrap_trailing_w } else { 0 };
             rows.push(RowPlan {
                 first_seg: cur_first,
@@ -620,7 +664,7 @@ fn render_narrow<'a>(
             cur_first = i;
             cur_last = None;
             cur_width = 0;
-            cur_leading = wrap_leading_w + seg.total_width <= inner_width;
+            cur_leading = wrap_leading_w + seg.total_width <= usable_width;
             if cur_leading {
                 cur_width += wrap_leading_w;
             }
@@ -642,19 +686,25 @@ fn render_narrow<'a>(
     }
 
     let connector_style = Style::default().fg(Color::DarkGray);
-    let mut lines: Vec<Line<'a>> = Vec::with_capacity(rows.len() + 1);
+    let mut lines: Vec<Line<'a>> = Vec::with_capacity(rows.len() * (1 + INTER_ROW_PADDING_LINES));
 
-    for plan in &rows {
+    let last_row_idx = rows.len().saturating_sub(1);
+    for (row_idx, plan) in rows.iter().enumerate() {
         // Distribute slack across the inter-stage arrows in this row so the
-        // row spans inner_width. Each gap absorbs `slack / gap_count` extra
+        // row spans usable_width. Each gap absorbs `slack / gap_count` extra
         // spaces; the first `slack % gap_count` gaps absorb one more.
         let segs_in_row = plan.last_seg - plan.first_seg + 1;
         let gap_count = segs_in_row.saturating_sub(1);
-        let slack = inner_width.saturating_sub(plan.content_width);
+        let slack = usable_width.saturating_sub(plan.content_width);
         let base_extra = slack.checked_div(gap_count).unwrap_or(0);
         let extra_remainder = slack.checked_rem(gap_count).unwrap_or(0);
 
         let mut spans: Vec<Span<'a>> = Vec::new();
+        // Left margin: blank padding so the graph isn't flush against the
+        // pane edge (cycle 3 captain feedback).
+        if left_margin > 0 {
+            spans.push(Span::raw(" ".repeat(left_margin)));
+        }
         if plan.has_wrap_leading {
             spans.push(Span::styled(wrap_leading.clone(), connector_style));
         }
@@ -683,15 +733,30 @@ fn render_narrow<'a>(
         }
         // If there are no gaps to absorb slack (single-segment row) or the
         // gap count is zero, fall back to right-padding the row so the
-        // Paragraph's center alignment becomes a no-op (visible_width ==
-        // inner_width => left-anchored at column 0).
+        // row content occupies usable_width.
         if gap_count == 0 {
-            let pad = inner_width.saturating_sub(plan.content_width);
+            let pad = usable_width.saturating_sub(plan.content_width);
             if pad > 0 {
                 spans.push(Span::raw(" ".repeat(pad)));
             }
         }
+        // Right margin: keeps total span width == inner_width so the
+        // centered Paragraph stays neutral and the graph sits inside a
+        // visible right-side margin.
+        if right_margin > 0 {
+            spans.push(Span::raw(" ".repeat(right_margin)));
+        }
         lines.push(Line::from(spans));
+
+        // Inter-row vertical padding: >=3 blank spacer lines between any two
+        // stage-bearing rows (cycle 3 captain feedback). Skip after the last
+        // row so the feedback-annotation tail line still sits adjacent to
+        // the final stage row.
+        if row_idx < last_row_idx {
+            for _ in 0..INTER_ROW_PADDING_LINES {
+                lines.push(Line::default());
+            }
+        }
     }
 
     let fb_parts = feedback_annotations(stages, g);
@@ -761,6 +826,13 @@ fn render_very_narrow<'a>(
         return Vec::new();
     }
 
+    // Cycle 3: render into ~90% of inner_width with the remaining 10% used
+    // as left+right margin. Slack distribution + width-driven column count
+    // both operate on `usable_width`; each emitted line is then framed by
+    // left/right blank spans so the total visible width equals inner_width.
+    let usable_width = usable_inner_width(inner_width);
+    let (left_margin, right_margin) = horizontal_margins(inner_width, usable_width);
+
     // Cycle 2 captain feedback: feedback-annotation lines (e.g.
     // `↩ rollback on reject: review → implement`) must be rendered in the
     // VeryNarrow tier too, AND the grid height budget must subtract those
@@ -784,24 +856,33 @@ fn render_very_narrow<'a>(
     // search column counts from many to few so we maximise stages-per-row when
     // the pane is short.
     let widest_cell = cells.iter().map(|s| visible_width(s)).max().unwrap_or(1);
-    let max_cols_by_width = if inner_width == 0 {
+    let max_cols_by_width = if usable_width == 0 {
         1
     } else {
-        ((inner_width + col_gap) / (widest_cell + col_gap)).max(1)
+        ((usable_width + col_gap) / (widest_cell + col_gap)).max(1)
     };
     let max_cols = max_cols_by_width.min(stages.len());
 
+    // Cycle 3 captain feedback: subtract inter-row blank padding from the
+    // grid's row budget BEFORE choosing how many rows fit. Each pair of
+    // consecutive stage rows costs `INTER_ROW_PADDING_LINES` extra lines, so
+    // `R` stage rows actually occupy `R + (R-1) * pad` lines.  Solve for
+    // the max R: `R_max = floor((budget + pad) / (1 + pad))`.
+    let pad_lines = INTER_ROW_PADDING_LINES;
+    let max_rows_with_padding = grid_height_budget
+        .saturating_add(pad_lines)
+        .checked_div(1 + pad_lines)
+        .unwrap_or(1)
+        .max(1);
+
     // For each candidate column count, compute the row count and pick the
-    // largest column count that still fits within grid_height_budget. We
-    // prefer using more of the pane width over fewer columns (captain
-    // feedback cycle 2): a 12-stage workflow at width 100 with height 12
-    // would otherwise pick 1 column and leave the entire right half blank.
+    // largest column count that still fits within `max_rows_with_padding`.
     let mut chosen_cols = 1usize;
     let mut chosen_rows = stages.len();
     let mut found = false;
     for cols in (1..=max_cols).rev() {
         let rows = stages.len().div_ceil(cols);
-        if rows <= grid_height_budget {
+        if rows <= max_rows_with_padding {
             chosen_cols = cols;
             chosen_rows = rows;
             found = true;
@@ -818,12 +899,12 @@ fn render_very_narrow<'a>(
     // If even the densest tried layout doesn't fit, fall back to the maximum
     // columns and let overflow logic trim. We may also need to leave a line
     // for the overflow indicator.
-    if chosen_rows > grid_height_budget {
+    if chosen_rows > max_rows_with_padding {
         chosen_cols = max_cols;
         chosen_rows = stages.len().div_ceil(chosen_cols);
     }
 
-    let visible_rows = chosen_rows.min(grid_height_budget);
+    let visible_rows = chosen_rows.min(max_rows_with_padding);
     let visible_cells = visible_rows * chosen_cols;
     let need_overflow = visible_cells < stages.len();
 
@@ -853,7 +934,11 @@ fn render_very_narrow<'a>(
     let wrap_trailing_w = visible_width(&wrap_trailing);
     let wrap_leading = format!("{} ", g.narrow_arrow);
     let wrap_leading_w = visible_width(&wrap_leading);
-    let mut lines: Vec<Line<'a>> = Vec::with_capacity(visible_rows + 1);
+    let mut lines: Vec<Line<'a>> =
+        Vec::with_capacity(visible_rows * (1 + INTER_ROW_PADDING_LINES) + 2);
+    // Track the last rendered stage row index so we know where to insert
+    // inter-row padding (cycle 3 captain feedback).
+    let mut last_stage_row_pushed: Option<usize> = None;
     for r in 0..visible_rows {
         // How many cells does this row hold?
         let row_first_idx = r * chosen_cols;
@@ -862,6 +947,14 @@ fn render_very_narrow<'a>(
         if n_in_row == 0 {
             continue;
         }
+        // Inter-row blank padding before every stage row except the first
+        // rendered one. Pure spacers — no glyph.
+        if last_stage_row_pushed.is_some() {
+            for _ in 0..INTER_ROW_PADDING_LINES {
+                lines.push(Line::default());
+            }
+        }
+
         let has_lead = r > 0;
         // A trailing wrap arrow is added only when more stages follow within
         // the visible portion of the grid.
@@ -870,12 +963,16 @@ fn render_very_narrow<'a>(
         let trail_w = if has_trail { wrap_trailing_w } else { 0 };
         let baseline =
             lead_w + n_in_row * col_width + n_in_row.saturating_sub(1) * col_gap + trail_w;
-        let slack = inner_width.saturating_sub(baseline);
+        let slack = usable_width.saturating_sub(baseline);
         let gap_count = n_in_row.saturating_sub(1);
         let base_extra_gap = slack.checked_div(gap_count).unwrap_or(0);
         let extra_gap_remainder = slack.checked_rem(gap_count).unwrap_or(0);
 
         let mut spans: Vec<Span<'a>> = Vec::new();
+        // Left margin: cycle 3 captain feedback.
+        if left_margin > 0 {
+            spans.push(Span::raw(" ".repeat(left_margin)));
+        }
         // Leading wrap indicator on continuation rows so the directed
         // sequence reads across row breaks.
         if has_lead {
@@ -909,15 +1006,20 @@ fn render_very_narrow<'a>(
         if has_trail {
             spans.push(Span::styled(wrap_trailing.clone(), connector_style));
         }
-        // Single-cell rows (n_in_row == 1): right-pad to span inner_width.
+        // Single-cell rows (n_in_row == 1): right-pad to span usable_width.
         if gap_count == 0 {
             let total = lead_w + col_width + trail_w;
-            let pad_right = inner_width.saturating_sub(total);
+            let pad_right = usable_width.saturating_sub(total);
             if pad_right > 0 {
                 spans.push(Span::raw(" ".repeat(pad_right)));
             }
         }
+        // Right margin: cycle 3 captain feedback.
+        if right_margin > 0 {
+            spans.push(Span::raw(" ".repeat(right_margin)));
+        }
         lines.push(Line::from(spans));
+        last_stage_row_pushed = Some(r);
     }
 
     if need_overflow {
