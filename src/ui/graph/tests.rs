@@ -86,7 +86,7 @@ fn glyphs_for_respects_ascii_flag() {
 fn layout_columns_places_initial_marker_on_first_stage() {
     let g = glyphs_for(false);
     let stages = vec![stage("design", true, false, false, false, None)];
-    let cols = layout_columns(&stages, &[0], None, &g);
+    let cols = dag_layout_columns(&stages, &[0], None, &g);
     assert!(cols[0].node_text.starts_with("\u{25B6}"));
 }
 
@@ -94,7 +94,7 @@ fn layout_columns_places_initial_marker_on_first_stage() {
 fn layout_columns_places_terminal_marker_on_last_stage() {
     let g = glyphs_for(false);
     let stages = vec![stage("done", false, true, false, false, None)];
-    let cols = layout_columns(&stages, &[0], None, &g);
+    let cols = dag_layout_columns(&stages, &[0], None, &g);
     assert!(cols[0].node_text.ends_with("\u{25A0}"));
 }
 
@@ -104,7 +104,7 @@ fn layout_columns_single_glyph_per_stage_initial_takes_priority() {
     // A stage that is initial, gate, and worktree should display only ▶.
     let g = glyphs_for(false);
     let stages = vec![stage("x", true, true, true, true, None)];
-    let cols = layout_columns(&stages, &[0], None, &g);
+    let cols = dag_layout_columns(&stages, &[0], None, &g);
     let t = &cols[0].node_text;
     // Must contain initial glyph ▶, name 'x', and terminal ■.
     assert!(t.contains('\u{25B6}'), "missing initial glyph ▶");
@@ -1534,6 +1534,252 @@ fn very_narrow_tier_last_row_does_not_end_with_arrow() {
         !last_overflow_row_text.trim_end().ends_with('\u{2192}'),
         "very-narrow tier's final visible stage row must not end with a `→` \
          even when an overflow indicator follows; got {last_overflow_row_text:?}"
+    );
+}
+
+// --- Entity 010: ASCII DAG renderer ---
+
+/// Build the 4-stage `spacetop-ui` fixture used by entity 010 ACs:
+/// design (initial) → implement (worktree) → review (gate, feedback-to:
+/// implement) → done (terminal).
+fn spacetop_ui_workflow() -> App {
+    let root = PathBuf::from("/tmp/spacetop-ui-dag");
+    let stages = vec![
+        stage("design", true, false, false, false, None),
+        stage("implement", false, false, false, true, None),
+        stage("review", false, false, true, false, Some("implement")),
+        stage("done", false, true, false, false, None),
+    ];
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+        parse_errors: Vec::new(),
+    };
+    App::from_snapshot(root, snapshot)
+}
+
+/// AC-1: the 4-stage spacetop-ui fixture renders with drawn line-drawing
+/// edges between adjacent stage nodes (── horizontal fill and ▶/► arrowhead),
+/// not as a plain text separator. AC-2: a drawn feedback arc from
+/// `review → implement` carries the box-drawing corner glyphs ╰/╯ plus the
+/// vertical bar │ and the up arrowhead ↑ — collectively, line-drawing
+/// geometry the eye reads as a looping edge.
+#[test]
+fn dag_spacetop_ui_renders_drawn_edges_and_feedback_arc() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = spacetop_ui_workflow();
+    // 100x10 is wide enough for the DAG tier to fit the 4-stage chain.
+    let rendered = render_to_string(&app, 100, 10);
+
+    // AC-1: forward edges are drawn with ─ and ▶ (the wide-tier `──▶`
+    // glyph). Both line-drawing chars must be present.
+    assert!(
+        rendered.contains('\u{2500}'),
+        "DAG must draw horizontal edges (─) between adjacent nodes; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{25BA}'),
+        "DAG must draw forward arrowhead (►) between adjacent nodes; rendered=\n{rendered}"
+    );
+
+    // AC-2: the review → implement feedback edge renders as a drawn arc
+    // with rounded corners + vertical bar + up arrowhead.
+    assert!(
+        rendered.contains('\u{2570}') && rendered.contains('\u{256F}'),
+        "feedback arc must render with rounded corners ╰ and ╯; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{2502}'),
+        "feedback arc must render with vertical bar │; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{2191}'),
+        "feedback arc must point its arrowhead ↑ at the target column; rendered=\n{rendered}"
+    );
+}
+
+/// AC-2: the DAG tier must NOT emit the legacy `↩ rollback on reject: ...`
+/// footer annotation — that text only appears in the wrapped Narrow /
+/// VeryNarrow fallback tiers where the arc cannot be drawn.
+#[test]
+fn dag_does_not_render_rollback_footer_when_arc_is_drawn() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = spacetop_ui_workflow();
+    let rendered = render_to_string(&app, 100, 10);
+    // The arc must be drawn (sanity check — exercises the DAG tier path).
+    assert!(
+        rendered.contains('\u{2570}'),
+        "expected DAG tier to draw the arc at width=100; rendered=\n{rendered}"
+    );
+    // The legacy textual footer must be absent in DAG mode.
+    assert!(
+        !rendered.contains("rollback on reject"),
+        "DAG tier must not emit the `↩ rollback on reject:` footer when the \
+         arc is drawn; rendered=\n{rendered}"
+    );
+    assert!(
+        !rendered.contains('\u{21B6}'),
+        "DAG tier must not emit the ↩ feedback footer glyph when the arc is \
+         drawn; rendered=\n{rendered}"
+    );
+}
+
+/// AC-3: the 12-stage research fixture, when constrained, either fits in the
+/// 90% width-margin or surfaces an explicit `+N hidden:` overflow indicator
+/// naming the hidden stages — matching the 009 overflow-naming pattern. The
+/// DAG renderer delegates to the wrapped fallback when it cannot fit, which
+/// is what the captain-confirmed degraded-mode behaviour requires.
+#[test]
+fn dag_twelve_stage_research_fits_or_names_hidden_stages() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // A representative cramped pane: 80x7 inner (matches the overview-layout
+    // graph pane). 12 inline `name(count)` nodes do NOT fit on one row at
+    // 90% of 80 cols, so the renderer falls back to the wrapped tier.
+    let rendered = render_to_string(&app, 80, 7);
+    for name in RESEARCH_STAGES {
+        if rendered.contains(name) {
+            continue;
+        }
+        assert!(
+            rendered.contains("hidden:"),
+            "stage {name} missing and no `+N hidden:` overflow indicator present; \
+             rendered=\n{rendered}"
+        );
+        assert!(
+            rendered.contains(name),
+            "stage {name} not in visible cells nor named by overflow indicator"
+        );
+    }
+}
+
+/// AC-4: every stage span in the DAG tier carries `stage_color_for(name)` +
+/// BOLD, and the active stage layers REVERSED on top.
+#[test]
+fn dag_each_stage_span_carries_per_stage_color_and_bold() {
+    let g = glyphs_for(false);
+    let stages = vec![
+        stage("design", true, false, false, false, None),
+        stage("implement", false, false, false, true, None),
+        stage("review", false, false, true, false, Some("implement")),
+        stage("done", false, true, false, false, None),
+    ];
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/dag-colors"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // Active stage is `implement` so we can also assert REVERSED.
+    let lines = render_dag(&stages, &counts, Some("implement"), &g, 100, &definition);
+
+    let mut colored_seen: usize = 0;
+    let mut active_reversed = false;
+    for line in &lines {
+        for span in &line.spans {
+            for s in &stages {
+                if span.content.contains(&s.name) {
+                    let expected = definition.stage_color_for(&s.name);
+                    if span.style.fg == Some(expected)
+                        && span.style.add_modifier.contains(Modifier::BOLD)
+                    {
+                        colored_seen += 1;
+                        if s.name == "implement"
+                            && span.style.add_modifier.contains(Modifier::REVERSED)
+                        {
+                            active_reversed = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        colored_seen >= stages.len(),
+        "expected every DAG stage span to carry stage_color_for + BOLD; \
+         found {colored_seen} of {} (lines={lines:?})",
+        stages.len()
+    );
+    assert!(
+        active_reversed,
+        "active stage span must carry REVERSED on top of color+BOLD"
+    );
+}
+
+/// AC-5: short workflow readability. The 4-stage spacetop-ui DAG must show
+/// every stage name + its (count) suffix + the feedback edge from `review`
+/// to `implement`, and the rendered height stays within a tight bound. We
+/// pin the bound at 4 lines: 1 chain row + 2 arc rows + at most 1 spare.
+#[test]
+fn dag_short_workflow_stays_within_height_bound() {
+    let g = glyphs_for(false);
+    let stages = vec![
+        stage("design", true, false, false, false, None),
+        stage("implement", false, false, false, true, None),
+        stage("review", false, false, true, false, Some("implement")),
+        stage("done", false, true, false, false, None),
+    ];
+    let counts = vec![0usize, 0, 0, 0];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/dag-short"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    let lines = render_dag(&stages, &counts, None, &g, 100, &definition);
+    // Height bound for the short-workflow case: one chain row + one arc
+    // (two-line: label + arc) = 3 lines.
+    assert!(
+        lines.len() <= 4,
+        "DAG height for 4-stage workflow must be <=4 lines; got {} lines: {:?}",
+        lines.len(),
+        lines
+    );
+    // Every stage name + its (count) suffix must appear.
+    let joined: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+        .collect();
+    for s in &stages {
+        assert!(
+            joined.contains(&s.name),
+            "DAG must show stage {} in short workflow; rendered={joined}",
+            s.name
+        );
+    }
+    assert!(
+        joined.contains("(0)"),
+        "DAG must inline (count) into the node text; rendered={joined}"
+    );
+    // The feedback arc must be present (review → implement).
+    assert!(
+        joined.contains('\u{2570}') && joined.contains('\u{256F}'),
+        "feedback arc corners must be drawn; rendered={joined}"
+    );
+    assert!(
+        !joined.contains("rollback on reject"),
+        "DAG tier must not emit the legacy footer; rendered={joined}"
     );
 }
 

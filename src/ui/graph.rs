@@ -111,11 +111,12 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
 
     let definition = &state.snapshot().definition;
     let lines = match tier {
-        WidthTier::Wide => render_wide(
+        WidthTier::Wide => render_dag(
             stages,
             &counts,
             active_stage.as_deref(),
             &glyphs,
+            inner_width,
             definition,
         ),
         WidthTier::Narrow => render_narrow(
@@ -210,9 +211,9 @@ struct ColumnLayout {
     node_text: String,
     /// Byte column where the node text starts in the ribbon line.
     start_col: usize,
-    /// Column where the centre of the stage name sits (for counts alignment).
+    /// Column where the centre of the stage name sits (used by feedback-arc
+    /// geometry to anchor `╰`/`╯` corners and `↑` arrowheads).
     name_center: usize,
-    count: usize,
     is_active: bool,
 }
 
@@ -241,43 +242,6 @@ fn build_node_text(stage: &StageDefinition, g: &GlyphSet) -> String {
     parts.join(" ")
 }
 
-fn layout_columns(
-    stages: &[StageDefinition],
-    counts: &[usize],
-    active: Option<&str>,
-    g: &GlyphSet,
-) -> Vec<ColumnLayout> {
-    let separator = format!(" {} ", g.forward_arrow);
-    let sep_width = visible_width(&separator);
-
-    let mut out = Vec::with_capacity(stages.len());
-    let mut cursor = 0usize;
-    for (i, stage) in stages.iter().enumerate() {
-        if i > 0 {
-            cursor += sep_width;
-        }
-        let node_text = build_node_text(stage, g);
-        let width = visible_width(&node_text);
-        let start_col = cursor;
-        // Center of the stage name (not markers). Approximate by offsetting from
-        // the trailing end: node text is `{leading} {name} {terminal?}`. Name
-        // center ≈ node center; alignment target for counts.
-        let name_center = start_col + width / 2;
-        let count = counts.get(i).copied().unwrap_or(0);
-        let is_active = active.map(|s| s == stage.name).unwrap_or(false);
-        out.push(ColumnLayout {
-            stage_name: stage.name.clone(),
-            node_text,
-            start_col,
-            name_center,
-            count,
-            is_active,
-        });
-        cursor += width;
-    }
-    out
-}
-
 fn visible_width(s: &str) -> usize {
     // We only use BMP glyphs; char count is a good proxy (one column per char).
     s.chars().count()
@@ -292,12 +256,14 @@ fn pick_width_tier(
     if inner_width == 0 {
         return WidthTier::VeryNarrow;
     }
-    let columns = layout_columns(stages, counts, None, g);
-    let wide_width = columns
+    // DAG tier: inline `name(count)` nodes connected by forward arrows must
+    // fit on a single row within the usable inner-width budget.
+    let columns = dag_layout_columns(stages, counts, None, g);
+    let dag_width = columns
         .last()
         .map(|c| c.start_col + visible_width(&c.node_text))
         .unwrap_or(0);
-    if wide_width <= inner_width {
+    if dag_width <= inner_width {
         return WidthTier::Wide;
     }
 
@@ -323,21 +289,114 @@ fn narrow_summary(stages: &[StageDefinition], counts: &[usize], g: &GlyphSet) ->
     parts.join(&format!(" {} ", g.narrow_arrow))
 }
 
-fn render_wide<'a>(
+/// Build the inline DAG node text for a stage: `{leading?} {name}({count}){terminal?}`.
+///
+/// The DAG tier (entity 010) collapses the previous separate "counts row"
+/// into the node text so each stage reads as a single self-contained
+/// `name(count)` node connected by drawn `──▶` edges. Markers (initial /
+/// gate / worktree / terminal) keep the same single-glyph-per-stage rule
+/// from `build_node_text` so the existing marker tests still hold.
+fn build_dag_node_text(stage: &StageDefinition, count: usize, g: &GlyphSet) -> String {
+    let leading: Option<&str> = if stage.initial {
+        Some(g.initial)
+    } else if stage.gate {
+        Some(g.gate)
+    } else if stage.worktree {
+        Some(g.worktree)
+    } else {
+        None
+    };
+    let mut text = String::new();
+    if let Some(glyph) = leading {
+        text.push_str(glyph);
+        text.push(' ');
+    }
+    text.push_str(&stage.name);
+    text.push('(');
+    text.push_str(&count.to_string());
+    text.push(')');
+    if stage.terminal {
+        text.push(' ');
+        text.push_str(g.terminal);
+    }
+    text
+}
+
+/// Layout columns for the DAG tier. Identical in shape to `layout_columns`
+/// but uses `build_dag_node_text` so the per-column width accounts for the
+/// inline `(count)` suffix.
+fn dag_layout_columns(
+    stages: &[StageDefinition],
+    counts: &[usize],
+    active: Option<&str>,
+    g: &GlyphSet,
+) -> Vec<ColumnLayout> {
+    let separator = format!(" {} ", g.forward_arrow);
+    let sep_width = visible_width(&separator);
+
+    let mut out = Vec::with_capacity(stages.len());
+    let mut cursor = 0usize;
+    for (i, stage) in stages.iter().enumerate() {
+        if i > 0 {
+            cursor += sep_width;
+        }
+        let count = counts.get(i).copied().unwrap_or(0);
+        let node_text = build_dag_node_text(stage, count, g);
+        let width = visible_width(&node_text);
+        let start_col = cursor;
+        let name_center = start_col + width / 2;
+        let is_active = active.map(|s| s == stage.name).unwrap_or(false);
+        out.push(ColumnLayout {
+            stage_name: stage.name.clone(),
+            node_text,
+            start_col,
+            name_center,
+            is_active,
+        });
+        cursor += width;
+    }
+    out
+}
+
+/// Render the workflow as a single-row ASCII DAG with line-drawing edges
+/// between stages and feedback arcs drawn UNDER the chain (entity 010).
+///
+/// Layout:
+///   line 1: ` {leading}? name(count) {terminal}? ` ── `──▶` ── ... (the
+///           forward chain, with inline counts collapsed into the node text)
+///   lines 2..N: paired (label, arc) rows for each `feedback-to:` edge
+///
+/// Each stage span carries `stage_color_for(name)` + BOLD; the active stage
+/// also carries REVERSED. Feedback arcs render red.
+///
+/// All lines are right-padded to a uniform width that matches the inner
+/// pane width so the outer `Paragraph::alignment(Center)` is a no-op (the
+/// graph hugs the left margin instead of drifting on wide panes).
+fn render_dag<'a>(
     stages: &'a [StageDefinition],
     counts: &'a [usize],
     active: Option<&str>,
     g: &'a GlyphSet,
+    inner_width: usize,
     definition: &WorkflowDefinition,
 ) -> Vec<Line<'a>> {
-    let cols = layout_columns(stages, counts, active, g);
+    let cols = dag_layout_columns(stages, counts, active, g);
 
-    // Ribbon line — color each node by its stage; arrows stay neutral.
+    // The DAG occupies the leftmost `usable_width` cells of each row so the
+    // centered Paragraph + the 10% right-margin contract stay aligned with
+    // the wrapped tiers (cycle 3 from entity 009).
+    let usable_width = usable_inner_width(inner_width);
+    let (left_margin, right_margin) = horizontal_margins(inner_width, usable_width);
+
+    // Chain line — color each node by its stage; arrows stay neutral.
     let separator = format!(" {} ", g.forward_arrow);
-    let mut ribbon_spans: Vec<Span<'a>> = Vec::new();
+    let mut chain_spans: Vec<Span<'a>> = Vec::new();
+    if left_margin > 0 {
+        chain_spans.push(Span::raw(" ".repeat(left_margin)));
+    }
     for (i, col) in cols.iter().enumerate() {
         if i > 0 {
-            ribbon_spans.push(Span::styled(
+            chain_spans.push(Span::styled(
                 separator.clone(),
                 Style::default().fg(Color::DarkGray),
             ));
@@ -348,18 +407,15 @@ fn render_wide<'a>(
         if col.is_active {
             style = style.add_modifier(Modifier::REVERSED);
         }
-        ribbon_spans.push(Span::styled(col.node_text.clone(), style));
+        chain_spans.push(Span::styled(col.node_text.clone(), style));
     }
 
-    let max_width = cols
+    let chain_width = cols
         .last()
         .map(|c| c.start_col + visible_width(&c.node_text))
         .unwrap_or(0);
 
-    // Counts line: place count string centered under each node's name_center.
-    let counts_line = build_counts_line(&cols);
-
-    // Feedback arcs.
+    // Feedback arcs (drawn under the chain).
     let arcs = collect_feedback_arcs(stages, &cols);
     let capped: Vec<_> = arcs.iter().take(MAX_FEEDBACK_ROWS).collect();
     let arc_pairs: Vec<(String, String)> = capped
@@ -367,120 +423,62 @@ fn render_wide<'a>(
         .map(|arc| render_feedback_row(arc.source_col, arc.target_col, g))
         .collect();
 
-    // All lines must share the same width so the Paragraph's centred alignment
-    // keeps ribbon, counts, arc, and annotation rows aligned with each other.
-    let uniform_width = arc_pairs
-        .iter()
-        .map(|(arc, ann)| visible_width(arc).max(visible_width(ann)))
-        .max()
-        .unwrap_or(0)
-        .max(max_width);
-
-    let pad_len = uniform_width.saturating_sub(max_width);
-    if pad_len > 0 {
-        ribbon_spans.push(Span::raw(" ".repeat(pad_len)));
+    // All emitted lines share the same width so centered alignment is neutral.
+    let target_inner = inner_width.max(usable_width);
+    let chain_total = left_margin + chain_width;
+    let chain_pad = target_inner.saturating_sub(chain_total);
+    if chain_pad > 0 {
+        chain_spans.push(Span::raw(" ".repeat(chain_pad)));
+    } else if right_margin > 0 {
+        chain_spans.push(Span::raw(" ".repeat(right_margin)));
     }
-    let padded_counts = format!("{counts_line}{}", " ".repeat(pad_len));
-    let counts_spans = style_counts_spans(&cols, &padded_counts);
 
     let mut lines: Vec<Line<'a>> = Vec::new();
-    lines.push(Line::from(ribbon_spans));
-    lines.push(Line::from(counts_spans));
+    lines.push(Line::from(chain_spans));
 
     let arc_style = Style::default().fg(Color::Red);
     for (arc_line, ann_line) in arc_pairs {
-        lines.extend(padded_feedback_lines(
-            arc_line,
-            ann_line,
-            uniform_width,
-            arc_style,
-        ));
+        lines.push(dag_arc_line(&ann_line, left_margin, target_inner, arc_style));
+        lines.push(dag_arc_line(&arc_line, left_margin, target_inner, arc_style));
     }
     if arcs.len() > MAX_FEEDBACK_ROWS {
         let overflow = arcs.len() - MAX_FEEDBACK_ROWS;
-        lines.push(Line::from(format!("+{overflow} more feedback edges")));
+        let text = format!("+{overflow} more feedback edges");
+        let padding = target_inner.saturating_sub(visible_width(&text) + left_margin);
+        let mut spans: Vec<Span<'a>> = Vec::new();
+        if left_margin > 0 {
+            spans.push(Span::raw(" ".repeat(left_margin)));
+        }
+        spans.push(Span::raw(text));
+        if padding > 0 {
+            spans.push(Span::raw(" ".repeat(padding)));
+        }
+        lines.push(Line::from(spans));
     }
 
     lines
 }
 
-fn padded_feedback_lines<'a>(
-    arc_line: String,
-    ann_line: String,
-    uniform_width: usize,
+/// Frame a feedback-arc string with the DAG's left margin and right padding
+/// so the line's total visible width equals the pane inner width.
+fn dag_arc_line<'a>(
+    text: &str,
+    left_margin: usize,
+    target_inner: usize,
     style: Style,
-) -> [Line<'a>; 2] {
-    [
-        padded_styled_line(arc_line, uniform_width, style),
-        padded_styled_line(ann_line, uniform_width, style),
-    ]
-}
-
-fn padded_styled_line<'a>(text: String, uniform_width: usize, style: Style) -> Line<'a> {
-    let padding = uniform_width.saturating_sub(visible_width(&text));
-    Line::from(vec![
-        Span::styled(text, style),
-        Span::raw(" ".repeat(padding)),
-    ])
-}
-
-fn build_counts_line(cols: &[ColumnLayout]) -> String {
-    let total_width = cols
-        .last()
-        .map(|c| c.start_col + visible_width(&c.node_text))
-        .unwrap_or(0);
-    let mut buf: Vec<char> = vec![' '; total_width];
-    for col in cols {
-        let s = col.count.to_string();
-        let w = s.chars().count();
-        let start = col.name_center.saturating_sub(w / 2);
-        let end = (start + w).min(buf.len());
-        for (i, ch) in s.chars().enumerate() {
-            let idx = start + i;
-            if idx < end {
-                buf[idx] = ch;
-            }
-        }
-    }
-    buf.into_iter().collect()
-}
-
-fn style_counts_spans<'a>(cols: &[ColumnLayout], counts_line: &str) -> Vec<Span<'a>> {
-    // Split counts_line into chunks for each column to style the active one.
-    let total: Vec<char> = counts_line.chars().collect();
+) -> Line<'a> {
+    let body_w = visible_width(text);
     let mut spans: Vec<Span<'a>> = Vec::new();
-    // Determine active column byte ranges by name_center ± half-count width.
-    let mut regions: Vec<(usize, usize, bool)> = Vec::new();
-    let mut cursor = 0usize;
-    for col in cols {
-        let s = col.count.to_string();
-        let w = s.chars().count();
-        let start = col.name_center.saturating_sub(w / 2);
-        let end = (start + w).min(total.len());
-        if start > cursor {
-            regions.push((cursor, start, false));
-        }
-        regions.push((start, end, col.is_active));
-        cursor = end;
+    if left_margin > 0 {
+        spans.push(Span::raw(" ".repeat(left_margin)));
     }
-    if cursor < total.len() {
-        regions.push((cursor, total.len(), false));
+    spans.push(Span::styled(text.to_string(), style));
+    let used = left_margin + body_w;
+    let pad = target_inner.saturating_sub(used);
+    if pad > 0 {
+        spans.push(Span::raw(" ".repeat(pad)));
     }
-    for (start, end, active) in regions {
-        let text: String = total[start..end].iter().collect();
-        if active {
-            spans.push(Span::styled(
-                text,
-                Style::default().add_modifier(Modifier::REVERSED),
-            ));
-        } else {
-            spans.push(Span::styled(
-                text,
-                Style::default().add_modifier(Modifier::DIM),
-            ));
-        }
-    }
-    spans
+    Line::from(spans)
 }
 
 #[derive(Debug)]

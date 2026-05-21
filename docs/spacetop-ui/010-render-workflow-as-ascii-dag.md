@@ -68,3 +68,57 @@ The design stage should:
 5. Confirm **whether `render_wide` / `render_narrow` / `render_very_narrow` survive** as fallback tiers or get replaced by the DAG renderer at every width. Recommendation: keep them as the degraded-mode fallback per (3).
 
 The design output is the input to the implement stage — name code locations, sketch the rendered output, and write the acceptance assertions concretely enough that the implement worker can write the tests verbatim.
+
+## Stage Report: implement
+
+- DONE: Approach decisions called out in the stage report
+  DAG layout: simple topological columns left-to-right with inline `(count)`
+  collapsed into the node text (saves the dedicated counts row from 009).
+  Feedback-edge routing: arcs render UNDER the chain via the existing
+  `render_feedback_row` helper (rounded corners ╰/╯ + vertical bar │ + ↑
+  arrowhead at the target column) — same geometry the captain confirmed in
+  the entity preview. Degraded-mode: when the inline DAG node row exceeds
+  the 90% usable_width, dispatch falls back to the 009-era wrapped
+  `render_narrow` (and then `render_very_narrow`) tiers, preserving the
+  "show everything" contract along with the `↩ rollback on reject:`
+  footer that those tiers already carry. The `render_wide`/`render_narrow`/
+  `render_very_narrow` tier names survive — Wide now routes to `render_dag`;
+  Narrow and VeryNarrow are unchanged.
+- DONE: Test evidence for AC-1..AC-5
+  AC-1+AC-2: `dag_spacetop_ui_renders_drawn_edges_and_feedback_arc` asserts
+  ─, ►, ╰, ╯, │, ↑ are all present for the 4-stage spacetop-ui fixture.
+  `dag_does_not_render_rollback_footer_when_arc_is_drawn` locks the absence
+  of the legacy `↩ rollback on reject:` footer in DAG mode. AC-3:
+  `dag_twelve_stage_research_fits_or_names_hidden_stages` exercises the
+  12-stage fixture at 80x7 — degraded fallback kicks in and every stage
+  name remains visible. AC-4:
+  `dag_each_stage_span_carries_per_stage_color_and_bold` asserts
+  per-stage `stage_color_for` + BOLD + REVERSED for the active stage on
+  every DAG span. AC-5: `dag_short_workflow_stays_within_height_bound`
+  pins the 4-stage rendered height at ≤4 lines (1 chain + 2 arc + 1
+  spare) and re-asserts every stage name + `(count)` + the drawn arc
+  corners + absence of the footer. The pre-009 marker tests
+  (`layout_columns_*`) were retargeted from `layout_columns` to
+  `dag_layout_columns` (the new layout function); behaviour is unchanged
+  so the existing assertions still hold. No 009 tests were dropped.
+- DONE: make lint clean and full cargo test green
+  `make lint` finished without diagnostics; `cargo test` reports
+  283 + 4 + 10 = 297 unit/integration tests pass (graph::tests
+  39 passed, 0 failed) with 3 notify-backed watcher tests ignored as
+  before.
+
+### Summary
+
+The DAG tier (`render_dag`) replaces `render_wide`. It builds inline
+`{leading?} {name}({count}){terminal?}` nodes via `build_dag_node_text` +
+`dag_layout_columns`, connects them with `──▶`, draws feedback arcs UNDER
+the chain via the existing `render_feedback_row` helper, and preserves the
+009 horizontal-margin contract. When the inline chain cannot fit
+`usable_inner_width`, dispatch falls back to the 009 wrapped
+`render_narrow`/`render_very_narrow` tiers — which still carry the
+`↩ rollback on reject:` footer so the "show everything" contract from 009
+holds. Five new tests cover AC-1..AC-5; 34 prior tests still pass
+unchanged. Dead helpers (`render_wide`, `build_counts_line`,
+`style_counts_spans`, `padded_feedback_lines`, `padded_styled_line`,
+`layout_columns`) and the now-unused `ColumnLayout::count` field were
+removed; `make lint` (`-D warnings`) and `cargo test` are both green.
