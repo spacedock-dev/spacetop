@@ -557,4 +557,64 @@ mod tests {
             "header should contain middle workflow basename 'w1'; rendered=\n{rendered}"
         );
     }
+
+    /// AC-4: the D-key definition view renders prose for stages whose
+    /// `### {stage}` heading uses the qualifier-suffixed form
+    /// (`### \`scoping\` (lead only, worktree)`). Mirrors the
+    /// `definition_renders_against_real_readme` shape but with a
+    /// synthetic README so the failure mode is unambiguously about
+    /// qualifier-suffix handling.
+    #[test]
+    fn definition_renders_qualifier_suffixed_stages() {
+        let holder = TempDir::new().expect("tempdir");
+        let root = holder.path().join("research-fixture");
+        std::fs::create_dir_all(&root).unwrap();
+        let readme = "---\n\
+stages:\n  states:\n    - name: scoping\n      initial: true\n    - name: review\n    - name: smoke\n    - name: analyze\n    - name: promote\n      terminal: true\n\
+---\n\
+\n\
+# Research workflow\n\
+\n\
+## Stages\n\
+\n\
+### `scoping` (lead only, worktree)\n\
+scoping-prose-marker\n\
+\n\
+### `review` (hypothesis only, gate, fresh)\n\
+review-prose-marker\n\
+\n\
+### `smoke` (hypothesis only, worktree)\n\
+smoke-prose-marker\n\
+\n\
+### `analyze` (hypothesis only, fresh, no worktree)\n\
+analyze-prose-marker\n\
+\n\
+### `promote` (hypothesis only, gate, fresh)\n\
+promote-prose-marker\n";
+        std::fs::write(root.join("README.md"), readme).unwrap();
+        // A token entity file so the workflow loads cleanly.
+        std::fs::write(
+            root.join("task-001.md"),
+            "---\nid: 001\ntitle: T0\nstatus: scoping\n---\n\nbody\n",
+        )
+        .unwrap();
+
+        let mut app = App::load(root).expect("load");
+        app.handle_key(KeyEvent::new(KeyCode::Char('D'), KeyModifiers::NONE));
+        assert!(app.is_definition(), "D should switch to Definition mode");
+
+        let mut terminal = Terminal::new(TestBackend::new(160, 80)).expect("terminal");
+        terminal
+            .draw(|frame| crate::ui::render(frame, &app))
+            .expect("render");
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        for stage in ["scoping", "review", "smoke", "analyze", "promote"] {
+            let marker = format!("{stage}-prose-marker");
+            assert!(
+                rendered.contains(&marker),
+                "expected prose marker '{marker}' for stage {stage}; rendered=\n{rendered}"
+            );
+        }
+    }
 }
