@@ -1,13 +1,13 @@
 ---
 id: "009"
 title: Fit all workflow stages within the workflow pane
-status: review
+status: done
 source: captain
 started: 2026-05-21T02:52:59Z
-completed:
-verdict:
+completed: 2026-05-21T04:41:36Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-009-fit-all-stages-in-workflow-pane
+worktree: 
 issue:
 pr: #38
 mod-block: 
