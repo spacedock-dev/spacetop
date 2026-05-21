@@ -116,6 +116,7 @@ fn path_line_stays_visible_for_long_paths() {
             stage_prose: std::collections::HashMap::new(),
         },
         items: vec![in_root, out_of_root],
+        parse_errors: Vec::new(),
     };
     let mut app = App::from_snapshot(workflow_dir.clone(), snapshot);
     // Open the preview on the first (in-root) item.

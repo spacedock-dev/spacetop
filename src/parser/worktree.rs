@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use sha1::{Digest, Sha1};
 
-use crate::domain::WorkItem;
+use crate::domain::{EntityParseError, WorkItem};
 
+use super::snapshot::entity_parse_error_from;
 use super::{is_markdown_path, is_readme_path, parse_work_item, ParseError};
 
 /// Return the union of worktree root directories that may host a mirrored
@@ -45,27 +46,38 @@ pub(crate) fn scan_worktrees(
     repo_root: &Path,
     workflow_rel: &Path,
     allowed_statuses: &[String],
-) -> Result<Vec<WorkItem>, ParseError> {
+) -> Result<(Vec<WorkItem>, Vec<EntityParseError>), ParseError> {
     let mut all_items = Vec::new();
+    let mut all_errors: Vec<EntityParseError> = Vec::new();
     for wt_root in worktree_roots(repo_root) {
         let candidate = wt_root.join(workflow_rel);
         if !candidate.is_dir() {
             continue;
         }
-        all_items.extend(load_worktree_items(&candidate, allowed_statuses)?);
+        let (items, errors) = load_worktree_items(&candidate, allowed_statuses)?;
+        all_items.extend(items);
+        all_errors.extend(errors);
     }
-    Ok(all_items)
+    Ok((all_items, all_errors))
 }
 
 fn load_worktree_items(
     workflow_dir: &Path,
     allowed_statuses: &[String],
-) -> Result<Vec<WorkItem>, ParseError> {
+) -> Result<(Vec<WorkItem>, Vec<EntityParseError>), ParseError> {
     let item_paths = collect_worktree_item_paths(workflow_dir);
-    item_paths
-        .into_iter()
-        .map(|item_path| parse_work_item(&item_path, allowed_statuses))
-        .collect()
+    let mut items = Vec::with_capacity(item_paths.len());
+    let mut errors: Vec<EntityParseError> = Vec::new();
+    for item_path in item_paths {
+        match parse_work_item(&item_path, allowed_statuses) {
+            Ok(item) => items.push(item),
+            Err(err) if err.is_per_entity_parse_failure() => {
+                errors.push(entity_parse_error_from(&item_path, &err));
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok((items, errors))
 }
 
 fn collect_worktree_item_paths(workflow_dir: &Path) -> Vec<std::path::PathBuf> {

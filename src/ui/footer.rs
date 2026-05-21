@@ -15,43 +15,58 @@ const PILL_BG: Color = Color::Rgb(59, 66, 82);
 pub(super) fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
     let hints = status_footer_hints(session);
     let pill_style = Style::default().fg(Color::White).bg(PILL_BG);
+    let broken_pill_style = Style::default().fg(Color::Red).bg(PILL_BG);
     let sep_style = Style::default();
     let mut spans: Vec<Span<'_>> = Vec::new();
     for (i, hint) in hints.iter().enumerate() {
         if i > 0 {
             spans.push(Span::styled("  ", sep_style));
         }
-        spans.push(Span::styled(*hint, pill_style));
+        let style = if hint.starts_with('\u{26A0}') {
+            broken_pill_style
+        } else {
+            pill_style
+        };
+        spans.push(Span::styled(hint.clone(), style));
     }
 
     let para = Paragraph::new(Line::from(spans)).alignment(Alignment::Center);
     frame.render_widget(para, area);
 }
 
-fn status_footer_hints(session: &OverviewSession) -> Vec<&'static str> {
+/// Build the ordered footer pill labels for the active session. The first
+/// pill is the parse-error count (`⚠ N broken`) when any per-entity parse
+/// failures are present; the remainder are the static key hints. Returned as
+/// owned `String`s so the dynamic broken-count label can be formatted in.
+pub(crate) fn status_footer_hints(session: &OverviewSession) -> Vec<String> {
     let preview_open = session.active_state().preview_open();
-    let mut hints: Vec<&str> = vec!["?: help"];
+    let mut hints: Vec<String> = Vec::new();
+    let broken_count = session.active_state().parse_errors().len();
+    if broken_count > 0 {
+        hints.push(format!("\u{26A0} {broken_count} broken"));
+    }
+    hints.push("?: help".to_string());
     if preview_open {
-        hints.push("\u{2190}/\u{2192}: preview scroll");
+        hints.push("\u{2190}/\u{2192}: preview scroll".to_string());
     } else if session.is_multi() {
-        hints.push("\u{2190}/\u{2192}: switch workflow");
+        hints.push("\u{2190}/\u{2192}: switch workflow".to_string());
     }
     if session.is_multi() {
-        hints.push("P: pick workflow");
+        hints.push("P: pick workflow".to_string());
     }
-    hints.push("\u{23CE}: toggle preview");
-    hints.push("a: archive");
+    hints.push("\u{23CE}: toggle preview".to_string());
+    hints.push("a: archive".to_string());
     if preview_open {
-        hints.push("PgUp/PgDn: preview scroll");
-        hints.push("w: word wrap");
+        hints.push("PgUp/PgDn: preview scroll".to_string());
+        hints.push("w: word wrap".to_string());
     } else {
-        hints.push("PgUp/PgDn: page list");
-        hints.push("s: sort");
-        hints.push("D: definition");
+        hints.push("PgUp/PgDn: page list".to_string());
+        hints.push("s: sort".to_string());
+        hints.push("D: definition".to_string());
     }
     if preview_open {
-        hints.push("o: open");
+        hints.push("o: open".to_string());
     }
-    hints.push("q: quit");
+    hints.push("q: quit".to_string());
     hints
 }

@@ -42,6 +42,7 @@ fn app_with_items(items: Vec<WorkItem>) -> App {
             stage_prose: std::collections::HashMap::new(),
         },
         items,
+        parse_errors: Vec::new(),
     };
     let mut app = App::from_snapshot(root, snapshot);
     app.handle_key(crossterm::event::KeyEvent::new(
@@ -93,6 +94,7 @@ fn snapshot_with_body(id: &str, title: &str, body: &str) -> WorkflowSnapshot {
             stage_prose: std::collections::HashMap::new(),
         },
         items: vec![item(id, title, body)],
+        parse_errors: Vec::new(),
     }
 }
 

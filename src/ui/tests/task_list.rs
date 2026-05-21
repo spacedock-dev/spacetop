@@ -152,6 +152,7 @@ fn task_row_long_phase_name_ellipsis() {
                 i.status = long_phase.to_string();
                 i
             }],
+            parse_errors: Vec::new(),
         };
         App::from_snapshot(root, snapshot)
     };
@@ -475,5 +476,127 @@ fn phase_col_width_long_phase_name_clamped_at_12() {
         &col[..col.len() - 3],
         "a-very-long", // 11 chars, "…" is 3 bytes
         "first 11 chars must be preserved before ellipsis"
+    );
+}
+
+// ---- Task 042: broken-entity row + preview + footer pill ----
+
+use crate::domain::EntityParseError;
+
+fn app_with_broken_entity() -> App {
+    let root = PathBuf::from("/tmp/spacetop-broken");
+    let snapshot = crate::domain::WorkflowSnapshot {
+        definition: crate::domain::WorkflowDefinition {
+            root: root.clone(),
+            stages: vec![crate::domain::StageDefinition {
+                name: "design".to_string(),
+                initial: true,
+                terminal: false,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: false,
+                concurrency: None,
+            }],
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: vec![item("001", "Valid Task", "Body")],
+        parse_errors: vec![EntityParseError {
+            path: PathBuf::from("/tmp/spacetop-broken/bad.md"),
+            message: "/tmp/spacetop-broken/bad.md: malformed YAML frontmatter: mapping values are not allowed in this context at line 7 column 137".to_string(),
+            line: Some(7),
+            column: Some(137),
+        }],
+    };
+    App::from_snapshot(root, snapshot)
+}
+
+#[test]
+fn task_list_renders_broken_entity_row_after_items() {
+    // AC-2: synthetic "broken" row labeled `⚠ broken: <file>` appears after
+    // the valid work-item rows.
+    let app = app_with_broken_entity();
+    let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(
+        rendered.contains("Valid Task"),
+        "valid row must still render alongside broken row"
+    );
+    assert!(
+        rendered.contains("\u{26A0} broken: bad.md"),
+        "broken-entity row label must be visible; rendered: {:?}",
+        &rendered[..rendered.len().min(400)]
+    );
+}
+
+#[test]
+fn preview_pane_renders_broken_entity_error_with_hint() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    // Open preview, then advance selection to the broken row.
+    let mut app = app_with_broken_entity();
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+
+    let mut terminal = Terminal::new(TestBackend::new(160, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(
+        rendered.contains("Cannot parse"),
+        "broken preview must show 'Cannot parse' header; rendered: {:?}",
+        &rendered[..rendered.len().min(600)]
+    );
+    assert!(
+        rendered.contains("bad.md"),
+        "broken preview must show file name"
+    );
+    assert!(
+        rendered.contains("malformed YAML frontmatter"),
+        "broken preview must surface underlying YAML error"
+    );
+    assert!(
+        rendered.contains("line 7"),
+        "broken preview must surface the line number"
+    );
+    assert!(
+        rendered.contains("column 137"),
+        "broken preview must surface the column number"
+    );
+    // Pin the stable user-facing hint string verbatim.
+    assert!(
+        rendered.contains(
+            "Hint: wrap values containing ':' in quotes, or use '>-' for multi-line scalars"
+        ),
+        "broken preview must show the stable remediation hint"
+    );
+}
+
+#[test]
+fn footer_shows_broken_count_pill_when_parse_errors_present() {
+    let app = app_with_broken_entity();
+    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(
+        rendered.contains("\u{26A0} 1 broken"),
+        "footer must render '⚠ 1 broken' pill when one parse error is present"
+    );
+}
+
+#[test]
+fn footer_omits_broken_pill_when_no_parse_errors() {
+    let app = app_with_items(vec![item("001", "Valid Task", "Body")]);
+    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(
+        !rendered.contains("broken"),
+        "footer must not show broken pill when there are no parse_errors"
     );
 }

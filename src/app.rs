@@ -11,7 +11,7 @@ mod overview;
 mod picker;
 mod session;
 
-pub use overview::{OverviewState, SortMode, StageCount, ViewScope};
+pub use overview::{OverviewState, SelectedRow, SortMode, StageCount, ViewScope};
 pub use picker::PickerState;
 pub use session::{OverviewSession, WorkflowSwitch};
 

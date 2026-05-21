@@ -630,6 +630,7 @@ fn snapshot_with_items(count: usize) -> WorkflowSnapshot {
                 main_body: None,
             })
             .collect(),
+        parse_errors: Vec::new(),
     }
 }
 
@@ -675,6 +676,7 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
                 main_body: None,
             })
             .collect(),
+        parse_errors: Vec::new(),
     }
 }
 
@@ -807,8 +809,12 @@ fn reload_from_snapshot_preserves_view_scope() {
 }
 
 #[test]
-fn reload_retains_prior_snapshot_on_parse_error() {
-    // Minimal real workflow fixture in a tempdir.
+fn reload_records_per_entity_parse_error_without_dropping_other_items() {
+    // Minimal real workflow fixture in a tempdir with TWO tasks: one stays
+    // valid, the other gets poisoned. Per-entity errors are non-fatal so
+    // `reload` returns Ok and the snapshot contains the valid item plus a
+    // captured parse error for the bad entity. The README itself is fine,
+    // so the workflow still loads.
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     std::fs::write(
@@ -821,9 +827,15 @@ fn reload_retains_prior_snapshot_on_parse_error() {
         "---\nid: 001\ntitle: One\nstatus: plan\n---\n\nbody\n",
     )
     .unwrap();
+    std::fs::write(
+        root.join("task-two.md"),
+        "---\nid: 002\ntitle: Two\nstatus: plan\n---\n\nbody\n",
+    )
+    .unwrap();
 
     let mut app = App::load(root.to_path_buf()).expect("load ok");
-    let prior_snapshot = app.snapshot().clone();
+    assert_eq!(app.snapshot().items.len(), 2);
+    assert!(app.snapshot().parse_errors.is_empty());
 
     // Poison one task file: invalid YAML frontmatter.
     std::fs::write(
@@ -833,13 +845,21 @@ fn reload_retains_prior_snapshot_on_parse_error() {
     .unwrap();
 
     let result = app.reload();
-    assert!(result.is_err(), "parse should fail");
-    assert_eq!(
-        app.snapshot(),
-        &prior_snapshot,
-        "prior snapshot retained on parse error"
+    assert!(
+        result.is_ok(),
+        "per-entity parse failures are now non-fatal: {result:?}"
     );
-    assert!(app.last_refresh_error().is_some());
+    assert_eq!(
+        app.snapshot().items.len(),
+        1,
+        "valid task should still appear; got {:?}",
+        app.snapshot().items.iter().map(|i| i.id.clone()).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        app.snapshot().parse_errors.len(),
+        1,
+        "bad task should be recorded as a parse_error"
+    );
 }
 
 // --- Multi-workflow session tests (task 010) ---
@@ -1345,4 +1365,36 @@ fn definition_scopes_to_active_tab_and_esc_preserves_index() {
     assert!(matches!(app.mode(), AppMode::Overview(_)));
     assert_eq!(app.as_session().unwrap().active_index(), 1);
     assert_eq!(app.selected_index(), probe_selected);
+}
+
+// ---- Task 042: parse_errors surfaced on OverviewState + selectable rows ----
+
+#[test]
+fn overview_state_exposes_parse_errors_from_snapshot() {
+    use crate::app::{OverviewState, SelectedRow};
+    use crate::domain::EntityParseError;
+
+    let root = PathBuf::from("workflow");
+    let mut snapshot = snapshot_with_paths(&["workflow/good-1.md"]);
+    snapshot.parse_errors.push(EntityParseError {
+        path: PathBuf::from("workflow/bad.md"),
+        message: "workflow/bad.md: malformed YAML frontmatter: mapping values are not allowed in this context at line 7 column 137".to_string(),
+        line: Some(7),
+        column: Some(137),
+    });
+    let state = OverviewState::from_snapshot(root, snapshot);
+    assert_eq!(state.parse_errors().len(), 1);
+    assert_eq!(state.parse_errors()[0].path, PathBuf::from("workflow/bad.md"));
+
+    // Selection at index 0 is the work item; index 1 is the broken row.
+    assert!(matches!(state.selected_row(), Some(SelectedRow::Item(_))));
+    let mut state = state;
+    state.select_next();
+    match state.selected_row() {
+        Some(SelectedRow::Broken(err)) => {
+            assert_eq!(err.line, Some(7));
+            assert_eq!(err.column, Some(137));
+        }
+        other => panic!("expected SelectedRow::Broken, got {other:?}"),
+    }
 }

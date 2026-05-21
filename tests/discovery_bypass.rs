@@ -193,6 +193,71 @@ fn explicit_w_repo_root_symlink_uses_canonical_scan_root() {
 }
 
 #[test]
+fn decide_app_launches_overview_when_one_entity_has_malformed_frontmatter() {
+    // AC-3: a workflow with one malformed entity must launch the TUI, not
+    // bail out. The malformed entity surfaces via OverviewState::parse_errors.
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    let workflow = root.join("docs/research");
+    write_workflow(&workflow);
+    fs::write(
+        workflow.join("rd-001.md"),
+        "---\nid: \"001\"\ntitle: Good Item\nstatus: plan\n---\n\nbody\n",
+    )
+    .unwrap();
+    // Frontmatter that defeats both strict serde_yaml AND the flat-line
+    // fallback (unquoted colon in value + an indented continuation line).
+    // Mirrors the shape that triggers the captain's reproduction.
+    fs::write(
+        workflow.join("rd-013.md"),
+        "---\nid: \"013\"\ntitle: Bad Item\nstatus: plan\ndiff_summary: build the candidate set using a disjunction: WHERE foo = 1\n  another line with: another colon\n---\n\nbody\n",
+    )
+    .unwrap();
+
+    let cli = cli_with(Some(workflow.clone()));
+    let outcome = decide_app(&cli, root).expect("decide_app must succeed with malformed entity");
+    match outcome {
+        DecideOutcome::Overview(app) => {
+            let state = app.as_overview().expect("overview state");
+            assert_eq!(state.parse_errors().len(), 1);
+            assert!(
+                state.parse_errors()[0].path.ends_with("rd-013.md"),
+                "parse_error should reference rd-013.md: {:?}",
+                state.parse_errors()[0].path
+            );
+            assert_eq!(
+                state.snapshot().items.len(),
+                1,
+                "the valid entity must still load"
+            );
+        }
+        other => panic!("expected Overview, got {other:?}"),
+    }
+}
+
+#[test]
+fn decide_app_returns_err_when_workflow_readme_is_malformed() {
+    // AC-4 surface: malformed workflow README still bubbles up as an Err.
+    let tmp = tempdir().unwrap();
+    let root = tmp.path();
+    fs::create_dir_all(root.join(".git")).unwrap();
+    let workflow = root.join("docs/broken");
+    fs::create_dir_all(&workflow).unwrap();
+    fs::write(
+        workflow.join("README.md"),
+        "---\nstages: [unterminated\n---\n\n# bad\n",
+    )
+    .unwrap();
+    let cli = cli_with(Some(workflow.clone()));
+    let result = decide_app(&cli, root);
+    assert!(
+        result.is_err(),
+        "malformed README must produce a top-level error"
+    );
+}
+
+#[test]
 fn explicit_w_repo_root_single_workflow_opens_that_workflow() {
     let tmp = tempdir().unwrap();
     let root = tmp.path();

@@ -152,6 +152,30 @@ pub struct WorkItem {
 pub struct WorkflowSnapshot {
     pub definition: WorkflowDefinition,
     pub items: Vec<WorkItem>,
+    /// Per-entity parse failures captured during a non-strict load. Empty on
+    /// the happy path. The UI surfaces these as synthetic "broken" rows so a
+    /// single malformed entity does not prevent the rest of the workflow from
+    /// loading.
+    pub parse_errors: Vec<EntityParseError>,
+}
+
+/// A per-entity parse failure recorded by `load_workflow_dir` when an entity's
+/// frontmatter cannot be parsed. Used by the UI to render a synthetic "broken"
+/// row and an error preview in place of a normal work item.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityParseError {
+    /// File whose parse failed.
+    pub path: PathBuf,
+    /// `ParseError` Display string. Already contains the file path and the
+    /// underlying reason (e.g., `<path>: malformed YAML frontmatter: mapping
+    /// values are not allowed in this context at line 7 column 137`).
+    pub message: String,
+    /// Line number from `serde_yaml::Error::location()` when the underlying
+    /// failure is a `MalformedYaml` variant. `None` otherwise.
+    pub line: Option<u32>,
+    /// Column number from `serde_yaml::Error::location()` when the underlying
+    /// failure is a `MalformedYaml` variant. `None` otherwise.
+    pub column: Option<u32>,
 }
 
 #[cfg(test)]
