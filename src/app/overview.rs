@@ -3,8 +3,16 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::discovery::resolve_scan_root;
-use crate::domain::{WorkItem, WorkflowSnapshot};
+use crate::domain::{EntityParseError, WorkItem, WorkflowSnapshot};
 use crate::parser::{load_archived_items, load_workflow_dir, ParseError};
+
+/// Selection target in the task list — either a real work item or a synthetic
+/// "broken" row representing an entity whose frontmatter failed to parse.
+#[derive(Debug, Clone, Copy)]
+pub enum SelectedRow<'a> {
+    Item(&'a WorkItem),
+    Broken(&'a EntityParseError),
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewScope {
@@ -104,6 +112,7 @@ impl OverviewState {
                 stage_prose: HashMap::new(),
             },
             items: Vec::new(),
+            parse_errors: Vec::new(),
         };
         Self {
             workflow_dir,
@@ -267,6 +276,38 @@ impl OverviewState {
         self.visible_items().get(self.selected_index())
     }
 
+    /// Per-entity parse errors captured during the most recent active-scope
+    /// load. Empty on the happy path. Surfaced by the UI as synthetic "broken"
+    /// rows appended after the regular work items.
+    pub fn parse_errors(&self) -> &[EntityParseError] {
+        match self.view_scope {
+            ViewScope::Active => &self.snapshot.parse_errors,
+            // Archived scope does not (yet) carry per-entity errors; the
+            // archive loader still silently skips malformed entries.
+            ViewScope::Archived => &[],
+        }
+    }
+
+    /// Resolve the current selection to a `SelectedRow`. Selections beyond
+    /// `visible_items().len()` index into the synthetic broken rows that the
+    /// UI appends after the work items. Returns `None` when no row exists at
+    /// the current index (e.g., empty workflow with no parse errors).
+    pub fn selected_row(&self) -> Option<SelectedRow<'_>> {
+        let items = self.visible_items();
+        let idx = self.selected_index();
+        if let Some(item) = items.get(idx) {
+            return Some(SelectedRow::Item(item));
+        }
+        let broken_idx = idx.checked_sub(items.len())?;
+        self.parse_errors().get(broken_idx).map(SelectedRow::Broken)
+    }
+
+    /// Total number of selectable rows: work items + synthetic broken rows
+    /// (active scope) or just archived items (archived scope).
+    pub(crate) fn row_count(&self) -> usize {
+        self.visible_items().len() + self.parse_errors().len()
+    }
+
     pub fn view_scope(&self) -> ViewScope {
         self.view_scope
     }
@@ -396,9 +437,9 @@ impl OverviewState {
     }
 
     fn clamp_selection(&mut self) {
-        let len = self.visible_items().len();
         match self.view_scope {
             ViewScope::Active => {
+                let len = self.row_count();
                 if len == 0 {
                     self.selected_index = 0;
                 } else if self.selected_index >= len {
@@ -406,6 +447,7 @@ impl OverviewState {
                 }
             }
             ViewScope::Archived => {
+                let len = self.archived_items.len();
                 if len == 0 {
                     self.selected_index_archived = 0;
                 } else if self.selected_index_archived >= len {
@@ -441,7 +483,7 @@ impl OverviewState {
     }
 
     pub(crate) fn select_next(&mut self) {
-        let len = self.visible_items().len();
+        let len = self.row_count();
         if len == 0 {
             self.set_scope_index(0);
             return;
@@ -460,7 +502,7 @@ impl OverviewState {
     }
 
     pub(crate) fn select_last(&mut self) {
-        let last = self.visible_items().len().saturating_sub(1);
+        let last = self.row_count().saturating_sub(1);
         self.set_scope_index(last);
     }
 
@@ -530,7 +572,7 @@ impl OverviewState {
     }
 
     pub(crate) fn page_selection_down(&mut self) {
-        let len = self.visible_items().len();
+        let len = self.row_count();
         if len == 0 {
             self.set_scope_index(0);
             return;
@@ -631,6 +673,7 @@ mod tests {
                 stage_prose: HashMap::new(),
             },
             items: vec![fixture_item("001")],
+            parse_errors: Vec::new(),
         }
     }
 
@@ -688,6 +731,7 @@ mod tests {
                 stage_prose: HashMap::new(),
             },
             items,
+            parse_errors: Vec::new(),
         }
     }
 

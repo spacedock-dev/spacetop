@@ -17,6 +17,38 @@ pub use item::parse_work_item;
 pub use readme::parse_workflow_readme;
 pub use snapshot::load_workflow_dir;
 
+pub use crate::domain::EntityParseError;
+
+impl ParseError {
+    /// Return `true` when this parse error originated from a single entity
+    /// (frontmatter or schema validation) rather than from filesystem
+    /// failures. Used by the snapshot loader to decide whether to capture the
+    /// error as a per-entity `EntityParseError` or bail with a hard `Err`.
+    pub(crate) fn is_per_entity_parse_failure(&self) -> bool {
+        matches!(
+            self,
+            ParseError::MissingFrontmatter { .. }
+                | ParseError::UnterminatedFrontmatter { .. }
+                | ParseError::MalformedYaml { .. }
+                | ParseError::MissingRequiredField { .. }
+                | ParseError::UnknownStatus { .. }
+        )
+    }
+
+    /// Derive `(line, column)` from the underlying `serde_yaml::Error` when
+    /// this is a `MalformedYaml` variant. Returns `(None, None)` for all
+    /// other variants and when the YAML error has no location information.
+    pub(crate) fn yaml_location(&self) -> (Option<u32>, Option<u32>) {
+        if let ParseError::MalformedYaml { source, .. } = self {
+            if let Some(loc) = source.location() {
+                return (Some(loc.line() as u32), Some(loc.column() as u32));
+            }
+        }
+        (None, None)
+    }
+
+}
+
 #[derive(Debug, Error)]
 pub enum ParseError {
     #[error("{path}: failed to read file: {source}")]

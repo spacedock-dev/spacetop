@@ -41,6 +41,7 @@ fn workflow_with_active_item() -> App {
             stage_prose: std::collections::HashMap::new(),
         },
         items: vec![make_item("001", "plan", "Plan task")],
+        parse_errors: Vec::new(),
     };
     App::from_snapshot(root, snapshot)
 }
@@ -213,6 +214,7 @@ fn reflects_different_workflow_topology() {
             stage_prose: std::collections::HashMap::new(),
         },
         items: Vec::new(),
+        parse_errors: Vec::new(),
     };
     let app = App::from_snapshot(PathBuf::from("/tmp/other"), snapshot);
     let rendered = render_to_string(&app, 120, 10);
@@ -262,6 +264,7 @@ fn narrow_tier_renders_compact_textual_summary() {
             stage_prose: std::collections::HashMap::new(),
         },
         items: Vec::new(),
+        parse_errors: Vec::new(),
     };
     let app = App::from_snapshot(PathBuf::from("/tmp/narrow-tier"), snapshot);
     let rendered = render_to_string(&app, 56, 10);
@@ -613,6 +616,7 @@ fn research_12_stage_workflow() -> App {
             stage_prose: std::collections::HashMap::new(),
         },
         items: Vec::new(),
+        parse_errors: Vec::new(),
     };
     App::from_snapshot(root, snapshot)
 }
@@ -1111,6 +1115,7 @@ fn very_narrow_tier_renders_feedback_rollback_annotation() {
             stage_prose: std::collections::HashMap::new(),
         },
         items: Vec::new(),
+        parse_errors: Vec::new(),
     };
     let app = App::from_snapshot(root, snapshot);
     // 40x20 forces VeryNarrow with a grid that has room for the annotation.

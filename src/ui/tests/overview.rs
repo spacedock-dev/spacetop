@@ -87,6 +87,7 @@ fn overview_hides_preview_until_enter_opens_preview_mode() {
             stage_prose: std::collections::HashMap::new(),
         },
         items: vec![item("001", "Hidden Preview", "Body")],
+        parse_errors: Vec::new(),
     };
     let mut app = App::from_snapshot(root, snapshot);
 

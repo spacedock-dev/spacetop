@@ -5,10 +5,17 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 
-use crate::app::{OverviewState, ViewScope};
+use crate::app::{OverviewState, SelectedRow, ViewScope};
+use crate::domain::EntityParseError;
 
 use super::layout::PreviewPlacement;
 use super::{diff, markdown};
+
+/// Stable user-facing hint string shown in the broken-entity preview to guide
+/// the captain back to a parseable frontmatter. Pinned by a UI test so any
+/// change here is intentional and visible to reviewers.
+pub(crate) const BROKEN_ENTITY_HINT: &str =
+    "Hint: wrap values containing ':' in quotes, or use '>-' for multi-line scalars";
 
 const MARKDOWN_NO_WRAP_RENDER_WIDTH: u16 = 4096;
 
@@ -25,15 +32,22 @@ pub(super) fn render_preview(
     let block = Block::default().borders(borders);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    let Some(item) = state.selected_item() else {
-        let dim = Style::default().add_modifier(Modifier::DIM);
-        let header = Line::from(Span::styled("Preview", dim));
-        let mut lines = vec![header];
-        if inner.height > 1 {
-            lines.push(Line::from("Select a work item to inspect it."));
+    let item = match state.selected_row() {
+        Some(SelectedRow::Item(item)) => item,
+        Some(SelectedRow::Broken(err)) => {
+            render_broken_entity_preview(frame, inner, err);
+            return;
         }
-        frame.render_widget(Paragraph::new(lines), inner);
-        return;
+        None => {
+            let dim = Style::default().add_modifier(Modifier::DIM);
+            let header = Line::from(Span::styled("Preview", dim));
+            let mut lines = vec![header];
+            if inner.height > 1 {
+                lines.push(Line::from("Select a work item to inspect it."));
+            }
+            frame.render_widget(Paragraph::new(lines), inner);
+            return;
+        }
     };
 
     let mut header_lines = build_preview_header_lines(item, state, inner.width, placement);
@@ -360,6 +374,32 @@ pub(crate) fn fit_path_to_width(value: &str, pane_width: usize) -> String {
     let skip = value_chars - (available - 1);
     let tail: String = value.chars().skip(skip).collect();
     format!("\u{2026}{tail}")
+}
+
+/// Render the preview pane for a synthetic "broken" row. Surfaces the file
+/// path, the underlying YAML error message, the line/column when derivable,
+/// and a stable remediation hint pinned by tests.
+fn render_broken_entity_preview(frame: &mut Frame<'_>, inner: Rect, err: &EntityParseError) {
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let red = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
+    let path_display = err.path.display().to_string();
+    let mut lines: Vec<Line<'_>> = Vec::new();
+    lines.push(Line::from(vec![
+        Span::styled("Preview  \u{00B7}  ", dim),
+        Span::styled(format!("Cannot parse {path_display}"), red),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("Error: ", dim),
+        Span::raw(err.message.clone()),
+    ]));
+    if let (Some(line), Some(column)) = (err.line, err.column) {
+        lines.push(Line::from(vec![
+            Span::styled("Location: ", dim),
+            Span::raw(format!("line {line}, column {column}")),
+        ]));
+    }
+    lines.push(Line::from(Span::styled(BROKEN_ENTITY_HINT, dim)));
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
 fn wrapped_lines_height(lines: &[Line<'_>], width: u16) -> u16 {

@@ -947,3 +947,123 @@ fn worktree_scan_does_not_mutate_files() {
         assert_eq!(a.1, b.1, "file mtime stable for {:?}", a.0);
     }
 }
+
+// ---- Task 042: malformed-frontmatter entities are surfaced, not fatal ----
+
+/// Reproduction shape modeled on `rd-013.md`: a recognized key with an
+/// unquoted multi-line value where one of the continuation lines contains an
+/// unquoted `:`. The first failure mode trips strict `serde_yaml` (the colon
+/// inside an inline mapping value is rejected). The presence of indented
+/// continuation lines additionally trips the flat-line fallback's
+/// `line.starts_with(' ')` guard, so neither parser path can rescue the
+/// entity. The loader therefore sees a `MalformedYaml` error — the exact
+/// surface the captain's repro hits.
+const MALFORMED_FRONTMATTER_BODY: &str = "---
+id: 042
+title: Bad Entity
+status: design
+diff_summary: build the candidate set using a disjunction: WHERE foo = 1
+  continuation line with another: colon problem
+---
+
+Body
+";
+
+fn write_workflow_readme(dir: &Path) {
+    fs::create_dir_all(dir).expect("workflow dir");
+    fs::write(
+        dir.join("README.md"),
+        "---\ncommissioned-by: spacedock@0.10.1\nstages:\n  states:\n    - name: design\n      initial: true\n    - name: done\n      terminal: true\n---\n\n# Workflow\n",
+    )
+    .expect("write README");
+}
+
+#[test]
+fn load_workflow_dir_skips_malformed_entity_and_records_error() {
+    // AC-1: N valid + 1 malformed -> N items loaded + 1 parse_error captured.
+    let dir = unique_temp_dir("malformed-entity");
+    write_workflow_readme(&dir);
+    write_markdown(&dir.join("good-1.md"), &entity_md("001", "Good One"));
+    write_markdown(&dir.join("good-2.md"), &entity_md("002", "Good Two"));
+    write_markdown(&dir.join("good-3.md"), &entity_md("003", "Good Three"));
+    write_markdown(&dir.join("bad.md"), MALFORMED_FRONTMATTER_BODY);
+
+    let snapshot = load_workflow_dir(&dir, &dir).expect("load with malformed entity is non-fatal");
+    assert_eq!(
+        snapshot.items.len(),
+        3,
+        "all valid items must still load; got: {:?}",
+        snapshot.items.iter().map(|i| i.id.clone()).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        snapshot
+            .items
+            .iter()
+            .map(|i| i.id.as_str())
+            .collect::<Vec<_>>(),
+        ["001", "002", "003"]
+    );
+    assert_eq!(
+        snapshot.parse_errors.len(),
+        1,
+        "malformed entity must surface exactly one parse_error"
+    );
+    let err = &snapshot.parse_errors[0];
+    assert!(
+        err.path.ends_with("bad.md"),
+        "parse_error path should reference the malformed file: {:?}",
+        err.path
+    );
+    assert!(
+        err.message.contains("malformed YAML frontmatter"),
+        "parse_error message should describe the YAML failure: {}",
+        err.message
+    );
+    let line = err.line.expect("YAML line should be derivable for MalformedYaml");
+    let column = err.column.expect("YAML column should be derivable for MalformedYaml");
+    assert!(line > 0, "line should be > 0; got {line}");
+    assert!(column > 0, "column should be > 0; got {column}");
+}
+
+#[test]
+fn load_workflow_dir_all_malformed_entities_loads_empty_with_broken_rows() {
+    // Deliberate softening per the plan: when every entity is malformed, the
+    // workflow still loads with `items = []` and `parse_errors.len() == N`,
+    // rather than bailing out. AC-4 only mandates the README-malformed case
+    // stays fatal. This documents the soft path.
+    let dir = unique_temp_dir("all-malformed");
+    write_workflow_readme(&dir);
+    write_markdown(&dir.join("bad-1.md"), MALFORMED_FRONTMATTER_BODY);
+    write_markdown(&dir.join("bad-2.md"), MALFORMED_FRONTMATTER_BODY);
+
+    let snapshot = load_workflow_dir(&dir, &dir)
+        .expect("workflow with all-malformed entities should still load with broken rows");
+    assert!(snapshot.items.is_empty());
+    assert_eq!(snapshot.parse_errors.len(), 2);
+}
+
+#[test]
+fn load_workflow_dir_malformed_readme_still_fatal() {
+    // AC-4: a malformed workflow README is still a hard top-level error.
+    let dir = unique_temp_dir("bad-readme");
+    fs::create_dir_all(&dir).expect("dir");
+    // README frontmatter that fails to parse as YAML.
+    fs::write(
+        dir.join("README.md"),
+        "---\nstages: [unterminated\n---\n\n# Workflow\n",
+    )
+    .expect("README");
+    write_markdown(&dir.join("good.md"), &entity_md("001", "Good"));
+
+    let err =
+        load_workflow_dir(&dir, &dir).expect_err("malformed README must produce a top-level error");
+    let display = err.to_string();
+    assert!(
+        matches!(err, ParseError::MalformedYaml { .. }),
+        "expected MalformedYaml, got {err:?}"
+    );
+    assert!(
+        display.contains("README.md"),
+        "error must reference README.md: {display}"
+    );
+}

@@ -164,6 +164,7 @@ mod tests {
                 worktree_source,
                 main_body: None,
             }],
+            parse_errors: Vec::new(),
         };
         let state = OverviewState::from_snapshot(root, snapshot);
         OverviewSession::single(state, true)

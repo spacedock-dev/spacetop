@@ -266,6 +266,7 @@ fn synthetic_session(n: usize) -> crate::app::OverviewSession {
             stage_prose: std::collections::HashMap::new(),
         },
         items: Vec::new(),
+        parse_errors: Vec::new(),
     };
     let initial = OverviewState::from_snapshot(PathBuf::from("/x/w0"), snap);
     let discovery: Vec<DiscoveredWorkflow> = (0..n)

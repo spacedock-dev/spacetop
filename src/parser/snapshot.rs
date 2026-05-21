@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::domain::WorkflowSnapshot;
+use crate::domain::{EntityParseError, WorkflowSnapshot};
 
 use super::worktree::{merge_worktree_items, scan_worktrees};
 use super::{
@@ -18,17 +18,39 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
     let item_paths = collect_active_item_paths(path)?;
 
     let mut items = Vec::with_capacity(item_paths.len());
+    let mut parse_errors: Vec<EntityParseError> = Vec::new();
     for item_path in item_paths {
-        items.push(parse_work_item(&item_path, &allowed_statuses)?);
+        match parse_work_item(&item_path, &allowed_statuses) {
+            Ok(item) => items.push(item),
+            Err(err) if err.is_per_entity_parse_failure() => {
+                parse_errors.push(entity_parse_error_from(&item_path, &err));
+            }
+            Err(err) => return Err(err),
+        }
     }
 
-    let worktree_items = match path.strip_prefix(repo_root) {
+    let (worktree_items, worktree_parse_errors) = match path.strip_prefix(repo_root) {
         Ok(workflow_rel) => scan_worktrees(repo_root, workflow_rel, &allowed_statuses)?,
-        Err(_) => Vec::new(),
+        Err(_) => (Vec::new(), Vec::new()),
     };
+    parse_errors.extend(worktree_parse_errors);
     let items = merge_worktree_items(items, worktree_items);
 
-    Ok(WorkflowSnapshot { definition, items })
+    Ok(WorkflowSnapshot {
+        definition,
+        items,
+        parse_errors,
+    })
+}
+
+pub(crate) fn entity_parse_error_from(path: &Path, err: &ParseError) -> EntityParseError {
+    let (line, column) = err.yaml_location();
+    EntityParseError {
+        path: path.to_path_buf(),
+        message: err.to_string(),
+        line,
+        column,
+    }
 }
 
 fn collect_active_item_paths(workflow_dir: &Path) -> Result<Vec<PathBuf>, ParseError> {

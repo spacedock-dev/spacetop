@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use crate::app::{OverviewState, ViewScope};
+use crate::domain::EntityParseError;
 
 /// Format a phase name into a fixed `width`-character column, preserving the
 /// user's original casing exactly. Names longer than `width` chars are
@@ -90,7 +91,12 @@ const BG2: Color = Color::Rgb(40, 52, 84);
 fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
     let scope = state.view_scope();
     let items = state.visible_items();
-    if items.is_empty() {
+    let broken = if scope == ViewScope::Active {
+        state.parse_errors()
+    } else {
+        &[][..]
+    };
+    if items.is_empty() && broken.is_empty() {
         let empty_text = match (scope, state.archive_error()) {
             (ViewScope::Archived, Some(err)) => format!("archive load failed: {err}"),
             (ViewScope::Archived, None) => "No archived items found.".to_string(),
@@ -109,7 +115,7 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
         .unwrap_or(4)
         .clamp(4, 12);
 
-    items
+    let mut rendered: Vec<ListItem<'_>> = items
         .iter()
         .enumerate()
         .map(|(index, item)| {
@@ -172,5 +178,43 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
 
             ListItem::new(Line::from(spans))
         })
-        .collect()
+        .collect();
+
+    // Append synthetic "broken" rows for entities whose frontmatter failed to
+    // parse. These rows are visually distinct (dim + red) and never carry a
+    // worktree marker. Selection indices >= items.len() target broken rows.
+    let items_len = items.len();
+    for (offset, err) in broken.iter().enumerate() {
+        let index = items_len + offset;
+        let is_selected = index == selected_index;
+        rendered.push(broken_list_item(err, is_selected));
+    }
+
+    rendered
+}
+
+/// Render a synthetic "broken" entity row that surfaces a single parse
+/// failure inline in the task list. The label format is `⚠ broken: <file>`;
+/// the row is styled dim red so it does not blend with valid items.
+pub(crate) fn broken_list_item(err: &EntityParseError, is_selected: bool) -> ListItem<'static> {
+    let gutter_text = if is_selected { "\u{25B8} " } else { "  " };
+    let gutter_style = if is_selected {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    let file_name = err
+        .path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("<unknown>")
+        .to_string();
+    let label = format!("\u{26A0} broken: {file_name}");
+    let label_style = Style::default()
+        .fg(Color::Red)
+        .add_modifier(Modifier::DIM);
+    ListItem::new(Line::from(vec![
+        Span::styled(gutter_text, gutter_style),
+        Span::styled(label, label_style),
+    ]))
 }
