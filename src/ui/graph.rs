@@ -107,15 +107,22 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
     // the remaining 10% used as left+right margin. Thread the same budget
     // through `pick_width_tier` so the tier decision and the renderer agree.
     let usable_width = usable_inner_width(inner_width);
-    let tier = pick_width_tier(usable_width, stages, &counts, &glyphs);
+    let tier = pick_width_tier(
+        usable_width,
+        inner_height,
+        stages,
+        &counts,
+        &glyphs,
+    );
 
     let definition = &state.snapshot().definition;
     let lines = match tier {
-        WidthTier::Wide => render_wide(
+        WidthTier::Wide => render_dag(
             stages,
             &counts,
             active_stage.as_deref(),
             &glyphs,
+            inner_width,
             definition,
         ),
         WidthTier::Narrow => render_narrow(
@@ -168,6 +175,8 @@ struct GlyphSet {
     arc_up_arrow: &'static str,
     arc_corner_up_right: &'static str,
     arc_corner_up_left: &'static str,
+    arc_corner_down_right: &'static str,
+    arc_corner_down_left: &'static str,
 }
 
 fn glyphs_for(ascii: bool) -> GlyphSet {
@@ -185,6 +194,8 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             arc_up_arrow: "^",
             arc_corner_up_right: "\\",
             arc_corner_up_left: "/",
+            arc_corner_down_right: "/",
+            arc_corner_down_left: "\\",
         }
     } else {
         GlyphSet {
@@ -200,6 +211,8 @@ fn glyphs_for(ascii: bool) -> GlyphSet {
             arc_up_arrow: "\u{2191}",                  // ↑
             arc_corner_up_right: "\u{2570}",           // ╰
             arc_corner_up_left: "\u{256F}",            // ╯
+            arc_corner_down_right: "\u{256D}",         // ╭
+            arc_corner_down_left: "\u{256E}",          // ╮
         }
     }
 }
@@ -210,9 +223,9 @@ struct ColumnLayout {
     node_text: String,
     /// Byte column where the node text starts in the ribbon line.
     start_col: usize,
-    /// Column where the centre of the stage name sits (for counts alignment).
+    /// Column where the centre of the stage name sits (used by feedback-arc
+    /// geometry to anchor `╰`/`╯` corners and `↑` arrowheads).
     name_center: usize,
-    count: usize,
     is_active: bool,
 }
 
@@ -241,43 +254,6 @@ fn build_node_text(stage: &StageDefinition, g: &GlyphSet) -> String {
     parts.join(" ")
 }
 
-fn layout_columns(
-    stages: &[StageDefinition],
-    counts: &[usize],
-    active: Option<&str>,
-    g: &GlyphSet,
-) -> Vec<ColumnLayout> {
-    let separator = format!(" {} ", g.forward_arrow);
-    let sep_width = visible_width(&separator);
-
-    let mut out = Vec::with_capacity(stages.len());
-    let mut cursor = 0usize;
-    for (i, stage) in stages.iter().enumerate() {
-        if i > 0 {
-            cursor += sep_width;
-        }
-        let node_text = build_node_text(stage, g);
-        let width = visible_width(&node_text);
-        let start_col = cursor;
-        // Center of the stage name (not markers). Approximate by offsetting from
-        // the trailing end: node text is `{leading} {name} {terminal?}`. Name
-        // center ≈ node center; alignment target for counts.
-        let name_center = start_col + width / 2;
-        let count = counts.get(i).copied().unwrap_or(0);
-        let is_active = active.map(|s| s == stage.name).unwrap_or(false);
-        out.push(ColumnLayout {
-            stage_name: stage.name.clone(),
-            node_text,
-            start_col,
-            name_center,
-            count,
-            is_active,
-        });
-        cursor += width;
-    }
-    out
-}
-
 fn visible_width(s: &str) -> usize {
     // We only use BMP glyphs; char count is a good proxy (one column per char).
     s.chars().count()
@@ -285,6 +261,7 @@ fn visible_width(s: &str) -> usize {
 
 fn pick_width_tier(
     inner_width: usize,
+    inner_height: usize,
     stages: &[StageDefinition],
     counts: &[usize],
     g: &GlyphSet,
@@ -292,12 +269,17 @@ fn pick_width_tier(
     if inner_width == 0 {
         return WidthTier::VeryNarrow;
     }
-    let columns = layout_columns(stages, counts, None, g);
-    let wide_width = columns
-        .last()
-        .map(|c| c.start_col + visible_width(&c.node_text))
-        .unwrap_or(0);
-    if wide_width <= inner_width {
+    // DAG tier: nodes pack into one or more rows that each fit within
+    // `inner_width`, connected by forward arrows on each row and by drawn
+    // corner-glyph connectors between rows. Use the multi-row planner so the
+    // DAG can wrap onto subsequent rows instead of falling back to the
+    // wrapped-text Narrow tier on the first width pressure (entity 010
+    // cycle 1).
+    let columns = dag_layout_columns(stages, counts, None, g);
+    let plan = dag_layout_rows(&columns, inner_width);
+    let feedback_arc_rows = count_feedback_arcs(stages, &columns).min(MAX_FEEDBACK_ROWS) * 2;
+    let dag_total_rows = dag_total_line_count(&plan, feedback_arc_rows);
+    if dag_total_rows <= inner_height && !plan.is_empty() {
         return WidthTier::Wide;
     }
 
@@ -307,6 +289,22 @@ fn pick_width_tier(
         return WidthTier::Narrow;
     }
     WidthTier::VeryNarrow
+}
+
+fn count_feedback_arcs(stages: &[StageDefinition], cols: &[ColumnLayout]) -> usize {
+    collect_feedback_arcs(stages, cols).len()
+}
+
+/// Total visible line count emitted by `render_dag` for the given row plan
+/// plus the line count required by feedback arcs (each arc takes 2 lines).
+/// Each "row break" inserts one connector line between chain rows.
+fn dag_total_line_count(plan: &DagRowPlan, feedback_arc_lines: usize) -> usize {
+    let row_count = plan.rows.len();
+    if row_count == 0 {
+        return 0;
+    }
+    // chain rows + (row_count - 1) connector lines + feedback arc lines
+    row_count + row_count.saturating_sub(1) + feedback_arc_lines
 }
 
 fn narrow_summary(stages: &[StageDefinition], counts: &[usize], g: &GlyphSet) -> String {
@@ -323,164 +321,457 @@ fn narrow_summary(stages: &[StageDefinition], counts: &[usize], g: &GlyphSet) ->
     parts.join(&format!(" {} ", g.narrow_arrow))
 }
 
-fn render_wide<'a>(
+/// Build the inline DAG node text for a stage: `{leading?} {name}({count}){terminal?}`.
+///
+/// The DAG tier (entity 010) collapses the previous separate "counts row"
+/// into the node text so each stage reads as a single self-contained
+/// `name(count)` node connected by drawn `──▶` edges. Markers (initial /
+/// gate / worktree / terminal) keep the same single-glyph-per-stage rule
+/// from `build_node_text` so the existing marker tests still hold.
+fn build_dag_node_text(stage: &StageDefinition, count: usize, g: &GlyphSet) -> String {
+    let leading: Option<&str> = if stage.initial {
+        Some(g.initial)
+    } else if stage.gate {
+        Some(g.gate)
+    } else if stage.worktree {
+        Some(g.worktree)
+    } else {
+        None
+    };
+    let mut text = String::new();
+    if let Some(glyph) = leading {
+        text.push_str(glyph);
+        text.push(' ');
+    }
+    text.push_str(&stage.name);
+    text.push('(');
+    text.push_str(&count.to_string());
+    text.push(')');
+    if stage.terminal {
+        text.push(' ');
+        text.push_str(g.terminal);
+    }
+    text
+}
+
+/// Layout columns for the DAG tier. Identical in shape to `layout_columns`
+/// but uses `build_dag_node_text` so the per-column width accounts for the
+/// inline `(count)` suffix.
+fn dag_layout_columns(
+    stages: &[StageDefinition],
+    counts: &[usize],
+    active: Option<&str>,
+    g: &GlyphSet,
+) -> Vec<ColumnLayout> {
+    let separator = format!(" {} ", g.forward_arrow);
+    let sep_width = visible_width(&separator);
+
+    let mut out = Vec::with_capacity(stages.len());
+    let mut cursor = 0usize;
+    for (i, stage) in stages.iter().enumerate() {
+        if i > 0 {
+            cursor += sep_width;
+        }
+        let count = counts.get(i).copied().unwrap_or(0);
+        let node_text = build_dag_node_text(stage, count, g);
+        let width = visible_width(&node_text);
+        let start_col = cursor;
+        let name_center = start_col + width / 2;
+        let is_active = active.map(|s| s == stage.name).unwrap_or(false);
+        out.push(ColumnLayout {
+            stage_name: stage.name.clone(),
+            node_text,
+            start_col,
+            name_center,
+            is_active,
+        });
+        cursor += width;
+    }
+    out
+}
+
+/// A planned DAG row: a contiguous slice of column indices that fit within
+/// the row width budget along with the computed column positions on this row
+/// (column 0 is the start of the row content).
+#[derive(Debug, Clone)]
+struct DagRow {
+    /// Indices into the original `cols` slice that this row contains.
+    col_indices: Vec<usize>,
+    /// For each column in `col_indices`, the column position (0-based) on
+    /// this row where the node text begins.
+    row_start_cols: Vec<usize>,
+    /// Total visible width of this row (last node's end column).
+    row_width: usize,
+}
+
+#[derive(Debug, Clone)]
+struct DagRowPlan {
+    rows: Vec<DagRow>,
+}
+
+impl DagRowPlan {
+    fn is_empty(&self) -> bool {
+        self.rows.is_empty() || self.rows.iter().all(|r| r.col_indices.is_empty())
+    }
+}
+
+/// Pack columns into rows that each fit within `row_budget`. Each row's
+/// content starts at column 0; arrows separate adjacent nodes within a row.
+///
+/// If any single node by itself exceeds `row_budget`, that node still gets a
+/// row of its own (we'd rather overflow than drop a stage); the caller is
+/// expected to detect this via `dag_total_line_count` and fall back to the
+/// wrapped-text tiers when even the multi-row DAG cannot fit.
+fn dag_layout_rows(cols: &[ColumnLayout], row_budget: usize) -> DagRowPlan {
+    // Arrow separator visible width is hard-coded to 3 (`──►`) plus the two
+    // surrounding spaces => 5 cells. We recompute from a constructed
+    // separator below to keep this in sync with the glyph set's
+    // `forward_arrow`.
+    // We don't have the GlyphSet here, but `dag_layout_columns` already
+    // accounts for separator width when laying out the columns. We can
+    // recover the inter-node gap from the columns' start positions.
+    let arrow_gap = if cols.len() >= 2 {
+        // gap between end of cols[0] and start of cols[1].
+        cols[1]
+            .start_col
+            .saturating_sub(cols[0].start_col + visible_width(&cols[0].node_text))
+    } else {
+        0
+    };
+
+    let mut rows: Vec<DagRow> = Vec::new();
+    let mut cur_indices: Vec<usize> = Vec::new();
+    let mut cur_positions: Vec<usize> = Vec::new();
+    let mut cur_cursor: usize = 0;
+
+    for (i, col) in cols.iter().enumerate() {
+        let node_w = visible_width(&col.node_text);
+        let need_arrow = !cur_indices.is_empty();
+        let projected = if need_arrow {
+            cur_cursor + arrow_gap + node_w
+        } else {
+            node_w
+        };
+        if need_arrow && projected > row_budget {
+            // Close the current row and start a new one with this node.
+            let row_width = cur_cursor;
+            rows.push(DagRow {
+                col_indices: std::mem::take(&mut cur_indices),
+                row_start_cols: std::mem::take(&mut cur_positions),
+                row_width,
+            });
+            cur_cursor = 0;
+        }
+        let need_arrow = !cur_indices.is_empty();
+        if need_arrow {
+            cur_cursor += arrow_gap;
+        }
+        cur_positions.push(cur_cursor);
+        cur_indices.push(i);
+        cur_cursor += node_w;
+    }
+    if !cur_indices.is_empty() {
+        rows.push(DagRow {
+            col_indices: cur_indices,
+            row_start_cols: cur_positions,
+            row_width: cur_cursor,
+        });
+    }
+    DagRowPlan { rows }
+}
+
+/// Render the workflow as a multi-row ASCII DAG with line-drawing edges
+/// between stages, drawn corner-glyph connectors between rows, and feedback
+/// arcs drawn UNDER the chain (entity 010).
+///
+/// Layout (per chain row):
+///   chain row: ` {leading}? name(count) {terminal}? ` ── `──▶` ── ...
+///              with the last node followed by ` ──╮` when more chain rows
+///              follow.
+/// Between chain rows:
+///   connector row: ` ╰` + `─` fill across + `╯` at the column matching the
+///                  prior row's `╮`. This reads as: "exit right of row N,
+///                  drop down, come back across, enter left of row N+1."
+/// Feedback arcs (entity 010 cycle 0): per feedback-to edge, emit two
+/// lines positioned UNDER the chain row whose source belongs to. The first
+/// emitted arc line carries `↑` at the target column and `│` at the source
+/// column with the centred `reject` label between them; the second emitted
+/// arc line carries the matching corners (`╰` at the leftmost column and
+/// `╯` at the rightmost) with horizontal `─` fill between. The arrow row
+/// renders FIRST (closer to the chain) so the visual flow drops down from
+/// the source and re-enters the target at the chain (entity 010 cycle 1).
+///
+/// Each stage span carries `stage_color_for(name)` + BOLD; the active stage
+/// also carries REVERSED. Feedback arcs and inter-row connectors render in
+/// neutral DarkGray so the stage colours dominate.
+///
+/// All lines are right-padded to a uniform width that matches the inner
+/// pane width so the outer `Paragraph::alignment(Center)` is a no-op (the
+/// graph hugs the left margin instead of drifting on wide panes).
+fn render_dag<'a>(
     stages: &'a [StageDefinition],
     counts: &'a [usize],
     active: Option<&str>,
     g: &'a GlyphSet,
+    inner_width: usize,
     definition: &WorkflowDefinition,
 ) -> Vec<Line<'a>> {
-    let cols = layout_columns(stages, counts, active, g);
+    let cols = dag_layout_columns(stages, counts, active, g);
 
-    // Ribbon line — color each node by its stage; arrows stay neutral.
+    // The DAG packs into at most `usable_width` cells per row (90% of
+    // inner_width, mirroring the wrapped tiers). After all rows are
+    // built we measure the actual rendered chain width and CENTER the
+    // entire DAG horizontally within `inner_width` (entity 010 cycle 2
+    // captain feedback). Every line — chain rows, inter-row connector
+    // rows, feedback-arc rows, and cross-row fallback annotations —
+    // receives the same `left_pad`, so the corners and arrowhead on the
+    // arc row stay column-aligned with the source/target stages on the
+    // chain row.
+    let usable_width = usable_inner_width(inner_width);
+    let plan = dag_layout_rows(&cols, usable_width);
+
     let separator = format!(" {} ", g.forward_arrow);
-    let mut ribbon_spans: Vec<Span<'a>> = Vec::new();
-    for (i, col) in cols.iter().enumerate() {
-        if i > 0 {
-            ribbon_spans.push(Span::styled(
-                separator.clone(),
-                Style::default().fg(Color::DarkGray),
-            ));
+    let connector_style = Style::default().fg(Color::DarkGray);
+
+    // First pass: build each row's content spans and record its visible
+    // width. We defer the left/right padding until we know the max
+    // content width — that determines the centering offset.
+    struct RowContent<'b> {
+        spans: Vec<Span<'b>>,
+        width: usize,
+    }
+    let mut rows_content: Vec<RowContent<'a>> = Vec::new();
+
+    let row_count = plan.rows.len();
+    for (row_idx, row) in plan.rows.iter().enumerate() {
+        // Chain row content (no left/right padding yet).
+        let mut chain_spans: Vec<Span<'a>> = Vec::new();
+        for (within_idx, &col_i) in row.col_indices.iter().enumerate() {
+            if within_idx > 0 {
+                chain_spans.push(Span::styled(separator.clone(), connector_style));
+            }
+            let col = &cols[col_i];
+            let mut style = Style::default()
+                .fg(definition.stage_color_for(&col.stage_name))
+                .add_modifier(Modifier::BOLD);
+            if col.is_active {
+                style = style.add_modifier(Modifier::REVERSED);
+            }
+            chain_spans.push(Span::styled(col.node_text.clone(), style));
         }
-        let mut style = Style::default()
-            .fg(definition.stage_color_for(&col.stage_name))
-            .add_modifier(Modifier::BOLD);
-        if col.is_active {
-            style = style.add_modifier(Modifier::REVERSED);
+        // If another chain row follows, append the `──╮` row-break indicator
+        // at the right end of this row so the eye sees the chain continue
+        // down to the connector below.
+        let mut row_end_col = row.row_width;
+        if row_idx + 1 < row_count {
+            let break_tail = format!(
+                "{}{}{}",
+                g.arc_horizontal, g.arc_horizontal, g.arc_corner_down_left
+            );
+            let bt_w = visible_width(&break_tail);
+            chain_spans.push(Span::styled(break_tail, connector_style));
+            row_end_col += bt_w;
         }
-        ribbon_spans.push(Span::styled(col.node_text.clone(), style));
+        rows_content.push(RowContent {
+            spans: chain_spans,
+            width: row_end_col,
+        });
+
+        // Feedback arcs that originate from a column on THIS chain row.
+        for arc in feedback_arcs_for_row(stages, &cols, row) {
+            let (top, bottom) = render_feedback_row(arc.source_col, arc.target_col, g);
+            let arc_style = Style::default().fg(Color::Red);
+            let top_w = visible_width(&top);
+            let bot_w = visible_width(&bottom);
+            rows_content.push(RowContent {
+                spans: vec![Span::styled(top, arc_style)],
+                width: top_w,
+            });
+            rows_content.push(RowContent {
+                spans: vec![Span::styled(bottom, arc_style)],
+                width: bot_w,
+            });
+        }
+
+        // Inter-chain-row connector line.
+        if row_idx + 1 < row_count {
+            let next_row = &plan.rows[row_idx + 1];
+            let break_col = row_end_col.saturating_sub(1); // column of `╮`
+            let next_start_col = next_row.row_start_cols.first().copied().unwrap_or(0);
+            let conn = build_row_break_connector(next_start_col, break_col, g);
+            let conn_w = visible_width(&conn);
+            rows_content.push(RowContent {
+                spans: vec![Span::styled(conn, connector_style)],
+                width: conn_w,
+            });
+        }
     }
 
-    let max_width = cols
-        .last()
-        .map(|c| c.start_col + visible_width(&c.node_text))
-        .unwrap_or(0);
-
-    // Counts line: place count string centered under each node's name_center.
-    let counts_line = build_counts_line(&cols);
-
-    // Feedback arcs.
-    let arcs = collect_feedback_arcs(stages, &cols);
-    let capped: Vec<_> = arcs.iter().take(MAX_FEEDBACK_ROWS).collect();
-    let arc_pairs: Vec<(String, String)> = capped
-        .iter()
-        .map(|arc| render_feedback_row(arc.source_col, arc.target_col, g))
-        .collect();
-
-    // All lines must share the same width so the Paragraph's centred alignment
-    // keeps ribbon, counts, arc, and annotation rows aligned with each other.
-    let uniform_width = arc_pairs
-        .iter()
-        .map(|(arc, ann)| visible_width(arc).max(visible_width(ann)))
-        .max()
-        .unwrap_or(0)
-        .max(max_width);
-
-    let pad_len = uniform_width.saturating_sub(max_width);
-    if pad_len > 0 {
-        ribbon_spans.push(Span::raw(" ".repeat(pad_len)));
+    // Cross-row feedback arcs degrade to a one-line annotation.
+    for arc in collect_cross_row_feedback_arcs(stages, &cols, &plan) {
+        let text = format!(
+            "{} {} {} {}",
+            g.feedback, arc.source_name, g.narrow_arrow, arc.target_name
+        );
+        let w = visible_width(&text);
+        let arc_style = Style::default().fg(Color::Red);
+        rows_content.push(RowContent {
+            spans: vec![Span::styled(text, arc_style)],
+            width: w,
+        });
     }
-    let padded_counts = format!("{counts_line}{}", " ".repeat(pad_len));
-    let counts_spans = style_counts_spans(&cols, &padded_counts);
 
-    let mut lines: Vec<Line<'a>> = Vec::new();
-    lines.push(Line::from(ribbon_spans));
-    lines.push(Line::from(counts_spans));
+    // Second pass: compute the chain's actual rendered width (max width
+    // across all DAG rows) and split the remaining `inner_width -
+    // chain_width` slack as `left_pad = slack / 2`, `right_pad = slack -
+    // left_pad`. Every line is then framed with the same `left_pad` so
+    // arc-row corners and arrowheads stay column-aligned with their
+    // source/target stages on the chain row.
+    let chain_width = rows_content.iter().map(|r| r.width).max().unwrap_or(0);
+    let chain_width = chain_width.min(inner_width);
+    let slack = inner_width.saturating_sub(chain_width);
+    let left_pad = slack / 2;
 
-    let arc_style = Style::default().fg(Color::Red);
-    for (arc_line, ann_line) in arc_pairs {
-        lines.extend(padded_feedback_lines(
-            arc_line,
-            ann_line,
-            uniform_width,
-            arc_style,
-        ));
-    }
-    if arcs.len() > MAX_FEEDBACK_ROWS {
-        let overflow = arcs.len() - MAX_FEEDBACK_ROWS;
-        lines.push(Line::from(format!("+{overflow} more feedback edges")));
+    let mut lines: Vec<Line<'a>> = Vec::with_capacity(rows_content.len());
+    for content in rows_content {
+        let mut spans: Vec<Span<'a>> = Vec::new();
+        if left_pad > 0 {
+            spans.push(Span::raw(" ".repeat(left_pad)));
+        }
+        spans.extend(content.spans);
+        let used = left_pad + content.width;
+        let pad = inner_width.saturating_sub(used);
+        if pad > 0 {
+            spans.push(Span::raw(" ".repeat(pad)));
+        }
+        lines.push(Line::from(spans));
     }
 
     lines
 }
 
-fn padded_feedback_lines<'a>(
-    arc_line: String,
-    ann_line: String,
-    uniform_width: usize,
-    style: Style,
-) -> [Line<'a>; 2] {
-    [
-        padded_styled_line(arc_line, uniform_width, style),
-        padded_styled_line(ann_line, uniform_width, style),
-    ]
+/// Build the connector string between two chain rows. `next_start_col` is
+/// where the next row's first node begins (start column on the next chain
+/// row); `break_col` is the column of the `╮` glyph on the row above.
+///
+/// Geometry (typical case, next_start_col < break_col):
+///
+/// ```text
+/// chain-row-N:    ... node ──╮    (break_col holds ╮)
+/// connector:    ╭───────────╯     (╭ at next_start_col, ─ fill, ╯ at break_col)
+/// chain-row-N+1: node ──► ...     (chain continues from next_start_col)
+/// ```
+///
+/// `╭` at the left tells the eye "this is where the flow re-enters the chain
+/// from above"; `╯` at the right closes the corner started by `╮` on the
+/// previous row.
+fn build_row_break_connector(next_start_col: usize, break_col: usize, g: &GlyphSet) -> String {
+    let total = break_col.max(next_start_col) + 1;
+    let mut out: Vec<String> = vec![" ".to_string(); total];
+    if next_start_col == break_col {
+        out[next_start_col] = g.arc_vert.to_string();
+    } else if next_start_col < break_col {
+        let (left, right) = (next_start_col, break_col);
+        out[left] = g.arc_corner_down_right.to_string();
+        out[right] = g.arc_corner_up_left.to_string();
+        for cell in out.iter_mut().take(right).skip(left + 1) {
+            *cell = g.arc_horizontal.to_string();
+        }
+    } else {
+        // Defensive: next row starts RIGHT of the break column — unusual
+        // (would only happen if the next row had a deeper leading indent
+        // than the break column allows). Mirror the corner glyphs so the
+        // connector still reads.
+        let (left, right) = (break_col, next_start_col);
+        out[left] = g.arc_corner_up_right.to_string();
+        out[right] = g.arc_corner_down_left.to_string();
+        for cell in out.iter_mut().take(right).skip(left + 1) {
+            *cell = g.arc_horizontal.to_string();
+        }
+    }
+    out.join("")
 }
 
-fn padded_styled_line<'a>(text: String, uniform_width: usize, style: Style) -> Line<'a> {
-    let padding = uniform_width.saturating_sub(visible_width(&text));
-    Line::from(vec![
-        Span::styled(text, style),
-        Span::raw(" ".repeat(padding)),
-    ])
-}
-
-fn build_counts_line(cols: &[ColumnLayout]) -> String {
-    let total_width = cols
-        .last()
-        .map(|c| c.start_col + visible_width(&c.node_text))
-        .unwrap_or(0);
-    let mut buf: Vec<char> = vec![' '; total_width];
-    for col in cols {
-        let s = col.count.to_string();
-        let w = s.chars().count();
-        let start = col.name_center.saturating_sub(w / 2);
-        let end = (start + w).min(buf.len());
-        for (i, ch) in s.chars().enumerate() {
-            let idx = start + i;
-            if idx < end {
-                buf[idx] = ch;
+/// Per-row feedback arcs: collect those arcs whose source AND target both
+/// belong to the given chain row, translating absolute column positions to
+/// the row's local positions.
+fn feedback_arcs_for_row(
+    stages: &[StageDefinition],
+    cols: &[ColumnLayout],
+    row: &DagRow,
+) -> Vec<FeedbackArc> {
+    let mut out = Vec::new();
+    let mut seen = 0usize;
+    for (i, stage) in stages.iter().enumerate() {
+        if let Some(target) = &stage.feedback_to {
+            if let Some(t) = stages.iter().position(|s| &s.name == target) {
+                // Both endpoints must be on this row.
+                let src_in = row.col_indices.iter().position(|&c| c == i);
+                let tgt_in = row.col_indices.iter().position(|&c| c == t);
+                if let (Some(si), Some(ti)) = (src_in, tgt_in) {
+                    if seen >= MAX_FEEDBACK_ROWS {
+                        break;
+                    }
+                    // Translate absolute column positions to this row's
+                    // local positions: row_start_cols[idx] is the local
+                    // start column of cols[row.col_indices[idx]]; centre
+                    // sits at start + width/2 of that node.
+                    let src_col_start = row.row_start_cols[si];
+                    let src_node_w = visible_width(&cols[i].node_text);
+                    let src_centre = src_col_start + src_node_w / 2;
+                    let tgt_col_start = row.row_start_cols[ti];
+                    let tgt_node_w = visible_width(&cols[t].node_text);
+                    let tgt_centre = tgt_col_start + tgt_node_w / 2;
+                    out.push(FeedbackArc {
+                        source_col: src_centre,
+                        target_col: tgt_centre,
+                    });
+                    seen += 1;
+                }
             }
         }
     }
-    buf.into_iter().collect()
+    out
 }
 
-fn style_counts_spans<'a>(cols: &[ColumnLayout], counts_line: &str) -> Vec<Span<'a>> {
-    // Split counts_line into chunks for each column to style the active one.
-    let total: Vec<char> = counts_line.chars().collect();
-    let mut spans: Vec<Span<'a>> = Vec::new();
-    // Determine active column byte ranges by name_center ± half-count width.
-    let mut regions: Vec<(usize, usize, bool)> = Vec::new();
-    let mut cursor = 0usize;
-    for col in cols {
-        let s = col.count.to_string();
-        let w = s.chars().count();
-        let start = col.name_center.saturating_sub(w / 2);
-        let end = (start + w).min(total.len());
-        if start > cursor {
-            regions.push((cursor, start, false));
+#[derive(Debug)]
+struct CrossRowFeedbackArc {
+    source_name: String,
+    target_name: String,
+}
+
+/// Cross-row feedback arcs: edges whose source/target span different chain
+/// rows. Returns at most `MAX_FEEDBACK_ROWS` of them.
+fn collect_cross_row_feedback_arcs(
+    stages: &[StageDefinition],
+    _cols: &[ColumnLayout],
+    plan: &DagRowPlan,
+) -> Vec<CrossRowFeedbackArc> {
+    let mut out = Vec::new();
+    for (i, stage) in stages.iter().enumerate() {
+        if let Some(target) = &stage.feedback_to {
+            if let Some(t) = stages.iter().position(|s| &s.name == target) {
+                let src_row = plan
+                    .rows
+                    .iter()
+                    .position(|r| r.col_indices.contains(&i));
+                let tgt_row = plan
+                    .rows
+                    .iter()
+                    .position(|r| r.col_indices.contains(&t));
+                if src_row != tgt_row {
+                    if out.len() >= MAX_FEEDBACK_ROWS {
+                        break;
+                    }
+                    out.push(CrossRowFeedbackArc {
+                        source_name: stage.name.clone(),
+                        target_name: target.clone(),
+                    });
+                }
+            }
         }
-        regions.push((start, end, col.is_active));
-        cursor = end;
     }
-    if cursor < total.len() {
-        regions.push((cursor, total.len(), false));
-    }
-    for (start, end, active) in regions {
-        let text: String = total[start..end].iter().collect();
-        if active {
-            spans.push(Span::styled(
-                text,
-                Style::default().add_modifier(Modifier::REVERSED),
-            ));
-        } else {
-            spans.push(Span::styled(
-                text,
-                Style::default().add_modifier(Modifier::DIM),
-            ));
-        }
-    }
-    spans
+    out
 }
 
 #[derive(Debug)]

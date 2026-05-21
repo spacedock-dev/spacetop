@@ -86,7 +86,7 @@ fn glyphs_for_respects_ascii_flag() {
 fn layout_columns_places_initial_marker_on_first_stage() {
     let g = glyphs_for(false);
     let stages = vec![stage("design", true, false, false, false, None)];
-    let cols = layout_columns(&stages, &[0], None, &g);
+    let cols = dag_layout_columns(&stages, &[0], None, &g);
     assert!(cols[0].node_text.starts_with("\u{25B6}"));
 }
 
@@ -94,7 +94,7 @@ fn layout_columns_places_initial_marker_on_first_stage() {
 fn layout_columns_places_terminal_marker_on_last_stage() {
     let g = glyphs_for(false);
     let stages = vec![stage("done", false, true, false, false, None)];
-    let cols = layout_columns(&stages, &[0], None, &g);
+    let cols = dag_layout_columns(&stages, &[0], None, &g);
     assert!(cols[0].node_text.ends_with("\u{25A0}"));
 }
 
@@ -104,7 +104,7 @@ fn layout_columns_single_glyph_per_stage_initial_takes_priority() {
     // A stage that is initial, gate, and worktree should display only ▶.
     let g = glyphs_for(false);
     let stages = vec![stage("x", true, true, true, true, None)];
-    let cols = layout_columns(&stages, &[0], None, &g);
+    let cols = dag_layout_columns(&stages, &[0], None, &g);
     let t = &cols[0].node_text;
     // Must contain initial glyph ▶, name 'x', and terminal ■.
     assert!(t.contains('\u{25B6}'), "missing initial glyph ▶");
@@ -132,19 +132,24 @@ fn pick_width_tier_returns_expected_tier_for_sample_widths() {
     let stages = &app.snapshot().definition.stages;
     let counts: Vec<usize> = app.stage_counts().into_iter().map(|c| c.items).collect();
     let g = glyphs_for(false);
+    // Inner-height matches the production graph pane (7 - 2 borders = 5).
+    let h: usize = 5;
     assert_eq!(
-        pick_width_tier(120, stages, &counts, &g),
+        pick_width_tier(120, h, stages, &counts, &g),
         WidthTier::Wide,
         "120 cols should fit wide"
     );
     // 38 inner cols is too small for wide but fits narrow compact form for our 5-stage set.
-    let narrow = pick_width_tier(38, stages, &counts, &g);
+    let narrow = pick_width_tier(38, h, stages, &counts, &g);
     assert!(
         matches!(narrow, WidthTier::Narrow | WidthTier::VeryNarrow),
         "small width should not be Wide"
     );
+    // At 22 cols the DAG cannot pack the 5-stage chain into the available
+    // height (multi-row DAG would need too many rows), so we should fall
+    // through to the wrapped-text VeryNarrow tier.
     assert_eq!(
-        pick_width_tier(22, stages, &counts, &g),
+        pick_width_tier(22, h, stages, &counts, &g),
         WidthTier::VeryNarrow
     );
 }
@@ -267,7 +272,13 @@ fn narrow_tier_renders_compact_textual_summary() {
         parse_errors: Vec::new(),
     };
     let app = App::from_snapshot(PathBuf::from("/tmp/narrow-tier"), snapshot);
-    let rendered = render_to_string(&app, 56, 10);
+    // Height=4 leaves inner_height=2 (TOP+BOTTOM borders), which is too
+    // short for the multi-row DAG tier (single chain row + at least one
+    // feedback-arc row already maxes the budget when the chain needs to
+    // wrap). At inner_width=56 the inline DAG chain cannot fit either, so
+    // pick_width_tier falls through to the wrapped-text Narrow tier — the
+    // exact path this test exercises.
+    let rendered = render_to_string(&app, 56, 4);
     for name in ["design", "plan", "implement", "review", "done"] {
         assert!(rendered.contains(name), "missing stage {name}");
     }
@@ -1118,8 +1129,12 @@ fn very_narrow_tier_renders_feedback_rollback_annotation() {
         parse_errors: Vec::new(),
     };
     let app = App::from_snapshot(root, snapshot);
-    // 40x20 forces VeryNarrow with a grid that has room for the annotation.
-    let rendered = render_to_string(&app, 40, 20);
+    // 40x9 keeps the pane narrow enough that the DAG cannot pack the 12
+    // stages into the available height (inner_height=7 must hold the chain
+    // rows AND their connectors), so pick_width_tier falls through to the
+    // VeryNarrow grid. The grid then has room for the `↩` annotation tail
+    // line that this test pins.
+    let rendered = render_to_string(&app, 40, 9);
     assert!(
         rendered.contains("rollback on reject"),
         "VeryNarrow tier must render the feedback rollback annotation; rendered=\n{rendered}"
@@ -1537,6 +1552,786 @@ fn very_narrow_tier_last_row_does_not_end_with_arrow() {
     );
 }
 
+// --- Entity 010: ASCII DAG renderer ---
+
+/// Build the 4-stage `spacetop-ui` fixture used by entity 010 ACs:
+/// design (initial) → implement (worktree) → review (gate, feedback-to:
+/// implement) → done (terminal).
+fn spacetop_ui_workflow() -> App {
+    let root = PathBuf::from("/tmp/spacetop-ui-dag");
+    let stages = vec![
+        stage("design", true, false, false, false, None),
+        stage("implement", false, false, false, true, None),
+        stage("review", false, false, true, false, Some("implement")),
+        stage("done", false, true, false, false, None),
+    ];
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+        parse_errors: Vec::new(),
+    };
+    App::from_snapshot(root, snapshot)
+}
+
+/// AC-1: the 4-stage spacetop-ui fixture renders with drawn line-drawing
+/// edges between adjacent stage nodes (── horizontal fill and ▶/► arrowhead),
+/// not as a plain text separator. AC-2: a drawn feedback arc from
+/// `review → implement` carries the box-drawing corner glyphs ╰/╯ plus the
+/// vertical bar │ and the up arrowhead ↑ — collectively, line-drawing
+/// geometry the eye reads as a looping edge.
+#[test]
+fn dag_spacetop_ui_renders_drawn_edges_and_feedback_arc() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = spacetop_ui_workflow();
+    // 100x10 is wide enough for the DAG tier to fit the 4-stage chain.
+    let rendered = render_to_string(&app, 100, 10);
+
+    // AC-1: forward edges are drawn with ─ and ▶ (the wide-tier `──▶`
+    // glyph). Both line-drawing chars must be present.
+    assert!(
+        rendered.contains('\u{2500}'),
+        "DAG must draw horizontal edges (─) between adjacent nodes; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{25BA}'),
+        "DAG must draw forward arrowhead (►) between adjacent nodes; rendered=\n{rendered}"
+    );
+
+    // AC-2: the review → implement feedback edge renders as a drawn arc
+    // with rounded corners + vertical bar + up arrowhead.
+    assert!(
+        rendered.contains('\u{2570}') && rendered.contains('\u{256F}'),
+        "feedback arc must render with rounded corners ╰ and ╯; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{2502}'),
+        "feedback arc must render with vertical bar │; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{2191}'),
+        "feedback arc must point its arrowhead ↑ at the target column; rendered=\n{rendered}"
+    );
+}
+
+/// AC-2: the DAG tier must NOT emit the legacy `↩ rollback on reject: ...`
+/// footer annotation — that text only appears in the wrapped Narrow /
+/// VeryNarrow fallback tiers where the arc cannot be drawn.
+#[test]
+fn dag_does_not_render_rollback_footer_when_arc_is_drawn() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = spacetop_ui_workflow();
+    let rendered = render_to_string(&app, 100, 10);
+    // The arc must be drawn (sanity check — exercises the DAG tier path).
+    assert!(
+        rendered.contains('\u{2570}'),
+        "expected DAG tier to draw the arc at width=100; rendered=\n{rendered}"
+    );
+    // The legacy textual footer must be absent in DAG mode.
+    assert!(
+        !rendered.contains("rollback on reject"),
+        "DAG tier must not emit the `↩ rollback on reject:` footer when the \
+         arc is drawn; rendered=\n{rendered}"
+    );
+    assert!(
+        !rendered.contains('\u{21B6}'),
+        "DAG tier must not emit the ↩ feedback footer glyph when the arc is \
+         drawn; rendered=\n{rendered}"
+    );
+}
+
+/// AC-3: the 12-stage research fixture, when constrained, either fits in the
+/// 90% width-margin or surfaces an explicit `+N hidden:` overflow indicator
+/// naming the hidden stages — matching the 009 overflow-naming pattern. The
+/// DAG renderer delegates to the wrapped fallback when it cannot fit, which
+/// is what the captain-confirmed degraded-mode behaviour requires.
+#[test]
+fn dag_twelve_stage_research_fits_or_names_hidden_stages() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // A representative cramped pane: 80x7 inner (matches the overview-layout
+    // graph pane). 12 inline `name(count)` nodes do NOT fit on one row at
+    // 90% of 80 cols, so the renderer falls back to the wrapped tier.
+    let rendered = render_to_string(&app, 80, 7);
+    for name in RESEARCH_STAGES {
+        if rendered.contains(name) {
+            continue;
+        }
+        assert!(
+            rendered.contains("hidden:"),
+            "stage {name} missing and no `+N hidden:` overflow indicator present; \
+             rendered=\n{rendered}"
+        );
+        assert!(
+            rendered.contains(name),
+            "stage {name} not in visible cells nor named by overflow indicator"
+        );
+    }
+}
+
+/// AC-4: every stage span in the DAG tier carries `stage_color_for(name)` +
+/// BOLD, and the active stage layers REVERSED on top.
+#[test]
+fn dag_each_stage_span_carries_per_stage_color_and_bold() {
+    let g = glyphs_for(false);
+    let stages = vec![
+        stage("design", true, false, false, false, None),
+        stage("implement", false, false, false, true, None),
+        stage("review", false, false, true, false, Some("implement")),
+        stage("done", false, true, false, false, None),
+    ];
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/dag-colors"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // Active stage is `implement` so we can also assert REVERSED.
+    let lines = render_dag(&stages, &counts, Some("implement"), &g, 100, &definition);
+
+    let mut colored_seen: usize = 0;
+    let mut active_reversed = false;
+    for line in &lines {
+        for span in &line.spans {
+            for s in &stages {
+                if span.content.contains(&s.name) {
+                    let expected = definition.stage_color_for(&s.name);
+                    if span.style.fg == Some(expected)
+                        && span.style.add_modifier.contains(Modifier::BOLD)
+                    {
+                        colored_seen += 1;
+                        if s.name == "implement"
+                            && span.style.add_modifier.contains(Modifier::REVERSED)
+                        {
+                            active_reversed = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        colored_seen >= stages.len(),
+        "expected every DAG stage span to carry stage_color_for + BOLD; \
+         found {colored_seen} of {} (lines={lines:?})",
+        stages.len()
+    );
+    assert!(
+        active_reversed,
+        "active stage span must carry REVERSED on top of color+BOLD"
+    );
+}
+
+/// AC-5: short workflow readability. The 4-stage spacetop-ui DAG must show
+/// every stage name + its (count) suffix + the feedback edge from `review`
+/// to `implement`, and the rendered height stays within a tight bound. We
+/// pin the bound at 4 lines: 1 chain row + 2 arc rows + at most 1 spare.
+#[test]
+fn dag_short_workflow_stays_within_height_bound() {
+    let g = glyphs_for(false);
+    let stages = vec![
+        stage("design", true, false, false, false, None),
+        stage("implement", false, false, false, true, None),
+        stage("review", false, false, true, false, Some("implement")),
+        stage("done", false, true, false, false, None),
+    ];
+    let counts = vec![0usize, 0, 0, 0];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/dag-short"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    let lines = render_dag(&stages, &counts, None, &g, 100, &definition);
+    // Height bound for the short-workflow case: one chain row + one arc
+    // (two-line: label + arc) = 3 lines.
+    assert!(
+        lines.len() <= 4,
+        "DAG height for 4-stage workflow must be <=4 lines; got {} lines: {:?}",
+        lines.len(),
+        lines
+    );
+    // Every stage name + its (count) suffix must appear.
+    let joined: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+        .collect();
+    for s in &stages {
+        assert!(
+            joined.contains(&s.name),
+            "DAG must show stage {} in short workflow; rendered={joined}",
+            s.name
+        );
+    }
+    assert!(
+        joined.contains("(0)"),
+        "DAG must inline (count) into the node text; rendered={joined}"
+    );
+    // The feedback arc must be present (review → implement).
+    assert!(
+        joined.contains('\u{2570}') && joined.contains('\u{256F}'),
+        "feedback arc corners must be drawn; rendered={joined}"
+    );
+    assert!(
+        !joined.contains("rollback on reject"),
+        "DAG tier must not emit the legacy footer; rendered={joined}"
+    );
+}
+
+/// Build a fixture matching the on-repo `docs/spacetop-dev` workflow shape
+/// (5 stages: design → plan → implement → review → done with
+/// `review → feedback-to: implement`). Used by the drawn-arc test that
+/// pins the FULL connected glyph sequence (entity 010 cycle 1).
+fn spacetop_dev_workflow() -> App {
+    let root = PathBuf::from("/tmp/spacetop-dev-arc");
+    let stages = vec![
+        stage("design", true, false, false, false, None),
+        stage("plan", false, false, false, false, None),
+        stage("implement", false, false, false, true, None),
+        stage("review", false, false, true, false, Some("implement")),
+        stage("done", false, true, false, false, None),
+    ];
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+        parse_errors: Vec::new(),
+    };
+    App::from_snapshot(root, snapshot)
+}
+
+/// Entity 010 cycle 1, gap 1: when the inline single-row chain does not fit
+/// `usable_inner_width`, `render_dag` MUST wrap the chain across multiple
+/// rows with drawn line-drawing glyphs (`│`/`╭`/`╮`/`╯`/`╰`) connecting one
+/// chain row to the next — it must NOT fall back to the 009 wrapped-text
+/// `render_narrow` tier. The 009 tier remains a DEEPER fallback only when
+/// the multi-row DAG itself cannot fit the available height.
+///
+/// Test setup: the 12-stage research fixture at a representative narrow
+/// pane size where (a) the single-row chain overflows `usable_inner_width`
+/// at ~90% of 100 cols, but (b) the available height (10 rows ⇒ inner
+/// height 8) is generous enough to hold 2-3 wrapped DAG chain rows with
+/// connector lines between them.
+#[test]
+fn dag_multi_row_wraps_with_drawn_connectors_on_research_fixture() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    let rendered = render_to_string(&app, 100, 10);
+
+    // (a) Every stage name + its (count) suffix must appear somewhere on
+    // the rendered buffer. Counts are zero for this fixture but we pin the
+    // `(0)` suffix on at least one node so we know the DAG node-text
+    // (which collapses the count INTO the node) was the renderer used.
+    for name in RESEARCH_STAGES {
+        assert!(
+            rendered.contains(name),
+            "every stage name must be visible in multi-row DAG; missing {name}; \
+             rendered=\n{rendered}"
+        );
+    }
+    assert!(
+        rendered.contains("(0)"),
+        "DAG nodes must carry inline `(count)` suffix; rendered=\n{rendered}"
+    );
+
+    // (b) Drawn vertical/corner glyphs connect consecutive chain rows. We
+    // expect at least one row-break corner `╮` on a chain row tail AND a
+    // matching `╯` on the connector line below. The `╭` corner appears on
+    // the connector at the next row's start column.
+    assert!(
+        rendered.contains('\u{256E}'),
+        "multi-row DAG must emit row-break corner ╮ at the right end of a \
+         wrapping chain row; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{256F}'),
+        "multi-row DAG must emit row-break corner ╯ on the connector line; \
+         rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{256D}'),
+        "multi-row DAG must emit row-break corner ╭ on the connector line at \
+         the next chain row's start column; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{2500}'),
+        "multi-row DAG must emit horizontal `─` fill on connector lines; \
+         rendered=\n{rendered}"
+    );
+
+    // (c) The rendering is NOT the 009 wrapped-text fallback. The Narrow
+    // tier emits `↩ rollback on reject: ...` as a tail Line whenever the
+    // workflow declares `feedback-to:` paths; this fixture has no feedback
+    // edges, so the footer would not appear regardless. The discriminator
+    // here is that the chain MUST be drawn with the DAG's wide `──►`
+    // forward arrow (`►` = U+25BA), not the Narrow tier's `→` (U+2192).
+    assert!(
+        rendered.contains('\u{25BA}'),
+        "multi-row DAG must use the wide `►` forward arrow, not the Narrow \
+         tier's `→`; rendered=\n{rendered}"
+    );
+
+    // Also assert at least two chain rows actually render: count `►` on
+    // the buffer; a 12-stage chain wrapped to 2 rows of 6 stages each has
+    // 5 + 5 = 10 forward arrows; even if the wrap puts 7-and-5 we still
+    // see well above the single-row count, so >= 9 is a safe floor.
+    let chain_arrow_count = rendered.matches('\u{25BA}').count();
+    assert!(
+        chain_arrow_count >= 9,
+        "multi-row DAG should emit at least one ► per inter-node edge \
+         (12 stages over 2 rows = ~10 arrows); got {chain_arrow_count}; \
+         rendered=\n{rendered}"
+    );
+}
+
+/// Entity 010 cycle 1, gap 1 (depth-fallback complement): when the
+/// multi-row DAG ITSELF cannot fit the available height, the renderer
+/// falls back to the 009 wrapped-text tiers (render_narrow /
+/// render_very_narrow). This test exercises the height-starved path and
+/// asserts the deeper-fallback contract: the 009 tiers' `↩ rollback on
+/// reject:` footer is still emitted when feedback edges are declared.
+#[test]
+fn dag_falls_back_to_009_wrapped_text_when_height_starved() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    // 12-stage workflow with a `review → feedback-to: implement` edge so
+    // the 009 wrapped tier has an annotation to emit. Inner_height=2
+    // (height=4) is far too tight for multi-row DAG so the fallback kicks
+    // in.
+    let root = PathBuf::from("/tmp/spacetop-deep-fallback");
+    let names = [
+        "pending", "scoping", "ideate", "implement", "review", "smoke",
+        "run", "analyze", "promote", "expanded", "ideated", "done",
+    ];
+    let stages: Vec<StageDefinition> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done";
+            let fb = if *n == "review" { Some("implement") } else { None };
+            stage(n, initial, terminal, false, false, fb)
+        })
+        .collect();
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+        parse_errors: Vec::new(),
+    };
+    let app = App::from_snapshot(root, snapshot);
+    // 40x9 forces the VeryNarrow tier path (matches the existing pinned
+    // behaviour for the 009 wrapped-text fallback).
+    let rendered = render_to_string(&app, 40, 9);
+    assert!(
+        rendered.contains("rollback on reject"),
+        "height-starved fallback must still emit the 009 `↩ rollback on reject:` \
+         footer when feedback edges are declared; rendered=\n{rendered}"
+    );
+}
+
+/// Entity 010 cycle 1, gap 2: the drawn feedback arc must render the FULL
+/// connected glyph sequence between source and target columns — corner at
+/// source, `─` fill across all columns between target and source with the
+/// label centred, matching corner at the target column, and `↑` arrowhead
+/// at the target. Endpoints alone (just `↑` + stray `│`) are not enough.
+///
+/// Tested on the spacetop-dev fixture (5 stages: design → plan → implement
+/// → review → done with `review → feedback-to: implement`).
+#[test]
+fn dag_drawn_feedback_arc_is_fully_connected_on_spacetop_dev() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = spacetop_dev_workflow();
+    // 109x10 matches the captain's reported terminal pane: chain fits on a
+    // single row so the arc geometry is the focus of the assertion.
+    let rendered = render_to_string(&app, 109, 10);
+
+    // Locate the arc rows. Per render_dag (entity 010 cycle 1), the arrow
+    // row (`↑   reject   │`) renders FIRST so it sits closer to the chain;
+    // the corner row (`╰────...────╯`) renders second below it. Chunk the
+    // rendered buffer by `line_w` chars per row (chars, not bytes, because
+    // the buffer contains multi-byte BMP glyphs like `→`/`│`/`╰`).
+    let line_w = 109usize;
+    let chars: Vec<char> = rendered.chars().collect();
+    let row_strings: Vec<String> = chars
+        .chunks(line_w)
+        .map(|c| c.iter().collect())
+        .collect();
+
+    // Find the arrow row (contains both `↑` and `│` and "reject").
+    let arrow_row_idx = row_strings.iter().position(|r| {
+        r.contains('\u{2191}') && r.contains('\u{2502}') && r.contains("reject")
+    });
+    assert!(
+        arrow_row_idx.is_some(),
+        "missing arrow row carrying ↑ + │ + 'reject' label; rendered=\n{rendered}"
+    );
+    let arrow_row = &row_strings[arrow_row_idx.unwrap()];
+    // Locate columns of ↑ (target = implement column) and │ (source =
+    // review column).
+    let up_col = arrow_row
+        .chars()
+        .position(|c| c == '\u{2191}')
+        .expect("arrow row has ↑");
+    let bar_col = arrow_row
+        .chars()
+        .position(|c| c == '\u{2502}')
+        .expect("arrow row has │");
+    let (target_col, source_col) = if up_col < bar_col {
+        (up_col, bar_col)
+    } else {
+        (bar_col, up_col)
+    };
+    assert!(
+        source_col > target_col,
+        "source column ({source_col}) must be right of target column \
+         ({target_col}) for review→implement feedback"
+    );
+
+    // The label `reject` must appear BETWEEN target_col and source_col on
+    // the arrow row.
+    let reject_pos = arrow_row.find("reject").expect("label present");
+    let reject_char_col = arrow_row[..reject_pos].chars().count();
+    assert!(
+        reject_char_col > target_col && reject_char_col < source_col,
+        "label `reject` must sit between target ({target_col}) and source \
+         ({source_col}) columns; reject_col={reject_char_col}"
+    );
+
+    // The next row must be the corner row carrying ╰ + ─...─ + ╯ at the
+    // SAME columns as the arrow-row endpoints.
+    let corner_row_idx = arrow_row_idx.unwrap() + 1;
+    assert!(
+        corner_row_idx < row_strings.len(),
+        "corner row must follow arrow row; row count = {}",
+        row_strings.len()
+    );
+    let corner_row = &row_strings[corner_row_idx];
+    let corner_chars: Vec<char> = corner_row.chars().collect();
+
+    // Corner at target column.
+    assert_eq!(
+        corner_chars.get(target_col).copied(),
+        Some('\u{2570}'),
+        "corner ╰ must sit at target column {target_col}; corner_row=\n{corner_row}"
+    );
+    // Matching corner at source column.
+    assert_eq!(
+        corner_chars.get(source_col).copied(),
+        Some('\u{256F}'),
+        "corner ╯ must sit at source column {source_col}; corner_row=\n{corner_row}"
+    );
+    // Horizontal `─` fill spans ALL columns between target+1 and source-1
+    // (inclusive of both endpoints). At least one `─` must exist in that
+    // range (sanity) AND every column in that range must be `─` (full
+    // connectivity).
+    assert!(
+        source_col > target_col + 1,
+        "target/source columns must be far enough apart for at least one \
+         `─` between them; target={target_col} source={source_col}"
+    );
+    for col in (target_col + 1)..source_col {
+        assert_eq!(
+            corner_chars.get(col).copied(),
+            Some('\u{2500}'),
+            "every column between target+1 ({}) and source-1 ({}) must be \
+             `─`; column {col} was {:?}; corner_row=\n{corner_row}",
+            target_col + 1,
+            source_col - 1,
+            corner_chars.get(col)
+        );
+    }
+
+    // The drawn arc must NOT degrade to the legacy `↩ rollback on reject:`
+    // footer when the geometry actually fits.
+    assert!(
+        !rendered.contains("rollback on reject"),
+        "drawn arc must not co-exist with the legacy footer; rendered=\n{rendered}"
+    );
+}
+
+/// Entity 010 cycle 2: the DAG is horizontally CENTERED within the inner
+/// pane width. The leftmost rendered DAG column equals approximately
+/// `(inner_width - chain_width) / 2` (within a one-column rounding
+/// tolerance), the rightmost rendered column is approximately the same
+/// distance from the right edge, AND the feedback-arc row shifts with the
+/// chain so the `↑` arrowhead and `│` source-column glyphs remain
+/// column-aligned with their target/source stage spans on the chain row.
+///
+/// Test fixture: spacetop-dev (5 stages, fits in a single row at typical
+/// widths) at 109x10 — same geometry the captain reported in cycle-2
+/// feedback.
+#[test]
+fn dag_chain_is_horizontally_centered_on_spacetop_dev() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = spacetop_dev_workflow();
+    let line_w = 109usize;
+    let rendered = render_to_string(&app, line_w as u16, 10);
+
+    let chars: Vec<char> = rendered.chars().collect();
+    let row_strings: Vec<String> = chars
+        .chunks(line_w)
+        .map(|c| c.iter().collect())
+        .collect();
+
+    // Find the chain row: the line containing the wide `►` forward arrow.
+    let chain_row_idx = row_strings
+        .iter()
+        .position(|r| r.contains('\u{25BA}'))
+        .expect("chain row with ► should be present");
+    let chain_row = &row_strings[chain_row_idx];
+
+    // Helper: leftmost and rightmost non-space columns on a row.
+    fn non_space_bounds(row: &str) -> Option<(usize, usize)> {
+        let cols: Vec<char> = row.chars().collect();
+        let left = cols.iter().position(|c| !c.is_whitespace())?;
+        let right = cols.iter().rposition(|c| !c.is_whitespace())?;
+        Some((left, right))
+    }
+
+    let (left, right) = non_space_bounds(chain_row).expect("chain row has content");
+    let chain_width = right - left + 1;
+    let slack = line_w.saturating_sub(chain_width);
+    let expected_left = slack / 2;
+    let expected_right_gap = slack - expected_left;
+    let actual_right_gap = line_w - 1 - right;
+
+    // (a) leftmost rendered DAG column is approximately (inner_width -
+    // chain_width) / 2 within a one-column rounding tolerance.
+    assert!(
+        left.abs_diff(expected_left) <= 1,
+        "chain row leftmost column {left} must be approximately \
+         expected_left {expected_left} (slack/2 with chain_width={chain_width}, \
+         inner_width={line_w}); rendered chain_row=\n{chain_row}"
+    );
+    // (b) rightmost rendered column is approximately the same distance
+    // from the right edge.
+    assert!(
+        actual_right_gap.abs_diff(expected_right_gap) <= 1,
+        "chain row right gap {actual_right_gap} must be approximately \
+         expected_right_gap {expected_right_gap}; chain row=\n{chain_row}"
+    );
+    // The two gaps must agree within one column of each other (the
+    // captain's centering ask).
+    assert!(
+        left.abs_diff(actual_right_gap) <= 1,
+        "chain row must be horizontally centered: left_gap {left} vs \
+         right_gap {actual_right_gap} (chain_width={chain_width}); chain_row=\n{chain_row}"
+    );
+
+    // (c) the feedback-arc row's source-column `│` glyph still column-
+    // aligns with the source stage span (`review`) on the chain row, and
+    // the target-column `↑` aligns with the target stage span
+    // (`implement`).
+    let arrow_row_idx = row_strings
+        .iter()
+        .position(|r| {
+            r.contains('\u{2191}') && r.contains('\u{2502}') && r.contains("reject")
+        })
+        .expect("arrow row should be present in DAG");
+    let arrow_row = &row_strings[arrow_row_idx];
+    let up_col = arrow_row
+        .chars()
+        .position(|c| c == '\u{2191}')
+        .expect("↑ on arrow row");
+    let bar_col = arrow_row
+        .chars()
+        .position(|c| c == '\u{2502}')
+        .expect("│ on arrow row");
+    let (target_col, source_col) = if up_col < bar_col {
+        (up_col, bar_col)
+    } else {
+        (bar_col, up_col)
+    };
+
+    // Find the start and end columns of the `implement` and `review`
+    // stage spans on the chain row. Match the stage name then bracket
+    // back/forward to include the `(0)` suffix.
+    fn stage_span_bounds(row: &str, name: &str) -> Option<(usize, usize)> {
+        let chars: Vec<char> = row.chars().collect();
+        let byte_pos = row.find(name)?;
+        let char_start = row[..byte_pos].chars().count();
+        let mut char_end = char_start + name.chars().count();
+        // Extend through the (count) suffix: `(0)` etc.
+        if chars.get(char_end).copied() == Some('(') {
+            while char_end < chars.len() && chars[char_end] != ')' {
+                char_end += 1;
+            }
+            if chars.get(char_end).copied() == Some(')') {
+                char_end += 1;
+            }
+        }
+        Some((char_start, char_end))
+    }
+
+    let (impl_start, impl_end) = stage_span_bounds(chain_row, "implement")
+        .expect("implement span on chain row");
+    let (rev_start, rev_end) = stage_span_bounds(chain_row, "review")
+        .expect("review span on chain row");
+
+    assert!(
+        target_col >= impl_start && target_col < impl_end,
+        "arrow row `↑` at col {target_col} must fall within the \
+         `implement` stage span [{impl_start}, {impl_end}); chain row=\n{chain_row}\narrow row=\n{arrow_row}"
+    );
+    assert!(
+        source_col >= rev_start && source_col < rev_end,
+        "arrow row `│` at col {source_col} must fall within the `review` \
+         stage span [{rev_start}, {rev_end}); chain row=\n{chain_row}\narrow row=\n{arrow_row}"
+    );
+}
+
+/// Entity 010 cycle 2: the centering property also holds for the multi-
+/// row DAG layout (research 12-stage fixture at a narrow pane width). The
+/// captain's spec: compute `chain_width = max(row_widths)` and split
+/// `slack = inner_width - chain_width` as `left_pad = slack / 2`,
+/// `right_pad = slack - left_pad`. All DAG rows (chain rows, inter-row
+/// connectors, feedback-arc rows) receive the SAME left_pad — so the
+/// widest row sits exactly centered and narrower rows left-align within
+/// the centered band. Per-row centering would force connectors and arc
+/// rows to drift relative to the source/target stage spans they refer to.
+#[test]
+fn dag_multi_row_chain_is_horizontally_centered_on_research_fixture() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    let line_w = 100usize;
+    let rendered = render_to_string(&app, line_w as u16, 10);
+
+    let chars: Vec<char> = rendered.chars().collect();
+    let row_strings: Vec<String> = chars
+        .chunks(line_w)
+        .map(|c| c.iter().collect())
+        .collect();
+
+    fn non_space_bounds(row: &str) -> Option<(usize, usize)> {
+        let cols: Vec<char> = row.chars().collect();
+        let left = cols.iter().position(|c| !c.is_whitespace())?;
+        let right = cols.iter().rposition(|c| !c.is_whitespace())?;
+        Some((left, right))
+    }
+
+    // Find all chain rows (those containing the wide `►` forward arrow).
+    let chain_row_indices: Vec<usize> = row_strings
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.contains('\u{25BA}'))
+        .map(|(i, _)| i)
+        .collect();
+    assert!(
+        chain_row_indices.len() >= 2,
+        "multi-row DAG must emit at least 2 chain rows on the 12-stage \
+         research fixture at width {line_w}; chain_rows={}",
+        chain_row_indices.len()
+    );
+
+    // Determine the DAG block bounds: leftmost non-space column across
+    // all DAG rows and rightmost non-space column across all DAG rows.
+    // The DAG occupies a contiguous range of rows around the chain rows.
+    let dag_start = chain_row_indices[0];
+    let dag_end = *chain_row_indices.last().unwrap();
+    let mut block_left = usize::MAX;
+    let mut block_right = 0usize;
+    for row in row_strings.iter().take(dag_end + 1).skip(dag_start) {
+        if let Some((l, r)) = non_space_bounds(row) {
+            if l < block_left {
+                block_left = l;
+            }
+            if r > block_right {
+                block_right = r;
+            }
+        }
+    }
+    assert!(
+        block_left < block_right,
+        "DAG block must have non-empty bounds; rendered=\n{rendered}"
+    );
+
+    let chain_width = block_right - block_left + 1;
+    let expected_left = (line_w.saturating_sub(chain_width)) / 2;
+    let expected_right_gap = line_w.saturating_sub(chain_width) - expected_left;
+    let actual_right_gap = line_w - 1 - block_right;
+
+    // (a) the leftmost DAG column equals approximately (inner_width -
+    // chain_width) / 2 within one column.
+    assert!(
+        block_left.abs_diff(expected_left) <= 1,
+        "DAG block leftmost column {block_left} must be approximately \
+         expected_left {expected_left} (chain_width={chain_width}, \
+         inner_width={line_w}); rendered=\n{rendered}"
+    );
+    // (b) rightmost DAG column has approximately the same distance to
+    // the right edge.
+    assert!(
+        actual_right_gap.abs_diff(expected_right_gap) <= 1,
+        "DAG block right gap {actual_right_gap} must be approximately \
+         expected_right_gap {expected_right_gap}; rendered=\n{rendered}"
+    );
+    // The two gaps must agree within one column of each other.
+    assert!(
+        block_left.abs_diff(actual_right_gap) <= 1,
+        "DAG block must be horizontally centered: left_gap {block_left} \
+         vs right_gap {actual_right_gap}; rendered=\n{rendered}"
+    );
+
+    // (c) per-row property: every DAG row starts at exactly the same
+    // left column (the uniform left_pad). The widest row spans the full
+    // chain_width; narrower rows left-align within the centered band.
+    for (idx, row) in row_strings
+        .iter()
+        .enumerate()
+        .take(dag_end + 1)
+        .skip(dag_start)
+    {
+        if let Some((l, _)) = non_space_bounds(row) {
+            assert!(
+                l.abs_diff(block_left) <= 1,
+                "DAG row {idx} must left-align with the centered chain \
+                 (block_left={block_left}, this row left={l}); row=\n{row}"
+            );
+        }
+    }
+}
+
 #[allow(dead_code)]
 fn make_item(id: &str, status: &str, title: &str) -> WorkItem {
     WorkItem {
@@ -1557,3 +2352,4 @@ fn make_item(id: &str, status: &str, title: &str) -> WorkItem {
         main_body: None,
     }
 }
+
