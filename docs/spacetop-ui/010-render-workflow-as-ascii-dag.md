@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-010-render-workflow-as-ascii-dag
 issue:
 pr: #40
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Today the workflow pane (after task 009) renders stages as a wrapped linear sequence: `pending → scoping → ideate → review → … `, possibly wrapped onto multiple rows with `↪` continuation arrows. This reads as a strip, not a directed acyclic graph. Workflows with feedback edges (e.g. `review` with `feedback-to: implement`) get a small "rollback on reject" annotation line at the bottom, but the feedback edge itself is not drawn.
