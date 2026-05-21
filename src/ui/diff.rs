@@ -256,10 +256,7 @@ mod tests {
         let body = "same\nlines\n";
         let lines = render_diff_lines_with_width(body, body, 80);
         assert!(
-            lines
-                .iter()
-                .map(line_text)
-                .all(|t| t.starts_with(' ')),
+            lines.iter().map(line_text).all(|t| t.starts_with(' ')),
             "all lines should be context for identical inputs"
         );
     }
@@ -297,9 +294,10 @@ let added = 2;
         // content is `+`, `-`, or ` ` and whose style matches the
         // expected palette.
         for (idx, line) in lines.iter().enumerate() {
-            let gutter = line.spans.first().unwrap_or_else(|| {
-                panic!("line {idx} has no spans at all: {:?}", lines)
-            });
+            let gutter = line
+                .spans
+                .first()
+                .unwrap_or_else(|| panic!("line {idx} has no spans at all: {:?}", lines));
             let glyph: &str = gutter.content.as_ref();
             assert!(
                 matches!(glyph, "+" | "-" | " "),
@@ -328,11 +326,7 @@ let added = 2;
         // heading is shared between old and new).
         let heading_line = lines
             .iter()
-            .find(|l| {
-                l.spans
-                    .iter()
-                    .any(|s| s.content.contains("Shared heading"))
-            })
+            .find(|l| l.spans.iter().any(|s| s.content.contains("Shared heading")))
             .expect("heading line must exist");
         assert_eq!(
             heading_line.spans[0].content.as_ref(),
@@ -340,8 +334,7 @@ let added = 2;
             "heading is shared content so its gutter must be ' '",
         );
         let heading_bold = heading_line.spans.iter().any(|s| {
-            s.content.contains("Shared heading")
-                && s.style.add_modifier.contains(Modifier::BOLD)
+            s.content.contains("Shared heading") && s.style.add_modifier.contains(Modifier::BOLD)
         });
         assert!(
             heading_bold,
@@ -354,14 +347,13 @@ let added = 2;
             .iter()
             .find(|l| {
                 l.spans.first().map(|s| s.content.as_ref()) == Some("-")
-                    && l.spans
-                        .iter()
-                        .any(|s| s.content.contains("old_code"))
+                    && l.spans.iter().any(|s| s.content.contains("old_code"))
             })
             .expect("removed line containing 'old_code' must exist");
-        let removed_inline_styled = removed_inline.spans.iter().any(|s| {
-            s.content.contains("old_code") && s.style.bg == Some(Color::DarkGray)
-        });
+        let removed_inline_styled = removed_inline
+            .spans
+            .iter()
+            .any(|s| s.content.contains("old_code") && s.style.bg == Some(Color::DarkGray));
         assert!(
             removed_inline_styled,
             "inline `old_code` on the removed line must carry DarkGray bg",
@@ -373,14 +365,13 @@ let added = 2;
             .iter()
             .find(|l| {
                 l.spans.first().map(|s| s.content.as_ref()) == Some("+")
-                    && l.spans
-                        .iter()
-                        .any(|s| s.content.contains("new_code"))
+                    && l.spans.iter().any(|s| s.content.contains("new_code"))
             })
             .expect("added line containing 'new_code' must exist");
-        let added_inline_styled = added_inline.spans.iter().any(|s| {
-            s.content.contains("new_code") && s.style.bg == Some(Color::DarkGray)
-        });
+        let added_inline_styled = added_inline
+            .spans
+            .iter()
+            .any(|s| s.content.contains("new_code") && s.style.bg == Some(Color::DarkGray));
         assert!(
             added_inline_styled,
             "inline `new_code` on the added line must carry DarkGray bg",
@@ -408,10 +399,7 @@ let added = 2;
                         && s.style.bg == Some(Color::DarkGray)
                 })
         });
-        assert!(
-            added_code,
-            "added code block line must be Cyan-on-DarkGray",
-        );
+        assert!(added_code, "added code block line must be Cyan-on-DarkGray",);
 
         // Raw markdown markers must not survive — even on diff lines.
         for line in &lines {

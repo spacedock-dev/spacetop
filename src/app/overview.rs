@@ -636,8 +636,7 @@ mod tests {
 
     #[test]
     fn preview_wrap_default_on_for_loaded_overview() {
-        let state =
-            OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), fixture_snapshot());
+        let state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), fixture_snapshot());
         assert!(
             state.preview_wrap(),
             "preview_wrap defaults to true at construction"
@@ -704,7 +703,11 @@ mod tests {
             vec![stage("design"), stage("plan"), stage("implement")],
         );
         let state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
-        let ids: Vec<&str> = state.visible_items().iter().map(|i| i.id.as_str()).collect();
+        let ids: Vec<&str> = state
+            .visible_items()
+            .iter()
+            .map(|i| i.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["002", "010", "037"]);
         assert_eq!(state.sort_mode(), SortMode::Id);
     }
@@ -730,7 +733,11 @@ mod tests {
         let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
         state.cycle_sort_mode();
         assert_eq!(state.sort_mode(), SortMode::Status);
-        let ids: Vec<&str> = state.visible_items().iter().map(|i| i.id.as_str()).collect();
+        let ids: Vec<&str> = state
+            .visible_items()
+            .iter()
+            .map(|i| i.id.as_str())
+            .collect();
         // design (002, 005), plan (003), implement (001), done (004); IDs ascending within stage.
         assert_eq!(ids, vec!["002", "005", "003", "001", "004"]);
     }
@@ -745,7 +752,11 @@ mod tests {
         let snap = snapshot_with(items, vec![stage("design"), stage("plan")]);
         let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
         state.cycle_sort_mode();
-        let ids: Vec<&str> = state.visible_items().iter().map(|i| i.id.as_str()).collect();
+        let ids: Vec<&str> = state
+            .visible_items()
+            .iter()
+            .map(|i| i.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["001", "003", "002"]);
     }
 
@@ -770,8 +781,7 @@ mod tests {
 
     #[test]
     fn cycle_sort_mode_default_and_cycles_back() {
-        let state =
-            OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), fixture_snapshot());
+        let state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), fixture_snapshot());
         assert_eq!(state.sort_mode(), SortMode::Id);
         let mut state = state;
         state.cycle_sort_mode();
@@ -795,11 +805,14 @@ mod tests {
             item_with_status("020", "implement"),
             item_with_status("005", "design"),
         ];
-        let reload_snap =
-            snapshot_with(reload_items, vec![stage("design"), stage("implement")]);
+        let reload_snap = snapshot_with(reload_items, vec![stage("design"), stage("implement")]);
         state.reload_from_snapshot(reload_snap);
         assert_eq!(state.sort_mode(), SortMode::Status);
-        let ids: Vec<&str> = state.visible_items().iter().map(|i| i.id.as_str()).collect();
+        let ids: Vec<&str> = state
+            .visible_items()
+            .iter()
+            .map(|i| i.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["005", "020"]);
     }
 
@@ -815,13 +828,21 @@ mod tests {
             vec![stage("design"), stage("plan"), stage("implement")],
         );
         let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
-        let original_ids: Vec<String> =
-            state.snapshot().items.iter().map(|i| i.id.clone()).collect();
+        let original_ids: Vec<String> = state
+            .snapshot()
+            .items
+            .iter()
+            .map(|i| i.id.clone())
+            .collect();
         for _ in 0..5 {
             state.cycle_sort_mode();
         }
-        let after_ids: Vec<String> =
-            state.snapshot().items.iter().map(|i| i.id.clone()).collect();
+        let after_ids: Vec<String> = state
+            .snapshot()
+            .items
+            .iter()
+            .map(|i| i.id.clone())
+            .collect();
         assert_eq!(original_ids, after_ids);
         // Also verify the on-disk-derived order is the source-provided order.
         assert_eq!(original_ids, vec!["010", "002", "037"]);

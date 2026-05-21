@@ -38,7 +38,9 @@ pub fn render_markdown_termimad(body: &str, width: u16) -> Vec<Line<'static>> {
 /// terminal-style output stays aligned. Inside a ratatui `Paragraph`
 /// with `Wrap { trim: false }` those trailing spaces would re-wrap onto
 /// extra rows and dilute scrollbar metrics, so we strip them here.
-fn trim_trailing_padding(mut spans: Vec<ratatui::text::Span<'static>>) -> Vec<ratatui::text::Span<'static>> {
+fn trim_trailing_padding(
+    mut spans: Vec<ratatui::text::Span<'static>>,
+) -> Vec<ratatui::text::Span<'static>> {
     while let Some(last) = spans.last() {
         let is_padding = last.style == ratatui::prelude::Style::default()
             && last.content.chars().all(|c| c == ' ');
@@ -121,9 +123,9 @@ mod tests {
 
         // Heading text carries termimad's bold styling.
         let heading_has_bold = lines.iter().any(|line| {
-            line.spans
-                .iter()
-                .any(|s| s.content.contains("Heading") && s.style.add_modifier.contains(Modifier::BOLD))
+            line.spans.iter().any(|s| {
+                s.content.contains("Heading") && s.style.add_modifier.contains(Modifier::BOLD)
+            })
         });
         assert!(heading_has_bold, "heading span must be bold");
 

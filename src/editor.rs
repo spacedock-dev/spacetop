@@ -148,9 +148,7 @@ mod tests {
     #[test]
     fn resolve_editor_visual_editor_default_precedence() {
         // (a) VISUAL set — wins over EDITOR.
-        let env = MapEnv::empty()
-            .with("VISUAL", "vim")
-            .with("EDITOR", "nano");
+        let env = MapEnv::empty().with("VISUAL", "vim").with("EDITOR", "nano");
         let cmd = resolve_editor(&env);
         assert_eq!(cmd.program, OsString::from("vim"));
         assert!(cmd.args.is_empty());
@@ -183,9 +181,7 @@ mod tests {
     fn empty_visual_falls_through_to_editor() {
         // VISUAL=" " is whitespace-only; resolver should treat it as unset
         // and fall through to EDITOR rather than spawning a blank program.
-        let env = MapEnv::empty()
-            .with("VISUAL", "   ")
-            .with("EDITOR", "nano");
+        let env = MapEnv::empty().with("VISUAL", "   ").with("EDITOR", "nano");
         let cmd = resolve_editor(&env);
         assert_eq!(cmd.program, OsString::from("nano"));
     }

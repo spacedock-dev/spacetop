@@ -294,14 +294,17 @@ mod tests {
 
         // And the selected row carries the REVERSED modifier.
         let buffer = terminal.backend().buffer();
-        let selected_visible = row_strings(buffer)
-            .iter()
-            .enumerate()
-            .any(|(y, row)| {
-                row.contains("docs/w39")
-                    && buffer[(1, y as u16)].style().add_modifier.contains(Modifier::REVERSED)
-            });
-        assert!(selected_visible, "selected row should be drawn with REVERSED");
+        let selected_visible = row_strings(buffer).iter().enumerate().any(|(y, row)| {
+            row.contains("docs/w39")
+                && buffer[(1, y as u16)]
+                    .style()
+                    .add_modifier
+                    .contains(Modifier::REVERSED)
+        });
+        assert!(
+            selected_visible,
+            "selected row should be drawn with REVERSED"
+        );
 
         // Move selection back to the top — top edge tracking.
         state.selected_index = 0;
@@ -397,9 +400,7 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer();
         let thumb_y_top: Vec<u16> = (0..buffer.area.height)
-            .filter(|y| {
-                (0..buffer.area.width).any(|x| buffer[(x, *y)].symbol() == "\u{2588}")
-            })
+            .filter(|y| (0..buffer.area.width).any(|x| buffer[(x, *y)].symbol() == "\u{2588}"))
             .collect();
         assert!(!thumb_y_top.is_empty(), "thumb should render at top");
 
@@ -409,9 +410,7 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer();
         let thumb_y_bot: Vec<u16> = (0..buffer.area.height)
-            .filter(|y| {
-                (0..buffer.area.width).any(|x| buffer[(x, *y)].symbol() == "\u{2588}")
-            })
+            .filter(|y| (0..buffer.area.width).any(|x| buffer[(x, *y)].symbol() == "\u{2588}"))
             .collect();
         assert!(!thumb_y_bot.is_empty(), "thumb should render at bottom");
         assert!(

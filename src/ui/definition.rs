@@ -68,9 +68,7 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, definition: &WorkflowDefinit
         .unwrap_or_else(|| "entities".to_string());
 
     let path_full = definition.root.display().to_string();
-    let prefix = format!(
-        "Workflow Definition  \u{00B7}  {basename}  \u{00B7}  {plural} "
-    );
+    let prefix = format!("Workflow Definition  \u{00B7}  {basename}  \u{00B7}  {plural} ");
     let prefix_len = prefix.chars().count();
     let available = (area.width as usize).saturating_sub(prefix_len);
     let path_str = left_fit(&path_full, available);
@@ -79,10 +77,7 @@ fn render_header(frame: &mut Frame<'_>, area: Rect, definition: &WorkflowDefinit
 
     let line = Line::from(vec![
         Span::styled("Workflow Definition  \u{00B7}  ", dim),
-        Span::styled(
-            basename,
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
+        Span::styled(basename, Style::default().add_modifier(Modifier::BOLD)),
         Span::styled(format!("  \u{00B7}  {plural} "), dim),
         Span::styled(path_str, dim),
         Span::styled(" ".repeat(trailing_spaces), dim),
@@ -379,8 +374,7 @@ mod tests {
     /// exercising every flag combination.
     #[test]
     fn stages_table_renders_every_stage_field() {
-        let definition =
-            five_stage_fixture(PathBuf::from("/workflow-fixture"), HashMap::new());
+        let definition = five_stage_fixture(PathBuf::from("/workflow-fixture"), HashMap::new());
 
         let mut terminal = Terminal::new(TestBackend::new(140, 50)).expect("terminal");
         terminal
@@ -527,9 +521,7 @@ mod tests {
             .unwrap();
             std::fs::write(
                 root.join("task-001.md"),
-                format!(
-                    "---\nid: 001\ntitle: T{i}\nstatus: plan\n---\n\nbody\n"
-                ),
+                format!("---\nid: 001\ntitle: T{i}\nstatus: plan\n---\n\nbody\n"),
             )
             .unwrap();
             roots.push(root.clone());

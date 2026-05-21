@@ -272,9 +272,7 @@ mod tests {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/spacetop-dev");
         let contents = std::fs::read_to_string(root.join("README.md")).expect("read README");
         let out = parse_stage_prose(&contents);
-        let plan = out
-            .get("plan")
-            .expect("plan stage prose must be extracted");
+        let plan = out.get("plan").expect("plan stage prose must be extracted");
         assert!(
             plan.contains("Approved design notes"),
             "plan prose missing 'Approved design notes'; got: {plan}"

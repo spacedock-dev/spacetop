@@ -208,6 +208,8 @@ fn explicit_w_repo_root_single_workflow_opens_that_workflow() {
                 fs::canonicalize(root.join("docs/only")).unwrap().as_path()
             );
         }
-        other => panic!("expected single discovered workflow from explicit repo root, got {other:?}"),
+        other => {
+            panic!("expected single discovered workflow from explicit repo root, got {other:?}")
+        }
     }
 }
