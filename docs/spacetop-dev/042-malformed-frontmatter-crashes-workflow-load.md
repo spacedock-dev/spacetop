@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-042-malformed-frontmatter-crashes-workflow-load
 issue:
-pr:
+pr: #39
 mod-block: merge:pr-merge
 ---
 
