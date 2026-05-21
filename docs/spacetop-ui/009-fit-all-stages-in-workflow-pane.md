@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-009-fit-all-stages-in-workflow-pane
 issue:
-pr:
+pr: #38
 mod-block: merge:pr-merge
 ---
 
