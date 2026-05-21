@@ -126,4 +126,16 @@ Layered cycle 3's 90% horizontal margin and ≥3-line inter-row padding on top o
 Do not regress the prior color, arrows, full-width, feedback-row, or 90% margin work.
 
 
+## Stage Report: implement (cycle 5)
+
+- DONE: Suppress trailing arrow after the final emitted stage in both wrapped Narrow and VeryNarrow tiers. Inter-stage `→` and `wrap_trailing` glyphs render only between two real stage cells, never after the last one in the rendered sequence. Add/adjust tests asserting the final row's rendered text does not end with an arrow glyph for the 12-stage research fixture; cycle-1 arrow tests must still pass.
+  `render_very_narrow` now sets `has_trail = row_last_excl < visible_cells` (was `row_last_excl < visible_cells && row_last_excl < cells.len()`), so the final visible stage row never carries a `wrap_trailing` even when a `+N hidden:` overflow indicator follows. Narrow's final row already had `has_wrap_trailing: false` hardcoded. New tests `narrow_tier_last_row_does_not_end_with_arrow` and `very_narrow_tier_last_row_does_not_end_with_arrow` (both fit and overflow cases) assert the last stage-bearing row's trimmed text does not end with `→`; cycle-1 `narrow_tier_colors_each_stage_name_per_stage` / `very_narrow_tier_colors_each_stage_name_per_stage` arrow assertions still pass unchanged.
+- DONE: Change `INTER_ROW_PADDING_LINES` from `3` to `1`. Update the inter-row spacing tests (the `>=3 blank lines` assertions become `==1 blank line`). Keep the padding-aware row-count math (`max_rows_with_padding = (budget + pad) / (1 + pad)`) intact — only the constant changes.
+  `INTER_ROW_PADDING_LINES` flipped from `3` to `1` in `src/ui/graph.rs`; the `max_rows_with_padding` formula and all uses of the constant are untouched. Tests `narrow_tier_inserts_blank_lines_between_rows` and `very_narrow_tier_inserts_blank_lines_between_rows` now `assert_eq!(gap, 1, …)`; `very_narrow_tier_row_budget_accounts_for_inter_row_padding`'s height was rebalanced from 13 (4 + 3*3) to 7 (4 + 3*1) to exercise the same exact-fit / one-short branch with the new constant.
+- DONE: make lint clean and full cargo test green; prior 12-stage tests for color, arrows (between adjacent stages only), full-width, feedback-row, and 90% margin all still pass.
+  `make lint` → clippy clean with `-D warnings`. `cargo test` → 270 lib + 4 bin + 8 integration tests pass, 3 notify-backend tests intentionally ignored, 0 failures. All cycle-1/2/3/4 tests (color, arrows, full-width, feedback-row, 90% margin) still pass without further edits.
+
+### Summary
+
+Two narrow polish edits per the cycle-4 captain feedback: dropped the inter-row spacer from 3 lines to 1, and tightened the VeryNarrow `has_trail` predicate so a wrap arrow is emitted only when at least one more stage cell will actually be rendered in a subsequent visible row (was: any time more cells exist in the source list, which pointed an arrow at the `+N hidden:` overflow line). Narrow's final-row trailing-arrow path was already suppressed; added regression tests for both tiers (12-stage research fixture, fit + overflow cases) so the rule cannot silently regress.
 

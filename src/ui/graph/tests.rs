@@ -1181,12 +1181,12 @@ fn narrow_tier_inserts_blank_lines_between_rows() {
     );
     for pair in stage_row_indices.windows(2) {
         let (a, b) = (pair[0], pair[1]);
-        // Lines between two stage rows must all be blank spacer Lines and
-        // there must be at least 3 of them.
+        // Cycle 4 captain feedback: inter-row padding tightened from 3 to 1
+        // blank spacer Line between any two stage rows.
         let gap = b - a - 1;
-        assert!(
-            gap >= 3,
-            "narrow tier must have >=3 blank spacer Lines between stage rows {a} and {b}; got {gap}"
+        assert_eq!(
+            gap, 1,
+            "narrow tier must have exactly 1 blank spacer Line between stage rows {a} and {b}; got {gap}"
         );
         for (k, line) in lines.iter().enumerate().take(b).skip(a + 1) {
             let blank: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -1199,7 +1199,8 @@ fn narrow_tier_inserts_blank_lines_between_rows() {
 }
 
 /// Cycle 3 captain feedback (ask #2): the VeryNarrow multi-column grid must
-/// also inject ≥3 blank spacer Lines between consecutive stage rows.
+/// also inject blank spacer Lines between consecutive stage rows (cycle 4
+/// tightened the count from 3 to 1).
 #[test]
 fn very_narrow_tier_inserts_blank_lines_between_rows() {
     let g = glyphs_for(false);
@@ -1256,9 +1257,9 @@ fn very_narrow_tier_inserts_blank_lines_between_rows() {
     for pair in stage_row_indices.windows(2) {
         let (a, b) = (pair[0], pair[1]);
         let gap = b - a - 1;
-        assert!(
-            gap >= 3,
-            "very-narrow tier must have >=3 blank spacer Lines between stage rows {a} and {b}; got {gap}"
+        assert_eq!(
+            gap, 1,
+            "very-narrow tier must have exactly 1 blank spacer Line between stage rows {a} and {b}; got {gap}"
         );
         for (k, line) in lines.iter().enumerate().take(b).skip(a + 1) {
             let blank: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -1304,12 +1305,13 @@ fn very_narrow_tier_row_budget_accounts_for_inter_row_padding() {
     };
     // Width 16 forces a 1-cell-per-row layout (the widest cell at this
     // fixture is "▶ alpha (0)" = 11 chars, so a 16-col usable budget can
-    // only hold 1 column with `col_gap=3`). Height 13 is exactly enough
-    // for 4 stage rows with 3 blank padding lines between consecutive
-    // rows: 4 + 3*3 = 13. A correctly-budgeted renderer must keep all 4
+    // only hold 1 column with `col_gap=3`). Cycle 4 tightened
+    // INTER_ROW_PADDING_LINES from 3 to 1, so height 7 is exactly enough
+    // for 4 stage rows with 1 blank padding line between consecutive
+    // rows: 4 + 3*1 = 7. A correctly-budgeted renderer must keep all 4
     // stages visible (no overflow indicator).
     let inner_width = 16usize;
-    let inner_height = 13usize;
+    let inner_height = 7usize;
     let lines = render_very_narrow(
         &stages,
         &counts,
@@ -1368,6 +1370,165 @@ fn very_narrow_tier_row_budget_accounts_for_inter_row_padding() {
         short_text.contains("hidden:"),
         "at exactly one line below the padding-aware budget the renderer must \
          surface an overflow indicator; got=\n{short_text}"
+    );
+}
+
+/// Cycle 4 captain feedback (ask #1): no trailing arrow after the final
+/// (terminal) stage on the last wrapped row in the Narrow tier. Inter-stage
+/// `→` and `wrap_trailing` glyphs render only BETWEEN two real stage cells —
+/// never after the very last emitted cell in the rendered sequence.
+#[test]
+fn narrow_tier_last_row_does_not_end_with_arrow() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/narrow-no-trailing"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // Force wrapping with inner_width=80 (usable_width=72) which cannot hold
+    // the full 12-stage narrow_summary on a single row.
+    let lines = render_narrow(&stages, &counts, None, &g, 80, &definition);
+
+    // Find the last row that contains a stage name (skip feedback annotation
+    // / blank spacer lines).
+    let last_stage_row = lines
+        .iter()
+        .rev()
+        .find(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+        })
+        .expect("at least one stage-bearing row in narrow output");
+
+    // The terminal stage ("rejected") must appear on the final stage row —
+    // sanity-check the fixture actually exercised the wrap behaviour.
+    let last_row_text: String = last_stage_row
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
+    assert!(
+        last_row_text.contains("rejected"),
+        "expected the terminal stage on the final wrapped row; got {last_row_text:?}"
+    );
+
+    // After stripping the right-margin whitespace, the row must NOT end with
+    // a narrow arrow glyph.
+    let trimmed = last_row_text.trim_end();
+    assert!(
+        !trimmed.ends_with('\u{2192}'),
+        "narrow tier's final wrapped row must not end with a trailing `→` arrow \
+         after the terminal stage; got {last_row_text:?}"
+    );
+}
+
+/// Cycle 4 captain feedback (ask #1): no trailing arrow after the final
+/// (terminal) stage on the last wrapped row in the VeryNarrow tier. Holds
+/// both when every stage fits in the grid AND when an overflow indicator
+/// follows the grid (a `+N hidden:` line is NOT a stage cell).
+#[test]
+fn very_narrow_tier_last_row_does_not_end_with_arrow() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/vnarrow-no-trailing"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+
+    // Case A: every stage fits in the grid (no overflow indicator).
+    let lines_fit = render_very_narrow(&stages, &counts, None, &g, 40, 24, &definition);
+    let last_stage_row = lines_fit
+        .iter()
+        .rev()
+        .find(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+                && !text.contains("rollback on reject")
+                && !text.starts_with('+')
+        })
+        .expect("at least one stage-bearing row in very-narrow output");
+    let last_row_text: String = last_stage_row
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
+    assert!(
+        last_row_text.contains("rejected"),
+        "expected the terminal stage on the final grid row; got {last_row_text:?}"
+    );
+    assert!(
+        !last_row_text.trim_end().ends_with('\u{2192}'),
+        "very-narrow tier's final grid row must not end with a trailing `→` \
+         after the terminal stage; got {last_row_text:?}"
+    );
+
+    // Case B: grid overflows (some stages elided to a `+N hidden:` line).
+    // The last EMITTED stage cell must still not be followed by a trailing
+    // arrow, even though more stages exist in the overflow line.
+    let lines_overflow = render_very_narrow(&stages, &counts, None, &g, 14, 5, &definition);
+    let overflow_text: String = lines_overflow
+        .iter()
+        .map(|l| {
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        overflow_text.contains("hidden:"),
+        "fixture must overflow at width=14/height=5 to exercise this case; got=\n{overflow_text}"
+    );
+    let last_stage_row_overflow = lines_overflow
+        .iter()
+        .rev()
+        .find(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+                && !text.contains("rollback on reject")
+                && !text.starts_with('+')
+        })
+        .expect("at least one stage-bearing row before overflow indicator");
+    let last_overflow_row_text: String = last_stage_row_overflow
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
+    assert!(
+        !last_overflow_row_text.trim_end().ends_with('\u{2192}'),
+        "very-narrow tier's final visible stage row must not end with a `→` \
+         even when an overflow indicator follows; got {last_overflow_row_text:?}"
     );
 }
 

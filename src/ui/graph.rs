@@ -19,8 +19,9 @@ const ASCII_ENV_VAR: &str = "SPACETOP_ASCII";
 const MAX_FEEDBACK_ROWS: usize = 2;
 /// Number of blank padding lines inserted between consecutive stage rows in
 /// the wrapped Narrow tier and the VeryNarrow multi-column grid (cycle 3
-/// captain feedback). Pure spacers — no glyph.
-const INTER_ROW_PADDING_LINES: usize = 3;
+/// captain feedback; tightened from 3 to 1 in cycle 4). Pure spacers — no
+/// glyph.
+const INTER_ROW_PADDING_LINES: usize = 1;
 
 /// Compute the usable horizontal budget for the stage graph: roughly 90% of
 /// the inner pane width, with a floor that lets very narrow panes still
@@ -956,9 +957,14 @@ fn render_very_narrow<'a>(
         }
 
         let has_lead = r > 0;
-        // A trailing wrap arrow is added only when more stages follow within
-        // the visible portion of the grid.
-        let has_trail = row_last_excl < visible_cells && row_last_excl < cells.len();
+        // Cycle 4 captain feedback: inter-stage / wrap_trailing arrows only
+        // render BETWEEN two real stage cells, never after the very last
+        // emitted stage cell. A trailing wrap arrow is therefore added only
+        // when at least one more stage cell will actually be rendered in a
+        // subsequent visible row — `row_last_excl < visible_cells`. The
+        // previous condition also pointed an arrow at the `+N hidden:`
+        // overflow indicator, which the captain rejected.
+        let has_trail = row_last_excl < visible_cells;
         let lead_w = if has_lead { wrap_leading_w } else { 0 };
         let trail_w = if has_trail { wrap_trailing_w } else { 0 };
         let baseline =
