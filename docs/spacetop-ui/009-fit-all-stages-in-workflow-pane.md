@@ -116,4 +116,14 @@ Cycles 1 and 2 fixes confirmed landed. Two polish asks on the wrapped tiers:
 
 Layered cycle 3's 90% horizontal margin and ≥3-line inter-row padding on top of the prior color, arrow, full-width, and feedback-row work. Threaded a shared `usable_inner_width` budget through `pick_width_tier` and both wrapping renderers so the tier choice and the rendered content agree on the same column budget, and added padding-aware row-count math (`max_rows_with_padding = (budget + pad) / (1 + pad)`) to the VeryNarrow grid so the new spacers never silently elide stages. The cycle-3 commit is the only edit to `src/ui/graph.rs` and `src/ui/graph/tests.rs` beyond what cycles 1–3 already landed.
 
+#### Cycle 4 — captain rejection at implement (2026-05-21, cycle-limit override)
+
+3-cycle threshold reached; captain explicitly authorised one more iteration on two concrete polish asks:
+
+1. **No trailing arrow after the final (terminal) stage on the last wrapped row.** Current rendering shows `↪ … rejected (0) →` (terminal stage followed by a wrap-trailing/inter-stage arrow before the right margin). The terminal stage is the end of the directed sequence; nothing follows it, so no glyph belongs there. Suppress the trailing arrow after the very last stage in both wrapped Narrow and VeryNarrow tiers (i.e. only emit `wrap_trailing` / inter-stage `→` between two real stage cells, never after the final emitted cell).
+2. **Tighten inter-row spacing.** The current `INTER_ROW_PADDING_LINES = 3` reads as too much vertical air between stage rows. Drop it to `1` blank line between consecutive stage rows in both wrapping tiers. Keep the padding-aware row-count math intact — just change the constant and update the affected tests.
+
+Do not regress the prior color, arrows, full-width, feedback-row, or 90% margin work.
+
+
 
