@@ -148,3 +148,12 @@ Both gaps are in `render_dag` / `render_feedback_row` (or whatever helper draws 
 
 `render_dag` now packs nodes into multi-row layouts via `dag_layout_rows` and connects rows with drawn `──╮`/`╭───╯` glyphs (using two new entries in `GlyphSet`: `arc_corner_down_right` = ╭ and `arc_corner_down_left` = ╮). `pick_width_tier` takes `inner_height` into account so the DAG tier wins whenever it can pack everything; the 009 wrapped-text tiers are entered only when the multi-row DAG would overflow the available rows. The feedback-arc row order was flipped so the arrow row renders directly under the chain and the corner row below it — giving the eye a continuous flow from source `│` down through the corners and back up via `↑` at the target. Two new tests cover the multi-row connector glyphs and the fully-connected drawn-arc sequence respectively; one regression test pins the deeper-fallback path. Lint and the full test suite remain green.
 
+### Cycle 2 — captain rejection at implement (2026-05-21)
+
+Arc rendering from Cycle 1 is confirmed fixed (full connected glyph sequence visible). One alignment ask:
+
+**Center-align the DAG horizontally within the pane.** Current rendering left-aligns the DAG inside the 90% usable-width band — at typical pane widths the chain (e.g. spacetop-dev's 5 stages) occupies the left half of the pane and leaves the right half empty. The captain wants the DAG centered horizontally: compute the chain's actual rendered width and pad both sides so the chain sits in the middle of `inner_width` (or middle of `usable_inner_width`). Apply to both single-row and multi-row DAG layouts. The feedback-arc row must shift with the chain so the corners and arrowhead remain column-aligned with their source/target stages. The Narrow/VeryNarrow fallback tiers from 009 are NOT in scope for this change — they already distribute slack across the row internally via the 009 cycle 2 work.
+
+Do not regress the multi-row DAG layout or drawn-arc-segments work from cycle 1.
+
+
