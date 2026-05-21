@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-042-malformed-frontmatter-crashes-workflow-load
 issue:
 pr: #39
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 Running `spacetop -w /Users/kent/dev/InfuseAI/GitHub/dataagentbench/docs/research/` exits 1 with no TUI shown:
