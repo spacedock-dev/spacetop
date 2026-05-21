@@ -1,13 +1,13 @@
 ---
 id: "010"
 title: Render the workflow graph as a true ASCII DAG with line-drawing edges
-status: review
+status: done
 source: captain
 started: 2026-05-21T05:29:51Z
-completed:
-verdict:
+completed: 2026-05-21T07:41:06Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-010-render-workflow-as-ascii-dag
+worktree: 
 issue:
 pr: #40
 mod-block: 
