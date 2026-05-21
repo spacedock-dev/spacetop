@@ -280,7 +280,10 @@ fn very_narrow_tier_stacks_one_stage_per_line() {
     std::env::remove_var(ASCII_ENV_VAR);
     let app = real_workflow();
     let width: u16 = 24;
-    let height: u16 = 12;
+    // Cycle 3 adds ≥3 blank lines between stage rows; 5 stages stacked at
+    // 1-per-line need 5 + 4*3 = 17 lines + pane borders. Bump height
+    // accordingly so all stage names still land on distinct rows.
+    let height: u16 = 22;
     let rendered = render_to_string(&app, width, height);
     // Verify each stage name appears on a distinct row (strictly increasing row index).
     let cols = width as usize;
@@ -521,49 +524,42 @@ fn narrow_dag_wraps_to_two_rows() {
         stage("done", false, true, false, false, None),
     ];
     let counts = vec![1usize, 2, 3, 4, 5, 0];
-    let lines = render_narrow(&stages, &counts, None, &g);
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/narrow-wrap"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // Choose an inner_width that fits roughly half the stages per row.
+    // alpha(1), beta(2), gamma(3), delta(4), epsilon(5), done(0) with markers
+    // and arrows; ~40 cols should split into about two rows.
+    let lines = render_narrow(&stages, &counts, None, &g, 40, &definition);
     // Must produce at least 2 lines.
     assert!(
         lines.len() >= 2,
-        "render_narrow must produce at least 2 lines for split DAG, got {}",
+        "render_narrow must produce at least 2 lines when stages do not fit on one row, got {}",
         lines.len()
     );
-    // First row must contain the first-half stage names (alpha, beta, gamma).
+    // Every stage name must appear somewhere across all rows.
+    let all_text: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+        .collect();
+    for name in ["alpha", "beta", "gamma", "delta", "epsilon", "done"] {
+        assert!(
+            all_text.contains(name),
+            "narrow tier must show every stage; missing {name} in {all_text:?}"
+        );
+    }
+    // Sanity: first row must not contain the last stage (must have wrapped).
     let row1: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
     assert!(
-        row1.contains("alpha"),
-        "row 1 must contain 'alpha'; got: {row1:?}"
-    );
-    assert!(
-        row1.contains("beta"),
-        "row 1 must contain 'beta'; got: {row1:?}"
-    );
-    assert!(
-        row1.contains("gamma"),
-        "row 1 must contain 'gamma'; got: {row1:?}"
-    );
-    // Second row must contain the second-half stage names (delta, epsilon, done).
-    let row2: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
-    assert!(
-        row2.contains("delta"),
-        "row 2 must contain 'delta'; got: {row2:?}"
-    );
-    assert!(
-        row2.contains("epsilon"),
-        "row 2 must contain 'epsilon'; got: {row2:?}"
-    );
-    assert!(
-        row2.contains("done"),
-        "row 2 must contain 'done'; got: {row2:?}"
-    );
-    // Row 1 must NOT contain second-half names (they must be on row 2).
-    assert!(
-        !row1.contains("delta"),
-        "row 1 must not contain 'delta' (should be on row 2)"
-    );
-    assert!(
-        !row1.contains("epsilon"),
-        "row 1 must not contain 'epsilon' (should be on row 2)"
+        !row1.contains("done"),
+        "row 1 must wrap before 'done' at inner_width=40; got: {row1:?}"
     );
 }
 
@@ -587,6 +583,953 @@ fn stage(
         worktree,
         concurrency: None,
     }
+}
+
+/// Build the 12-stage research workflow described in the AC for entity 009.
+fn research_12_stage_workflow() -> App {
+    let root = PathBuf::from("/tmp/spacetop-research-12");
+    let names = [
+        "pending", "scoping", "ideate", "review", "smoke", "run", "analyze",
+        "promote", "expanded", "ideated", "done", "rejected",
+    ];
+    let stages: Vec<StageDefinition> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+    };
+    App::from_snapshot(root, snapshot)
+}
+
+const RESEARCH_STAGES: &[&str] = &[
+    "pending", "scoping", "ideate", "review", "smoke", "run", "analyze",
+    "promote", "expanded", "ideated", "done", "rejected",
+];
+
+/// AC-1: every stage name must appear (or be named in an explicit overflow
+/// indicator) at a representative narrow pane size for a 12-stage workflow.
+#[test]
+fn fits_all_twelve_research_stages_at_narrow_pane_size() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 80x24 overall is a representative cramped terminal. The graph pane is 7
+    // rows tall (1 top border, 1 bottom border, 5 inner lines) per the
+    // overview layout in `src/ui/mod.rs`.
+    let rendered = render_to_string(&app, 80, 7);
+    let total_lines = rendered.len() / 80;
+    for name in RESEARCH_STAGES {
+        let present = rendered.contains(name);
+        if present {
+            continue;
+        }
+        // Allow an explicit overflow indicator that names the hidden count.
+        assert!(
+            rendered.contains("hidden:"),
+            "stage {name} missing and no '+N hidden:' indicator present (rendered {total_lines} lines)"
+        );
+        // The indicator must mention this stage by name if it was elided.
+        assert!(
+            rendered.contains(name),
+            "stage {name} not in visible cells nor named by overflow indicator"
+        );
+    }
+}
+
+/// AC-2: at the Wide width breakpoint every stage must be visible.
+#[test]
+fn fits_all_twelve_research_stages_in_wide_tier() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 200 columns is generous enough for the wide ribbon.
+    let rendered = render_to_string(&app, 200, 10);
+    for name in RESEARCH_STAGES {
+        assert!(
+            rendered.contains(name),
+            "wide tier must show {name}; full rendered=\n{rendered}"
+        );
+    }
+}
+
+/// AC-2: at the Narrow width breakpoint every stage must be visible (the
+/// renderer wraps into as many rows as needed instead of dropping stages).
+#[test]
+fn fits_all_twelve_research_stages_in_narrow_tier() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 100 cols is wide enough to wrap two-or-three rows of compact form but
+    // not the full single-line wide ribbon (which needs >120 cols for 12
+    // stages with markers).
+    let rendered = render_to_string(&app, 100, 14);
+    for name in RESEARCH_STAGES {
+        assert!(
+            rendered.contains(name),
+            "narrow tier must show every stage; missing {name}"
+        );
+    }
+}
+
+/// AC-2: at the VeryNarrow width breakpoint every stage must be visible
+/// (the grid layout packs stages into multiple columns; if even that
+/// overflows vertically, the overflow indicator must name the hidden stages).
+#[test]
+fn fits_all_twelve_research_stages_in_very_narrow_tier() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 40 cols forces the VeryNarrow tier for a 12-stage workflow. Cycle 3
+    // captain feedback adds ≥3 blank lines between stage rows, so the grid
+    // needs more vertical room than before (12 stages at 2 cols → 6 rows
+    // → 6 + 5*3 = 21 stage-grid lines, plus pane borders).
+    let rendered = render_to_string(&app, 40, 26);
+    for name in RESEARCH_STAGES {
+        assert!(
+            rendered.contains(name),
+            "very narrow tier must show {name}"
+        );
+    }
+}
+
+/// AC-1 fallback: when even the multi-column grid cannot fit every stage
+/// within the available pane height, an overflow indicator must be present
+/// and must name the hidden stages so the captain knows what is hidden.
+#[test]
+fn very_narrow_overflow_indicator_names_hidden_stages() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 14 cols is narrow enough that each cell needs its own column AND only
+    // 3 rows of inner content (height 5) — only a handful of stages can
+    // fit, so the overflow indicator must kick in.
+    let rendered = render_to_string(&app, 14, 5);
+    assert!(
+        rendered.contains("hidden:"),
+        "expected '+N hidden:' overflow indicator at extreme size; got:\n{rendered}"
+    );
+}
+
+/// Cycle 1 feedback: every stage-name span in the wrapped Narrow renderer
+/// must carry the per-stage `stage_color_for` color plus BOLD, matching the
+/// Wide-tier convention. We assert this at the level of the styled spans
+/// returned from `render_narrow` so the assertion is robust to terminal
+/// fallthrough.
+#[test]
+fn narrow_tier_colors_each_stage_name_per_stage() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/narrow-colors"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    let lines = render_narrow(&stages, &counts, Some("review"), &g, 60, &definition);
+
+    // Collect (span_content, span_style) pairs across all rows.
+    let mut found_colored: usize = 0;
+    let mut active_seen_reversed = false;
+    let mut found_arrow = false;
+    for line in &lines {
+        for span in &line.spans {
+            // Inter-stage arrow.
+            if span.content.contains('\u{2192}') {
+                found_arrow = true;
+            }
+            // Stage-name spans look like "design", "▶ design", "done ■", etc.
+            // Match a span whose content contains any RESEARCH_STAGES name and
+            // assert it carries the per-stage color + BOLD.
+            for name in RESEARCH_STAGES {
+                if span.content.contains(name) && !span.content.starts_with('(') {
+                    let expected = definition.stage_color_for(name);
+                    if span.style.fg == Some(expected)
+                        && span.style.add_modifier.contains(Modifier::BOLD)
+                    {
+                        found_colored += 1;
+                        if *name == "review"
+                            && span.style.add_modifier.contains(Modifier::REVERSED)
+                        {
+                            active_seen_reversed = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        found_colored >= RESEARCH_STAGES.len(),
+        "expected every research stage name span to carry per-stage color+BOLD, \
+         found {found_colored} of {} (lines={lines:?})",
+        RESEARCH_STAGES.len()
+    );
+    assert!(
+        active_seen_reversed,
+        "active stage 'review' span must carry Modifier::REVERSED on top of color+BOLD"
+    );
+    assert!(
+        found_arrow,
+        "narrow tier must render inter-stage arrows (→) between stages"
+    );
+}
+
+/// Cycle 1 feedback: every stage-name span in the multi-column VeryNarrow
+/// grid must carry the per-stage `stage_color_for` color plus BOLD, and the
+/// grid must include inter-stage arrows within rows.
+#[test]
+fn very_narrow_tier_colors_each_stage_name_per_stage() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/vnarrow-colors"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // 40 cols, height 24 — every stage fits in the grid without overflow,
+    // accounting for cycle-3 inter-row blank padding (3 blank lines between
+    // any two stage rows in the multi-column grid).
+    let lines = render_very_narrow(&stages, &counts, Some("analyze"), &g, 40, 24, &definition);
+
+    let mut found_colored: usize = 0;
+    let mut active_seen_reversed = false;
+    let mut found_arrow = false;
+    for line in &lines {
+        for span in &line.spans {
+            if span.content.contains('\u{2192}') {
+                found_arrow = true;
+            }
+            for name in RESEARCH_STAGES {
+                if span.content.contains(name) {
+                    let expected = definition.stage_color_for(name);
+                    if span.style.fg == Some(expected)
+                        && span.style.add_modifier.contains(Modifier::BOLD)
+                    {
+                        found_colored += 1;
+                        if *name == "analyze"
+                            && span.style.add_modifier.contains(Modifier::REVERSED)
+                        {
+                            active_seen_reversed = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        found_colored >= RESEARCH_STAGES.len(),
+        "expected every research stage name cell to carry per-stage color+BOLD, \
+         found {found_colored} of {} (lines={lines:?})",
+        RESEARCH_STAGES.len()
+    );
+    assert!(
+        active_seen_reversed,
+        "active stage 'analyze' cell must carry Modifier::REVERSED on top of color+BOLD"
+    );
+    assert!(
+        found_arrow,
+        "very-narrow grid must render inter-stage arrows (→) within rows"
+    );
+}
+
+/// Cycle 3 captain feedback (ask #1): the wrapped Narrow renderer must
+/// render into roughly 90% of `inner_width`, with the remaining 10% used
+/// as left+right margin. Multi-stage rows distribute slack across the
+/// inter-stage gaps to span `usable_width`; the line as a whole still
+/// reaches `inner_width` (left margin + content + right margin) so the
+/// centered Paragraph alignment is a no-op.
+#[test]
+fn narrow_tier_uses_full_pane_width() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/narrow-fullwidth"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // Force wrapping by choosing an inner_width well below the narrow_summary
+    // width (~154 chars for the 12-stage research fixture).
+    let inner_width = 80usize;
+    let lines = render_narrow(&stages, &counts, None, &g, inner_width, &definition);
+    // Skip the trailing feedback-annotation line (if any) by only checking
+    // lines that contain at least one stage name.
+    let stage_lines: Vec<&Line<'_>> = lines
+        .iter()
+        .filter(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+        })
+        .collect();
+    assert!(
+        stage_lines.len() >= 2,
+        "narrow renderer must wrap onto multiple rows at inner_width=80; \
+         got {} stage-bearing rows",
+        stage_lines.len()
+    );
+    // Cycle 3: the graph renders into ~90% of inner_width (usable_width=72)
+    // with the remaining 10% as left+right margin. Each line's total
+    // visible width still equals inner_width so the centered Paragraph is a
+    // no-op.
+    let usable_width = usable_inner_width(inner_width);
+    assert!(
+        usable_width < inner_width,
+        "usable_width must leave room for horizontal margins at inner_width=80"
+    );
+    let (left_margin, right_margin) = horizontal_margins(inner_width, usable_width);
+    assert!(left_margin > 0, "left margin must be non-zero (cycle 3)");
+    assert!(right_margin > 0, "right margin must be non-zero (cycle 3)");
+    for (i, line) in stage_lines.iter().enumerate() {
+        let total_width: usize = line.spans.iter().map(|s| visible_width(&s.content)).sum();
+        assert_eq!(
+            total_width, inner_width,
+            "narrow row {i} total visible_width={total_width} does not span inner_width={inner_width}"
+        );
+        // Every stage row must begin with a blank left-margin span so the
+        // graph isn't flush against the pane edge.
+        let first_span_text: &str = line
+            .spans
+            .first()
+            .map(|s| s.content.as_ref())
+            .unwrap_or("");
+        assert!(
+            first_span_text.chars().all(|c| c == ' ')
+                && first_span_text.chars().count() == left_margin,
+            "narrow row {i} must start with a left-margin span of {left_margin} spaces; \
+             got first span={first_span_text:?}"
+        );
+        // And it must end with a blank right-margin span of equal-ish width.
+        let last_span_text: &str = line
+            .spans
+            .last()
+            .map(|s| s.content.as_ref())
+            .unwrap_or("");
+        assert!(
+            last_span_text.chars().all(|c| c == ' ')
+                && last_span_text.chars().count() >= right_margin,
+            "narrow row {i} must end with a right-margin span of >={right_margin} spaces; \
+             got last span={last_span_text:?}"
+        );
+    }
+}
+
+/// Cycle 3 captain feedback (ask #1): the VeryNarrow multi-column grid must
+/// render into ~90% of inner_width with the remaining 10% as left+right
+/// margin. The line's total visible width still equals inner_width so the
+/// centered Paragraph is a no-op.
+#[test]
+fn very_narrow_tier_uses_full_pane_width() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/vnarrow-fullwidth"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    let inner_width = 40usize;
+    // Cycle 3: with INTER_ROW_PADDING_LINES=3 between rows, give a generous
+    // inner_height so the test still exercises all stage rows without the
+    // padding pushing stages off-screen. 12 stages at 2 cols → 6 rows → 6 +
+    // 5*3 = 21 lines + 1 feedback line = budget >= 22.
+    let inner_height = 24usize;
+    let lines = render_very_narrow(
+        &stages,
+        &counts,
+        None,
+        &g,
+        inner_width,
+        inner_height,
+        &definition,
+    );
+    // Identify the rows that contain stage names (skip any overflow/feedback
+    // tail lines).
+    let stage_lines: Vec<&Line<'_>> = lines
+        .iter()
+        .filter(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+                && !text.contains("rollback on reject")
+                && !text.starts_with('+')
+        })
+        .collect();
+    assert!(
+        !stage_lines.is_empty(),
+        "expected stage-bearing lines in very-narrow output"
+    );
+    // Cycle 3: graph renders into ~90% of inner_width with non-zero
+    // left+right margins; total line width still equals inner_width.
+    let usable_width = usable_inner_width(inner_width);
+    assert!(
+        usable_width < inner_width,
+        "usable_width must leave room for horizontal margins at inner_width=40"
+    );
+    let (left_margin, right_margin) = horizontal_margins(inner_width, usable_width);
+    assert!(left_margin > 0, "left margin must be non-zero (cycle 3)");
+    assert!(right_margin > 0, "right margin must be non-zero (cycle 3)");
+    for (i, line) in stage_lines.iter().enumerate() {
+        let total_width: usize = line.spans.iter().map(|s| visible_width(&s.content)).sum();
+        assert_eq!(
+            total_width, inner_width,
+            "very-narrow row {i} total visible_width={total_width} does not span inner_width={inner_width}"
+        );
+        // Every stage row must start with a blank left-margin span.
+        let first_span_text: &str = line
+            .spans
+            .first()
+            .map(|s| s.content.as_ref())
+            .unwrap_or("");
+        assert!(
+            first_span_text.chars().all(|c| c == ' ')
+                && first_span_text.chars().count() == left_margin,
+            "very-narrow row {i} must start with a left-margin span of {left_margin} spaces; \
+             got first span={first_span_text:?}"
+        );
+        // And end with a blank right-margin span of at least right_margin
+        // spaces (cell padding may add more on the last cell).
+        let last_span_text: &str = line
+            .spans
+            .last()
+            .map(|s| s.content.as_ref())
+            .unwrap_or("");
+        assert!(
+            last_span_text.chars().all(|c| c == ' ')
+                && last_span_text.chars().count() >= right_margin,
+            "very-narrow row {i} must end with a right-margin span of >={right_margin} spaces; \
+             got last span={last_span_text:?}"
+        );
+    }
+}
+
+/// Cycle 2 captain feedback (ask #2): the VeryNarrow tier must render the
+/// `↩ rollback on reject: review → implement` annotation when the workflow
+/// declares a `feedback-to:` path. The grid height budget must reserve room
+/// for this line BEFORE deciding how many stage rows fit.
+#[test]
+fn very_narrow_tier_renders_feedback_rollback_annotation() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    // Build a research-like 12-stage workflow with `review` declaring
+    // `feedback-to: implement` (matches the real research workflow).
+    let root = PathBuf::from("/tmp/spacetop-research-rb");
+    let names = [
+        "pending", "scoping", "ideate", "implement", "review", "smoke",
+        "run", "analyze", "promote", "expanded", "ideated", "done",
+    ];
+    let stages: Vec<StageDefinition> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done";
+            // `review` points its feedback edge back at `implement`.
+            let fb = if *n == "review" {
+                Some("implement")
+            } else {
+                None
+            };
+            stage(n, initial, terminal, false, false, fb)
+        })
+        .collect();
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+    };
+    let app = App::from_snapshot(root, snapshot);
+    // 40x20 forces VeryNarrow with a grid that has room for the annotation.
+    let rendered = render_to_string(&app, 40, 20);
+    assert!(
+        rendered.contains("rollback on reject"),
+        "VeryNarrow tier must render the feedback rollback annotation; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains("review") && rendered.contains("implement"),
+        "rollback annotation must name source and target stages; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{21B6}'),
+        "rollback annotation must use the ↩ feedback glyph; rendered=\n{rendered}"
+    );
+}
+
+/// Cycle 3 captain feedback (ask #2): the wrapped Narrow renderer must
+/// inject ≥3 blank spacer Lines between any two stage-bearing rows so the
+/// rows visually read as distinct bands.
+#[test]
+fn narrow_tier_inserts_blank_lines_between_rows() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/narrow-interrow"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // Choose inner_width that forces multiple stage rows for the 12-stage
+    // research fixture (usable_width=72 cannot hold the full narrow_summary).
+    let inner_width = 80usize;
+    let lines = render_narrow(&stages, &counts, None, &g, inner_width, &definition);
+
+    // Identify the indices of stage-bearing lines (skip trailing feedback
+    // annotations / empty spacer lines).
+    let stage_row_indices: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            let has_stage = RESEARCH_STAGES.iter().any(|s| text.contains(s));
+            if has_stage {
+                Some(i)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        stage_row_indices.len() >= 2,
+        "expected at least 2 stage rows at inner_width=80 to exercise inter-row padding"
+    );
+    for pair in stage_row_indices.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        // Cycle 4 captain feedback: inter-row padding tightened from 3 to 1
+        // blank spacer Line between any two stage rows.
+        let gap = b - a - 1;
+        assert_eq!(
+            gap, 1,
+            "narrow tier must have exactly 1 blank spacer Line between stage rows {a} and {b}; got {gap}"
+        );
+        for (k, line) in lines.iter().enumerate().take(b).skip(a + 1) {
+            let blank: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            assert!(
+                blank.trim().is_empty(),
+                "expected blank spacer Line at index {k} between stage rows; got {blank:?}"
+            );
+        }
+    }
+}
+
+/// Cycle 3 captain feedback (ask #2): the VeryNarrow multi-column grid must
+/// also inject blank spacer Lines between consecutive stage rows (cycle 4
+/// tightened the count from 3 to 1).
+#[test]
+fn very_narrow_tier_inserts_blank_lines_between_rows() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/vnarrow-interrow"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    let inner_width = 40usize;
+    let inner_height = 24usize;
+    let lines = render_very_narrow(
+        &stages,
+        &counts,
+        None,
+        &g,
+        inner_width,
+        inner_height,
+        &definition,
+    );
+    let stage_row_indices: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            let has_stage = RESEARCH_STAGES.iter().any(|s| text.contains(s))
+                && !text.contains("rollback on reject")
+                && !text.starts_with('+');
+            if has_stage {
+                Some(i)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        stage_row_indices.len() >= 2,
+        "expected at least 2 stage rows in the very-narrow grid to exercise inter-row padding"
+    );
+    for pair in stage_row_indices.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let gap = b - a - 1;
+        assert_eq!(
+            gap, 1,
+            "very-narrow tier must have exactly 1 blank spacer Line between stage rows {a} and {b}; got {gap}"
+        );
+        for (k, line) in lines.iter().enumerate().take(b).skip(a + 1) {
+            let blank: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            assert!(
+                blank.trim().is_empty(),
+                "expected blank spacer Line at index {k} between stage rows; got {blank:?}"
+            );
+        }
+    }
+}
+
+/// Cycle 3 captain feedback (ask #2): the VeryNarrow tier's row-count
+/// budgeting must subtract inter-row padding from inner_height BEFORE
+/// picking how many rows fit, so the padding does not push stages
+/// off-screen. Equivalently, the same stage that would fit without the
+/// padding-aware subtraction continues to fit when we add just enough
+/// vertical room to absorb the extra padding.
+#[test]
+fn very_narrow_tier_row_budget_accounts_for_inter_row_padding() {
+    let g = glyphs_for(false);
+    // A 4-stage fixture is enough to exercise the row-count math without
+    // tripping the overflow indicator at common pane sizes.
+    let names = ["alpha", "beta", "gamma", "delta"];
+    let stages: Vec<StageDefinition> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "delta";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/vnarrow-rowbudget"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // Width 16 forces a 1-cell-per-row layout (the widest cell at this
+    // fixture is "▶ alpha (0)" = 11 chars, so a 16-col usable budget can
+    // only hold 1 column with `col_gap=3`). Cycle 4 tightened
+    // INTER_ROW_PADDING_LINES from 3 to 1, so height 7 is exactly enough
+    // for 4 stage rows with 1 blank padding line between consecutive
+    // rows: 4 + 3*1 = 7. A correctly-budgeted renderer must keep all 4
+    // stages visible (no overflow indicator).
+    let inner_width = 16usize;
+    let inner_height = 7usize;
+    let lines = render_very_narrow(
+        &stages,
+        &counts,
+        None,
+        &g,
+        inner_width,
+        inner_height,
+        &definition,
+    );
+    let rendered_text: String = lines
+        .iter()
+        .map(|l| {
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    for name in names {
+        assert!(
+            rendered_text.contains(name),
+            "stage {name} must be visible when height is exactly enough \
+             to fit all rows + inter-row padding; rendered=\n{rendered_text}"
+        );
+    }
+    assert!(
+        !rendered_text.contains("hidden:"),
+        "no overflow indicator should appear when row budget accounts for \
+         padding; rendered=\n{rendered_text}"
+    );
+
+    // Now shrink the budget by exactly one line below the padding-aware
+    // requirement. The renderer must elide one stage (and surface it via
+    // the overflow indicator) rather than silently dropping it.
+    let lines_short = render_very_narrow(
+        &stages,
+        &counts,
+        None,
+        &g,
+        inner_width,
+        inner_height - 1,
+        &definition,
+    );
+    let short_text: String = lines_short
+        .iter()
+        .map(|l| {
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        short_text.contains("hidden:"),
+        "at exactly one line below the padding-aware budget the renderer must \
+         surface an overflow indicator; got=\n{short_text}"
+    );
+}
+
+/// Cycle 4 captain feedback (ask #1): no trailing arrow after the final
+/// (terminal) stage on the last wrapped row in the Narrow tier. Inter-stage
+/// `→` and `wrap_trailing` glyphs render only BETWEEN two real stage cells —
+/// never after the very last emitted cell in the rendered sequence.
+#[test]
+fn narrow_tier_last_row_does_not_end_with_arrow() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/narrow-no-trailing"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+    // Force wrapping with inner_width=80 (usable_width=72) which cannot hold
+    // the full 12-stage narrow_summary on a single row.
+    let lines = render_narrow(&stages, &counts, None, &g, 80, &definition);
+
+    // Find the last row that contains a stage name (skip feedback annotation
+    // / blank spacer lines).
+    let last_stage_row = lines
+        .iter()
+        .rev()
+        .find(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+        })
+        .expect("at least one stage-bearing row in narrow output");
+
+    // The terminal stage ("rejected") must appear on the final stage row —
+    // sanity-check the fixture actually exercised the wrap behaviour.
+    let last_row_text: String = last_stage_row
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
+    assert!(
+        last_row_text.contains("rejected"),
+        "expected the terminal stage on the final wrapped row; got {last_row_text:?}"
+    );
+
+    // After stripping the right-margin whitespace, the row must NOT end with
+    // a narrow arrow glyph.
+    let trimmed = last_row_text.trim_end();
+    assert!(
+        !trimmed.ends_with('\u{2192}'),
+        "narrow tier's final wrapped row must not end with a trailing `→` arrow \
+         after the terminal stage; got {last_row_text:?}"
+    );
+}
+
+/// Cycle 4 captain feedback (ask #1): no trailing arrow after the final
+/// (terminal) stage on the last wrapped row in the VeryNarrow tier. Holds
+/// both when every stage fits in the grid AND when an overflow indicator
+/// follows the grid (a `+N hidden:` line is NOT a stage cell).
+#[test]
+fn very_narrow_tier_last_row_does_not_end_with_arrow() {
+    let g = glyphs_for(false);
+    let stages: Vec<StageDefinition> = RESEARCH_STAGES
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let counts = vec![0usize; stages.len()];
+    let definition = WorkflowDefinition {
+        root: PathBuf::from("/tmp/vnarrow-no-trailing"),
+        stages: stages.clone(),
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+    };
+
+    // Case A: every stage fits in the grid (no overflow indicator).
+    let lines_fit = render_very_narrow(&stages, &counts, None, &g, 40, 24, &definition);
+    let last_stage_row = lines_fit
+        .iter()
+        .rev()
+        .find(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+                && !text.contains("rollback on reject")
+                && !text.starts_with('+')
+        })
+        .expect("at least one stage-bearing row in very-narrow output");
+    let last_row_text: String = last_stage_row
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
+    assert!(
+        last_row_text.contains("rejected"),
+        "expected the terminal stage on the final grid row; got {last_row_text:?}"
+    );
+    assert!(
+        !last_row_text.trim_end().ends_with('\u{2192}'),
+        "very-narrow tier's final grid row must not end with a trailing `→` \
+         after the terminal stage; got {last_row_text:?}"
+    );
+
+    // Case B: grid overflows (some stages elided to a `+N hidden:` line).
+    // The last EMITTED stage cell must still not be followed by a trailing
+    // arrow, even though more stages exist in the overflow line.
+    let lines_overflow = render_very_narrow(&stages, &counts, None, &g, 14, 5, &definition);
+    let overflow_text: String = lines_overflow
+        .iter()
+        .map(|l| {
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        overflow_text.contains("hidden:"),
+        "fixture must overflow at width=14/height=5 to exercise this case; got=\n{overflow_text}"
+    );
+    let last_stage_row_overflow = lines_overflow
+        .iter()
+        .rev()
+        .find(|line| {
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            RESEARCH_STAGES.iter().any(|s| text.contains(s))
+                && !text.contains("rollback on reject")
+                && !text.starts_with('+')
+        })
+        .expect("at least one stage-bearing row before overflow indicator");
+    let last_overflow_row_text: String = last_stage_row_overflow
+        .spans
+        .iter()
+        .map(|s| s.content.as_ref())
+        .collect();
+    assert!(
+        !last_overflow_row_text.trim_end().ends_with('\u{2192}'),
+        "very-narrow tier's final visible stage row must not end with a `→` \
+         even when an overflow indicator follows; got {last_overflow_row_text:?}"
+    );
 }
 
 #[allow(dead_code)]
