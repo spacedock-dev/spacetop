@@ -90,25 +90,32 @@ pub(crate) fn parse_stage_prose(readme_contents: &str) -> HashMap<String, String
     };
 
     let mut out: HashMap<String, String> = HashMap::new();
-    let mut current: Option<(String, String)> = None;
+    let mut current: Option<(Vec<String>, String)> = None;
 
     for line in body.lines() {
-        if let Some(rest) = stage_heading_name(line) {
+        if let Some(names) = stage_heading_names(line) {
             // Close the previous block if any.
-            if let Some((name, mut prose)) = current.take() {
+            if let Some((names, mut prose)) = current.take() {
                 trim_trailing_blank_lines(&mut prose);
-                out.insert(name, prose);
+                for name in names {
+                    out.insert(name, prose.clone());
+                }
             }
-            current = Some((rest.to_string(), String::new()));
+            current = Some((
+                names.into_iter().map(str::to_string).collect(),
+                String::new(),
+            ));
             continue;
         }
         // A heading of any level (h1/h2/h3+) closes the current stage.
         // We already handled `### …` above as a stage heading; any other
         // `#`-prefixed heading closes whatever stage we were collecting.
         if is_any_heading(line) {
-            if let Some((name, mut prose)) = current.take() {
+            if let Some((names, mut prose)) = current.take() {
                 trim_trailing_blank_lines(&mut prose);
-                out.insert(name, prose);
+                for name in names {
+                    out.insert(name, prose.clone());
+                }
             }
             continue;
         }
@@ -117,17 +124,28 @@ pub(crate) fn parse_stage_prose(readme_contents: &str) -> HashMap<String, String
             prose.push('\n');
         }
     }
-    if let Some((name, mut prose)) = current.take() {
+    if let Some((names, mut prose)) = current.take() {
         trim_trailing_blank_lines(&mut prose);
-        out.insert(name, prose);
+        for name in names {
+            out.insert(name, prose.clone());
+        }
     }
     out
 }
 
-/// Returns `Some(name)` when `line` is exactly an `### {name}` ATX
-/// heading. The returned name is trimmed of surrounding whitespace and
-/// any wrapping backticks. Returns `None` otherwise.
-fn stage_heading_name(line: &str) -> Option<&str> {
+/// Returns `Some(names)` when `line` is an `### {names}` ATX heading,
+/// where `names` is the list of backtick-wrapped tokens found on the
+/// heading line (in source order). If the heading has no backticks at
+/// all, the whole trimmed remainder is returned as a single element —
+/// preserving the legacy `### plan` form.
+///
+/// Examples:
+/// - `` ### `scoping` (lead only, worktree) `` → `Some(vec!["scoping"])`
+/// - `` ### `expanded` / `ideated` / `done` / `rejected` `` →
+///   `Some(vec!["expanded", "ideated", "done", "rejected"])`
+/// - `### plan` → `Some(vec!["plan"])`
+/// - `### \`unterminated` → `None` (malformed input, dropped silently)
+fn stage_heading_names(line: &str) -> Option<Vec<&str>> {
     let rest = line.strip_prefix("### ")?;
     // Reject anything that opens another heading marker after the level-3
     // prefix (e.g. `#### foo` would have been caught earlier; this is
@@ -136,12 +154,42 @@ fn stage_heading_name(line: &str) -> Option<&str> {
         return None;
     }
     let trimmed = rest.trim();
-    // Strip surrounding backticks: `### \`design\`` → `design`.
-    let unticked = trimmed.trim_matches('`').trim();
-    if unticked.is_empty() {
+    if trimmed.is_empty() {
         return None;
     }
-    Some(unticked)
+
+    if trimmed.contains('`') {
+        // Walk byte indices and collect every backtick-delimited token.
+        let bytes = trimmed.as_bytes();
+        let mut names: Vec<&str> = Vec::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'`' {
+                let start = i + 1;
+                let mut j = start;
+                while j < bytes.len() && bytes[j] != b'`' {
+                    j += 1;
+                }
+                if j >= bytes.len() {
+                    // Unterminated backtick — malformed heading, drop it.
+                    return None;
+                }
+                names.push(&trimmed[start..j]);
+                i = j + 1;
+            } else {
+                i += 1;
+            }
+        }
+        if names.is_empty() {
+            None
+        } else {
+            Some(names)
+        }
+    } else {
+        // No backticks at all: fall back to the entire trimmed line as a
+        // single name. Preserves AC-2 for the legacy `### plan` form.
+        Some(vec![trimmed])
+    }
 }
 
 /// Returns true if the line looks like an ATX markdown heading at any
@@ -296,6 +344,56 @@ mod tests {
     fn parse_stage_prose_signature_is_pure() {
         let f: fn(&str) -> HashMap<String, String> = parse_stage_prose;
         let _ = f(""); // exercise the coerced signature
+    }
+
+    /// AC-1: stage headings of the qualifier-suffixed form
+    /// `### \`scoping\` (lead only, worktree)` populate the prose map
+    /// under the plain stage name, not the noisy full-trim string.
+    #[test]
+    fn prose_extracts_qualifier_suffixed_headings() {
+        let readme = "---\nstages:\n  states:\n    - name: scoping\n    - name: review\n    - name: smoke\n---\n\
+            ## Stages\n\
+            ### `scoping` (lead only, worktree)\n\
+            scoping-body\n\
+            \n\
+            ### `review` (hypothesis only, gate, fresh)\n\
+            review-body\n\
+            \n\
+            ### `smoke` (hypothesis only, worktree)\n\
+            smoke-body\n";
+        let out = parse_stage_prose(readme);
+        assert_eq!(out.get("scoping").map(String::as_str), Some("scoping-body"));
+        assert_eq!(out.get("review").map(String::as_str), Some("review-body"));
+        assert_eq!(out.get("smoke").map(String::as_str), Some("smoke-body"));
+        // Lock the trim contract: the noisy keys must not appear.
+        assert!(
+            !out.contains_key("scoping` (lead only, worktree)"),
+            "noisy key should not be inserted; got map: {out:?}"
+        );
+    }
+
+    /// AC-3: a slash-joined heading like
+    /// `### \`expanded\` / \`ideated\` / \`done\` / \`rejected\``
+    /// inserts the same prose body under each named stage.
+    #[test]
+    fn prose_extracts_slash_joined_terminal_stages() {
+        let readme = "---\nstages:\n  states:\n    - name: expanded\n    - name: ideated\n    - name: done\n    - name: rejected\n---\n\
+            ## Stages\n\
+            ### `expanded` / `ideated` / `done` / `rejected`\n\
+            terminal-shared-body\n";
+        let out = parse_stage_prose(readme);
+        for name in ["expanded", "ideated", "done", "rejected"] {
+            assert_eq!(
+                out.get(name).map(String::as_str),
+                Some("terminal-shared-body"),
+                "stage {name} should map to shared body; got {out:?}"
+            );
+        }
+        // All four entries must share byte-identical bodies.
+        let body = out.get("expanded").cloned().expect("expanded body");
+        for name in ["ideated", "done", "rejected"] {
+            assert_eq!(out.get(name), Some(&body), "{name} body should equal expanded body");
+        }
     }
 
     /// `parse_workflow_readme` wires the prose extractor into the
