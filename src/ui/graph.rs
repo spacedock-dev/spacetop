@@ -518,27 +518,34 @@ fn render_dag<'a>(
 ) -> Vec<Line<'a>> {
     let cols = dag_layout_columns(stages, counts, active, g);
 
-    // The DAG occupies the leftmost `usable_width` cells of each row so the
-    // centered Paragraph + the 10% right-margin contract stay aligned with
-    // the wrapped tiers (cycle 3 from entity 009).
+    // The DAG packs into at most `usable_width` cells per row (90% of
+    // inner_width, mirroring the wrapped tiers). After all rows are
+    // built we measure the actual rendered chain width and CENTER the
+    // entire DAG horizontally within `inner_width` (entity 010 cycle 2
+    // captain feedback). Every line — chain rows, inter-row connector
+    // rows, feedback-arc rows, and cross-row fallback annotations —
+    // receives the same `left_pad`, so the corners and arrowhead on the
+    // arc row stay column-aligned with the source/target stages on the
+    // chain row.
     let usable_width = usable_inner_width(inner_width);
-    let (left_margin, right_margin) = horizontal_margins(inner_width, usable_width);
-    let target_inner = inner_width.max(usable_width);
-
     let plan = dag_layout_rows(&cols, usable_width);
 
     let separator = format!(" {} ", g.forward_arrow);
     let connector_style = Style::default().fg(Color::DarkGray);
 
-    let mut lines: Vec<Line<'a>> = Vec::new();
+    // First pass: build each row's content spans and record its visible
+    // width. We defer the left/right padding until we know the max
+    // content width — that determines the centering offset.
+    struct RowContent<'b> {
+        spans: Vec<Span<'b>>,
+        width: usize,
+    }
+    let mut rows_content: Vec<RowContent<'a>> = Vec::new();
 
     let row_count = plan.rows.len();
     for (row_idx, row) in plan.rows.iter().enumerate() {
-        // Chain row content
+        // Chain row content (no left/right padding yet).
         let mut chain_spans: Vec<Span<'a>> = Vec::new();
-        if left_margin > 0 {
-            chain_spans.push(Span::raw(" ".repeat(left_margin)));
-        }
         for (within_idx, &col_i) in row.col_indices.iter().enumerate() {
             if within_idx > 0 {
                 chain_spans.push(Span::styled(separator.clone(), connector_style));
@@ -557,9 +564,6 @@ fn render_dag<'a>(
         // down to the connector below.
         let mut row_end_col = row.row_width;
         if row_idx + 1 < row_count {
-            // Use `─` + `╮` (one each) — total 2 cells — appended after the
-            // last node. We don't repeat the full forward_arrow to keep the
-            // connector compact; the corner glyph itself implies turn-down.
             let break_tail = format!(
                 "{}{}{}",
                 g.arc_horizontal, g.arc_horizontal, g.arc_corner_down_left
@@ -568,26 +572,25 @@ fn render_dag<'a>(
             chain_spans.push(Span::styled(break_tail, connector_style));
             row_end_col += bt_w;
         }
+        rows_content.push(RowContent {
+            spans: chain_spans,
+            width: row_end_col,
+        });
 
-        let chain_total = left_margin + row_end_col;
-        let chain_pad = target_inner.saturating_sub(chain_total);
-        if chain_pad > 0 {
-            chain_spans.push(Span::raw(" ".repeat(chain_pad)));
-        } else if right_margin > 0 {
-            chain_spans.push(Span::raw(" ".repeat(right_margin)));
-        }
-        lines.push(Line::from(chain_spans));
-
-        // Feedback arcs that originate from a column on THIS chain row are
-        // emitted directly under it (kept simple: for now, every feedback
-        // edge that has both endpoints on this row gets drawn here; cross-
-        // row arcs degrade to a tail annotation).
+        // Feedback arcs that originate from a column on THIS chain row.
         for arc in feedback_arcs_for_row(stages, &cols, row) {
-            // Arrow row first (closer to chain) then corner row below it.
             let (top, bottom) = render_feedback_row(arc.source_col, arc.target_col, g);
             let arc_style = Style::default().fg(Color::Red);
-            lines.push(dag_arc_line(&top, left_margin, target_inner, arc_style));
-            lines.push(dag_arc_line(&bottom, left_margin, target_inner, arc_style));
+            let top_w = visible_width(&top);
+            let bot_w = visible_width(&bottom);
+            rows_content.push(RowContent {
+                spans: vec![Span::styled(top, arc_style)],
+                width: top_w,
+            });
+            rows_content.push(RowContent {
+                spans: vec![Span::styled(bottom, arc_style)],
+                width: bot_w,
+            });
         }
 
         // Inter-chain-row connector line.
@@ -597,35 +600,51 @@ fn render_dag<'a>(
             let next_start_col = next_row.row_start_cols.first().copied().unwrap_or(0);
             let conn = build_row_break_connector(next_start_col, break_col, g);
             let conn_w = visible_width(&conn);
-            let mut spans: Vec<Span<'a>> = Vec::new();
-            if left_margin > 0 {
-                spans.push(Span::raw(" ".repeat(left_margin)));
-            }
-            spans.push(Span::styled(conn, connector_style));
-            let used = left_margin + conn_w;
-            let pad = target_inner.saturating_sub(used);
-            if pad > 0 {
-                spans.push(Span::raw(" ".repeat(pad)));
-            }
-            lines.push(Line::from(spans));
+            rows_content.push(RowContent {
+                spans: vec![Span::styled(conn, connector_style)],
+                width: conn_w,
+            });
         }
     }
 
-    // Cross-row feedback arcs: any feedback edge whose source and target
-    // belong to different chain rows degrades to a one-line annotation so
-    // we don't try to weave a multi-row drawn arc (a known limitation). We
-    // still draw same-row arcs as full geometry above. The annotation is
-    // intentionally distinct from the legacy `↩ rollback on reject:` footer
-    // — it surfaces a drawn arrow plus the source/target stage names so the
-    // DAG tier still communicates "there is a feedback edge" without
-    // falling all the way back to the Narrow/VeryNarrow tier.
+    // Cross-row feedback arcs degrade to a one-line annotation.
     for arc in collect_cross_row_feedback_arcs(stages, &cols, &plan) {
         let text = format!(
             "{} {} {} {}",
             g.feedback, arc.source_name, g.narrow_arrow, arc.target_name
         );
+        let w = visible_width(&text);
         let arc_style = Style::default().fg(Color::Red);
-        lines.push(dag_arc_line(&text, left_margin, target_inner, arc_style));
+        rows_content.push(RowContent {
+            spans: vec![Span::styled(text, arc_style)],
+            width: w,
+        });
+    }
+
+    // Second pass: compute the chain's actual rendered width (max width
+    // across all DAG rows) and split the remaining `inner_width -
+    // chain_width` slack as `left_pad = slack / 2`, `right_pad = slack -
+    // left_pad`. Every line is then framed with the same `left_pad` so
+    // arc-row corners and arrowheads stay column-aligned with their
+    // source/target stages on the chain row.
+    let chain_width = rows_content.iter().map(|r| r.width).max().unwrap_or(0);
+    let chain_width = chain_width.min(inner_width);
+    let slack = inner_width.saturating_sub(chain_width);
+    let left_pad = slack / 2;
+
+    let mut lines: Vec<Line<'a>> = Vec::with_capacity(rows_content.len());
+    for content in rows_content {
+        let mut spans: Vec<Span<'a>> = Vec::new();
+        if left_pad > 0 {
+            spans.push(Span::raw(" ".repeat(left_pad)));
+        }
+        spans.extend(content.spans);
+        let used = left_pad + content.width;
+        let pad = inner_width.saturating_sub(used);
+        if pad > 0 {
+            spans.push(Span::raw(" ".repeat(pad)));
+        }
+        lines.push(Line::from(spans));
     }
 
     lines
@@ -753,28 +772,6 @@ fn collect_cross_row_feedback_arcs(
         }
     }
     out
-}
-
-/// Frame a feedback-arc string with the DAG's left margin and right padding
-/// so the line's total visible width equals the pane inner width.
-fn dag_arc_line<'a>(
-    text: &str,
-    left_margin: usize,
-    target_inner: usize,
-    style: Style,
-) -> Line<'a> {
-    let body_w = visible_width(text);
-    let mut spans: Vec<Span<'a>> = Vec::new();
-    if left_margin > 0 {
-        spans.push(Span::raw(" ".repeat(left_margin)));
-    }
-    spans.push(Span::styled(text.to_string(), style));
-    let used = left_margin + body_w;
-    let pad = target_inner.saturating_sub(used);
-    if pad > 0 {
-        spans.push(Span::raw(" ".repeat(pad)));
-    }
-    Line::from(spans)
 }
 
 #[derive(Debug)]

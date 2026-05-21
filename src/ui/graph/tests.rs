@@ -2088,6 +2088,250 @@ fn dag_drawn_feedback_arc_is_fully_connected_on_spacetop_dev() {
     );
 }
 
+/// Entity 010 cycle 2: the DAG is horizontally CENTERED within the inner
+/// pane width. The leftmost rendered DAG column equals approximately
+/// `(inner_width - chain_width) / 2` (within a one-column rounding
+/// tolerance), the rightmost rendered column is approximately the same
+/// distance from the right edge, AND the feedback-arc row shifts with the
+/// chain so the `↑` arrowhead and `│` source-column glyphs remain
+/// column-aligned with their target/source stage spans on the chain row.
+///
+/// Test fixture: spacetop-dev (5 stages, fits in a single row at typical
+/// widths) at 109x10 — same geometry the captain reported in cycle-2
+/// feedback.
+#[test]
+fn dag_chain_is_horizontally_centered_on_spacetop_dev() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = spacetop_dev_workflow();
+    let line_w = 109usize;
+    let rendered = render_to_string(&app, line_w as u16, 10);
+
+    let chars: Vec<char> = rendered.chars().collect();
+    let row_strings: Vec<String> = chars
+        .chunks(line_w)
+        .map(|c| c.iter().collect())
+        .collect();
+
+    // Find the chain row: the line containing the wide `►` forward arrow.
+    let chain_row_idx = row_strings
+        .iter()
+        .position(|r| r.contains('\u{25BA}'))
+        .expect("chain row with ► should be present");
+    let chain_row = &row_strings[chain_row_idx];
+
+    // Helper: leftmost and rightmost non-space columns on a row.
+    fn non_space_bounds(row: &str) -> Option<(usize, usize)> {
+        let cols: Vec<char> = row.chars().collect();
+        let left = cols.iter().position(|c| !c.is_whitespace())?;
+        let right = cols.iter().rposition(|c| !c.is_whitespace())?;
+        Some((left, right))
+    }
+
+    let (left, right) = non_space_bounds(chain_row).expect("chain row has content");
+    let chain_width = right - left + 1;
+    let slack = line_w.saturating_sub(chain_width);
+    let expected_left = slack / 2;
+    let expected_right_gap = slack - expected_left;
+    let actual_right_gap = line_w - 1 - right;
+
+    // (a) leftmost rendered DAG column is approximately (inner_width -
+    // chain_width) / 2 within a one-column rounding tolerance.
+    assert!(
+        left.abs_diff(expected_left) <= 1,
+        "chain row leftmost column {left} must be approximately \
+         expected_left {expected_left} (slack/2 with chain_width={chain_width}, \
+         inner_width={line_w}); rendered chain_row=\n{chain_row}"
+    );
+    // (b) rightmost rendered column is approximately the same distance
+    // from the right edge.
+    assert!(
+        actual_right_gap.abs_diff(expected_right_gap) <= 1,
+        "chain row right gap {actual_right_gap} must be approximately \
+         expected_right_gap {expected_right_gap}; chain row=\n{chain_row}"
+    );
+    // The two gaps must agree within one column of each other (the
+    // captain's centering ask).
+    assert!(
+        left.abs_diff(actual_right_gap) <= 1,
+        "chain row must be horizontally centered: left_gap {left} vs \
+         right_gap {actual_right_gap} (chain_width={chain_width}); chain_row=\n{chain_row}"
+    );
+
+    // (c) the feedback-arc row's source-column `│` glyph still column-
+    // aligns with the source stage span (`review`) on the chain row, and
+    // the target-column `↑` aligns with the target stage span
+    // (`implement`).
+    let arrow_row_idx = row_strings
+        .iter()
+        .position(|r| {
+            r.contains('\u{2191}') && r.contains('\u{2502}') && r.contains("reject")
+        })
+        .expect("arrow row should be present in DAG");
+    let arrow_row = &row_strings[arrow_row_idx];
+    let up_col = arrow_row
+        .chars()
+        .position(|c| c == '\u{2191}')
+        .expect("↑ on arrow row");
+    let bar_col = arrow_row
+        .chars()
+        .position(|c| c == '\u{2502}')
+        .expect("│ on arrow row");
+    let (target_col, source_col) = if up_col < bar_col {
+        (up_col, bar_col)
+    } else {
+        (bar_col, up_col)
+    };
+
+    // Find the start and end columns of the `implement` and `review`
+    // stage spans on the chain row. Match the stage name then bracket
+    // back/forward to include the `(0)` suffix.
+    fn stage_span_bounds(row: &str, name: &str) -> Option<(usize, usize)> {
+        let chars: Vec<char> = row.chars().collect();
+        let byte_pos = row.find(name)?;
+        let char_start = row[..byte_pos].chars().count();
+        let mut char_end = char_start + name.chars().count();
+        // Extend through the (count) suffix: `(0)` etc.
+        if chars.get(char_end).copied() == Some('(') {
+            while char_end < chars.len() && chars[char_end] != ')' {
+                char_end += 1;
+            }
+            if chars.get(char_end).copied() == Some(')') {
+                char_end += 1;
+            }
+        }
+        Some((char_start, char_end))
+    }
+
+    let (impl_start, impl_end) = stage_span_bounds(chain_row, "implement")
+        .expect("implement span on chain row");
+    let (rev_start, rev_end) = stage_span_bounds(chain_row, "review")
+        .expect("review span on chain row");
+
+    assert!(
+        target_col >= impl_start && target_col < impl_end,
+        "arrow row `↑` at col {target_col} must fall within the \
+         `implement` stage span [{impl_start}, {impl_end}); chain row=\n{chain_row}\narrow row=\n{arrow_row}"
+    );
+    assert!(
+        source_col >= rev_start && source_col < rev_end,
+        "arrow row `│` at col {source_col} must fall within the `review` \
+         stage span [{rev_start}, {rev_end}); chain row=\n{chain_row}\narrow row=\n{arrow_row}"
+    );
+}
+
+/// Entity 010 cycle 2: the centering property also holds for the multi-
+/// row DAG layout (research 12-stage fixture at a narrow pane width). The
+/// captain's spec: compute `chain_width = max(row_widths)` and split
+/// `slack = inner_width - chain_width` as `left_pad = slack / 2`,
+/// `right_pad = slack - left_pad`. All DAG rows (chain rows, inter-row
+/// connectors, feedback-arc rows) receive the SAME left_pad — so the
+/// widest row sits exactly centered and narrower rows left-align within
+/// the centered band. Per-row centering would force connectors and arc
+/// rows to drift relative to the source/target stage spans they refer to.
+#[test]
+fn dag_multi_row_chain_is_horizontally_centered_on_research_fixture() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    let line_w = 100usize;
+    let rendered = render_to_string(&app, line_w as u16, 10);
+
+    let chars: Vec<char> = rendered.chars().collect();
+    let row_strings: Vec<String> = chars
+        .chunks(line_w)
+        .map(|c| c.iter().collect())
+        .collect();
+
+    fn non_space_bounds(row: &str) -> Option<(usize, usize)> {
+        let cols: Vec<char> = row.chars().collect();
+        let left = cols.iter().position(|c| !c.is_whitespace())?;
+        let right = cols.iter().rposition(|c| !c.is_whitespace())?;
+        Some((left, right))
+    }
+
+    // Find all chain rows (those containing the wide `►` forward arrow).
+    let chain_row_indices: Vec<usize> = row_strings
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.contains('\u{25BA}'))
+        .map(|(i, _)| i)
+        .collect();
+    assert!(
+        chain_row_indices.len() >= 2,
+        "multi-row DAG must emit at least 2 chain rows on the 12-stage \
+         research fixture at width {line_w}; chain_rows={}",
+        chain_row_indices.len()
+    );
+
+    // Determine the DAG block bounds: leftmost non-space column across
+    // all DAG rows and rightmost non-space column across all DAG rows.
+    // The DAG occupies a contiguous range of rows around the chain rows.
+    let dag_start = chain_row_indices[0];
+    let dag_end = *chain_row_indices.last().unwrap();
+    let mut block_left = usize::MAX;
+    let mut block_right = 0usize;
+    for row in row_strings.iter().take(dag_end + 1).skip(dag_start) {
+        if let Some((l, r)) = non_space_bounds(row) {
+            if l < block_left {
+                block_left = l;
+            }
+            if r > block_right {
+                block_right = r;
+            }
+        }
+    }
+    assert!(
+        block_left < block_right,
+        "DAG block must have non-empty bounds; rendered=\n{rendered}"
+    );
+
+    let chain_width = block_right - block_left + 1;
+    let expected_left = (line_w.saturating_sub(chain_width)) / 2;
+    let expected_right_gap = line_w.saturating_sub(chain_width) - expected_left;
+    let actual_right_gap = line_w - 1 - block_right;
+
+    // (a) the leftmost DAG column equals approximately (inner_width -
+    // chain_width) / 2 within one column.
+    assert!(
+        block_left.abs_diff(expected_left) <= 1,
+        "DAG block leftmost column {block_left} must be approximately \
+         expected_left {expected_left} (chain_width={chain_width}, \
+         inner_width={line_w}); rendered=\n{rendered}"
+    );
+    // (b) rightmost DAG column has approximately the same distance to
+    // the right edge.
+    assert!(
+        actual_right_gap.abs_diff(expected_right_gap) <= 1,
+        "DAG block right gap {actual_right_gap} must be approximately \
+         expected_right_gap {expected_right_gap}; rendered=\n{rendered}"
+    );
+    // The two gaps must agree within one column of each other.
+    assert!(
+        block_left.abs_diff(actual_right_gap) <= 1,
+        "DAG block must be horizontally centered: left_gap {block_left} \
+         vs right_gap {actual_right_gap}; rendered=\n{rendered}"
+    );
+
+    // (c) per-row property: every DAG row starts at exactly the same
+    // left column (the uniform left_pad). The widest row spans the full
+    // chain_width; narrower rows left-align within the centered band.
+    for (idx, row) in row_strings
+        .iter()
+        .enumerate()
+        .take(dag_end + 1)
+        .skip(dag_start)
+    {
+        if let Some((l, _)) = non_space_bounds(row) {
+            assert!(
+                l.abs_diff(block_left) <= 1,
+                "DAG row {idx} must left-align with the centered chain \
+                 (block_left={block_left}, this row left={l}); row=\n{row}"
+            );
+        }
+    }
+}
+
 #[allow(dead_code)]
 fn make_item(id: &str, status: &str, title: &str) -> WorkItem {
     WorkItem {
