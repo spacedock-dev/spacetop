@@ -122,3 +122,16 @@ unchanged. Dead helpers (`render_wide`, `build_counts_line`,
 `style_counts_spans`, `padded_feedback_lines`, `padded_styled_line`,
 `layout_columns`) and the now-unused `ColumnLayout::count` field were
 removed; `make lint` (`-D warnings`) and `cargo test` are both green.
+
+## Feedback Cycles
+
+### Cycle 1 — captain rejection at implement (2026-05-21)
+
+Two material gaps surfaced when the captain installed the worktree binary and ran it against real workflows:
+
+1. **The DAG must wrap AS A DAG when the chain does not fit the pane width — it must not fall back to the 009 wrapped-text tiers.** At ~109 cols with the 12-stage `dataagentbench/docs/research` workflow, the inline single-row chain `pending(7) ──▶ scoping(0) ──▶ … ──▶ rejected(0)` cannot fit, so `render_dag` currently bails to `render_narrow` and the captain sees the pre-010 wrapped-text rendering — visually indistinguishable from the post-009 output. The captain's confirmed preview shows the chain wrapping ACROSS ROWS with drawn `│`/`╭`/`╮`/`╯`/`╰` glyphs connecting one row to the next AND with feedback arcs drawn alongside. The fix: `render_dag` must support multi-row DAG layout (greedy pack nodes into rows that fit `usable_width`; between rows emit drawn `╮` (right turn down) + `│` + `╰` (left turn into next row) so the directed sequence reads continuously). Only fall back to the 009 wrapped-text tiers when the multi-row DAG itself cannot fit the available height — and even then, prefer surfacing an explicit overflow indicator (`+N nodes hidden`) over silently switching renderer families.
+
+2. **The feedback arc is broken: corner glyphs and horizontal segments are missing — only `↑`, the `reject` label, and a stray `│` render.** Captain screenshot for the spacetop-dev workflow (5 stages: `design → plan → implement → review → done` with `review → feedback-to: implement`) shows the second row as `↑    reject    │` — the `↑` is under the `implement` column, the `│` is under the `review` column, but the connecting `╰─────reject─────╯` arc between them is absent. The drawn arc must actually connect source-column → target-column: source emits `│` then `╰` (or `╮` if routed under, `╯` if routed over) at the row break; horizontal `─` segments span the columns between target and source with the label centered; target emits the matching corner and `↑` arrowhead. Cite a unit test that renders the spacetop-dev fixture and asserts the full glyph sequence on the arc row (corner → `──reject──` → corner → arrowhead), not just the endpoints.
+
+Both gaps are in `render_dag` / `render_feedback_row` (or whatever helper draws the arc). Do NOT remove the 009 wrapped tiers — they remain a deeper fallback for the height-constrained case after multi-row DAG has been exhausted.
+
