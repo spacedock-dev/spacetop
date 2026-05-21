@@ -1,13 +1,13 @@
 ---
 id: "043"
 title: Stage-heading parser drops prose when the README uses `### `stage` (qualifier)` form
-status: plan
+status: implement
 source: captain
 started: 2026-05-21T07:55:59Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-043-stage-heading-with-qualifier-not-parsed
 issue:
 pr:
 ---
