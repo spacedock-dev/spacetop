@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-043-stage-heading-with-qualifier-not-parsed
 issue:
-pr:
+pr: #41
 mod-block: merge:pr-merge
 ---
 
