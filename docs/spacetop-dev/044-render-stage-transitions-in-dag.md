@@ -145,3 +145,16 @@ Unit 1 → Unit 2 → Unit 3 in that order. Unit 1 lands the data; Unit 2 lands 
 ### Summary
 
 The plan is three units: (1) parse `stages.transitions` into a new `StageTransition` field on `WorkflowDefinition` with tests in `src/parser/readme.rs`; (2) add an `effective_transitions()` helper on `WorkflowDefinition` that synthesizes the implicit linear chain when no transitions block is declared, locking the AC-4 fallback into a single chokepoint; (3) extend `src/ui/graph.rs` `render_dag` to bucket edges as adjacent / non-adjacent-same-row / cross-row, drawing an overhead arc channel for the non-adjacent case and reusing the existing annotation-tail degradation for cross-row, with a shared dataagentbench fixture driving the AC-2 and AC-3 tests. Each unit is independently committable; `make lint` is required clean at every step.
+
+## Stage Report: implement
+
+- DONE: Domain + parser changes for stages.transitions land with passing unit tests against both a transitions-fixture (mirroring dataagentbench/docs/research) and a no-transitions fixture; effective_transitions() returns the implicit linear chain when no block is declared (AC-1 + AC-4 chokepoint).
+  Commit 931afa0; 4 domain + 4 parser tests passing including `parse_workflow_readme_research_fixture_terminal_edges` and `missing_transitions_block_leaves_empty_vec`.
+- DONE: Graph rendering draws inbound edges to each terminal stage from its declared predecessor(s) for the research fixture — including all three sources (review, smoke, analyze) for rejected — verified by an assertion test in src/ui/graph.rs (AC-2 + AC-3).
+  Commit 93acd91; `dag_renders_inbound_edge_for_non_adjacent_terminal_predecessor` (AC-2), `dag_renders_three_inbound_edges_for_rejected` (AC-3, exactly 3 `→ rejected` substrings), `dag_omits_arcs_when_no_transitions_block` (AC-4), and `collect_extra_transitions_for_research_fixture_lists_all_non_adjacent_edges` all green.
+- DONE: make lint and cargo test are both green at end of implement; no new #[allow(...)] introduced without justification (AC-5).
+  `make lint` clean (clippy -D warnings); cargo test reports 303 lib + 4 + 10 integration tests passing; `git diff main` shows no new `#[allow(...)]`.
+
+### Summary
+
+Implemented the three-unit plan: (1) added `StageTransition { from, to, label }` to the domain model and parsed `stages.transitions` from the README; (2) added `WorkflowDefinition::effective_transitions()` that synthesises the implicit linear chain when no block is declared, locking AC-4 into a single chokepoint; (3) extended `render_dag` (and the narrow tiers) to emit a one-line annotation tail for every declared edge that the inline chain rendering does not already draw. Rather than the originally-sketched overhead-arc geometry, the implementation reuses the existing cross-row degradation pattern — a single annotation line per non-adjacent edge — which is sufficient for AC-2/AC-3, keeps the change small, and avoids new geometry budget bookkeeping in the row planner.
