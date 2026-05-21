@@ -11,6 +11,7 @@ worktree:
 issue:
 pr: #39
 mod-block: 
+archived: 2026-05-21T05:29:07Z
 ---
 
 Running `spacetop -w /Users/kent/dev/InfuseAI/GitHub/dataagentbench/docs/research/` exits 1 with no TUI shown:
