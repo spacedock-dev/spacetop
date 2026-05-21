@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-010-render-workflow-as-ascii-dag
 issue:
-pr:
+pr: #40
 mod-block: merge:pr-merge
 ---
 
