@@ -11,6 +11,7 @@ worktree:
 issue:
 pr: #41
 mod-block: 
+archived: 2026-05-21T08:17:48Z
 ---
 
 When the captain opens `spacetop -w /Users/kent/dev/InfuseAI/GitHub/dataagentbench/docs/research/` and presses `D` to show the workflow README detail, the per-stage description blocks are all empty even though the README clearly defines them under a `## Stages` section.
