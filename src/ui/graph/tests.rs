@@ -132,19 +132,24 @@ fn pick_width_tier_returns_expected_tier_for_sample_widths() {
     let stages = &app.snapshot().definition.stages;
     let counts: Vec<usize> = app.stage_counts().into_iter().map(|c| c.items).collect();
     let g = glyphs_for(false);
+    // Inner-height matches the production graph pane (7 - 2 borders = 5).
+    let h: usize = 5;
     assert_eq!(
-        pick_width_tier(120, stages, &counts, &g),
+        pick_width_tier(120, h, stages, &counts, &g),
         WidthTier::Wide,
         "120 cols should fit wide"
     );
     // 38 inner cols is too small for wide but fits narrow compact form for our 5-stage set.
-    let narrow = pick_width_tier(38, stages, &counts, &g);
+    let narrow = pick_width_tier(38, h, stages, &counts, &g);
     assert!(
         matches!(narrow, WidthTier::Narrow | WidthTier::VeryNarrow),
         "small width should not be Wide"
     );
+    // At 22 cols the DAG cannot pack the 5-stage chain into the available
+    // height (multi-row DAG would need too many rows), so we should fall
+    // through to the wrapped-text VeryNarrow tier.
     assert_eq!(
-        pick_width_tier(22, stages, &counts, &g),
+        pick_width_tier(22, h, stages, &counts, &g),
         WidthTier::VeryNarrow
     );
 }
@@ -267,7 +272,13 @@ fn narrow_tier_renders_compact_textual_summary() {
         parse_errors: Vec::new(),
     };
     let app = App::from_snapshot(PathBuf::from("/tmp/narrow-tier"), snapshot);
-    let rendered = render_to_string(&app, 56, 10);
+    // Height=4 leaves inner_height=2 (TOP+BOTTOM borders), which is too
+    // short for the multi-row DAG tier (single chain row + at least one
+    // feedback-arc row already maxes the budget when the chain needs to
+    // wrap). At inner_width=56 the inline DAG chain cannot fit either, so
+    // pick_width_tier falls through to the wrapped-text Narrow tier — the
+    // exact path this test exercises.
+    let rendered = render_to_string(&app, 56, 4);
     for name in ["design", "plan", "implement", "review", "done"] {
         assert!(rendered.contains(name), "missing stage {name}");
     }
@@ -1118,8 +1129,12 @@ fn very_narrow_tier_renders_feedback_rollback_annotation() {
         parse_errors: Vec::new(),
     };
     let app = App::from_snapshot(root, snapshot);
-    // 40x20 forces VeryNarrow with a grid that has room for the annotation.
-    let rendered = render_to_string(&app, 40, 20);
+    // 40x9 keeps the pane narrow enough that the DAG cannot pack the 12
+    // stages into the available height (inner_height=7 must hold the chain
+    // rows AND their connectors), so pick_width_tier falls through to the
+    // VeryNarrow grid. The grid then has room for the `↩` annotation tail
+    // line that this test pins.
+    let rendered = render_to_string(&app, 40, 9);
     assert!(
         rendered.contains("rollback on reject"),
         "VeryNarrow tier must render the feedback rollback annotation; rendered=\n{rendered}"
@@ -1783,6 +1798,296 @@ fn dag_short_workflow_stays_within_height_bound() {
     );
 }
 
+/// Build a fixture matching the on-repo `docs/spacetop-dev` workflow shape
+/// (5 stages: design → plan → implement → review → done with
+/// `review → feedback-to: implement`). Used by the drawn-arc test that
+/// pins the FULL connected glyph sequence (entity 010 cycle 1).
+fn spacetop_dev_workflow() -> App {
+    let root = PathBuf::from("/tmp/spacetop-dev-arc");
+    let stages = vec![
+        stage("design", true, false, false, false, None),
+        stage("plan", false, false, false, false, None),
+        stage("implement", false, false, false, true, None),
+        stage("review", false, false, true, false, Some("implement")),
+        stage("done", false, true, false, false, None),
+    ];
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+        parse_errors: Vec::new(),
+    };
+    App::from_snapshot(root, snapshot)
+}
+
+/// Entity 010 cycle 1, gap 1: when the inline single-row chain does not fit
+/// `usable_inner_width`, `render_dag` MUST wrap the chain across multiple
+/// rows with drawn line-drawing glyphs (`│`/`╭`/`╮`/`╯`/`╰`) connecting one
+/// chain row to the next — it must NOT fall back to the 009 wrapped-text
+/// `render_narrow` tier. The 009 tier remains a DEEPER fallback only when
+/// the multi-row DAG itself cannot fit the available height.
+///
+/// Test setup: the 12-stage research fixture at a representative narrow
+/// pane size where (a) the single-row chain overflows `usable_inner_width`
+/// at ~90% of 100 cols, but (b) the available height (10 rows ⇒ inner
+/// height 8) is generous enough to hold 2-3 wrapped DAG chain rows with
+/// connector lines between them.
+#[test]
+fn dag_multi_row_wraps_with_drawn_connectors_on_research_fixture() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    let rendered = render_to_string(&app, 100, 10);
+
+    // (a) Every stage name + its (count) suffix must appear somewhere on
+    // the rendered buffer. Counts are zero for this fixture but we pin the
+    // `(0)` suffix on at least one node so we know the DAG node-text
+    // (which collapses the count INTO the node) was the renderer used.
+    for name in RESEARCH_STAGES {
+        assert!(
+            rendered.contains(name),
+            "every stage name must be visible in multi-row DAG; missing {name}; \
+             rendered=\n{rendered}"
+        );
+    }
+    assert!(
+        rendered.contains("(0)"),
+        "DAG nodes must carry inline `(count)` suffix; rendered=\n{rendered}"
+    );
+
+    // (b) Drawn vertical/corner glyphs connect consecutive chain rows. We
+    // expect at least one row-break corner `╮` on a chain row tail AND a
+    // matching `╯` on the connector line below. The `╭` corner appears on
+    // the connector at the next row's start column.
+    assert!(
+        rendered.contains('\u{256E}'),
+        "multi-row DAG must emit row-break corner ╮ at the right end of a \
+         wrapping chain row; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{256F}'),
+        "multi-row DAG must emit row-break corner ╯ on the connector line; \
+         rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{256D}'),
+        "multi-row DAG must emit row-break corner ╭ on the connector line at \
+         the next chain row's start column; rendered=\n{rendered}"
+    );
+    assert!(
+        rendered.contains('\u{2500}'),
+        "multi-row DAG must emit horizontal `─` fill on connector lines; \
+         rendered=\n{rendered}"
+    );
+
+    // (c) The rendering is NOT the 009 wrapped-text fallback. The Narrow
+    // tier emits `↩ rollback on reject: ...` as a tail Line whenever the
+    // workflow declares `feedback-to:` paths; this fixture has no feedback
+    // edges, so the footer would not appear regardless. The discriminator
+    // here is that the chain MUST be drawn with the DAG's wide `──►`
+    // forward arrow (`►` = U+25BA), not the Narrow tier's `→` (U+2192).
+    assert!(
+        rendered.contains('\u{25BA}'),
+        "multi-row DAG must use the wide `►` forward arrow, not the Narrow \
+         tier's `→`; rendered=\n{rendered}"
+    );
+
+    // Also assert at least two chain rows actually render: count `►` on
+    // the buffer; a 12-stage chain wrapped to 2 rows of 6 stages each has
+    // 5 + 5 = 10 forward arrows; even if the wrap puts 7-and-5 we still
+    // see well above the single-row count, so >= 9 is a safe floor.
+    let chain_arrow_count = rendered.matches('\u{25BA}').count();
+    assert!(
+        chain_arrow_count >= 9,
+        "multi-row DAG should emit at least one ► per inter-node edge \
+         (12 stages over 2 rows = ~10 arrows); got {chain_arrow_count}; \
+         rendered=\n{rendered}"
+    );
+}
+
+/// Entity 010 cycle 1, gap 1 (depth-fallback complement): when the
+/// multi-row DAG ITSELF cannot fit the available height, the renderer
+/// falls back to the 009 wrapped-text tiers (render_narrow /
+/// render_very_narrow). This test exercises the height-starved path and
+/// asserts the deeper-fallback contract: the 009 tiers' `↩ rollback on
+/// reject:` footer is still emitted when feedback edges are declared.
+#[test]
+fn dag_falls_back_to_009_wrapped_text_when_height_starved() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    // 12-stage workflow with a `review → feedback-to: implement` edge so
+    // the 009 wrapped tier has an annotation to emit. Inner_height=2
+    // (height=4) is far too tight for multi-row DAG so the fallback kicks
+    // in.
+    let root = PathBuf::from("/tmp/spacetop-deep-fallback");
+    let names = [
+        "pending", "scoping", "ideate", "implement", "review", "smoke",
+        "run", "analyze", "promote", "expanded", "ideated", "done",
+    ];
+    let stages: Vec<StageDefinition> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done";
+            let fb = if *n == "review" { Some("implement") } else { None };
+            stage(n, initial, terminal, false, false, fb)
+        })
+        .collect();
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+        parse_errors: Vec::new(),
+    };
+    let app = App::from_snapshot(root, snapshot);
+    // 40x9 forces the VeryNarrow tier path (matches the existing pinned
+    // behaviour for the 009 wrapped-text fallback).
+    let rendered = render_to_string(&app, 40, 9);
+    assert!(
+        rendered.contains("rollback on reject"),
+        "height-starved fallback must still emit the 009 `↩ rollback on reject:` \
+         footer when feedback edges are declared; rendered=\n{rendered}"
+    );
+}
+
+/// Entity 010 cycle 1, gap 2: the drawn feedback arc must render the FULL
+/// connected glyph sequence between source and target columns — corner at
+/// source, `─` fill across all columns between target and source with the
+/// label centred, matching corner at the target column, and `↑` arrowhead
+/// at the target. Endpoints alone (just `↑` + stray `│`) are not enough.
+///
+/// Tested on the spacetop-dev fixture (5 stages: design → plan → implement
+/// → review → done with `review → feedback-to: implement`).
+#[test]
+fn dag_drawn_feedback_arc_is_fully_connected_on_spacetop_dev() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = spacetop_dev_workflow();
+    // 109x10 matches the captain's reported terminal pane: chain fits on a
+    // single row so the arc geometry is the focus of the assertion.
+    let rendered = render_to_string(&app, 109, 10);
+
+    // Locate the arc rows. Per render_dag (entity 010 cycle 1), the arrow
+    // row (`↑   reject   │`) renders FIRST so it sits closer to the chain;
+    // the corner row (`╰────...────╯`) renders second below it. Chunk the
+    // rendered buffer by `line_w` chars per row (chars, not bytes, because
+    // the buffer contains multi-byte BMP glyphs like `→`/`│`/`╰`).
+    let line_w = 109usize;
+    let chars: Vec<char> = rendered.chars().collect();
+    let row_strings: Vec<String> = chars
+        .chunks(line_w)
+        .map(|c| c.iter().collect())
+        .collect();
+
+    // Find the arrow row (contains both `↑` and `│` and "reject").
+    let arrow_row_idx = row_strings.iter().position(|r| {
+        r.contains('\u{2191}') && r.contains('\u{2502}') && r.contains("reject")
+    });
+    assert!(
+        arrow_row_idx.is_some(),
+        "missing arrow row carrying ↑ + │ + 'reject' label; rendered=\n{rendered}"
+    );
+    let arrow_row = &row_strings[arrow_row_idx.unwrap()];
+    // Locate columns of ↑ (target = implement column) and │ (source =
+    // review column).
+    let up_col = arrow_row
+        .chars()
+        .position(|c| c == '\u{2191}')
+        .expect("arrow row has ↑");
+    let bar_col = arrow_row
+        .chars()
+        .position(|c| c == '\u{2502}')
+        .expect("arrow row has │");
+    let (target_col, source_col) = if up_col < bar_col {
+        (up_col, bar_col)
+    } else {
+        (bar_col, up_col)
+    };
+    assert!(
+        source_col > target_col,
+        "source column ({source_col}) must be right of target column \
+         ({target_col}) for review→implement feedback"
+    );
+
+    // The label `reject` must appear BETWEEN target_col and source_col on
+    // the arrow row.
+    let reject_pos = arrow_row.find("reject").expect("label present");
+    let reject_char_col = arrow_row[..reject_pos].chars().count();
+    assert!(
+        reject_char_col > target_col && reject_char_col < source_col,
+        "label `reject` must sit between target ({target_col}) and source \
+         ({source_col}) columns; reject_col={reject_char_col}"
+    );
+
+    // The next row must be the corner row carrying ╰ + ─...─ + ╯ at the
+    // SAME columns as the arrow-row endpoints.
+    let corner_row_idx = arrow_row_idx.unwrap() + 1;
+    assert!(
+        corner_row_idx < row_strings.len(),
+        "corner row must follow arrow row; row count = {}",
+        row_strings.len()
+    );
+    let corner_row = &row_strings[corner_row_idx];
+    let corner_chars: Vec<char> = corner_row.chars().collect();
+
+    // Corner at target column.
+    assert_eq!(
+        corner_chars.get(target_col).copied(),
+        Some('\u{2570}'),
+        "corner ╰ must sit at target column {target_col}; corner_row=\n{corner_row}"
+    );
+    // Matching corner at source column.
+    assert_eq!(
+        corner_chars.get(source_col).copied(),
+        Some('\u{256F}'),
+        "corner ╯ must sit at source column {source_col}; corner_row=\n{corner_row}"
+    );
+    // Horizontal `─` fill spans ALL columns between target+1 and source-1
+    // (inclusive of both endpoints). At least one `─` must exist in that
+    // range (sanity) AND every column in that range must be `─` (full
+    // connectivity).
+    assert!(
+        source_col > target_col + 1,
+        "target/source columns must be far enough apart for at least one \
+         `─` between them; target={target_col} source={source_col}"
+    );
+    for col in (target_col + 1)..source_col {
+        assert_eq!(
+            corner_chars.get(col).copied(),
+            Some('\u{2500}'),
+            "every column between target+1 ({}) and source-1 ({}) must be \
+             `─`; column {col} was {:?}; corner_row=\n{corner_row}",
+            target_col + 1,
+            source_col - 1,
+            corner_chars.get(col)
+        );
+    }
+
+    // The drawn arc must NOT degrade to the legacy `↩ rollback on reject:`
+    // footer when the geometry actually fits.
+    assert!(
+        !rendered.contains("rollback on reject"),
+        "drawn arc must not co-exist with the legacy footer; rendered=\n{rendered}"
+    );
+}
+
 #[allow(dead_code)]
 fn make_item(id: &str, status: &str, title: &str) -> WorkItem {
     WorkItem {
@@ -1803,3 +2108,4 @@ fn make_item(id: &str, status: &str, title: &str) -> WorkItem {
         main_body: None,
     }
 }
+
