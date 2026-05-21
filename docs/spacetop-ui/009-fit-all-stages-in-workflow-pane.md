@@ -1,7 +1,7 @@
 ---
 id: "009"
 title: Fit all workflow stages within the workflow pane
-status: implement
+status: review
 source: captain
 started: 2026-05-21T02:52:59Z
 completed:
