@@ -95,3 +95,11 @@ Color + arrows from Cycle 1 are confirmed fixed. Two new concrete asks against t
 
 Made both wrapping tiers actually use the inner pane width: `render_narrow` distributes per-row slack across the inter-stage `→` gaps (with leftover sprinkled into the leading gaps), and `render_very_narrow` does the same per-row math while accounting for wrap arrows. The VeryNarrow column-count search now prefers the LARGEST column count that fits the height budget (was: smallest), so multi-stage workflows actually use the right half of the pane. Layered the feedback-annotation reservation on top: feedback rows are computed and subtracted from the grid's height budget BEFORE choosing rows/cols, and the rollback line is appended in both Narrow and VeryNarrow tiers. Cycle 1 (color + arrows) and the earlier cycle-2 reflow work are untouched.
 
+#### Cycle 3 — captain rejection at implement (2026-05-21)
+
+Cycles 1 and 2 fixes confirmed landed. Two polish asks on the wrapped tiers:
+
+1. **Use 90% of the pane width (not 100%) — leave a left+right margin.** The current full-width distribution stretches the graph edge-to-edge with no breathing room. Render the graph into roughly 90% of `inner_width`, horizontally centered (or left-padded by half the slack and right-padded by the rest), so the workflow pane has visible margin around the graph. Apply to both the wrapped Narrow tier and the VeryNarrow multi-column grid. The exact 90% rule is a usability default — choose a clean integer column budget like `inner_width * 9 / 10` (with a floor so very narrow panes still consume what they can), and route the same logic through both tiers.
+2. **At least 3 blank lines of vertical padding between row 1 and row 2 of the stage grid.** The current rendering places the second wrapped row directly under the first, which makes adjacent rows visually run together. Inject ≥3 blank lines between consecutive stage rows (in both Narrow's wrapped form and VeryNarrow's grid) so each row reads as its own band. The blank lines are pure spacers — no glyph, no annotation. The grid's row-count budgeting must subtract the inter-row blank lines from `inner_height` BEFORE choosing how many rows fit, so the inter-row padding does not push stages off-screen.
+
+
