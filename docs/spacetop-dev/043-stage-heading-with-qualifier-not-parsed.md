@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-043-stage-heading-with-qualifier-not-parsed
 issue:
 pr: #41
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 When the captain opens `spacetop -w /Users/kent/dev/InfuseAI/GitHub/dataagentbench/docs/research/` and presses `D` to show the workflow README detail, the per-stage description blocks are all empty even though the README clearly defines them under a `## Stages` section.
