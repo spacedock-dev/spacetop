@@ -1,9 +1,9 @@
 ---
 id: "042"
 title: One malformed-frontmatter entity crashes the entire workflow load
-status: design
+status: plan
 source: captain
-started:
+started: 2026-05-21T04:42:27Z
 completed:
 verdict:
 score:
