@@ -66,8 +66,10 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
     }
 
     // With TOP+BOTTOM borders only, the inner width equals the full area width
-    // (no left/right border columns are consumed).
+    // (no left/right border columns are consumed). The inner height is the area
+    // height minus the two horizontal borders.
     let inner_width = area.width as usize;
+    let inner_height = (area.height as usize).saturating_sub(2).max(1);
     let tier = pick_width_tier(inner_width, stages, &counts, &glyphs);
 
     let definition = &state.snapshot().definition;
@@ -79,10 +81,21 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
             &glyphs,
             definition,
         ),
-        WidthTier::Narrow => render_narrow(stages, &counts, active_stage.as_deref(), &glyphs),
-        WidthTier::VeryNarrow => {
-            render_very_narrow(stages, &counts, active_stage.as_deref(), &glyphs)
-        }
+        WidthTier::Narrow => render_narrow(
+            stages,
+            &counts,
+            active_stage.as_deref(),
+            &glyphs,
+            inner_width,
+        ),
+        WidthTier::VeryNarrow => render_very_narrow(
+            stages,
+            &counts,
+            active_stage.as_deref(),
+            &glyphs,
+            inner_width,
+            inner_height,
+        ),
     };
 
     let paragraph = Paragraph::new(lines)
@@ -505,48 +518,65 @@ fn render_feedback_row(source_col: usize, target_col: usize, g: &GlyphSet) -> (S
     (top.join(""), bottom.join(""))
 }
 
-/// Build a single ribbon row for a slice of stages (used by render_narrow for 2-row split).
-fn build_narrow_row(
-    stages: &[StageDefinition],
-    counts: &[usize],
-    _active: Option<&str>,
-    g: &GlyphSet,
-) -> String {
-    let parts: Vec<String> = stages
-        .iter()
-        .enumerate()
-        .map(|(i, stage)| {
-            let count = counts.get(i).copied().unwrap_or(0);
-            let node = build_node_text(stage, g);
-            format!("{node}({count})")
-        })
-        .collect();
-    parts.join(&format!(" {} ", g.narrow_arrow))
-}
-
 fn render_narrow<'a>(
     stages: &'a [StageDefinition],
     counts: &'a [usize],
     active: Option<&str>,
     g: &'a GlyphSet,
+    inner_width: usize,
 ) -> Vec<Line<'a>> {
-    // AC-5: Split DAG into two rows at the midpoint so it fits at ~80 columns.
-    // Row 1: stages[0..mid], Row 2: stages[mid..].
-    let mid = stages.len() / 2;
-    let (row1_stages, row2_stages) = stages.split_at(mid.max(1).min(stages.len()));
-    let row1_counts = &counts[..row1_stages.len().min(counts.len())];
-    let row2_counts = if counts.len() > row1_stages.len() {
-        &counts[row1_stages.len()..]
-    } else {
-        &[]
-    };
+    // Wrap the compact `name(count) → name(count) → …` form across however many
+    // rows are needed to fit within `inner_width`. The previous fixed two-row
+    // split silently dropped stages from view when the workflow had enough
+    // stages that even half the list overflowed one row (AC-1, AC-2).
+    let arrow_sep = format!(" {} ", g.narrow_arrow);
+    let arrow_w = visible_width(&arrow_sep);
 
-    let row1 = build_narrow_row(row1_stages, row1_counts, active, g);
-    let row2 = build_narrow_row(row2_stages, row2_counts, active, g);
+    let segments: Vec<(String, usize, &str)> = stages
+        .iter()
+        .enumerate()
+        .map(|(i, stage)| {
+            let count = counts.get(i).copied().unwrap_or(0);
+            let node = build_node_text(stage, g);
+            let segment = format!("{node}({count})");
+            let width = visible_width(&segment);
+            (segment, width, stage.name.as_str())
+        })
+        .collect();
 
-    let mut lines = vec![Line::from(row1)];
-    if !row2_stages.is_empty() {
-        lines.push(Line::from(row2));
+    let mut lines: Vec<Line<'a>> = Vec::new();
+    let mut row = String::new();
+    let mut row_width = 0usize;
+    let mut row_has_stage = false;
+
+    for (segment, seg_w, _name) in segments.iter() {
+        let needed = if row_has_stage {
+            arrow_w + seg_w
+        } else {
+            *seg_w
+        };
+        // If the inner_width is implausibly small to ever fit, still emit one
+        // stage per row rather than spinning forever.
+        if row_has_stage && row_width + needed > inner_width {
+            lines.push(Line::from(row.clone()));
+            row.clear();
+            row_width = 0;
+            row_has_stage = false;
+        }
+        if row_has_stage {
+            row.push_str(&arrow_sep);
+            row_width += arrow_w;
+        }
+        row.push_str(segment);
+        row_width += seg_w;
+        row_has_stage = true;
+        // Ignore active styling here — same as the prior implementation, the
+        // narrow tier uses plain text rows. Active highlighting happens in the
+        // very-narrow tier per row instead.
+        let _ = active;
+    }
+    if row_has_stage {
+        lines.push(Line::from(row));
     }
 
     let fb_parts = feedback_annotations(stages, g);
@@ -571,44 +601,174 @@ fn feedback_annotations(stages: &[StageDefinition], g: &GlyphSet) -> Vec<String>
         .collect()
 }
 
+fn very_narrow_cell_text(stage: &StageDefinition, count: usize, g: &GlyphSet) -> String {
+    let mut marker = String::new();
+    if stage.gate {
+        marker.push_str(g.gate);
+    }
+    if stage.worktree {
+        marker.push_str(g.worktree);
+    }
+    if stage.initial {
+        marker.push_str(g.initial);
+    }
+    if stage.terminal {
+        marker.push_str(g.terminal);
+    }
+    let marker_prefix = if marker.is_empty() {
+        String::new()
+    } else {
+        format!("{marker} ")
+    };
+    format!("{marker_prefix}{} ({count})", stage.name)
+}
+
 fn render_very_narrow<'a>(
     stages: &'a [StageDefinition],
     counts: &'a [usize],
     active: Option<&str>,
     g: &'a GlyphSet,
+    inner_width: usize,
+    inner_height: usize,
 ) -> Vec<Line<'a>> {
-    let mut lines: Vec<Line<'a>> = Vec::new();
-    for (i, stage) in stages.iter().enumerate() {
-        let count = counts.get(i).copied().unwrap_or(0);
-        let mut marker = String::new();
-        if stage.gate {
-            marker.push_str(g.gate);
-        }
-        if stage.worktree {
-            marker.push_str(g.worktree);
-        }
-        if stage.initial {
-            marker.push_str(g.initial);
-        }
-        if stage.terminal {
-            marker.push_str(g.terminal);
-        }
-        let marker_prefix = if marker.is_empty() {
-            String::new()
-        } else {
-            format!("{marker} ")
-        };
-        let text = format!("{marker_prefix}{} ({count})", stage.name);
-        let is_active = active.map(|s| s == stage.name).unwrap_or(false);
-        if is_active {
-            lines.push(Line::from(Span::styled(
-                text,
-                Style::default().add_modifier(Modifier::REVERSED),
-            )));
-        } else {
-            lines.push(Line::from(text));
-        }
+    // Build the per-stage cell text once, in stage order.
+    let cells: Vec<String> = stages
+        .iter()
+        .enumerate()
+        .map(|(i, stage)| {
+            let count = counts.get(i).copied().unwrap_or(0);
+            very_narrow_cell_text(stage, count, g)
+        })
+        .collect();
+
+    if cells.is_empty() {
+        return Vec::new();
     }
+
+    // Decide a multi-column layout that fits as many stages as possible inside
+    // the pane. We reserve one line for a potential overflow indicator. We
+    // search column counts from many to few so we maximise stages-per-row when
+    // the pane is short.
+    let widest_cell = cells.iter().map(|s| visible_width(s)).max().unwrap_or(1);
+    let col_gap = 2usize; // two spaces between columns
+    let max_cols_by_width = if inner_width == 0 {
+        1
+    } else {
+        ((inner_width + col_gap) / (widest_cell + col_gap)).max(1)
+    };
+    let max_cols = max_cols_by_width.min(stages.len());
+
+    // For each candidate column count, compute the row count and pick the
+    // smallest layout that fits within inner_height. Prefer fewer columns
+    // (more readable) when several fit.
+    let mut chosen_cols = 1usize;
+    let mut chosen_rows = stages.len();
+    for cols in 1..=max_cols {
+        let rows = stages.len().div_ceil(cols);
+        if rows <= inner_height {
+            chosen_cols = cols;
+            chosen_rows = rows;
+            break;
+        }
+        // Track the densest layout in case nothing fits — we'll need it to
+        // decide overflow.
+        chosen_cols = cols;
+        chosen_rows = rows;
+    }
+
+    // If even the densest tried layout doesn't fit, fall back to the maximum
+    // columns and let overflow logic trim. We may also need to leave a line
+    // for the overflow indicator.
+    if chosen_rows > inner_height {
+        chosen_cols = max_cols;
+        chosen_rows = stages.len().div_ceil(chosen_cols);
+    }
+
+    let visible_rows = chosen_rows.min(inner_height);
+    let visible_cells = visible_rows * chosen_cols;
+    let need_overflow = visible_cells < stages.len();
+
+    // If we need an overflow line, reserve one row for it (provided we have
+    // more than one row to work with). Recompute visible cells accordingly.
+    let (visible_rows, visible_cells, need_overflow) = if need_overflow && visible_rows > 1 {
+        let r = visible_rows - 1;
+        let v = r * chosen_cols;
+        (r, v, v < stages.len())
+    } else {
+        (visible_rows, visible_cells, need_overflow)
+    };
+
+    // Lay out row-major: cell (r, c) is stages[r * cols + c]. Row-major reads
+    // left-to-right like the wide ribbon, preserving stage order.
+    let col_width = widest_cell;
+    let mut lines: Vec<Line<'a>> = Vec::with_capacity(visible_rows + 1);
+    for r in 0..visible_rows {
+        let mut spans: Vec<Span<'a>> = Vec::new();
+        for c in 0..chosen_cols {
+            let idx = r * chosen_cols + c;
+            if idx >= cells.len() || idx >= visible_cells {
+                break;
+            }
+            if c > 0 {
+                spans.push(Span::raw(" ".repeat(col_gap)));
+            }
+            let cell = &cells[idx];
+            let pad = col_width.saturating_sub(visible_width(cell));
+            let is_active = active.map(|s| s == stages[idx].name).unwrap_or(false);
+            let style = if is_active {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            spans.push(Span::styled(cell.clone(), style));
+            if pad > 0 {
+                spans.push(Span::raw(" ".repeat(pad)));
+            }
+        }
+        lines.push(Line::from(spans));
+    }
+
+    if need_overflow {
+        let hidden: Vec<&str> = stages[visible_cells..]
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        // Compose the indicator and trim names if it would itself overflow.
+        let prefix = format!("+{} hidden: ", hidden.len());
+        let mut joined = String::new();
+        let mut shown = 0usize;
+        for (i, name) in hidden.iter().enumerate() {
+            let candidate = if i == 0 {
+                name.to_string()
+            } else {
+                format!(", {name}")
+            };
+            if visible_width(&prefix) + visible_width(&joined) + visible_width(&candidate)
+                > inner_width
+            {
+                break;
+            }
+            joined.push_str(&candidate);
+            shown += 1;
+        }
+        let text = if shown < hidden.len() {
+            format!("{prefix}{joined}, …")
+        } else {
+            format!("{prefix}{joined}")
+        };
+        lines.push(Line::from(Span::styled(
+            text,
+            Style::default().add_modifier(Modifier::DIM),
+        )));
+    }
+
+    // Feedback annotations: include if any room remains for them. Helpful when
+    // the workflow has rejection paths.
+    let fb_parts = feedback_annotations(stages, g);
+    if !fb_parts.is_empty() {
+        lines.push(Line::from(fb_parts.join(", ")));
+    }
+
     lines
 }
 

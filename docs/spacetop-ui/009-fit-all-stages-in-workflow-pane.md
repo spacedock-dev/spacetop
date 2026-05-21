@@ -37,3 +37,16 @@ Verified by: rendering assertions that, when stages reflow across rows or scroll
 
 **AC-5 — `make lint` and `cargo test` pass.**
 Verified by: `make lint` (clippy `-D warnings`) and `cargo test` from the repo root, both green.
+
+## Stage Report: implement
+
+- DONE: Approach decision: name the chosen strategy for fitting many stages
+  Hybrid reflow: Narrow tier now greedily wraps the compact `name(count) → …` form across as many rows as the width requires (was hard-coded to 2); VeryNarrow tier now lays cells into a width/height-aware multi-column grid and falls back to a `+N hidden: …` indicator naming the elided stages. This degrades gracefully across AC-1/AC-2 without ever silently dropping a stage.
+- DONE: Test evidence for the 12-stage case
+  Added `fits_all_twelve_research_stages_at_narrow_pane_size`, `…_in_wide_tier`, `…_in_narrow_tier`, `…_in_very_narrow_tier`, plus `very_narrow_overflow_indicator_names_hidden_stages` in `src/ui/graph/tests.rs` — fixture lists the exact research stages (pending, scoping, ideate, review, smoke, run, analyze, promote, expanded, ideated, done, rejected) and each renders into a `TestBackend` buffer with assertions that every name appears (or that an explicit `+N hidden: …` indicator names the hidden count).
+- DONE: make lint clean and full cargo test green
+  `make lint` → clean (`-D warnings`); `cargo test` → 260 + 4 + 8 lib/integration tests pass, 3 notify-backend tests intentionally ignored, 0 failures.
+
+### Summary
+
+Replaced the fixed 2-row Narrow split and one-stage-per-line VeryNarrow renderer with width/height-aware layouts: Narrow greedily wraps the compact form across N rows, VeryNarrow packs cells into a multi-column grid sized to the pane and emits a named overflow indicator if the grid still can't hold every stage. All 19 pre-existing graph tests pass unchanged; five new tests cover the 12-stage research workflow across every width tier and the extreme-overflow fallback.

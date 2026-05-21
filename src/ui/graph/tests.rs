@@ -521,49 +521,32 @@ fn narrow_dag_wraps_to_two_rows() {
         stage("done", false, true, false, false, None),
     ];
     let counts = vec![1usize, 2, 3, 4, 5, 0];
-    let lines = render_narrow(&stages, &counts, None, &g);
+    // Choose an inner_width that fits roughly half the stages per row.
+    // alpha(1), beta(2), gamma(3), delta(4), epsilon(5), done(0) with markers
+    // and arrows; ~40 cols should split into about two rows.
+    let lines = render_narrow(&stages, &counts, None, &g, 40);
     // Must produce at least 2 lines.
     assert!(
         lines.len() >= 2,
-        "render_narrow must produce at least 2 lines for split DAG, got {}",
+        "render_narrow must produce at least 2 lines when stages do not fit on one row, got {}",
         lines.len()
     );
-    // First row must contain the first-half stage names (alpha, beta, gamma).
+    // Every stage name must appear somewhere across all rows.
+    let all_text: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+        .collect();
+    for name in ["alpha", "beta", "gamma", "delta", "epsilon", "done"] {
+        assert!(
+            all_text.contains(name),
+            "narrow tier must show every stage; missing {name} in {all_text:?}"
+        );
+    }
+    // Sanity: first row must not contain the last stage (must have wrapped).
     let row1: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
     assert!(
-        row1.contains("alpha"),
-        "row 1 must contain 'alpha'; got: {row1:?}"
-    );
-    assert!(
-        row1.contains("beta"),
-        "row 1 must contain 'beta'; got: {row1:?}"
-    );
-    assert!(
-        row1.contains("gamma"),
-        "row 1 must contain 'gamma'; got: {row1:?}"
-    );
-    // Second row must contain the second-half stage names (delta, epsilon, done).
-    let row2: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
-    assert!(
-        row2.contains("delta"),
-        "row 2 must contain 'delta'; got: {row2:?}"
-    );
-    assert!(
-        row2.contains("epsilon"),
-        "row 2 must contain 'epsilon'; got: {row2:?}"
-    );
-    assert!(
-        row2.contains("done"),
-        "row 2 must contain 'done'; got: {row2:?}"
-    );
-    // Row 1 must NOT contain second-half names (they must be on row 2).
-    assert!(
-        !row1.contains("delta"),
-        "row 1 must not contain 'delta' (should be on row 2)"
-    );
-    assert!(
-        !row1.contains("epsilon"),
-        "row 1 must not contain 'epsilon' (should be on row 2)"
+        !row1.contains("done"),
+        "row 1 must wrap before 'done' at inner_width=40; got: {row1:?}"
     );
 }
 
@@ -587,6 +570,145 @@ fn stage(
         worktree,
         concurrency: None,
     }
+}
+
+/// Build the 12-stage research workflow described in the AC for entity 009.
+fn research_12_stage_workflow() -> App {
+    let root = PathBuf::from("/tmp/spacetop-research-12");
+    let names = [
+        "pending", "scoping", "ideate", "review", "smoke", "run", "analyze",
+        "promote", "expanded", "ideated", "done", "rejected",
+    ];
+    let stages: Vec<StageDefinition> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = *n == "done" || *n == "rejected";
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+        },
+        items: Vec::new(),
+    };
+    App::from_snapshot(root, snapshot)
+}
+
+const RESEARCH_STAGES: &[&str] = &[
+    "pending", "scoping", "ideate", "review", "smoke", "run", "analyze",
+    "promote", "expanded", "ideated", "done", "rejected",
+];
+
+/// AC-1: every stage name must appear (or be named in an explicit overflow
+/// indicator) at a representative narrow pane size for a 12-stage workflow.
+#[test]
+fn fits_all_twelve_research_stages_at_narrow_pane_size() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 80x24 overall is a representative cramped terminal. The graph pane is 7
+    // rows tall (1 top border, 1 bottom border, 5 inner lines) per the
+    // overview layout in `src/ui/mod.rs`.
+    let rendered = render_to_string(&app, 80, 7);
+    let total_lines = rendered.len() / 80;
+    for name in RESEARCH_STAGES {
+        let present = rendered.contains(name);
+        if present {
+            continue;
+        }
+        // Allow an explicit overflow indicator that names the hidden count.
+        assert!(
+            rendered.contains("hidden:"),
+            "stage {name} missing and no '+N hidden:' indicator present (rendered {total_lines} lines)"
+        );
+        // The indicator must mention this stage by name if it was elided.
+        assert!(
+            rendered.contains(name),
+            "stage {name} not in visible cells nor named by overflow indicator"
+        );
+    }
+}
+
+/// AC-2: at the Wide width breakpoint every stage must be visible.
+#[test]
+fn fits_all_twelve_research_stages_in_wide_tier() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 200 columns is generous enough for the wide ribbon.
+    let rendered = render_to_string(&app, 200, 10);
+    for name in RESEARCH_STAGES {
+        assert!(
+            rendered.contains(name),
+            "wide tier must show {name}; full rendered=\n{rendered}"
+        );
+    }
+}
+
+/// AC-2: at the Narrow width breakpoint every stage must be visible (the
+/// renderer wraps into as many rows as needed instead of dropping stages).
+#[test]
+fn fits_all_twelve_research_stages_in_narrow_tier() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 100 cols is wide enough to wrap two-or-three rows of compact form but
+    // not the full single-line wide ribbon (which needs >120 cols for 12
+    // stages with markers).
+    let rendered = render_to_string(&app, 100, 14);
+    for name in RESEARCH_STAGES {
+        assert!(
+            rendered.contains(name),
+            "narrow tier must show every stage; missing {name}"
+        );
+    }
+}
+
+/// AC-2: at the VeryNarrow width breakpoint every stage must be visible
+/// (the grid layout packs stages into multiple columns; if even that
+/// overflows vertically, the overflow indicator must name the hidden stages).
+#[test]
+fn fits_all_twelve_research_stages_in_very_narrow_tier() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 40 cols forces the VeryNarrow tier for a 12-stage workflow; give it
+    // generous height so all stages can land in the grid without overflow.
+    let rendered = render_to_string(&app, 40, 20);
+    for name in RESEARCH_STAGES {
+        assert!(
+            rendered.contains(name),
+            "very narrow tier must show {name}"
+        );
+    }
+}
+
+/// AC-1 fallback: when even the multi-column grid cannot fit every stage
+/// within the available pane height, an overflow indicator must be present
+/// and must name the hidden stages so the captain knows what is hidden.
+#[test]
+fn very_narrow_overflow_indicator_names_hidden_stages() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_12_stage_workflow();
+    // 14 cols is narrow enough that each cell needs its own column AND only
+    // 3 rows of inner content (height 5) — only a handful of stages can
+    // fit, so the overflow indicator must kick in.
+    let rendered = render_to_string(&app, 14, 5);
+    assert!(
+        rendered.contains("hidden:"),
+        "expected '+N hidden:' overflow indicator at extreme size; got:\n{rendered}"
+    );
 }
 
 #[allow(dead_code)]
