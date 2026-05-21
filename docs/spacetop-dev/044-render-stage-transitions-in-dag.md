@@ -1,9 +1,9 @@
 ---
 id: 044
 title: Render stage transitions in the DAG (terminal stages disconnected from predecessors)
-status: design
+status: plan
 source: captain
-started:
+started: 2026-05-21T08:29:26Z
 completed:
 verdict:
 score:
