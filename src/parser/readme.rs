@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::domain::{StageDefinition, WorkflowDefinition};
+use crate::domain::{StageDefinition, StageTransition, WorkflowDefinition};
 
 use super::frontmatter::extract_frontmatter;
 use super::{display_path, required, ParseError};
@@ -50,6 +50,19 @@ pub fn parse_workflow_readme(path: &Path) -> Result<WorkflowDefinition, ParseErr
 
     let stage_colors = crate::domain::assign_stage_colors(&stages);
     let stage_prose = parse_stage_prose(&contents);
+    let transitions = stage_block
+        .transitions
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|raw| match (raw.from, raw.to) {
+            (Some(from), Some(to)) => Some(StageTransition {
+                from,
+                to,
+                label: raw.label,
+            }),
+            _ => None,
+        })
+        .collect();
     Ok(WorkflowDefinition {
         root: path.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
         stages,
@@ -59,6 +72,7 @@ pub fn parse_workflow_readme(path: &Path) -> Result<WorkflowDefinition, ParseErr
         entity_label_plural: raw.entity_label_plural,
         stage_colors,
         stage_prose,
+        transitions,
     })
 }
 
@@ -236,6 +250,14 @@ struct RawWorkflowFrontmatter {
 struct RawStageBlock {
     defaults: Option<RawStageDefaults>,
     states: Vec<RawStage>,
+    transitions: Option<Vec<RawTransition>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawTransition {
+    from: Option<String>,
+    to: Option<String>,
+    label: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -394,6 +416,113 @@ mod tests {
         for name in ["ideated", "done", "rejected"] {
             assert_eq!(out.get(name), Some(&body), "{name} body should equal expanded body");
         }
+    }
+
+    /// AC-1: a `stages.transitions:` block is parsed into the returned
+    /// `WorkflowDefinition.transitions` vec in declaration order.
+    #[test]
+    fn transitions_block_is_parsed_into_definition() {
+        let tmp = tempdir_path("transitions_block");
+        std::fs::create_dir_all(&tmp).expect("mkdir tmp");
+        let path = tmp.join("README.md");
+        let readme = "---\nstages:\n  states:\n    - name: pending\n      initial: true\n    - name: scoping\n    - name: expanded\n      terminal: true\n    - name: review\n      gate: true\n    - name: smoke\n    - name: analyze\n    - name: promote\n    - name: done\n      terminal: true\n    - name: rejected\n      terminal: true\n  transitions:\n    - from: pending\n      to: scoping\n    - from: scoping\n      to: expanded\n    - from: review\n      to: rejected\n      label: reject\n    - from: smoke\n      to: rejected\n      label: reject\n    - from: analyze\n      to: rejected\n      label: reject\n    - from: promote\n      to: done\n---\n";
+        std::fs::write(&path, readme).expect("write readme");
+
+        let wf = parse_workflow_readme(&path).expect("parse");
+        assert_eq!(wf.transitions.len(), 6);
+        let pairs: Vec<(&str, &str)> = wf
+            .transitions
+            .iter()
+            .map(|t| (t.from.as_str(), t.to.as_str()))
+            .collect();
+        assert!(pairs.contains(&("pending", "scoping")));
+        assert!(pairs.contains(&("scoping", "expanded")));
+        assert!(pairs.contains(&("review", "rejected")));
+        assert!(pairs.contains(&("smoke", "rejected")));
+        assert!(pairs.contains(&("analyze", "rejected")));
+        assert!(pairs.contains(&("promote", "done")));
+        // Label round-trips when present.
+        let labeled: Vec<_> = wf
+            .transitions
+            .iter()
+            .filter(|t| t.label.as_deref() == Some("reject"))
+            .collect();
+        assert_eq!(labeled.len(), 3);
+    }
+
+    /// AC-4 (parser layer): a frontmatter without a `transitions:` key leaves
+    /// the parsed vec empty so `effective_transitions()` falls back to the
+    /// implicit linear chain.
+    #[test]
+    fn missing_transitions_block_leaves_empty_vec() {
+        let tmp = tempdir_path("transitions_missing");
+        std::fs::create_dir_all(&tmp).expect("mkdir tmp");
+        let path = tmp.join("README.md");
+        let readme = "---\nstages:\n  states:\n    - name: design\n      initial: true\n    - name: plan\n    - name: done\n      terminal: true\n---\n";
+        std::fs::write(&path, readme).expect("write readme");
+
+        let wf = parse_workflow_readme(&path).expect("parse");
+        assert!(
+            wf.transitions.is_empty(),
+            "expected empty transitions vec when block is absent; got {:?}",
+            wf.transitions
+        );
+    }
+
+    /// AC-1: labels round-trip — `Some` when declared, `None` when omitted.
+    #[test]
+    fn transitions_block_with_labels_round_trips() {
+        let tmp = tempdir_path("transitions_labels");
+        std::fs::create_dir_all(&tmp).expect("mkdir tmp");
+        let path = tmp.join("README.md");
+        let readme = "---\nstages:\n  states:\n    - name: a\n      initial: true\n    - name: b\n    - name: c\n      terminal: true\n  transitions:\n    - from: a\n      to: b\n      label: advance\n    - from: b\n      to: c\n---\n";
+        std::fs::write(&path, readme).expect("write readme");
+
+        let wf = parse_workflow_readme(&path).expect("parse");
+        assert_eq!(wf.transitions.len(), 2);
+        assert_eq!(wf.transitions[0].label.as_deref(), Some("advance"));
+        assert_eq!(wf.transitions[1].label, None);
+    }
+
+    /// AC-2/AC-3 fixture: the dataagentbench research-style stages.transitions
+    /// block produces edges into all four terminal stages with the right
+    /// predecessor multiplicities (3 sources for `rejected`).
+    #[test]
+    fn parse_workflow_readme_research_fixture_terminal_edges() {
+        let tmp = tempdir_path("transitions_research");
+        std::fs::create_dir_all(&tmp).expect("mkdir tmp");
+        let path = tmp.join("README.md");
+        let readme = "---\nstages:\n  states:\n    - name: pending\n      initial: true\n    - name: scoping\n    - name: ideate\n    - name: review\n      gate: true\n    - name: smoke\n    - name: run\n    - name: analyze\n    - name: promote\n    - name: expanded\n      terminal: true\n    - name: ideated\n      terminal: true\n    - name: done\n      terminal: true\n    - name: rejected\n      terminal: true\n  transitions:\n    - from: pending\n      to: scoping\n    - from: scoping\n      to: ideate\n    - from: scoping\n      to: expanded\n    - from: ideate\n      to: review\n    - from: ideate\n      to: ideated\n    - from: review\n      to: smoke\n    - from: review\n      to: rejected\n      label: reject\n    - from: smoke\n      to: run\n    - from: smoke\n      to: rejected\n      label: reject\n    - from: run\n      to: analyze\n    - from: analyze\n      to: promote\n    - from: analyze\n      to: rejected\n      label: reject\n    - from: promote\n      to: done\n---\n";
+        std::fs::write(&path, readme).expect("write readme");
+
+        let wf = parse_workflow_readme(&path).expect("parse");
+        // Count incoming edges per terminal stage.
+        let inbound = |target: &str| -> Vec<String> {
+            wf.transitions
+                .iter()
+                .filter(|t| t.to == target)
+                .map(|t| t.from.clone())
+                .collect()
+        };
+        assert_eq!(inbound("expanded"), vec!["scoping".to_string()]);
+        assert_eq!(inbound("ideated"), vec!["ideate".to_string()]);
+        assert_eq!(inbound("done"), vec!["promote".to_string()]);
+        let rejected_sources = inbound("rejected");
+        assert_eq!(rejected_sources.len(), 3, "got {:?}", rejected_sources);
+        for src in ["review", "smoke", "analyze"] {
+            assert!(
+                rejected_sources.iter().any(|s| s == src),
+                "rejected missing source {src}; got {rejected_sources:?}"
+            );
+        }
+    }
+
+    fn tempdir_path(label: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("spacetop-parser-{label}-{nanos}"))
     }
 
     /// `parse_workflow_readme` wires the prose extractor into the

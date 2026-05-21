@@ -146,6 +146,7 @@ fn task_row_long_phase_name_ellipsis() {
                 entity_label_plural: None,
                 stage_colors: std::collections::HashMap::new(),
                 stage_prose: std::collections::HashMap::new(),
+                transitions: Vec::new(),
             },
             items: vec![{
                 let mut i = item("001", "Long phase task", "Body");
@@ -504,6 +505,7 @@ fn app_with_broken_entity() -> App {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: vec![item("001", "Valid Task", "Body")],
         parse_errors: vec![EntityParseError {

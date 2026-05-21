@@ -98,6 +98,11 @@ pub struct WorkflowDefinition {
     /// `parse_stage_prose`. Empty for fixtures and synthetic definitions
     /// constructed in tests.
     pub stage_prose: HashMap<String, String>,
+    /// Declared `stages.transitions` edges from the README frontmatter. Empty
+    /// when the workflow omits a `transitions:` block — in that case the
+    /// renderer should consult `effective_transitions()` which synthesises
+    /// the implicit linear chain.
+    pub transitions: Vec<StageTransition>,
 }
 
 impl WorkflowDefinition {
@@ -110,6 +115,41 @@ impl WorkflowDefinition {
             .copied()
             .unwrap_or_else(|| stage_color(stage_name))
     }
+
+    /// Returns the edge set the renderer should draw. When `transitions` is
+    /// non-empty, returns a clone of the declared edges verbatim. When empty,
+    /// synthesises the implicit linear chain from `stages` declaration order
+    /// (`stages[0] → stages[1], stages[1] → stages[2], …`) so workflows
+    /// without an explicit `transitions:` block keep rendering as today.
+    pub fn effective_transitions(&self) -> Vec<StageTransition> {
+        if !self.transitions.is_empty() {
+            return self.transitions.clone();
+        }
+        if self.stages.len() < 2 {
+            return Vec::new();
+        }
+        self.stages
+            .windows(2)
+            .map(|pair| StageTransition {
+                from: pair[0].name.clone(),
+                to: pair[1].name.clone(),
+                label: None,
+            })
+            .collect()
+    }
+}
+
+/// A declared edge in the workflow's `stages.transitions` block.
+///
+/// `from` and `to` are stage names that must (when well-formed) match entries
+/// under `stages.states`. The renderer treats unmatched names as no-ops.
+/// `label` is the optional `label:` on the transition row — typically a verb
+/// describing the trigger (e.g. `reject`, `promote`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StageTransition {
+    pub from: String,
+    pub to: String,
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -199,6 +239,85 @@ mod tests {
             "five evenly-spaced oklch hues must produce 5 distinct Rgb values, got {:?}",
             results
         );
+    }
+
+    fn mk_stage(name: &str) -> StageDefinition {
+        StageDefinition {
+            name: name.to_string(),
+            initial: false,
+            terminal: false,
+            gate: false,
+            fresh: false,
+            feedback_to: None,
+            worktree: false,
+            concurrency: None,
+        }
+    }
+
+    fn mk_definition(stages: Vec<StageDefinition>, transitions: Vec<StageTransition>) -> WorkflowDefinition {
+        WorkflowDefinition {
+            root: PathBuf::new(),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: HashMap::new(),
+            stage_prose: HashMap::new(),
+            transitions,
+        }
+    }
+
+    #[test]
+    fn effective_transitions_returns_declared_set_when_present() {
+        // 3 stages, 2 explicit transitions that skip the middle stage.
+        let stages = vec![mk_stage("a"), mk_stage("b"), mk_stage("c")];
+        let declared = vec![
+            StageTransition {
+                from: "a".into(),
+                to: "c".into(),
+                label: None,
+            },
+            StageTransition {
+                from: "b".into(),
+                to: "c".into(),
+                label: Some("merge".into()),
+            },
+        ];
+        let wf = mk_definition(stages, declared.clone());
+        assert_eq!(wf.effective_transitions(), declared);
+    }
+
+    #[test]
+    fn effective_transitions_synthesizes_linear_chain_when_absent() {
+        let stages = vec![
+            mk_stage("a"),
+            mk_stage("b"),
+            mk_stage("c"),
+            mk_stage("d"),
+            mk_stage("e"),
+        ];
+        let wf = mk_definition(stages, Vec::new());
+        let out = wf.effective_transitions();
+        let expected = vec![
+            StageTransition { from: "a".into(), to: "b".into(), label: None },
+            StageTransition { from: "b".into(), to: "c".into(), label: None },
+            StageTransition { from: "c".into(), to: "d".into(), label: None },
+            StageTransition { from: "d".into(), to: "e".into(), label: None },
+        ];
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn effective_transitions_for_single_stage_is_empty() {
+        let wf = mk_definition(vec![mk_stage("only")], Vec::new());
+        assert!(wf.effective_transitions().is_empty());
+    }
+
+    #[test]
+    fn effective_transitions_for_zero_stages_is_empty() {
+        let wf = mk_definition(Vec::new(), Vec::new());
+        assert!(wf.effective_transitions().is_empty());
     }
 
     #[test]

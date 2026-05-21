@@ -610,6 +610,7 @@ fn snapshot_with_items(count: usize) -> WorkflowSnapshot {
             entity_label_plural: None,
             stage_colors: HashMap::new(),
             stage_prose: HashMap::new(),
+            transitions: Vec::new(),
         },
         items: (0..count)
             .map(|index| WorkItem {
@@ -654,6 +655,7 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
             entity_label_plural: None,
             stage_colors: HashMap::new(),
             stage_prose: HashMap::new(),
+            transitions: Vec::new(),
         },
         items: paths
             .iter()

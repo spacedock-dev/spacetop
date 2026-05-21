@@ -264,6 +264,7 @@ fn synthetic_session(n: usize) -> crate::app::OverviewSession {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),

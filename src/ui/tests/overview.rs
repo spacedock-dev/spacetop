@@ -85,6 +85,7 @@ fn overview_hides_preview_until_enter_opens_preview_mode() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: vec![item("001", "Hidden Preview", "Body")],
         parse_errors: Vec::new(),

@@ -39,6 +39,7 @@ fn workflow_with_active_item() -> App {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: vec![make_item("001", "plan", "Plan task")],
         parse_errors: Vec::new(),
@@ -217,6 +218,7 @@ fn reflects_different_workflow_topology() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -267,6 +269,7 @@ fn narrow_tier_renders_compact_textual_summary() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -547,6 +550,7 @@ fn narrow_dag_wraps_to_two_rows() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Choose an inner_width that fits roughly half the stages per row.
     // alpha(1), beta(2), gamma(3), delta(4), epsilon(5), done(0) with markers
@@ -625,6 +629,7 @@ fn research_12_stage_workflow() -> App {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -768,6 +773,7 @@ fn narrow_tier_colors_each_stage_name_per_stage() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     let lines = render_narrow(&stages, &counts, Some("review"), &g, 60, &definition);
 
@@ -842,6 +848,7 @@ fn very_narrow_tier_colors_each_stage_name_per_stage() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // 40 cols, height 24 — every stage fits in the grid without overflow,
     // accounting for cycle-3 inter-row blank padding (3 blank lines between
@@ -917,6 +924,7 @@ fn narrow_tier_uses_full_pane_width() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Force wrapping by choosing an inner_width well below the narrow_summary
     // width (~154 chars for the 12-stage research fixture).
@@ -1009,6 +1017,7 @@ fn very_narrow_tier_uses_full_pane_width() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     let inner_width = 40usize;
     // Cycle 3: with INTER_ROW_PADDING_LINES=3 between rows, give a generous
@@ -1124,6 +1133,7 @@ fn very_narrow_tier_renders_feedback_rollback_annotation() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -1174,6 +1184,7 @@ fn narrow_tier_inserts_blank_lines_between_rows() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Choose inner_width that forces multiple stage rows for the 12-stage
     // research fixture (usable_width=72 cannot hold the full narrow_summary).
@@ -1243,6 +1254,7 @@ fn very_narrow_tier_inserts_blank_lines_between_rows() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     let inner_width = 40usize;
     let inner_height = 24usize;
@@ -1322,6 +1334,7 @@ fn very_narrow_tier_row_budget_accounts_for_inter_row_padding() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Width 16 forces a 1-cell-per-row layout (the widest cell at this
     // fixture is "▶ alpha (0)" = 11 chars, so a 16-col usable budget can
@@ -1419,6 +1432,7 @@ fn narrow_tier_last_row_does_not_end_with_arrow() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Force wrapping with inner_width=80 (usable_width=72) which cannot hold
     // the full 12-stage narrow_summary on a single row.
@@ -1483,6 +1497,7 @@ fn very_narrow_tier_last_row_does_not_end_with_arrow() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
 
     // Case A: every stage fits in the grid (no overflow indicator).
@@ -1575,6 +1590,7 @@ fn spacetop_ui_workflow() -> App {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -1701,6 +1717,7 @@ fn dag_each_stage_span_carries_per_stage_color_and_bold() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Active stage is `implement` so we can also assert REVERSED.
     let lines = render_dag(&stages, &counts, Some("implement"), &g, 100, &definition);
@@ -1761,6 +1778,7 @@ fn dag_short_workflow_stays_within_height_bound() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     let lines = render_dag(&stages, &counts, None, &g, 100, &definition);
     // Height bound for the short-workflow case: one chain row + one arc
@@ -1821,6 +1839,7 @@ fn spacetop_dev_workflow() -> App {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -1952,6 +1971,7 @@ fn dag_falls_back_to_009_wrapped_text_when_height_starved() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),

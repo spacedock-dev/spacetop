@@ -365,6 +365,7 @@ mod tests {
             entity_label_plural: Some("tasks".to_string()),
             stage_colors,
             stage_prose: prose,
+            transitions: Vec::new(),
         }
     }
 
