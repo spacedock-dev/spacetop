@@ -1,9 +1,9 @@
 ---
 id: 045
 title: Reload workflows live when README files are added, changed, or removed
-status: design
+status: plan
 source: captain
-started:
+started: 2026-05-26T15:08:52Z
 completed:
 verdict:
 score:

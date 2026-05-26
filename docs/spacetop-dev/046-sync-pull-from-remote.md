@@ -2,8 +2,8 @@
 id: 046
 title: Add a Sync action that runs `git pull` when the workflow root has a remote
 source: captain
-status: design
-started:
+status: plan
+started: 2026-05-26T15:08:54Z
 completed:
 verdict:
 score:
