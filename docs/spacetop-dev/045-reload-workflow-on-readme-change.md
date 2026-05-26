@@ -1,13 +1,13 @@
 ---
 id: 045
 title: Reload workflows live when README files are added, changed, or removed
-status: plan
+status: implement
 source: captain
 started: 2026-05-26T15:08:52Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-045-reload-workflow-on-readme-change
 issue:
 pr:
 ---
