@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-044-render-stage-transitions-in-dag
 issue:
 pr: #42
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 The Spacetop graph view lays stages out left-to-right in the order they appear under `stages.states`, drawing a single chain of `──▶` edges between adjacent entries. It ignores the `stages.transitions` block when the workflow README declares one. On any workflow with branching transitions and multiple terminal stages, the DAG misrepresents the real flow.
