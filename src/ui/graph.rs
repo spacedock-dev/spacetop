@@ -13,7 +13,7 @@ use ratatui::{
 };
 
 use crate::app::{OverviewState, ViewScope};
-use crate::domain::{StageDefinition, WorkflowDefinition};
+use crate::domain::{StageDefinition, StageTransition, WorkflowDefinition};
 
 const ASCII_ENV_VAR: &str = "SPACETOP_ASCII";
 const MAX_FEEDBACK_ROWS: usize = 2;
@@ -621,6 +621,34 @@ fn render_dag<'a>(
         });
     }
 
+    // Declared transitions that the inline chain rendering does NOT already
+    // imply (non-adjacent same-row, or cross-row) degrade to a one-line
+    // annotation per edge — the same degradation strategy `feedback-to`
+    // arcs already use. Workflows that omit `stages.transitions` synthesize
+    // an implicit linear chain via `effective_transitions()`, so every
+    // synthesized edge IS adjacent and this loop emits zero lines (AC-4).
+    let extras = collect_extra_transitions(stages, &cols, &plan, definition);
+    for edge in extras {
+        let text = match edge.label.as_deref() {
+            Some(label) => format!(
+                "{} {} {} {} ({label})",
+                g.feedback, edge.from, g.narrow_arrow, edge.to
+            ),
+            None => format!(
+                "{} {} {} {}",
+                g.narrow_arrow, edge.from, g.narrow_arrow, edge.to
+            ),
+        };
+        let w = visible_width(&text);
+        // Reuse the connector color so these are visibly secondary to the
+        // chain itself; feedback-rollback arcs already own Red.
+        let style = Style::default().fg(Color::DarkGray);
+        rows_content.push(RowContent {
+            spans: vec![Span::styled(text, style)],
+            width: w,
+        });
+    }
+
     // Second pass: compute the chain's actual rendered width (max width
     // across all DAG rows) and split the remaining `inner_width -
     // chain_width` slack as `left_pad = slack / 2`, `right_pad = slack -
@@ -770,6 +798,76 @@ fn collect_cross_row_feedback_arcs(
                 }
             }
         }
+    }
+    out
+}
+
+/// A declared transition that the inline chain rendering does not already
+/// imply (non-adjacent same-row, or cross-row). Carries the original
+/// stage names and label so the annotation tail can preserve them.
+#[derive(Debug, Clone)]
+struct ExtraTransition {
+    from: String,
+    to: String,
+    label: Option<String>,
+}
+
+/// Walk `definition.effective_transitions()` and return the subset that the
+/// inline chain rendering does not draw natively. The chain row draws an
+/// inline `──▶` between two columns when:
+///   * `from` and `to` are both present in `cols`,
+///   * they sit on the same `DagRow`,
+///   * AND they occupy consecutive positions within that row's
+///     `col_indices` (i.e. `position(to) == position(from) + 1`).
+///
+/// Anything else — non-adjacent same-row, cross-row, or referencing a stage
+/// name that does not appear in `cols` — falls through to the annotation
+/// channel (caller). Transitions where `from == to` are skipped: self-loops
+/// are not meaningful in this layout.
+fn collect_extra_transitions(
+    stages: &[StageDefinition],
+    cols: &[ColumnLayout],
+    plan: &DagRowPlan,
+    definition: &WorkflowDefinition,
+) -> Vec<ExtraTransition> {
+    let mut out: Vec<ExtraTransition> = Vec::new();
+    let stage_idx = |name: &str| -> Option<usize> {
+        stages.iter().position(|s| s.name == name)
+    };
+    let row_of = |col_i: usize| -> Option<(usize, usize)> {
+        for (r_idx, row) in plan.rows.iter().enumerate() {
+            if let Some(pos) = row.col_indices.iter().position(|&c| c == col_i) {
+                return Some((r_idx, pos));
+            }
+        }
+        None
+    };
+
+    for edge in definition.effective_transitions() {
+        if edge.from == edge.to {
+            continue;
+        }
+        let (Some(from_col), Some(to_col)) = (stage_idx(&edge.from), stage_idx(&edge.to)) else {
+            continue;
+        };
+        // Defensive: unmatched name yields no column.
+        let (Some(_), Some(_)) = (cols.get(from_col), cols.get(to_col)) else {
+            continue;
+        };
+        let from_loc = row_of(from_col);
+        let to_loc = row_of(to_col);
+        let drawn_inline = matches!(
+            (from_loc, to_loc),
+            (Some((r1, p1)), Some((r2, p2))) if r1 == r2 && p2 == p1 + 1
+        );
+        if drawn_inline {
+            continue;
+        }
+        out.push(ExtraTransition {
+            from: edge.from.clone(),
+            to: edge.to.clone(),
+            label: edge.label.clone(),
+        });
     }
     out
 }
@@ -1055,7 +1153,43 @@ fn render_narrow<'a>(
     if !fb_parts.is_empty() {
         lines.push(Line::from(fb_parts.join(", ")));
     }
+    let extra_parts = non_implied_transition_annotations(stages, g, definition);
+    if !extra_parts.is_empty() {
+        lines.push(Line::from(extra_parts.join(", ")));
+    }
     lines
+}
+
+/// Render the subset of declared transitions that the implicit
+/// `stages[i] → stages[i+1]` reading order does NOT already imply. Returns
+/// an empty vec when the workflow has no declared `transitions` block (the
+/// synthesised chain is by construction implied) — so AC-4's promise that
+/// transitionless workflows render byte-equivalent to today still holds.
+fn non_implied_transition_annotations(
+    stages: &[StageDefinition],
+    g: &GlyphSet,
+    definition: &WorkflowDefinition,
+) -> Vec<String> {
+    if definition.transitions.is_empty() {
+        return Vec::new();
+    }
+    let mut implied: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for pair in stages.windows(2) {
+        implied.insert((pair[0].name.clone(), pair[1].name.clone()));
+    }
+    definition
+        .transitions
+        .iter()
+        .filter(|t| !implied.contains(&(t.from.clone(), t.to.clone())))
+        .map(|t| transition_label_text(t, g))
+        .collect()
+}
+
+fn transition_label_text(t: &StageTransition, g: &GlyphSet) -> String {
+    match t.label.as_deref() {
+        Some(label) => format!("{} {} {} ({label})", t.from, g.narrow_arrow, t.to),
+        None => format!("{} {} {}", t.from, g.narrow_arrow, t.to),
+    }
 }
 
 fn feedback_annotations(stages: &[StageDefinition], g: &GlyphSet) -> Vec<String> {
@@ -1358,6 +1492,10 @@ fn render_very_narrow<'a>(
     // `feedback-to:` paths (matches Narrow tier behaviour).
     if !fb_parts.is_empty() {
         lines.push(Line::from(fb_parts.join(", ")));
+    }
+    let extra_parts = non_implied_transition_annotations(stages, g, definition);
+    if !extra_parts.is_empty() {
+        lines.push(Line::from(extra_parts.join(", ")));
     }
 
     lines

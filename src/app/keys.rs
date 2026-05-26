@@ -146,6 +146,7 @@ mod tests {
                 entity_label_plural: None,
                 stage_colors: HashMap::new(),
                 stage_prose: HashMap::new(),
+                transitions: Vec::new(),
             },
             items: vec![WorkItem {
                 path,

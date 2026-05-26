@@ -114,6 +114,7 @@ fn path_line_stays_visible_for_long_paths() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: vec![in_root, out_of_root],
         parse_errors: Vec::new(),

@@ -39,6 +39,7 @@ fn workflow_with_active_item() -> App {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: vec![make_item("001", "plan", "Plan task")],
         parse_errors: Vec::new(),
@@ -217,6 +218,7 @@ fn reflects_different_workflow_topology() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -267,6 +269,7 @@ fn narrow_tier_renders_compact_textual_summary() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -547,6 +550,7 @@ fn narrow_dag_wraps_to_two_rows() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Choose an inner_width that fits roughly half the stages per row.
     // alpha(1), beta(2), gamma(3), delta(4), epsilon(5), done(0) with markers
@@ -625,6 +629,7 @@ fn research_12_stage_workflow() -> App {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -768,6 +773,7 @@ fn narrow_tier_colors_each_stage_name_per_stage() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     let lines = render_narrow(&stages, &counts, Some("review"), &g, 60, &definition);
 
@@ -842,6 +848,7 @@ fn very_narrow_tier_colors_each_stage_name_per_stage() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // 40 cols, height 24 — every stage fits in the grid without overflow,
     // accounting for cycle-3 inter-row blank padding (3 blank lines between
@@ -917,6 +924,7 @@ fn narrow_tier_uses_full_pane_width() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Force wrapping by choosing an inner_width well below the narrow_summary
     // width (~154 chars for the 12-stage research fixture).
@@ -1009,6 +1017,7 @@ fn very_narrow_tier_uses_full_pane_width() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     let inner_width = 40usize;
     // Cycle 3: with INTER_ROW_PADDING_LINES=3 between rows, give a generous
@@ -1124,6 +1133,7 @@ fn very_narrow_tier_renders_feedback_rollback_annotation() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -1174,6 +1184,7 @@ fn narrow_tier_inserts_blank_lines_between_rows() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Choose inner_width that forces multiple stage rows for the 12-stage
     // research fixture (usable_width=72 cannot hold the full narrow_summary).
@@ -1243,6 +1254,7 @@ fn very_narrow_tier_inserts_blank_lines_between_rows() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     let inner_width = 40usize;
     let inner_height = 24usize;
@@ -1322,6 +1334,7 @@ fn very_narrow_tier_row_budget_accounts_for_inter_row_padding() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Width 16 forces a 1-cell-per-row layout (the widest cell at this
     // fixture is "▶ alpha (0)" = 11 chars, so a 16-col usable budget can
@@ -1419,6 +1432,7 @@ fn narrow_tier_last_row_does_not_end_with_arrow() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Force wrapping with inner_width=80 (usable_width=72) which cannot hold
     // the full 12-stage narrow_summary on a single row.
@@ -1483,6 +1497,7 @@ fn very_narrow_tier_last_row_does_not_end_with_arrow() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
 
     // Case A: every stage fits in the grid (no overflow indicator).
@@ -1575,6 +1590,7 @@ fn spacetop_ui_workflow() -> App {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -1701,6 +1717,7 @@ fn dag_each_stage_span_carries_per_stage_color_and_bold() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     // Active stage is `implement` so we can also assert REVERSED.
     let lines = render_dag(&stages, &counts, Some("implement"), &g, 100, &definition);
@@ -1761,6 +1778,7 @@ fn dag_short_workflow_stays_within_height_bound() {
         entity_label_plural: None,
         stage_colors: std::collections::HashMap::new(),
         stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
     };
     let lines = render_dag(&stages, &counts, None, &g, 100, &definition);
     // Height bound for the short-workflow case: one chain row + one arc
@@ -1821,6 +1839,7 @@ fn spacetop_dev_workflow() -> App {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -1952,6 +1971,7 @@ fn dag_falls_back_to_009_wrapped_text_when_height_starved() {
             entity_label_plural: None,
             stage_colors: std::collections::HashMap::new(),
             stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
         },
         items: Vec::new(),
         parse_errors: Vec::new(),
@@ -2353,3 +2373,226 @@ fn make_item(id: &str, status: &str, title: &str) -> WorkItem {
     }
 }
 
+
+// --- Unit 3: declared transitions render as inbound edges ---
+
+use crate::domain::StageTransition;
+
+/// Builds the dataagentbench research workflow definition with its full
+/// 12-stage states block and 13 declared transitions. Used by the AC-2 and
+/// AC-3 tests so the bug case is exercised by a single source of truth.
+fn research_workflow_definition() -> WorkflowDefinition {
+    let names = [
+        "pending", "scoping", "ideate", "review", "smoke", "run", "analyze",
+        "promote", "expanded", "ideated", "done", "rejected",
+    ];
+    let stages: Vec<StageDefinition> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = matches!(*n, "expanded" | "ideated" | "done" | "rejected");
+            let gate = *n == "review";
+            stage(n, initial, terminal, gate, false, None)
+        })
+        .collect();
+    let transitions = vec![
+        StageTransition { from: "pending".into(), to: "scoping".into(), label: None },
+        StageTransition { from: "scoping".into(), to: "ideate".into(), label: None },
+        StageTransition { from: "scoping".into(), to: "expanded".into(), label: None },
+        StageTransition { from: "ideate".into(), to: "review".into(), label: None },
+        StageTransition { from: "ideate".into(), to: "ideated".into(), label: None },
+        StageTransition { from: "review".into(), to: "smoke".into(), label: None },
+        StageTransition { from: "review".into(), to: "rejected".into(), label: Some("reject".into()) },
+        StageTransition { from: "smoke".into(), to: "run".into(), label: None },
+        StageTransition { from: "smoke".into(), to: "rejected".into(), label: Some("reject".into()) },
+        StageTransition { from: "run".into(), to: "analyze".into(), label: None },
+        StageTransition { from: "analyze".into(), to: "promote".into(), label: None },
+        StageTransition { from: "analyze".into(), to: "rejected".into(), label: Some("reject".into()) },
+        StageTransition { from: "promote".into(), to: "done".into(), label: None },
+    ];
+    WorkflowDefinition {
+        root: PathBuf::from("/tmp/spacetop-research-transitions"),
+        stages,
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+        transitions,
+    }
+}
+
+fn research_workflow_app() -> App {
+    let definition = research_workflow_definition();
+    let root = definition.root.clone();
+    let snapshot = WorkflowSnapshot {
+        definition,
+        items: Vec::new(),
+        parse_errors: Vec::new(),
+    };
+    App::from_snapshot(root, snapshot)
+}
+
+/// AC-2: the rendered DAG must visibly link each non-adjacent-predecessor
+/// terminal stage (`scoping → expanded`, `ideate → ideated`, `promote → done`)
+/// to its declared predecessor. This is the chokepoint regression that the
+/// bug report calls out — previously the four terminal stages were strung
+/// off the chain in `states:` order with no inbound edge to their real source.
+#[test]
+fn dag_renders_inbound_edge_for_non_adjacent_terminal_predecessor() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_workflow_app();
+    // Wide enough that the DAG tier is selected (the 12-stage research
+    // workflow comfortably fits when wrapped); height covers the chain
+    // rows + feedback arcs + every annotation tail this fixture emits.
+    let rendered = render_to_string(&app, 200, 40);
+    // Each non-adjacent terminal source/target pair must appear in the
+    // rendered output. The annotation tail format is
+    // `{narrow_arrow} {from} {narrow_arrow} {to}`.
+    let arrow = "\u{2192}"; // →
+    for (from, to) in [
+        ("scoping", "expanded"),
+        ("ideate", "ideated"),
+        ("promote", "done"),
+    ] {
+        let needle = format!("{from} {arrow} {to}");
+        assert!(
+            rendered.contains(&needle),
+            "DAG must show '{needle}' for non-adjacent transition; got:\n{rendered}"
+        );
+    }
+}
+
+/// AC-3: `rejected` has three declared predecessors (`review`, `smoke`,
+/// `analyze`). The rendered DAG must show all three inbound edges — not
+/// just one — so the captain can read the full topology.
+#[test]
+fn dag_renders_three_inbound_edges_for_rejected() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let app = research_workflow_app();
+    let rendered = render_to_string(&app, 200, 40);
+    let arrow = "\u{2192}"; // →
+    // Count distinct inbound substrings — once per declared source.
+    for src in ["review", "smoke", "analyze"] {
+        let needle = format!("{src} {arrow} rejected");
+        assert!(
+            rendered.contains(&needle),
+            "expected inbound edge '{needle}'; got:\n{rendered}"
+        );
+    }
+    // Sanity: exactly three '→ rejected' substrings (one per source).
+    let total = rendered.matches(&format!("{arrow} rejected")).count();
+    assert_eq!(
+        total, 3,
+        "expected exactly 3 inbound rejected edges, got {total}:\n{rendered}"
+    );
+}
+
+/// AC-4: a workflow with NO `transitions:` block synthesises the implicit
+/// linear chain at the consumer boundary (`effective_transitions()`), and
+/// every synthesised edge is by definition adjacent — so no annotation
+/// tails are emitted. The existing single-chain renderer must produce a
+/// byte-identical buffer for the same workflow rendered at the same size.
+#[test]
+fn dag_omits_arcs_when_no_transitions_block() {
+    let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var(ASCII_ENV_VAR);
+    let names = ["alpha", "beta", "gamma", "delta", "epsilon"];
+    let stages: Vec<StageDefinition> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let initial = i == 0;
+            let terminal = i == names.len() - 1;
+            stage(n, initial, terminal, false, false, None)
+        })
+        .collect();
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: PathBuf::from("/tmp/transitionless"),
+            stages,
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
+        },
+        items: Vec::new(),
+        parse_errors: Vec::new(),
+    };
+    let app = App::from_snapshot(PathBuf::from("/tmp/transitionless"), snapshot);
+    let rendered = render_to_string(&app, 120, 10);
+    // No annotation tail line: there must not be a `→ {name}` pattern that
+    // is NOT inside the inline chain. The inline chain uses `──▶` (U+25BA),
+    // so any U+2192 followed by a stage name signals an annotation we did
+    // not want emitted. None of the adjacent edges should produce one.
+    let arrow = '\u{2192}';
+    for needle in ["alpha", "beta", "gamma", "delta", "epsilon"] {
+        let pat = format!("{arrow} {needle}");
+        assert!(
+            !rendered.contains(&pat),
+            "no-transitions workflow must NOT emit annotation tail '{pat}'; got:\n{rendered}"
+        );
+    }
+}
+
+/// AC-2/AC-3 unit-level lock: even without driving the terminal renderer,
+/// `collect_extra_transitions` must report exactly the non-adjacent edges
+/// for the research fixture (3 sources for `rejected`, plus the three
+/// terminal-tail edges from `scoping`, `ideate`, `promote`).
+#[test]
+fn collect_extra_transitions_for_research_fixture_lists_all_non_adjacent_edges() {
+    let definition = research_workflow_definition();
+    let g = glyphs_for(false);
+    let counts = vec![0usize; definition.stages.len()];
+    let cols = dag_layout_columns(&definition.stages, &counts, None, &g);
+    // Single-row plan: pack everything onto one row regardless of width.
+    let row_width = cols
+        .iter()
+        .map(|c| c.start_col + visible_width(&c.node_text))
+        .max()
+        .unwrap_or(0);
+    let plan = dag_layout_rows(&cols, row_width + 1);
+    let extras = collect_extra_transitions(&definition.stages, &cols, &plan, &definition);
+    let pairs: std::collections::HashSet<(String, String)> = extras
+        .iter()
+        .map(|e| (e.from.clone(), e.to.clone()))
+        .collect();
+    // Every non-adjacent declared edge must appear.
+    for (from, to) in [
+        ("scoping", "expanded"),
+        ("ideate", "ideated"),
+        ("promote", "done"),
+        ("review", "rejected"),
+        ("smoke", "rejected"),
+        ("analyze", "rejected"),
+    ] {
+        assert!(
+            pairs.contains(&(from.to_string(), to.to_string())),
+            "missing non-adjacent edge {from} → {to}; got {pairs:?}"
+        );
+    }
+    // Sanity: no adjacent edge sneaks into the extras list. The states
+    // declaration order yields these adjacencies — every one is drawn
+    // inline by the chain renderer.
+    for (from, to) in [
+        ("pending", "scoping"),
+        ("scoping", "ideate"),
+        ("ideate", "review"),
+        ("review", "smoke"),
+        ("smoke", "run"),
+        ("run", "analyze"),
+        ("analyze", "promote"),
+    ] {
+        assert!(
+            !pairs.contains(&(from.to_string(), to.to_string())),
+            "adjacent edge {from} → {to} should not appear in extras; got {pairs:?}"
+        );
+    }
+}
