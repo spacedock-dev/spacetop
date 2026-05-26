@@ -1,13 +1,13 @@
 ---
 id: 044
 title: Render stage transitions in the DAG (terminal stages disconnected from predecessors)
-status: review
+status: done
 source: captain
 started: 2026-05-21T08:29:26Z
-completed:
-verdict:
+completed: 2026-05-26T14:45:33Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-044-render-stage-transitions-in-dag
+worktree: 
 issue:
 pr: #42
 mod-block: 
