@@ -159,3 +159,16 @@ The re-discovery step does not call back into the parser at all (it only walks `
 ### Summary
 
 Plan adopts a three-unit split: broaden the watcher to the discovery scan root (multi-workflow only), add a UI-agnostic `App::reload_with_rediscovery` that runs re-discovery then per-active reload, and swap the existing `app.reload()` call in `run_terminal`. Parse-failure isolation rides on the existing `OverviewState::reload` contract — no parser changes needed. Four integration tests in a new `tests/readme_reload.rs` lock AC-1..AC-4 by driving `App` directly without a terminal backend.
+
+## Stage Report: implement
+
+- DONE: README modifications inside the watched workflow trigger a live re-parse with the stage graph and overview updating within one debounce window (AC-1, AC-2, AC-3).
+  Watcher root broadened to the discovery scan root in `start_watcher_for` (src/lib.rs); event loop drives `App::reload_with_rediscovery` (src/app.rs) on each `RefreshSignal`; integration tests `readme_edit_reparses_definition_live`, `new_workflow_directory_appears_in_session`, `removing_active_workflow_yields_empty_state_without_panic`, `removing_only_workflow_yields_empty_overview_with_error` in tests/readme_reload.rs. Commit 25c1db4.
+- DONE: A malformed README during reload does NOT replace the prior good WorkflowDefinition; a warning is surfaced in the UI status area (AC-4).
+  `reload_with_rediscovery` delegates to `OverviewState::reload`, which mutates `self.snapshot` only on `Ok` and stores the message in `last_refresh_error`; locked by `malformed_readme_preserves_prior_definition` (tests/readme_reload.rs).
+- DONE: `make lint` and `cargo test` are clean on the worktree branch (AC-5).
+  `make lint` clean; `cargo test` 326/326 passing (304 lib + 4 + 10 + 5 + 3 ignored backend tests as designed).
+
+### Summary
+
+Implements live README reload via three layered changes: `start_watcher_for` now watches the discovery scan root in multi-workflow sessions; new `App::reload_with_rediscovery` runs `discover_workflows` then per-active `OverviewState::reload`, handling removed-active and removed-only cases with synthetic empty states; the event loop calls the new method on each `RefreshSignal`. Parse-failure isolation rides the existing `OverviewState::reload` contract — no parser changes were needed. Five integration tests plus one unit test lock the new behavior without depending on the live `notify` backend.
