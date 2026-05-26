@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(mkdir -p docs/spacetop-ui/_mods)",
-      "Bash(cp ~/.claude/plugins/cache/spacedock/spacedock/0.10.1/mods/pr-merge.md docs/spacetop-ui/_mods/pr-merge.md)"
+      "Bash(cp ~/.claude/plugins/cache/spacedock/spacedock/0.10.1/mods/pr-merge.md docs/spacetop-ui/_mods/pr-merge.md)",
+      "Bash(git *)"
     ]
   }
 }
