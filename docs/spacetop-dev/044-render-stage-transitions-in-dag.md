@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-044-render-stage-transitions-in-dag
 issue:
-pr:
+pr: #42
 mod-block: merge:pr-merge
 ---
 
