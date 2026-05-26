@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-046-sync-pull-from-remote
 issue:
 pr: #44
+mod-block: merge:pr-merge
 ---
 
 Workflow state lives in markdown under a git repo, and teammates push changes (new entities, status transitions, archive moves, mod-block updates) to the remote. Today a user inspecting a workflow in Spacetop has to drop to a terminal and run `git pull` themselves to see what landed since they opened the TUI. The captain wants a user-visible **Sync** action that, when triggered from inside Spacetop, runs `git pull` on the workflow root if the current folder is a git repo with a configured remote.
