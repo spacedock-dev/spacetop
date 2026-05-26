@@ -172,3 +172,20 @@ Plan adopts a three-unit split: broaden the watcher to the discovery scan root (
 ### Summary
 
 Implements live README reload via three layered changes: `start_watcher_for` now watches the discovery scan root in multi-workflow sessions; new `App::reload_with_rediscovery` runs `discover_workflows` then per-active `OverviewState::reload`, handling removed-active and removed-only cases with synthetic empty states; the event loop calls the new method on each `RefreshSignal`. Parse-failure isolation rides the existing `OverviewState::reload` contract — no parser changes were needed. Five integration tests plus one unit test lock the new behavior without depending on the live `notify` backend.
+
+## Stage Report: review
+
+- DONE: Each acceptance criterion (AC-1..AC-5) has cited evidence in the implement stage report or in code/tests on the worktree branch; flag any AC without evidence.
+  AC-1 `tests/readme_reload.rs:readme_edit_reparses_definition_live` passes; AC-2 `tests/readme_reload.rs:new_workflow_directory_appears_in_session` passes; AC-3 `tests/readme_reload.rs:removing_active_workflow_yields_empty_state_without_panic` + `:removing_only_workflow_yields_empty_overview_with_error` pass; AC-4 `tests/readme_reload.rs:malformed_readme_preserves_prior_definition` passes; AC-5 see next item.
+- DONE: Verify `make lint` and `cargo test` run clean on the worktree branch — report the exact commands and exit codes observed.
+  `make lint` → exit 0 (cargo clippy --all-targets --all-features -- -D warnings). `cargo test` → exit 0: 304 lib + 4 bin + 10 discovery_bypass + 5 readme_reload + 3 watcher_fs (ignored by design); 0 failed.
+- DONE: Confirm Spacetop's read-only guardrail still holds: no new code path mutates workflow files beyond what AC-5/AC-3-style ACs explicitly permit.
+  `git diff main..HEAD` shows the only added `fs::write`/`fs::remove_dir_all`/`fs::create_dir_all` calls live in `src/app/tests.rs` and `tests/readme_reload.rs` against tempdir fixtures; `App::reload_with_rediscovery` (src/app.rs:336) and the broadened watcher root (src/lib.rs:247) perform state swaps and read-only discovery only.
+
+### Verdict
+
+PASSED
+
+### Summary
+
+Review confirms commit 25c1db4 lands all four functional ACs with focused integration tests and a unit test that drive `App::reload_with_rediscovery` directly, avoiding live-watcher races. Parse-failure isolation rides the existing `OverviewState::reload` contract; removed-active handling installs a synthetic empty state with `last_refresh_error` set. `make lint` and `cargo test` are clean and no new code path writes to Spacedock workflow files outside test fixtures.
