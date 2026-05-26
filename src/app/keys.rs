@@ -13,6 +13,10 @@ pub(crate) enum OverviewKeyAction {
     OpenSelectedFile(PathBuf),
     /// `D` from Overview: open the full-pane Workflow Definition view.
     OpenDefinition,
+    /// `Y` from Overview: request a `git pull --ff-only` against the
+    /// active workflow's repo root. Always emitted when the binding
+    /// fires; the helper classifies availability and reports the result.
+    RequestSync,
 }
 
 pub(crate) fn handle_overview_key(
@@ -116,6 +120,7 @@ pub(crate) fn handle_overview_key(
             OverviewKeyAction::None
         }
         KeyCode::Char('D') if !state.preview_open() => OverviewKeyAction::OpenDefinition,
+        KeyCode::Char('Y') if !state.preview_open() => OverviewKeyAction::RequestSync,
         KeyCode::Right if is_multi => OverviewKeyAction::Switch(session.cycle_next()),
         KeyCode::Left if is_multi => OverviewKeyAction::Switch(session.cycle_prev()),
         KeyCode::Char('P') if is_multi && !pinned => OverviewKeyAction::OpenPickerOverlay,
@@ -270,6 +275,34 @@ mod tests {
         assert!(
             matches!(action, OverviewKeyAction::OpenDefinition),
             "D with preview closed must emit OpenDefinition"
+        );
+    }
+
+    /// AC-1: `Y` from an overview with preview closed emits `RequestSync`.
+    #[test]
+    fn y_from_overview_emits_request_sync() {
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item(path);
+        assert!(!session.active_state().preview_open());
+        let action = handle_overview_key(&mut session, key(KeyCode::Char('Y')));
+        assert!(
+            matches!(action, OverviewKeyAction::RequestSync),
+            "Y with preview closed must emit RequestSync"
+        );
+    }
+
+    /// AC-1: `Y` while the preview is open is a silent no-op so the
+    /// binding doesn't collide with future preview shortcuts.
+    #[test]
+    fn y_with_preview_open_is_noop() {
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item(path);
+        session.active_state_mut().toggle_preview();
+        assert!(session.active_state().preview_open());
+        let action = handle_overview_key(&mut session, key(KeyCode::Char('Y')));
+        assert!(
+            matches!(action, OverviewKeyAction::None),
+            "Y while preview is open must be a no-op"
         );
     }
 

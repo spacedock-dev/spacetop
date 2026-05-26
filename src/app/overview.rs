@@ -57,6 +57,26 @@ pub struct StageCount {
     pub items: usize,
 }
 
+/// User-visible status of the most recent sync attempt against the
+/// active workflow's repo root. Owned per-`OverviewState` so each tab
+/// in a multi-workflow session has its own status pill.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyncStatus {
+    /// A `git pull` is in flight on the main thread; the UI shows
+    /// `"Syncing…"` and the next event-loop tick replaces it with the
+    /// outcome.
+    InFlight,
+    /// The pull succeeded; either fast-forwarded `new_commits` commits
+    /// or was already up to date.
+    Succeeded { new_commits: u32 },
+    /// The pull was attempted but failed; `message` is the trimmed
+    /// stderr / synthesized reason from the helper.
+    Failed { message: String },
+    /// The repo state precluded a pull (no git repo, no upstream, no
+    /// `origin` remote). `hint` is the user-facing description.
+    Unavailable { hint: String },
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverviewState {
     pub workflow_dir: PathBuf,
@@ -85,6 +105,7 @@ pub struct OverviewState {
     pub task_page_size: Cell<usize>,
     pub sort_mode: SortMode,
     pub sorted_active: Vec<WorkItem>,
+    pub sync_status: Option<SyncStatus>,
 }
 
 /// Derive a stable slug from a work-item path. Prefer the file stem; when the
@@ -143,6 +164,7 @@ impl OverviewState {
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
             sorted_active: Vec::new(),
+            sync_status: None,
         }
     }
 
@@ -186,6 +208,7 @@ impl OverviewState {
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
             sorted_active: Vec::new(),
+            sync_status: None,
         };
         state.rebuild_sorted_active();
         state
@@ -264,6 +287,14 @@ impl OverviewState {
 
     pub fn set_refresh_error(&mut self, message: String) {
         self.last_refresh_error = Some(message);
+    }
+
+    pub fn sync_status(&self) -> Option<&SyncStatus> {
+        self.sync_status.as_ref()
+    }
+
+    pub fn set_sync_status(&mut self, status: SyncStatus) {
+        self.sync_status = Some(status);
     }
 
     pub fn workflow_dir(&self) -> &Path {

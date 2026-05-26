@@ -579,6 +579,88 @@ fn preview_pane_renders_broken_entity_error_with_hint() {
     );
 }
 
+// ---- Task 046: sync-pill labels (stable user-facing strings) ----
+
+#[test]
+fn footer_sync_pill_labels_match_pinned_strings() {
+    use crate::app::SyncStatus;
+    use crate::ui::footer::sync_pill_label;
+
+    assert_eq!(
+        sync_pill_label(Some(&SyncStatus::InFlight)).as_deref(),
+        Some("Syncing\u{2026}")
+    );
+    assert_eq!(
+        sync_pill_label(Some(&SyncStatus::Succeeded { new_commits: 0 })).as_deref(),
+        Some("Synced (already up to date)")
+    );
+    assert_eq!(
+        sync_pill_label(Some(&SyncStatus::Succeeded { new_commits: 1 })).as_deref(),
+        Some("Synced (1 new commit)")
+    );
+    assert_eq!(
+        sync_pill_label(Some(&SyncStatus::Succeeded { new_commits: 3 })).as_deref(),
+        Some("Synced (3 new commits)")
+    );
+    assert_eq!(
+        sync_pill_label(Some(&SyncStatus::Failed {
+            message: "boom".into()
+        }))
+        .as_deref(),
+        Some("\u{26A0} Sync failed: boom")
+    );
+    assert_eq!(
+        sync_pill_label(Some(&SyncStatus::Unavailable {
+            hint: "not a git repository".into()
+        }))
+        .as_deref(),
+        Some("Sync unavailable: not a git repository")
+    );
+    assert!(sync_pill_label(None).is_none());
+}
+
+#[test]
+fn footer_renders_sync_pill_when_status_set() {
+    let mut app = app_with_items(vec![item("001", "Task", "Body")]);
+    // Close the preview so the footer carries the Y hint and pills.
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    // Inject a Succeeded status as the event loop would after sync.
+    app.set_sync_status(crate::app::SyncStatus::Succeeded { new_commits: 2 });
+    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(
+        rendered.contains("Synced (2 new commits)"),
+        "footer must render the Synced (2 new commits) pill, got: {rendered}"
+    );
+    assert!(
+        rendered.contains("Y: sync"),
+        "footer must include the Y: sync hint when preview closed"
+    );
+}
+
+#[test]
+fn footer_renders_sync_failed_pill_with_warning_glyph() {
+    let mut app = app_with_items(vec![item("001", "Task", "Body")]);
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    app.set_sync_status(crate::app::SyncStatus::Failed {
+        message: "boom".into(),
+    });
+    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(
+        rendered.contains("\u{26A0} Sync failed: boom"),
+        "expected ⚠ Sync failed pill in footer, got: {rendered}"
+    );
+}
+
 #[test]
 fn footer_shows_broken_count_pill_when_parse_errors_present() {
     let app = app_with_broken_entity();

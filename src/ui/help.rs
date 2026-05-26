@@ -27,6 +27,7 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("  a              toggle active / archived view"),
         Line::from("  s              cycle sort mode (when preview closed)"),
         Line::from("  D              open workflow definition"),
+        Line::from("  Y              sync workflow (git pull)"),
         Line::from("  ?              toggle this help popup"),
         Line::from("  Esc            close help"),
     ];

@@ -3,6 +3,7 @@ pub mod cli;
 pub mod discovery;
 pub mod domain;
 pub mod editor;
+pub mod git_sync;
 pub mod parser;
 pub mod ui;
 pub mod watcher;
@@ -13,7 +14,7 @@ use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
-use app::{App, AppMode};
+use app::{App, AppMode, SyncStatus};
 use cli::Cli;
 use crossterm::{
     event::{self, Event},
@@ -21,6 +22,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
+use git_sync::{GitRunner, StdGitRunner, SyncOutcome};
 use ratatui::{backend::CrosstermBackend, Terminal};
 use watcher::{WatcherBackend, WatcherConfig, WorkflowWatcher};
 
@@ -209,7 +211,18 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
             watcher_state = start_watcher_for(&mut app);
         }
 
-        // 5. Drain pending "open file in $EDITOR" intent: suspend the TUI,
+        // 5. Drain pending sync request: redraw once with the in-flight
+        // pill, then run `git_sync::sync` synchronously, then redraw with
+        // the outcome on the next loop iteration.
+        if app.take_pending_sync() {
+            app.set_sync_status(SyncStatus::InFlight);
+            terminal
+                .draw(|frame| ui::render(frame, &app))
+                .context("failed to draw terminal UI")?;
+            apply_pending_sync(&mut app, &StdGitRunner);
+        }
+
+        // 6. Drain pending "open file in $EDITOR" intent: suspend the TUI,
         // block on the editor process, resume, force a redraw next iter.
         // Errors are intentionally swallowed — they would otherwise tear
         // down the TUI for an issue (e.g. editor not installed) that the
@@ -236,6 +249,47 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
         .context("failed to restore terminal cursor")?;
 
     Ok(())
+}
+
+/// Run a sync against the active workflow's repo root and reflect the
+/// outcome on `app`. Factored out of the event loop so integration tests
+/// can drive it with a stub [`GitRunner`] and assert end-state without a
+/// terminal. After a successful pull with new commits, the in-memory
+/// snapshot is reloaded so AC-4 holds independent of the watcher path.
+pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
+    let Some(root) = app.repo_root().map(|p| p.to_path_buf()) else {
+        app.set_sync_status(SyncStatus::Failed {
+            message: "no active workflow".to_string(),
+        });
+        return;
+    };
+    let outcome = git_sync::sync(runner, &root);
+    let availability = git_sync::probe_availability(runner, &root);
+    let status = match outcome {
+        SyncOutcome::UpToDate => SyncStatus::Succeeded { new_commits: 0 },
+        SyncOutcome::Pulled { new_commits } => {
+            // Explicit re-parse so the overview reflects newly pulled
+            // entity files regardless of whether the filesystem watcher
+            // already fired (AC-4 cross-references task 045 but does not
+            // block on it).
+            if new_commits > 0 {
+                let _ = app.reload();
+            }
+            SyncStatus::Succeeded { new_commits }
+        }
+        SyncOutcome::Failed { message } => {
+            // Classify between true failure and unavailability so the
+            // pill carries the right framing without re-running git
+            // probes unnecessarily.
+            match availability {
+                git_sync::SyncAvailability::Unavailable(reason) => SyncStatus::Unavailable {
+                    hint: reason.hint().to_string(),
+                },
+                git_sync::SyncAvailability::Available => SyncStatus::Failed { message },
+            }
+        }
+    };
+    app.set_sync_status(status);
 }
 
 fn start_watcher_for(

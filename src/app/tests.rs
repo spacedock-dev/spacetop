@@ -1496,6 +1496,55 @@ fn definition_scopes_to_active_tab_and_esc_preserves_index() {
     assert_eq!(app.selected_index(), probe_selected);
 }
 
+// ---- Task 046: Sync action plumbing ----
+
+#[test]
+fn y_keypress_records_pending_sync_when_preview_closed() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+    assert!(!app.take_pending_sync(), "pending_sync starts false");
+    app.handle_key(key(KeyCode::Char('Y')));
+    assert!(app.take_pending_sync(), "Y must set pending_sync");
+    assert!(!app.take_pending_sync(), "take_pending_sync drains the flag");
+}
+
+#[test]
+fn y_keypress_is_noop_when_preview_open() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.as_overview().unwrap().preview_open());
+    app.handle_key(key(KeyCode::Char('Y')));
+    assert!(
+        !app.take_pending_sync(),
+        "Y must NOT set pending_sync when preview is open"
+    );
+}
+
+#[test]
+fn set_sync_status_routes_to_active_overview_and_survives_reload_from_snapshot() {
+    use super::SyncStatus;
+    let mut app = App::from_snapshot(
+        PathBuf::from("workflow"),
+        snapshot_with_paths(&["workflow/alpha.md"]),
+    );
+    assert!(app.sync_status().is_none());
+    app.set_sync_status(SyncStatus::Succeeded { new_commits: 3 });
+    match app.sync_status() {
+        Some(SyncStatus::Succeeded { new_commits }) => assert_eq!(*new_commits, 3),
+        other => panic!("expected Succeeded(3), got {other:?}"),
+    }
+    // Reload preserves the sync status — it's an out-of-band UI signal,
+    // not part of the parsed snapshot.
+    app.reload_from_snapshot(snapshot_with_paths(&["workflow/alpha.md", "workflow/beta.md"]));
+    assert!(
+        matches!(
+            app.sync_status(),
+            Some(SyncStatus::Succeeded { new_commits: 3 })
+        ),
+        "sync_status must survive reload_from_snapshot, got {:?}",
+        app.sync_status()
+    );
+}
+
 // ---- Task 042: parse_errors surfaced on OverviewState + selectable rows ----
 
 #[test]
