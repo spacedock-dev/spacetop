@@ -55,3 +55,92 @@ Verified by: a grep over the new code asserting only `git pull` (and read-only `
 
 **AC-6 — `make lint` and `cargo test` remain clean.**
 Verified by: running `make lint` and `cargo test` locally.
+
+## Plan
+
+### Locked design decisions
+
+Three open questions from the spec are resolved here so the implement stage has no ambiguity:
+
+1. **`--ff-only` vs merge.** Use `git -C {repo_root} pull --ff-only`. Non-fast-forward history is reported as an error in the status line; Spacetop never produces a merge commit. Rationale: matches the captain's "auditable in git" framing and keeps Spacetop strictly non-mutating for anything other than upstream content the user explicitly asked to pull.
+2. **UX surface.** A status-line slot in the `OverviewState` (a new optional `sync_status: Option<SyncStatus>` field, distinct from `last_refresh_error`) rendered in the existing footer's left side. The footer (`src/ui/footer.rs`) gains a leading pill for sync status when present. States the pill renders:
+   - `Syncing…` (in-flight; rendered with the default pill style)
+   - `Synced (n new commits)` or `Synced (already up to date)` (success; default style)
+   - `Sync failed: {short reason}` (error; rendered with the `broken_pill_style` red foreground that already exists for parse errors)
+   - `Sync unavailable: {hint}` (no remote; default style, dim)
+   No modal, no toast. The pill persists until the next sync attempt overwrites it (or the user dismisses with `Esc` — out of scope; keep it simple and let the next `Y` keypress replace it).
+3. **What counts as "no remote configured".** Three distinguishable hints, all routed through one `SyncAvailability::Unavailable(reason)` enum variant so the helper does the classification and the UI just renders a string:
+   - `not a git repository` — `git rev-parse --is-inside-work-tree` exits non-zero, or stdout is not `true`.
+   - `no upstream for branch` — `git rev-parse --abbrev-ref --symbolic-full-name @{u}` exits non-zero (most common: branch exists but has no tracking config).
+   - `no origin remote` — `git remote get-url origin` exits non-zero. Probed last; only relevant when the user is on an orphan/non-tracking branch but might still want guidance.
+   Availability is a pure read-only probe — it never invokes `git pull`. Hidden-vs-disabled UI question: keep the keybinding always active; pressing `Y` when unavailable surfaces the reason string in the status pill. This is easier to discover than a hidden key.
+
+### Module layout
+
+- **`src/git_sync.rs`** (new top-level module under `src/`). Pure logic + a `Command`-runner seam, mirrored after `src/editor.rs`. No TUI dependencies. Public surface:
+  - `pub enum SyncAvailability { Available, Unavailable(UnavailableReason) }`
+  - `pub enum UnavailableReason { NotGitRepo, NoUpstream, NoOriginRemote }` (with a `fn hint(&self) -> &'static str` for the UI).
+  - `pub enum SyncOutcome { UpToDate, Pulled { new_commits: u32 }, Failed { message: String } }`
+  - `pub trait GitRunner { fn run(&self, repo_root: &Path, args: &[&str]) -> io::Result<GitCmdResult>; }` where `GitCmdResult { status: ExitStatus, stdout: String, stderr: String }`.
+  - `pub struct StdGitRunner;` — production impl that shells out to `git -C {repo_root} {args...}`.
+  - `pub fn probe_availability<R: GitRunner>(runner: &R, repo_root: &Path) -> SyncAvailability` — runs the three read-only probes above in order.
+  - `pub fn sync<R: GitRunner>(runner: &R, repo_root: &Path) -> SyncOutcome` — `probe_availability` first; if `Unavailable`, returns `Failed { message: reason.hint().into() }`; else runs `git pull --ff-only` and parses stdout for the "Already up to date." string vs. the `Fast-forward` block with a commit count (parse `git rev-parse HEAD` before+after, diff via `git rev-list --count {before}..{after}`).
+  - Only commands ever invoked through `GitRunner`: `rev-parse`, `remote get-url`, `pull --ff-only`, `rev-list --count`. AC-5 grep target is `"git push"`, `"git commit"`, `"git checkout"` returning zero matches in `src/`.
+
+- **`src/app.rs`** — add `sync_status: Option<SyncStatus>` accessor + setter on `App` that delegate to the active `OverviewState`. Add a `request_sync()` method that just sets a `pending_sync: bool` flag (same drain pattern as `pending_open_file`). Add `take_pending_sync()` for the event loop.
+
+- **`src/app/overview.rs`** — add `pub sync_status: Option<SyncStatus>` field (default `None`) and a `set_sync_status(SyncStatus)` setter. `SyncStatus` is a small enum: `InFlight | Succeeded { pulled: SyncPulled } | Failed { message: String } | Unavailable { hint: String }`. It is owned by `OverviewState` so a session with multiple workflows preserves per-workflow sync history when the user cycles.
+
+- **`src/app/keys.rs`** — add `KeyCode::Char('Y')` (uppercase, shift-Y, matching the existing `D`/`P` uppercase convention) → `OverviewKeyAction::RequestSync`. Active only when `!state.preview_open()` (consistent with `D`/`s`). Lowercase `y` is deliberately not bound — uppercase makes the action visually distinct from navigation keys and matches "destructive-ish" actions in the existing layout.
+
+- **`src/lib.rs`** (event loop) — add a drain step after the editor drain (step 6): if `app.take_pending_sync()` returns true, capture the active workflow's `repo_root`, set `SyncStatus::InFlight`, redraw once, then synchronously invoke `git_sync::sync(&StdGitRunner, &repo_root)` and set the resulting `SyncStatus`. After a successful pull with `new_commits > 0`, explicitly call `app.reload()` so AC-4 holds whether or not task 045's live README reload has shipped. Run synchronously on the main thread for v1 — `git pull` blocks the UI for a few seconds in the worst case, which is acceptable for a manually-triggered action and avoids introducing a worker thread or channel just for this. If captain pushes back in review we can move to a thread, but the spec doesn't require async.
+
+- **`src/ui/footer.rs`** — extend `status_footer_hints` to render the sync pill as the leading element when `state.sync_status.is_some()`, otherwise the existing broken-count / hints. Add `"Y: sync"` as a new hint in the regular hint chain when `!preview_open` and the workflow has any availability (i.e., probe is cached or unknown — keep it shown unconditionally so the user can discover it; pressing `Y` on a non-git dir teaches them why it's unavailable). Pinned tests in `src/ui/tests.rs` for footer hints get updated alongside the change.
+
+- **`src/ui/help.rs`** — add the `Y` binding to the help popup body.
+
+- **`CLAUDE.md`** — append a short note under "Safety: read-only by default" clarifying that `git pull --ff-only` is the one user-initiated exception, that all pulls are auditable in `git log`, and that no other write commands are ever invoked. (Single paragraph, ~3 lines.)
+
+### Step-by-step implementation order
+
+1. **`git_sync.rs` with `GitRunner` trait, `StdGitRunner`, and a `RecordingGitRunner` test double**, plus unit tests for `probe_availability` covering all three `Unavailable` branches and the `Available` happy path using the recording runner. No file I/O at this step.
+2. **`git_sync::sync` happy + sad paths** with the test double: simulate `pull --ff-only` success with `Fast-forward` output (assert `Pulled { new_commits: N }`), `Already up to date.` (assert `UpToDate`), and a non-zero exit with stderr (assert `Failed { message }`). At this point the helper is fully covered without touching `git`.
+3. **`SyncStatus` field on `OverviewState` + accessors on `App`** plus the `pending_sync` drain. Unit tests in `src/app/tests.rs` verifying that `request_sync()` sets the flag, `take_pending_sync()` consumes it once, and `set_sync_status` survives a `reload_from_snapshot` (status outlives content reloads).
+4. **Keybinding in `src/app/keys.rs`** with a unit test (the existing test module already drives synthetic `KeyEvent` values).
+5. **Footer + help-popup rendering** with a snapshot-style test in `src/ui/tests/` for each status variant (mirror existing `tests.rs` patterns; ratatui buffer assert on the pill label).
+6. **`lib.rs` event-loop drain wiring**. Smoke-tested manually via `cargo run` after the integration tests land — no automated test for the run-terminal loop itself (existing code follows this pattern; the loop is glue).
+7. **Integration test `tests/git_sync_e2e.rs`** that constructs a real git repo, exercises AC-1, AC-3, AC-4 end-to-end (gated on `git` being on `PATH` via a `which::which` check or just letting `Command::new("git").arg("--version")` failure skip the test with `eprintln!` + early return).
+8. **`CLAUDE.md` note** in the same commit as step 7 so the documentation lands with the integration test that proves the guardrail.
+9. **AC-5 grep evidence** captured in the implement-stage report (`grep -nE 'git (push|commit|checkout)' src/` should return zero matches outside test fixtures).
+
+### Test strategy — AC mapping
+
+| AC | Test location | Concrete fixture / assertion |
+|----|--------------|------------------------------|
+| AC-1 | `tests/git_sync_e2e.rs::sync_pulls_new_commits_from_upstream` | Build a temp dir with three subdirs: `bare/` (`git init --bare`), `upstream/` (clone of `bare`, push an initial commit containing a workflow `README.md` + one entity file), `working/` (clone of `bare`). Drive `App::request_sync()` against `working/`, run one tick of the event loop's sync drain (factor the drain body into a callable `apply_pending_sync(app: &mut App)` helper for testability), then push a new entity from `upstream/`. Call `apply_pending_sync` again. Assert: `App.sync_status()` is `Succeeded { pulled: Pulled { new_commits: 1 } }` AND the file `working/docs/.../{new-entity}.md` exists on disk. |
+| AC-2 | `src/git_sync.rs` unit + `tests/git_sync_e2e.rs::sync_unavailable_on_non_git_dir` | Unit: feed `RecordingGitRunner` that returns non-zero for `rev-parse --is-inside-work-tree` → assert `Unavailable(NotGitRepo)`. Integration: point `App` at a temp dir with no `.git`, call `apply_pending_sync`, assert `sync_status()` is `Unavailable { hint }` matching `not a git repository`, and assert the `RecordingGitRunner` (injected via a test seam constructor on `App`) recorded zero `pull` invocations. The seam: `App::set_git_runner(Box<dyn GitRunner>)` for tests; production constructors use `StdGitRunner`. |
+| AC-3 | `src/git_sync.rs` unit + integration `tests/git_sync_e2e.rs::sync_failed_pull_keeps_app_intact` | Unit: `RecordingGitRunner` returns non-zero exit on `pull` with stderr `"fatal: unable to access ..."`, assert `Failed { message }` carries the trimmed stderr. Integration: point a working repo at an unreachable remote (`git remote set-url origin file:///nonexistent/path.git`), call `apply_pending_sync`, assert `App` still functional (`handle_key(KeyCode::Char('j'))` advances selection), and `sync_status` is `Failed`. |
+| AC-4 | `tests/git_sync_e2e.rs::sync_reflects_new_entity_in_overview` | Same fixture as AC-1. After successful sync, assert `app.as_session().unwrap().active_state().snapshot.items.iter().any(|i| i.id == "{new-id}")` — proves the explicit `reload()` after a successful pull updates the in-memory entity list. Independent of task 045's watcher path. |
+| AC-5 | `tests/no_write_git_calls.rs` (new) | `let src = std::fs::read_to_string(".../src/...all files...")?;` walked via `walkdir`. Assert `!src.contains("\"push\"")`, `!src.contains("\"commit\"")`, `!src.contains("\"checkout\"")` when paired with `Command::new("git")` proximity (use a simple regex). Plus a positive assert that `"--ff-only"` appears exactly once. This is a guardrail test, not a behavior test — keeps AC-5 enforceable in CI. |
+| AC-6 | `make lint && cargo test` | Run locally; record output excerpts in implement-stage report. |
+
+### Notes & non-goals
+
+- No async: v1 is synchronous. The pull blocks the event loop. Acceptable per locked decision; revisit only on review feedback.
+- No retry: a failed pull surfaces the error and waits for the next `Y` press.
+- No credential prompting: if `git pull` would prompt, it will fail with a non-zero exit and the error surfaces in the pill. Users running over SSH-key or PAT auth (the normal case in this codebase) are unaffected.
+- Stable user-facing strings (`"Sync unavailable: not a git repository"`, `"Sync unavailable: no upstream for branch"`, `"Sync unavailable: no origin remote"`, `"Syncing…"`, `"Synced (already up to date)"`, `"Synced (N new commits)"`, `"Sync failed: {message}"`) are pinned by unit tests per the CLAUDE.md convention.
+- The plan deliberately does NOT touch `src/watcher.rs` — AC-4 is satisfied by the explicit post-sync `reload()`, which is simpler than depending on the watcher seeing the file changes from a `git pull`.
+
+## Stage Report: plan
+
+- DONE: Plan separates a testable git_sync helper (shell-out + structured result) from App keybinding and UI status surface, so the helper runs without a TUI.
+  See "Module layout" — `src/git_sync.rs` is a standalone module with `GitRunner` trait + `StdGitRunner` + pure `probe_availability` / `sync` functions; `App` only owns `pending_sync` + `sync_status`; UI lives in `src/ui/footer.rs`. Steps 1-2 cover the helper end-to-end with zero TUI dependency.
+- DONE: Plan locks the three design-stage open questions (--ff-only vs merge, UX surface, what counts as 'no remote configured') into concrete commands, UI states, and error messages.
+  See "Locked design decisions": (1) `git pull --ff-only` only, no merge commits; (2) status-line pill in the existing footer with four named states and exact label strings; (3) three `UnavailableReason` variants probed in order via `rev-parse --is-inside-work-tree`, `rev-parse --abbrev-ref @{u}`, and `remote get-url origin`.
+- DONE: Test strategy maps each of AC-1..AC-5 to a concrete fixture (temp git repo with upstream, non-git dir, failing pull, post-pull entity-list check, grep-over-code for write absence).
+  See "Test strategy — AC mapping" table: AC-1 uses bare+upstream+working clones; AC-2 uses both a recording-runner unit test and a non-git tempdir integration test; AC-3 uses an unreachable `file://` remote; AC-4 reuses the AC-1 fixture and asserts on `snapshot.items`; AC-5 is a `walkdir`-based source grep in `tests/no_write_git_calls.rs`.
+
+### Summary
+
+The plan threads a small testable `git_sync` module (mirroring the `editor.rs` seam pattern with a `GitRunner` trait + recording test double) under an `App`-owned `pending_sync` flag drained by the event loop, with a status pill in the existing footer. The three open design questions are locked: `--ff-only` only, a persistent pill in the footer with four named states and pinned label strings, and three distinct `UnavailableReason` variants probed in a fixed order. The integration tests build real git repos (bare + upstream + working clone) for AC-1/AC-4 and use an injected `RecordingGitRunner` test double for unit coverage of AC-2/AC-3, plus a `walkdir`-based AC-5 source-scan test so the read-only guardrail stays enforceable in CI.
