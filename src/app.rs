@@ -336,6 +336,79 @@ impl App {
         }
     }
 
+    /// Watcher-driven reload that also re-runs discovery when the session has
+    /// a scan root. Used by the event loop when a `RefreshSignal` arrives so
+    /// that a workflow added or removed under the discovery root becomes
+    /// visible, and an edit to the active workflow's README re-parses live.
+    ///
+    /// Order: discovery first (so the active slot's container is up to date),
+    /// then per-active reload. If the active workflow's directory has
+    /// disappeared, the active slot is replaced with an empty state carrying
+    /// a "workflow removed" message in `last_refresh_error` so the UI stays
+    /// non-panicking until the user picks another workflow.
+    pub fn reload_with_rediscovery(&mut self) -> Result<(), ParseError> {
+        let session = match &mut self.mode {
+            AppMode::Overview(s) => s,
+            AppMode::PickerOverlay { underlying, .. } => underlying,
+            AppMode::Definition { underlying, .. } => underlying,
+            AppMode::Picker(_) => return Ok(()),
+        };
+
+        let prior_active_dir = session.active_dir().to_path_buf();
+
+        if let Some(scan_root) = session.scan_root().map(|p| p.to_path_buf()) {
+            match crate::discovery::discover_workflows(&scan_root) {
+                Ok(new_discovery) if new_discovery.is_empty() => {
+                    // The last workflow under the scan root was removed.
+                    // Don't replace the discovery list (that would leave the
+                    // session structurally empty); instead, swap the active
+                    // slot for an empty state with a clear message.
+                    let mut empty = OverviewState::empty(prior_active_dir);
+                    empty.set_refresh_error("workflow removed".to_string());
+                    session.install_active_state(empty);
+                    return Ok(());
+                }
+                Ok(new_discovery) => {
+                    session.replace_discovery(new_discovery);
+                }
+                Err(err) => {
+                    session
+                        .active_state_mut()
+                        .set_refresh_error(format!("re-discovery failed: {err}"));
+                }
+            }
+        }
+
+        let active_dir = session.active_dir().to_path_buf();
+        if !active_dir.exists() {
+            let mut empty = OverviewState::empty(active_dir);
+            empty.set_refresh_error("workflow removed".to_string());
+            session.install_active_state(empty);
+            return Ok(());
+        }
+
+        // If the active slot has not been materialized yet (e.g. discovery
+        // remap picked a never-loaded workflow), load it now. Otherwise call
+        // the in-place reload, which already preserves prior good state on
+        // parse failure and records the error in `last_refresh_error`.
+        if !session.active_slot_loaded() {
+            match OverviewState::load(active_dir.clone()) {
+                Ok(state) => {
+                    session.install_active_state(state);
+                    Ok(())
+                }
+                Err(err) => {
+                    let mut empty = OverviewState::empty(active_dir);
+                    empty.set_refresh_error(err.to_string());
+                    session.install_active_state(empty);
+                    Err(err)
+                }
+            }
+        } else {
+            session.active_state_mut().reload()
+        }
+    }
+
     /// Materialize the active slot of the current session by loading from
     /// disk. Used by the event loop after a `WorkflowSwitch` with
     /// `needs_first_load == true`. On parse failure, installs a synthetic
