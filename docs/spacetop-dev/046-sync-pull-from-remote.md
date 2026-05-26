@@ -2,12 +2,12 @@
 id: 046
 title: Add a Sync action that runs `git pull` when the workflow root has a remote
 source: captain
-status: plan
+status: implement
 started: 2026-05-26T15:08:54Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-046-sync-pull-from-remote
 issue:
 pr:
 ---
