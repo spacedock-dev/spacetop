@@ -1,16 +1,17 @@
 ---
 id: 047
 title: Color the sync result pill so the Y-sync outcome is readable at a glance
-status: review
+status: done
 source: captain
 started: 2026-05-27T06:56:37Z
-completed:
-verdict:
+completed: 2026-05-27T07:24:39Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-047-sync-result-pill-color
+worktree: 
 issue:
 pr: #46
 mod-block: 
+archived: 2026-05-27T07:24:39Z
 ---
 
 When the user presses `Y` to sync (`git pull --ff-only`), the result already
