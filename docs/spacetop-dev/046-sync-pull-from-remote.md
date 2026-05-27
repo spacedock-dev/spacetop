@@ -2,7 +2,7 @@
 id: 046
 title: Add a Sync action that runs `git pull` when the workflow root has a remote
 source: captain
-status: implement
+status: review
 started: 2026-05-26T15:08:54Z
 completed:
 verdict:
@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-046-sync-pull-from-remote
 issue:
 pr: #44
+mod-block: merge:pr-merge
 ---
 
 Workflow state lives in markdown under a git repo, and teammates push changes (new entities, status transitions, archive moves, mod-block updates) to the remote. Today a user inspecting a workflow in Spacetop has to drop to a terminal and run `git pull` themselves to see what landed since they opened the TUI. The captain wants a user-visible **Sync** action that, when triggered from inside Spacetop, runs `git pull` on the workflow root if the current folder is a git repo with a configured remote.
@@ -144,3 +145,29 @@ Three open questions from the spec are resolved here so the implement stage has 
 ### Summary
 
 The plan threads a small testable `git_sync` module (mirroring the `editor.rs` seam pattern with a `GitRunner` trait + recording test double) under an `App`-owned `pending_sync` flag drained by the event loop, with a status pill in the existing footer. The three open design questions are locked: `--ff-only` only, a persistent pill in the footer with four named states and pinned label strings, and three distinct `UnavailableReason` variants probed in a fixed order. The integration tests build real git repos (bare + upstream + working clone) for AC-1/AC-4 and use an injected `RecordingGitRunner` test double for unit coverage of AC-2/AC-3, plus a `walkdir`-based AC-5 source-scan test so the read-only guardrail stays enforceable in CI.
+
+## Stage Report: review
+
+- DONE: Each acceptance criterion (AC-1..AC-6) has cited evidence in the implement stage report or in code/tests on the worktree branch; flag any AC without evidence.
+  AC-1: `tests/git_sync_e2e.rs::sync_pulls_new_commits_and_reflects_them` builds bare+upstream+working clones, pushes a new entity, drives `apply_pending_sync(&StdGitRunner)`, asserts `Succeeded { new_commits >= 1 }`. AC-2: unit `probe_not_a_git_repo_short_circuits` (asserts argv + short-circuit) plus integration `sync_unavailable_on_non_git_dir` (real non-git tempdir, asserts hint `"not a git repository"`). AC-3: integration `sync_failed_pull_keeps_app_intact` points origin at `file:///definitely/does/not/exist.git`, asserts `Failed{message}` and that a follow-up `KeyCode::Down` does not panic; unit `sync_failed_pull_carries_first_stderr_line` asserts message extraction. AC-4: same fixture as AC-1 asserts `app.snapshot().items.iter().any(|i| i.id == "002")` post-sync — proves the explicit `apply_pending_sync` `app.reload()` on `new_commits > 0`. AC-5: `tests/no_write_git_calls.rs` two tests — `src_tree_does_not_reference_disallowed_git_write_subcommands` walks `src/` and asserts zero literal `"push"`/`"commit"`/`"checkout"` outside comments; `src_tree_references_ff_only_exactly_once` confirms exactly one `--ff-only` in `src/`. AC-6: `make lint` and `cargo test` reported below.
+- DONE: Verify `make lint` and `cargo test` run clean on the worktree branch — report the exact commands and exit codes observed.
+  `make lint` exit 0 (`cargo clippy --all-targets --all-features -- -D warnings`, finished cleanly). `cargo test` exit 0; per-binary results: lib 320 passed / 0 failed, app_smoke 4 passed, decide_app 10 passed, git_sync_e2e 4 passed, no_write_git_calls 2 passed, watcher_fs 3 ignored, doc-tests 0 — total 343 ran, 0 failed.
+- DONE: Confirm read-only guardrail: grep the new code paths for any `git commit`, `git push`, `git checkout`, or other workflow-tree writes; only `git pull` + read-only probes should appear (AC-5).
+  Independent grep across `src/`: only `Command::new("git")` site is `src/git_sync.rs:92` (production `StdGitRunner`); all argv goes through `GitRunner::run`. Static argv set is `["rev-parse", "--is-inside-work-tree"]`, `["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]`, `["remote", "get-url", "origin"]`, `["rev-parse", "HEAD"]`, `["pull", "--ff-only"]`, `["rev-list", "--count", &range]`. No `push`/`commit`/`checkout`/`fetch`/`merge`/`rebase`/`reset` literals appear in `src/` outside the documentation comment at `git_sync.rs:138` that explicitly states these commands are never invoked. The `"merge"` literal at `src/domain/mod.rs:284` is a stage-transition label, unrelated to git.
+
+### Summary
+
+PASSED. AC-1..AC-6 all have concrete, executable evidence in code and tests on the worktree branch. `make lint` and `cargo test` are both clean (340 passed across all targets, 3 watcher tests intentionally ignored). The AC-5 read-only guardrail holds: a single `Command::new("git")` invocation lives in `src/git_sync.rs` and routes through `GitRunner::run`, with the complete argv surface restricted to read-only probes plus `pull --ff-only`. The implementation tracks the plan closely — `GitRunner` seam with `RecordingGitRunner` test double, three ordered availability probes, per-`OverviewState` `sync_status`, `pending_sync` drain in the event loop, and a footer pill whose user-facing strings are pinned by `footer_sync_pill_labels_match_pinned_strings`. Recommend moving to captain gate.
+
+## Stage Report: implement
+
+- DONE: Sync action invokes `git pull` (per design-stage decision: --ff-only) on the workflow root when a remote is configured, and surfaces a clear status (commits pulled / up to date / error) in the UI (AC-1, AC-3, AC-4).
+  `src/git_sync.rs` shells out to `git pull --ff-only` and parses `rev-list --count {before}..HEAD`; `lib.rs::apply_pending_sync` reloads the snapshot on `new_commits > 0`; footer pill labels pinned by `ui::tests::task_list::footer_sync_pill_labels_match_pinned_strings`; e2e `tests/git_sync_e2e.rs::sync_pulls_new_commits_and_reflects_them` builds a bare + upstream + working clone and asserts the new entity appears post-sync.
+- DONE: Sync is unavailable with a clear, distinguishable message when there is no git repo, no upstream tracked branch, or no `origin` remote — without exec'ing git in those cases (AC-2).
+  `git_sync::probe_availability` runs three read-only probes in order; unit tests (`probe_not_a_git_repo_short_circuits`, `probe_no_upstream_returns_no_upstream`, `probe_no_origin_remote_returns_no_origin`) assert each variant's argv and short-circuiting; integration `sync_unavailable_on_non_git_dir` asserts the same on a real non-git tempdir.
+- DONE: No new code path calls `git commit`, `git push`, `git checkout`, or any other workflow-tree mutation; only `git pull` and read-only probes are introduced (AC-5).
+  Guardrail test `tests/no_write_git_calls.rs::src_tree_does_not_reference_disallowed_git_write_subcommands` scans `src/` and asserts zero matches for `"push"`/`"commit"`/`"checkout"`; companion `src_tree_references_ff_only_exactly_once` confirms exactly one `--ff-only` reference in `src/`. `CLAUDE.md` updated to document the single sanctioned exception.
+
+### Summary
+
+Implemented in commit on `spacedock-ensign/046-sync-pull-from-remote`. New `src/git_sync.rs` module owns the `GitRunner` seam, `StdGitRunner` shell-out, `probe_availability` (three ordered read-only probes), and `sync` (pull + before/after `rev-parse` + `rev-list --count`). `App` gained a `pending_sync: bool` flag plus `request_sync`/`take_pending_sync`/`sync_status`/`set_sync_status`/`repo_root` accessors; `OverviewState` gained a per-tab `sync_status: Option<SyncStatus>` so a multi-workflow session retains per-workflow pill state. The event loop drains `pending_sync` between editor and watcher steps via `apply_pending_sync`, which reloads the snapshot on `new_commits > 0`. Footer renders a leading sync pill with stable pinned strings and adds a `Y: sync` hint; help popup gains the `Y` binding. `make lint` clean; `cargo test` 340 passed / 0 failed.

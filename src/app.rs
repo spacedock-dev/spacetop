@@ -11,7 +11,7 @@ mod overview;
 mod picker;
 mod session;
 
-pub use overview::{OverviewState, SelectedRow, SortMode, StageCount, ViewScope};
+pub use overview::{OverviewState, SelectedRow, SortMode, StageCount, SyncStatus, ViewScope};
 pub use picker::PickerState;
 pub use session::{OverviewSession, WorkflowSwitch};
 
@@ -48,6 +48,7 @@ pub struct App {
     pending_switch: Option<WorkflowSwitch>,
     pending_overlay_open: bool,
     pending_open_file: Option<PathBuf>,
+    pending_sync: bool,
 }
 
 impl App {
@@ -60,6 +61,7 @@ impl App {
             pending_switch: None,
             pending_overlay_open: false,
             pending_open_file: None,
+            pending_sync: false,
         }
     }
 
@@ -72,6 +74,7 @@ impl App {
             pending_switch: None,
             pending_overlay_open: false,
             pending_open_file: None,
+            pending_sync: false,
         })
     }
 
@@ -84,6 +87,7 @@ impl App {
             pending_switch: None,
             pending_overlay_open: false,
             pending_open_file: None,
+            pending_sync: false,
         }
     }
 
@@ -95,6 +99,7 @@ impl App {
             pending_switch: None,
             pending_overlay_open: false,
             pending_open_file: None,
+            pending_sync: false,
         }
     }
 
@@ -110,6 +115,7 @@ impl App {
             pending_switch: None,
             pending_overlay_open: false,
             pending_open_file: None,
+            pending_sync: false,
         }
     }
 
@@ -190,6 +196,47 @@ impl App {
     /// resumes — the actual I/O lives in `run_terminal`, not on `App`.
     pub fn take_pending_open_file(&mut self) -> Option<PathBuf> {
         self.pending_open_file.take()
+    }
+
+    /// Record a `Y` keypress intent. The event loop calls
+    /// `take_pending_sync` next tick and runs `git_sync::sync` against the
+    /// active workflow's repo root, synchronously.
+    pub fn request_sync(&mut self) {
+        self.pending_sync = true;
+    }
+
+    /// Drain any pending sync request. Returns `true` exactly once per
+    /// `request_sync` call.
+    pub fn take_pending_sync(&mut self) -> bool {
+        std::mem::replace(&mut self.pending_sync, false)
+    }
+
+    /// Current sync status for the active overview tab, if any.
+    pub fn sync_status(&self) -> Option<&SyncStatus> {
+        self.as_session().and_then(|s| s.active_state().sync_status())
+    }
+
+    /// Set the sync status pill on the active overview tab. Used by the
+    /// event loop after running the git_sync helper.
+    pub fn set_sync_status(&mut self, status: SyncStatus) {
+        match &mut self.mode {
+            AppMode::Overview(session) => session.active_state_mut().set_sync_status(status),
+            AppMode::PickerOverlay { underlying, .. } => {
+                underlying.active_state_mut().set_sync_status(status)
+            }
+            AppMode::Definition { underlying, .. } => {
+                underlying.active_state_mut().set_sync_status(status)
+            }
+            AppMode::Picker(_) => {}
+        }
+    }
+
+    /// Repo root of the active workflow (the git ancestor the discovery
+    /// scan resolved against). Used by the event-loop drain to target
+    /// `git pull` at the right directory.
+    pub fn repo_root(&self) -> Option<&Path> {
+        self.as_session()
+            .map(|s| s.active_state().repo_root.as_path())
     }
 
     /// Open a picker overlay with the given (possibly re-discovered)
@@ -568,6 +615,7 @@ impl App {
                 self.pending_open_file = Some(path);
             }
             OverviewKeyAction::OpenDefinition => self.open_definition(),
+            OverviewKeyAction::RequestSync => self.pending_sync = true,
         }
     }
 

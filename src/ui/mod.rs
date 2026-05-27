@@ -1,6 +1,6 @@
 mod definition;
 mod diff;
-mod footer;
+pub(crate) mod footer;
 mod graph;
 mod header;
 mod help;

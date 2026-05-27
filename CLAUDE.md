@@ -6,6 +6,8 @@ Read-only Rust TUI (ratatui + crossterm) for browsing [Spacedock](https://github
 
 Spacetop must NOT mutate Spacedock workflow files. Treat the markdown tree as the source of truth. If a future feature needs writes, make them explicit and auditable in git.
 
+The Sync action (`Y`) is the single sanctioned exception: it runs `git -C {repo_root} pull --ff-only` against the workflow root. No `git push`, `git commit`, or `git checkout` is ever invoked — the only on-disk write is the fast-forward update from the upstream remote, which is auditable in `git log`. The `tests/no_write_git_calls.rs` guardrail enforces this in CI.
+
 ## Lint Gate
 
 Before marking any task complete, run:
