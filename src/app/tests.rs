@@ -221,6 +221,9 @@ fn page_keys_scroll_preview_without_changing_selection() {
     let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
 
     app.handle_key(key(KeyCode::Enter));
+    // Page step is viewport-relative (viewport - 1); pin a 7-row body so a
+    // page == 6 rows and the offsets below stay deterministic.
+    app.as_overview().unwrap().preview_viewport_height.set(7);
     app.handle_key(key(KeyCode::PageDown));
     assert_eq!(app.selected_index(), 0);
     assert_eq!(app.as_overview().unwrap().preview_scroll(), 6);
@@ -239,6 +242,8 @@ fn changing_selection_resets_preview_scroll() {
     let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
 
     app.handle_key(key(KeyCode::Enter));
+    // Viewport-relative page step: 7-row body => a page is 6 rows.
+    app.as_overview().unwrap().preview_viewport_height.set(7);
     app.handle_key(key(KeyCode::PageDown));
     assert_eq!(app.as_overview().unwrap().preview_scroll(), 6);
 
@@ -326,6 +331,128 @@ fn scroll_preview_up_responds_immediately_after_capped_down() {
         state.preview_scroll() < 10,
         "first PageUp must decrease scroll after capped drift"
     );
+}
+
+#[test]
+fn preview_to_top_and_bottom_set_extremes() {
+    let mut state =
+        super::OverviewState::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(1));
+    state.preview_open = true;
+    state.max_preview_scroll.set(42);
+
+    state.scroll_preview_to_bottom();
+    assert_eq!(state.preview_scroll(), 42, "G jumps to the clamped max");
+
+    state.scroll_preview_to_top();
+    assert_eq!(state.preview_scroll(), 0, "g jumps to the top");
+}
+
+#[test]
+fn preview_to_bottom_then_page_up_is_not_stuck() {
+    // Regression R1: scroll_preview_to_bottom must store the real max (not
+    // usize::MAX), so a following page-up moves off the bottom instead of
+    // computing MAX - step (still past bottom) and appearing to no-op.
+    let mut state =
+        super::OverviewState::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(1));
+    state.preview_open = true;
+    state.max_preview_scroll.set(10);
+    state.preview_viewport_height.set(5); // page step = 4
+
+    state.scroll_preview_to_bottom();
+    assert_eq!(state.preview_scroll(), 10);
+
+    state.scroll_preview_up();
+    assert!(
+        state.preview_scroll() < 10,
+        "page-up after G must move off the bottom (offset not poisoned)"
+    );
+}
+
+#[test]
+fn preview_scroll_reclamps_after_viewport_shrinks() {
+    // Regression R4: a terminal resize that shrinks the doc's overflow lowers
+    // max_preview_scroll. The next scroll must re-clamp the stored offset to
+    // the new max BEFORE applying its delta — never leave it stranded high.
+    let mut state =
+        super::OverviewState::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(1));
+    state.preview_open = true;
+    state.max_preview_scroll.set(100);
+    state.preview_viewport_height.set(20);
+    state.scroll_preview_to_bottom();
+    assert_eq!(state.preview_scroll(), 100);
+
+    // Resize: far less content overflows now.
+    state.max_preview_scroll.set(10);
+    state.scroll_preview_up();
+    assert!(
+        state.preview_scroll() <= 10,
+        "stored offset must be re-clamped to the fresh max before the delta"
+    );
+}
+
+#[test]
+fn preview_scroll_keys_noop_when_doc_fits_pane() {
+    // max_preview_scroll == 0 means the doc fits; every scroll key is a no-op.
+    let mut state =
+        super::OverviewState::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(1));
+    state.preview_open = true;
+    state.max_preview_scroll.set(0);
+    state.preview_viewport_height.set(20);
+
+    state.scroll_preview_down();
+    state.scroll_preview_to_bottom();
+    assert_eq!(
+        state.preview_scroll(),
+        0,
+        "no scrolling when the document fits the pane"
+    );
+}
+
+#[test]
+fn space_and_b_page_scroll_the_preview() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    app.handle_key(key(KeyCode::Enter));
+    // Viewport-relative page step: 7-row body => a page is 6 rows.
+    app.as_overview().unwrap().preview_viewport_height.set(7);
+
+    app.handle_key(key(KeyCode::Char(' ')));
+    assert_eq!(app.as_overview().unwrap().preview_scroll(), 6);
+    assert_eq!(app.selected_index(), 0, "Space must not move task selection");
+
+    app.handle_key(key(KeyCode::Char('b')));
+    assert_eq!(app.as_overview().unwrap().preview_scroll(), 0);
+    assert_eq!(app.selected_index(), 0, "b must not move task selection");
+}
+
+#[test]
+fn g_and_shift_g_jump_to_preview_ends() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    app.handle_key(key(KeyCode::Enter));
+    app.as_overview().unwrap().max_preview_scroll.set(10);
+
+    app.handle_key(key(KeyCode::Char('G')));
+    assert_eq!(app.as_overview().unwrap().preview_scroll(), 10);
+
+    app.handle_key(key(KeyCode::Char('g')));
+    assert_eq!(app.as_overview().unwrap().preview_scroll(), 0);
+}
+
+#[test]
+fn jk_and_arrows_still_move_selection_with_preview_open() {
+    // Regression R2: opening the preview must NOT steal j/k/arrows — they stay
+    // task navigation in the list-driven model.
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(app.as_overview().unwrap().preview_open());
+
+    app.handle_key(key(KeyCode::Char('j')));
+    assert_eq!(app.selected_index(), 1, "j moves selection with preview open");
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.selected_index(), 2, "Down moves selection with preview open");
+    app.handle_key(key(KeyCode::Char('k')));
+    assert_eq!(app.selected_index(), 1, "k moves selection back");
+    app.handle_key(key(KeyCode::Up));
+    assert_eq!(app.selected_index(), 0, "Up moves selection back");
 }
 
 #[test]

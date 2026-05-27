@@ -75,6 +75,12 @@ pub struct OverviewState {
     pub max_preview_scroll: Cell<usize>,
     pub preview_scroll_x: usize,
     pub max_preview_scroll_x: Cell<usize>,
+    /// Visible height (rows) of the preview body area, written by the render
+    /// pass each frame (interior mutability, like `max_preview_scroll`). Drives
+    /// the page-relative vertical scroll step. The event loop draws before it
+    /// polls input (`lib.rs`), so this is always populated before any scroll
+    /// key is read.
+    pub preview_viewport_height: Cell<usize>,
     pub preview_wrap: bool,
     pub task_page_size: Cell<usize>,
     pub sort_mode: SortMode,
@@ -132,6 +138,7 @@ impl OverviewState {
             max_preview_scroll: Cell::new(usize::MAX),
             preview_scroll_x: 0,
             max_preview_scroll_x: Cell::new(usize::MAX),
+            preview_viewport_height: Cell::new(0),
             preview_wrap: true,
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
@@ -174,6 +181,7 @@ impl OverviewState {
             max_preview_scroll: Cell::new(usize::MAX),
             preview_scroll_x: 0,
             max_preview_scroll_x: Cell::new(usize::MAX),
+            preview_viewport_height: Cell::new(0),
             preview_wrap: true,
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
@@ -542,19 +550,58 @@ impl OverviewState {
         self.preview_wrap = !self.preview_wrap;
     }
 
-    pub(crate) fn scroll_preview_down(&mut self) {
+    /// Single home for the vertical scroll invariant: clamp the stored offset
+    /// to `[0, max]` BEFORE applying the delta, then re-clamp. Clamping the
+    /// stored field (not just the rendered value) is load-bearing — render
+    /// borrows `&OverviewState` and can only clamp its local copy, so if a
+    /// method left `preview_scroll > max` (e.g. after a resize shrank the doc)
+    /// the next relative scroll would start from a poisoned offset. Positive
+    /// delta scrolls down, negative up.
+    fn scroll_preview_vertical(&mut self, delta: isize) {
         if !self.preview_open {
             return;
         }
         let max = self.max_preview_scroll.get();
-        self.preview_scroll = self.preview_scroll.saturating_add(6).min(max);
+        let cur = self.preview_scroll.min(max);
+        self.preview_scroll = if delta >= 0 {
+            cur.saturating_add(delta as usize).min(max)
+        } else {
+            cur.saturating_sub(delta.unsigned_abs())
+        };
+    }
+
+    /// Page step in rows: one viewport minus a row of overlap for continuity,
+    /// floored at 1 so a not-yet-measured or single-row viewport still moves.
+    fn preview_page_step(&self) -> usize {
+        self.preview_viewport_height.get().saturating_sub(1).max(1)
+    }
+
+    pub(crate) fn scroll_preview_down(&mut self) {
+        let step = self.preview_page_step() as isize;
+        self.scroll_preview_vertical(step);
     }
 
     pub(crate) fn scroll_preview_up(&mut self) {
+        let step = self.preview_page_step() as isize;
+        self.scroll_preview_vertical(-step);
+    }
+
+    pub(crate) fn scroll_preview_to_top(&mut self) {
         if !self.preview_open {
             return;
         }
-        self.preview_scroll = self.preview_scroll.saturating_sub(6);
+        self.preview_scroll = 0;
+    }
+
+    /// Jump to the bottom. Reads the clamped `max` directly rather than setting
+    /// `usize::MAX`: the MAX trick survives render-clamp for display but poisons
+    /// the stored offset, so the next page-up would do `MAX - step` (still past
+    /// bottom) and appear to do nothing.
+    pub(crate) fn scroll_preview_to_bottom(&mut self) {
+        if !self.preview_open {
+            return;
+        }
+        self.preview_scroll = self.max_preview_scroll.get();
     }
 
     pub(crate) fn scroll_preview_right(&mut self) {
@@ -594,6 +641,9 @@ impl OverviewState {
         self.max_preview_scroll.set(usize::MAX);
         self.preview_scroll_x = 0;
         self.max_preview_scroll_x.set(usize::MAX);
+        // Render rewrites this each frame; reset to 0 keeps the page step at its
+        // floor (1 row) for the gap before the next draw rather than a stale value.
+        self.preview_viewport_height.set(0);
     }
 }
 

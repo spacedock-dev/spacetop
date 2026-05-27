@@ -234,9 +234,10 @@ fn multi_footer_shows_preview_scroll_when_preview_open() {
     terminal.draw(|frame| render(frame, &app)).unwrap();
     let rendered = buffer_text(terminal.backend().buffer());
 
-    assert!(rendered.contains("\u{2190}/\u{2192}: preview scroll"));
+    // Preview-open footer shows one consolidated scroll pill (the full key
+    // vocabulary, incl. horizontal scroll, lives in the help popup).
+    assert!(rendered.contains("scroll: Space/b PgUp/Dn g/G"));
     assert!(!rendered.contains("\u{2190}/\u{2192}: switch workflow"));
-    assert!(rendered.contains("PgUp/PgDn: preview scroll"));
     assert!(!rendered.contains("PgUp/PgDn: page list"));
 }
 
@@ -546,8 +547,12 @@ fn help_popup_includes_arrow_keys_in_multi_session() {
         "help popup must list preview scrolling when preview is open"
     );
     assert!(
-        rendered.contains("PageDown       scroll preview down"),
-        "preview-open help should describe PageDown as preview scroll"
+        rendered.contains("Space / PgDn   page preview down"),
+        "preview-open help should describe Space/PgDn as page-down preview scroll"
+    );
+    assert!(
+        rendered.contains("g / G          preview top / bottom"),
+        "preview-open help should list g/G as top/bottom jumps"
     );
     assert!(
         !rendered.contains("switch to next workflow"),

@@ -11,6 +11,84 @@ use crate::domain::EntityParseError;
 use super::layout::PreviewPlacement;
 use super::{diff, markdown};
 
+use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
+
+thread_local! {
+    /// Per-render-thread memoization of the termimad markdown render. Lives in
+    /// the ui layer (NOT on `OverviewState`) so app-state stays free of ratatui
+    /// types and testable without a terminal backend (see CLAUDE.md). Keyed by
+    /// content, so a live-reload edit to the same task file self-invalidates.
+    static MARKDOWN_CACHE: RefCell<MarkdownCache> = RefCell::new(MarkdownCache::default());
+}
+
+/// Render `body` to wrapped lines, reusing the thread-local cache when the
+/// (path, content, wrap, width) tuple is unchanged since the last frame.
+fn cached_markdown(path: &Path, body: &str, wrap: bool, width: u16) -> Vec<Line<'static>> {
+    MARKDOWN_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .get_or_render(path, body, wrap, width, markdown::render_markdown_termimad)
+    })
+}
+
+/// Single-item markdown render cache. Invalidates whole-key on a change to
+/// path, body content (hash), or wrap; within a key it retains up to two
+/// widths so the wrap+scrollbar two-pass render (full width then scrollbar-
+/// narrowed width) both hit on the next frame instead of thrashing.
+#[derive(Default)]
+struct MarkdownCache {
+    key: Option<MarkdownCacheKey>,
+    renders: Vec<(u16, Vec<Line<'static>>)>,
+}
+
+#[derive(PartialEq)]
+struct MarkdownCacheKey {
+    path: PathBuf,
+    body_hash: u64,
+    wrap: bool,
+}
+
+impl MarkdownCache {
+    fn get_or_render(
+        &mut self,
+        path: &Path,
+        body: &str,
+        wrap: bool,
+        width: u16,
+        render: impl FnOnce(&str, u16) -> Vec<Line<'static>>,
+    ) -> Vec<Line<'static>> {
+        let key = MarkdownCacheKey {
+            path: path.to_path_buf(),
+            body_hash: hash_str(body),
+            wrap,
+        };
+        if self.key.as_ref() != Some(&key) {
+            self.key = Some(key);
+            self.renders.clear();
+        }
+        if let Some((_, lines)) = self.renders.iter().find(|(w, _)| *w == width) {
+            return lines.clone();
+        }
+        let lines = render(body, width);
+        // Cap at the two widths a single frame uses (full pass + scrollbar pass);
+        // evict oldest first so the cache never grows unbounded.
+        if self.renders.len() >= 2 {
+            self.renders.remove(0);
+        }
+        self.renders.push((width, lines.clone()));
+        lines
+    }
+}
+
+fn hash_str(s: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
+}
+
 /// Stable user-facing hint string shown in the broken-entity preview to guide
 /// the captain back to a parseable frontmatter. Pinned by a UI test so any
 /// change here is intentional and visible to reviewers.
@@ -113,7 +191,7 @@ pub(super) fn render_preview(
     let (content_height_full, body_lines_full) = if let Some(lines) = diff_lines.as_ref() {
         (lines.len() as u16, None)
     } else {
-        let lines = markdown::render_markdown_termimad(&item.body, render_width);
+        let lines = cached_markdown(&item.path, &item.body, state.preview_wrap(), render_width);
         (lines.len() as u16, Some(lines))
     };
     let show_scrollbar = content_height_full > body_inner.height && body_inner.width > 1;
@@ -140,7 +218,12 @@ pub(super) fn render_preview(
     } else if show_scrollbar && state.preview_wrap() {
         // Re-render only when the wrap-mode scrollbar narrows the render
         // area, so code-block backgrounds still pad to the visible width.
-        markdown::render_markdown_termimad(&item.body, render_width_second_pass)
+        cached_markdown(
+            &item.path,
+            &item.body,
+            state.preview_wrap(),
+            render_width_second_pass,
+        )
     } else {
         body_lines_full.expect("markdown path always produces body_lines_full")
     };
@@ -148,6 +231,11 @@ pub(super) fn render_preview(
 
     let max_scroll = usize::from(content_height.saturating_sub(body_area.height));
     state.max_preview_scroll.set(max_scroll);
+    // Feed the live body height back to the scroll state so page/half steps are
+    // viewport-relative (mirrors the task_page_size Cell pattern for the list).
+    state
+        .preview_viewport_height
+        .set(usize::from(body_area.height));
     let content_width = body_lines.iter().map(line_width).max().unwrap_or(0);
     let max_scroll_x = content_width.saturating_sub(body_area.width as usize);
     state.max_preview_scroll_x.set(max_scroll_x);
@@ -411,4 +499,88 @@ fn wrapped_lines_height(lines: &[Line<'_>], width: u16) -> u16 {
             len.div_ceil(width) as u16
         })
         .sum()
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn dummy(_body: &str, width: u16) -> Vec<Line<'static>> {
+        vec![Line::from(format!("w{width}"))]
+    }
+
+    #[test]
+    fn repeated_identical_render_is_a_cache_hit() {
+        let mut cache = MarkdownCache::default();
+        let calls = Cell::new(0usize);
+        let path = PathBuf::from("/w/task-001.md");
+        let _ = cache.get_or_render(&path, "body", true, 40, |b, w| {
+            calls.set(calls.get() + 1);
+            dummy(b, w)
+        });
+        let _ = cache.get_or_render(&path, "body", true, 40, |b, w| {
+            calls.set(calls.get() + 1);
+            dummy(b, w)
+        });
+        assert_eq!(calls.get(), 1, "identical second render must hit the cache");
+    }
+
+    #[test]
+    fn body_edit_invalidates_same_path() {
+        // Regression R5: a live-reload edit to the same task file must not serve
+        // stale rendered lines — the content hash drops the key.
+        let mut cache = MarkdownCache::default();
+        let calls = Cell::new(0usize);
+        let path = PathBuf::from("/w/task-001.md");
+        let _ = cache.get_or_render(&path, "old body", true, 40, |b, w| {
+            calls.set(calls.get() + 1);
+            dummy(b, w)
+        });
+        let _ = cache.get_or_render(&path, "new body", true, 40, |b, w| {
+            calls.set(calls.get() + 1);
+            dummy(b, w)
+        });
+        assert_eq!(calls.get(), 2, "edited body must re-render, not serve stale");
+    }
+
+    #[test]
+    fn wrap_toggle_invalidates() {
+        let mut cache = MarkdownCache::default();
+        let calls = Cell::new(0usize);
+        let path = PathBuf::from("/w/task-001.md");
+        let _ = cache.get_or_render(&path, "body", true, 40, |b, w| {
+            calls.set(calls.get() + 1);
+            dummy(b, w)
+        });
+        let _ = cache.get_or_render(&path, "body", false, 40, |b, w| {
+            calls.set(calls.get() + 1);
+            dummy(b, w)
+        });
+        assert_eq!(calls.get(), 2, "wrap toggle must invalidate the cache");
+    }
+
+    #[test]
+    fn both_two_pass_widths_are_retained() {
+        // Mirrors the wrap+scrollbar two-pass (full width, then narrowed width):
+        // re-using the full width next frame must hit, not thrash.
+        let mut cache = MarkdownCache::default();
+        let calls = Cell::new(0usize);
+        let path = PathBuf::from("/w/task-001.md");
+        for w in [40u16, 39, 40] {
+            let _ = cache.get_or_render(&path, "body", true, w, |b, ww| {
+                calls.set(calls.get() + 1);
+                dummy(b, ww)
+            });
+        }
+        assert_eq!(calls.get(), 2, "both pass widths cached; width 40 must re-hit");
+    }
+
+    #[test]
+    fn returns_the_render_output_for_the_requested_width() {
+        let mut cache = MarkdownCache::default();
+        let path = PathBuf::from("/w/task-001.md");
+        let out = cache.get_or_render(&path, "body", true, 42, dummy);
+        assert_eq!(out, vec![Line::from("w42".to_string())]);
+    }
 }

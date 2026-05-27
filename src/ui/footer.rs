@@ -46,9 +46,7 @@ pub(crate) fn status_footer_hints(session: &OverviewSession) -> Vec<String> {
         hints.push(format!("\u{26A0} {broken_count} broken"));
     }
     hints.push("?: help".to_string());
-    if preview_open {
-        hints.push("\u{2190}/\u{2192}: preview scroll".to_string());
-    } else if session.is_multi() {
+    if !preview_open && session.is_multi() {
         hints.push("\u{2190}/\u{2192}: switch workflow".to_string());
     }
     if session.is_multi() {
@@ -57,7 +55,10 @@ pub(crate) fn status_footer_hints(session: &OverviewSession) -> Vec<String> {
     hints.push("\u{23CE}: toggle preview".to_string());
     hints.push("a: archive".to_string());
     if preview_open {
-        hints.push("PgUp/PgDn: preview scroll".to_string());
+        // One compact scroll pill advertises the real keys; the full vocabulary
+        // (incl. \u{2190}/\u{2192} horizontal scroll) lives in the help popup so this
+        // single center-aligned line stays within ~80 cols.
+        hints.push("scroll: Space/b PgUp/Dn g/G".to_string());
         hints.push("w: word wrap".to_string());
     } else {
         hints.push("PgUp/PgDn: page list".to_string());

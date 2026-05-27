@@ -49,6 +49,26 @@ pub(crate) fn handle_overview_key(
             state.scroll_preview_up();
             OverviewKeyAction::None
         }
+        // less/vim-style page scroll inside the preview body. Space/b page, g/G
+        // jump to the ends. Gated on preview_open so the list-mode bindings (s,
+        // D, and a future plain g) stay free when the preview is closed. Arrow
+        // keys and j/k deliberately stay task navigation.
+        KeyCode::Char(' ') if state.preview_open() => {
+            state.scroll_preview_down();
+            OverviewKeyAction::None
+        }
+        KeyCode::Char('b') if state.preview_open() => {
+            state.scroll_preview_up();
+            OverviewKeyAction::None
+        }
+        KeyCode::Char('g') if state.preview_open() => {
+            state.scroll_preview_to_top();
+            OverviewKeyAction::None
+        }
+        KeyCode::Char('G') if state.preview_open() => {
+            state.scroll_preview_to_bottom();
+            OverviewKeyAction::None
+        }
         KeyCode::PageDown => {
             state.page_selection_down();
             OverviewKeyAction::None
