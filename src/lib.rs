@@ -152,7 +152,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
             loop {
                 match rx.try_recv() {
                     Ok(_) => {
-                        let _ = app.reload();
+                        let _ = app.reload_with_rediscovery();
                     }
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
@@ -247,7 +247,15 @@ fn start_watcher_for(
     let AppMode::Overview(_) = app.mode() else {
         return None;
     };
-    let dir = app.workflow_dir().to_path_buf();
+    // For multi-workflow sessions, watch the discovery scan root so that
+    // creates/removes of sibling workflows (and edits to their READMEs) fire
+    // the same `RefreshSignal`. For `-w pinned` or single-workflow sessions,
+    // there is nothing to discover so keep the narrower active-dir scope.
+    let dir = app
+        .as_session()
+        .and_then(|s| s.scan_root())
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| app.workflow_dir().to_path_buf());
     match WorkflowWatcher::start(&dir, WatcherConfig::default()) {
         Ok((w, rx)) => {
             if w.backend() == WatcherBackend::Poll {

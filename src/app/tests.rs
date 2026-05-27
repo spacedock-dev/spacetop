@@ -1527,3 +1527,71 @@ fn overview_state_exposes_parse_errors_from_snapshot() {
         other => panic!("expected SelectedRow::Broken, got {other:?}"),
     }
 }
+
+/// AC-3 unit lock: when the active workflow's directory no longer exists,
+/// `reload_with_rediscovery` installs a synthetic empty `OverviewState` with
+/// `last_refresh_error` set and does not panic. This pins the "removed active"
+/// branch without depending on the live `notify` backend.
+#[test]
+fn reload_with_rediscovery_handles_removed_active_workflow() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let scan_root = dir.path();
+
+    // Two minimal workflows under the scan root so re-discovery finds the
+    // surviving sibling after we remove the active one.
+    let alpha = scan_root.join("docs/alpha");
+    let beta = scan_root.join("docs/beta");
+    for (root, slug) in [(&alpha, "alpha"), (&beta, "beta")] {
+        std::fs::create_dir_all(root).unwrap();
+        std::fs::write(
+            root.join("README.md"),
+            "---\ncommissioned-by: spacedock@0.10.1\nstages:\n  states:\n    - name: plan\n      initial: true\n    - name: done\n      terminal: true\n---\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join(format!("task-{slug}.md")),
+            format!("---\nid: 001\ntitle: T{slug}\nstatus: plan\n---\n\nbody\n"),
+        )
+        .unwrap();
+    }
+
+    let workflows = crate::discovery::discover_workflows(scan_root).expect("discover");
+    assert_eq!(workflows.len(), 2);
+    let first_root = workflows[0].root.clone();
+    let initial = super::OverviewState::load(first_root.clone()).expect("load initial");
+    let session = super::OverviewSession::from_discovery(
+        scan_root.to_path_buf(),
+        workflows,
+        0,
+        initial,
+    );
+    let mut app = super::App::from_session(session);
+
+    // Remove the active workflow's directory.
+    std::fs::remove_dir_all(&first_root).expect("remove active workflow");
+
+    // Reload: rediscovery prunes the gone workflow, surviving sibling becomes
+    // active and is loaded.
+    app.reload_with_rediscovery().expect("reload should not error");
+
+    let session = app.as_session().expect("session");
+    assert_eq!(
+        session.discovery().len(),
+        1,
+        "removed workflow must drop from discovery"
+    );
+    assert_ne!(
+        session.active_dir(),
+        first_root.as_path(),
+        "active must move off the removed workflow"
+    );
+    // The surviving workflow's snapshot has the expected stages.
+    let stages: Vec<&str> = app
+        .snapshot()
+        .definition
+        .stages
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
+    assert_eq!(stages, vec!["plan", "done"]);
+}

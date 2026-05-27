@@ -116,6 +116,14 @@ impl OverviewSession {
             .unwrap_or(false)
     }
 
+    /// True when the currently active slot has a materialized `OverviewState`.
+    /// Used by `App::reload_with_rediscovery` to decide whether to first-load
+    /// the active slot after `replace_discovery` remapped it from an
+    /// unloaded entry.
+    pub fn active_slot_loaded(&self) -> bool {
+        self.slot_loaded(self.active)
+    }
+
     /// Active workflow path (canonical, from discovery).
     pub fn active_dir(&self) -> &Path {
         &self.discovery[self.active].root
