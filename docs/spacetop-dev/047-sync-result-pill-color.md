@@ -10,7 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-047-sync-result-pill-color
 issue:
 pr: #46
-mod-block: merge:pr-merge
+mod-block: 
 ---
 
 When the user presses `Y` to sync (`git pull --ff-only`), the result already
