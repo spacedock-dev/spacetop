@@ -592,15 +592,15 @@ fn footer_sync_pill_labels_match_pinned_strings() {
     );
     assert_eq!(
         sync_pill_label(Some(&SyncStatus::Succeeded { new_commits: 0 })).as_deref(),
-        Some("Synced (already up to date)")
+        Some("\u{2713} Synced (already up to date)")
     );
     assert_eq!(
         sync_pill_label(Some(&SyncStatus::Succeeded { new_commits: 1 })).as_deref(),
-        Some("Synced (1 new commit)")
+        Some("\u{2713} Synced (1 new commit)")
     );
     assert_eq!(
         sync_pill_label(Some(&SyncStatus::Succeeded { new_commits: 3 })).as_deref(),
-        Some("Synced (3 new commits)")
+        Some("\u{2713} Synced (3 new commits)")
     );
     assert_eq!(
         sync_pill_label(Some(&SyncStatus::Failed {
@@ -633,12 +633,34 @@ fn footer_renders_sync_pill_when_status_set() {
     terminal.draw(|frame| render(frame, &app)).expect("render");
     let rendered = buffer_text(terminal.backend().buffer());
     assert!(
-        rendered.contains("Synced (2 new commits)"),
-        "footer must render the Synced (2 new commits) pill, got: {rendered}"
+        rendered.contains("\u{2713} Synced (2 new commits)"),
+        "footer must render the ✓ Synced (2 new commits) pill, got: {rendered}"
     );
     assert!(
         rendered.contains("Y: sync"),
         "footer must include the Y: sync hint when preview closed"
+    );
+}
+
+#[test]
+fn footer_renders_succeeded_sync_pill_green() {
+    use ratatui::style::Color;
+
+    let mut app = app_with_items(vec![item("001", "Task", "Body")]);
+    // Close the preview so the footer carries the sync pill.
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    app.set_sync_status(crate::app::SyncStatus::Succeeded { new_commits: 2 });
+    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let buffer = terminal.backend().buffer();
+    // The whole pill span is styled uniformly, so matching on "Synced"
+    // proves the green foreground (AC-7).
+    assert!(
+        find_styled_text(buffer, "Synced", |s| s.fg == Some(Color::Green)),
+        "succeeded sync pill must render with a green foreground"
     );
 }
 
@@ -658,6 +680,54 @@ fn footer_renders_sync_failed_pill_with_warning_glyph() {
     assert!(
         rendered.contains("\u{26A0} Sync failed: boom"),
         "expected ⚠ Sync failed pill in footer, got: {rendered}"
+    );
+}
+
+#[test]
+fn footer_renders_failed_sync_pill_red() {
+    use ratatui::style::Color;
+
+    let mut app = app_with_items(vec![item("001", "Task", "Body")]);
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    app.set_sync_status(crate::app::SyncStatus::Failed {
+        message: "boom".into(),
+    });
+    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let buffer = terminal.backend().buffer();
+    assert!(
+        find_styled_text(buffer, "Sync failed", |s| s.fg == Some(Color::Red)),
+        "failed sync pill must render with a red foreground"
+    );
+}
+
+#[test]
+fn sync_pill_color_maps_each_variant() {
+    use crate::app::SyncStatus;
+    use crate::ui::footer::sync_pill_color;
+    use ratatui::style::Color;
+
+    // Cyan/yellow are hard to drive deterministically through a full
+    // render, so lock the whole mapping at the unit level (AC-3, AC-4).
+    assert_eq!(sync_pill_color(&SyncStatus::InFlight), Color::Cyan);
+    assert_eq!(
+        sync_pill_color(&SyncStatus::Succeeded { new_commits: 0 }),
+        Color::Green
+    );
+    assert_eq!(
+        sync_pill_color(&SyncStatus::Failed {
+            message: "boom".into()
+        }),
+        Color::Red
+    );
+    assert_eq!(
+        sync_pill_color(&SyncStatus::Unavailable {
+            hint: "not a git repository".into()
+        }),
+        Color::Yellow
     );
 }
 

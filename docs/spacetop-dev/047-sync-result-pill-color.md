@@ -1,7 +1,7 @@
 ---
 id: 047
 title: Color the sync result pill so the Y-sync outcome is readable at a glance
-status: implement
+status: review
 source: captain
 started: 2026-05-27T06:56:37Z
 completed:
@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-047-sync-result-pill-color
 issue:
 pr: #46
+mod-block: merge:pr-merge
 ---
 
 When the user presses `Y` to sync (`git pull --ff-only`), the result already
@@ -188,3 +189,29 @@ full render in a deterministic footer layout. Decide at implement time.
 ### Summary
 
 Produced a footer-only implementation plan and test strategy in the entity body; no implementation code was written (planning stage). The plan replaces the renderer's fragile `starts_with('⚠')` string-sniffing with a `SyncStatus`-derived color: it threads a per-pill `Color` out of `status_footer_hints` (changing its return type to `Vec<(String, Color)>`, an internal-only signature with a single in-module caller), adds a `sync_pill_color` mapping (cyan/green/red/yellow), and prepends a `✓ ` `SUCCESS_MARKER` to the three `Succeeded` labels for parity with the existing `⚠ ` failure marker. Test strategy updates the pinned `footer_sync_pill_labels_match_pinned_strings` strings together with the labels (per convention) and adds two render assertions using the existing `find_styled_text` helper (green success fg, red failed fg); cyan/yellow are noted as an optional mapping-level unit test since they are hard to drive deterministically through a full render. `src/git_sync.rs`, the `Y` handler, and the event-loop flow are explicitly out of scope.
+
+## Stage Report: implement
+
+- DONE: src/ui/footer.rs renders the sync pill with an outcome color derived from the SyncStatus variant (Succeeded=green, Unavailable=yellow, Failed=red, InFlight=cyan), prepends the success-marker checkmark to the three Succeeded labels, and removes the starts_with(warn-glyph) string-sniffing branch in render_status_footer.
+  Added `fn sync_pill_color(&SyncStatus) -> Color` + `SUCCESS_MARKER` const; `status_footer_hints` now returns `Vec<(String, Color)>` (neutral hints White, broken pill Red, sync pill from `sync_pill_color`); renderer builds each span as `Style::default().fg(color).bg(PILL_BG)` with the per-pill color — the `starts_with('\u{26A0}')` branch is gone.
+- DONE: Tests updated/added: the pinned footer_sync_pill_labels_match_pinned_strings expectations reflect the new success prefix, and render assertions prove the success pill foreground is green and the failed pill foreground is red (cyan/yellow covered by a mapping-level unit test).
+  Updated the three Succeeded expectations to `✓ …` in footer_sync_pill_labels_match_pinned_strings; tightened footer_renders_sync_pill_when_status_set to require the `✓ ` prefix; added footer_renders_succeeded_sync_pill_green, footer_renders_failed_sync_pill_red, and sync_pill_color_maps_each_variant (cyan/green/red/yellow).
+- DONE: `make lint` is clean (-D warnings) and `cargo test` passes in full.
+  `make lint` finished with no clippy diagnostics; `cargo test` ran 336 lib tests + all integration suites (decide_app, git_sync_e2e 4/4, no_write_git_calls 2/2, readme_reload, etc.) green, 0 failed; the 3 watcher_fs tests are `#[ignore]` by design.
+
+### Summary
+
+Footer-only change in `src/ui/footer.rs`: the sync pill's foreground color is now derived from the `SyncStatus` variant via a new `sync_pill_color` mapping (InFlight=Cyan, Succeeded=Green, Failed=Red, Unavailable=Yellow), and `status_footer_hints` carries a `Color` per pill (`Vec<(String, Color)>`) so the renderer no longer sniffs the label string — the `starts_with('⚠')` branch is removed and the `⚠ N broken` pill keeps its red explicitly. Success labels gained a leading `✓ ` (`SUCCESS_MARKER`) for parity with the failure `⚠ `, and the pinned label test was updated in lockstep per the stable-strings convention. Only `src/ui/footer.rs` and `src/ui/tests/task_list.rs` changed; `src/git_sync.rs`, the `Y` key handler, `SyncStatus`, and the event-loop flow are untouched (AC-8). Commands run: `make lint` (clean), `cargo test` (all pass), `cargo test --lib` (336 passed) to confirm the new footer tests.
+
+## Stage Report: review
+
+- DONE: Independently re-run `make lint` and `cargo test` in the worktree and report the actual observed results (pass/fail counts), not the implement report's claims.
+  Forced a fresh clippy check (`touch` on both changed files, then `cargo clippy --all-targets --all-features -- -D warnings`) — recompiled the crate, exit 0, zero diagnostics. `cargo test` observed: 336 lib passed / 0 failed; integration: decide_app 10/10, git_sync_e2e 4/4, no_write_git_calls 2/2, readme_reload 5/5, discovery_bypass 10/10, watcher_fs 0 passed/3 ignored (real-notify, `#[ignore]` by design), doc-tests 0; total 0 failed. The five footer tests (`footer_renders_succeeded_sync_pill_green`, `footer_renders_failed_sync_pill_red`, `sync_pill_color_maps_each_variant`, `footer_sync_pill_labels_match_pinned_strings`, `footer_renders_sync_pill_when_status_set`) all pass.
+- DONE: Verify every acceptance criterion AC-1..AC-8 against the diff and tests with concrete evidence, and confirm scope: footer-only, with src/git_sync.rs, the Y key handler, SyncStatus, and the event-loop flow unchanged.
+  AC-1: `sync_pill_label` success arms emit `{SUCCESS_MARKER} Synced …` (`SUCCESS_MARKER='\u{2713}'`=✓); `sync_pill_color(Succeeded)=Green`; render test asserts green fg on "Synced" and `footer_renders_sync_pill_when_status_set` now asserts the `✓ ` prefix renders. AC-2: `Failed` label arm unchanged (`⚠ Sync failed: {message}`), `sync_pill_color(Failed)=Red`, `footer_renders_failed_sync_pill_red` asserts red fg. AC-3: `Unavailable` label unchanged, maps to Yellow, locked by `sync_pill_color_maps_each_variant`. AC-4: `InFlight` label `Syncing…` unchanged, maps to Cyan, locked by same unit test. AC-5: color comes from `sync_pill_color(variant)`; the `starts_with('\u{26A0}')` renderer branch is deleted; all key hints pushed with `Color::White`. AC-6: three `Succeeded` expectations in `footer_sync_pill_labels_match_pinned_strings` updated to `✓ `-prefixed in lockstep; other labels unchanged. AC-7: green-success + red-failed render tests present and passing. AC-8: clippy clean, full suite green, `git diff main..HEAD --name-only` = only `footer.rs`, `tests/task_list.rs`, and the entity doc. Scope confirmed: `git_sync.rs` has no diff; `SyncStatus` (src/app/overview.rs:64) and the `Y` handler (src/app/keys.rs:123) are untouched.
+- DONE: Give a clear PASSED/REJECTED verdict; if REJECTED, name specific defects and the exact fix needed.
+  Verdict: PASSED. No defects. One non-blocking observation: `status_footer_hints` uses `sync_status.map(sync_pill_color).unwrap_or(Color::White)`, whose `unwrap_or` arm is dead because `sync_pill_label` returning `Some` guarantees `sync_status` is `Some` — it is defensive, comment-documented, clippy-clean, and harmless; not worth a rework.
+
+### Summary
+
+PASSED. The footer-only change satisfies all of AC-1..AC-8 with concrete diff and test evidence. The fragile `starts_with('⚠')` string-sniffing is replaced by a `SyncStatus`-derived `sync_pill_color` (Cyan/Green/Red/Yellow), success labels carry the `✓ ` marker for parity with the failure `⚠ `, and the pinned label test was updated in lockstep. Independently verified: forced-fresh `cargo clippy -D warnings` is clean (exit 0), and `cargo test` is fully green (336 lib + 21 integration passed, 0 failed; 3 watcher tests `#[ignore]` by design). Scope is clean — only `src/ui/footer.rs` and `src/ui/tests/task_list.rs` changed; `src/git_sync.rs`, the `Y` key path, `SyncStatus`, and the in-flight→result event-loop flow are untouched. Recommend advancing to done.
