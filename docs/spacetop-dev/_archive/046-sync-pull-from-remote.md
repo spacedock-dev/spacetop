@@ -2,15 +2,16 @@
 id: 046
 title: Add a Sync action that runs `git pull` when the workflow root has a remote
 source: captain
-status: review
+status: done
 started: 2026-05-26T15:08:54Z
-completed:
-verdict:
+completed: 2026-05-27T06:41:29Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-046-sync-pull-from-remote
+worktree: 
 issue:
 pr: #44
 mod-block: 
+archived: 2026-05-27T06:41:29Z
 ---
 
 Workflow state lives in markdown under a git repo, and teammates push changes (new entities, status transitions, archive moves, mod-block updates) to the remote. Today a user inspecting a workflow in Spacetop has to drop to a terminal and run `git pull` themselves to see what landed since they opened the TUI. The captain wants a user-visible **Sync** action that, when triggered from inside Spacetop, runs `git pull` on the workflow root if the current folder is a git repo with a configured remote.
