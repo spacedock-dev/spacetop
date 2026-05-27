@@ -13,33 +13,6 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .as_session()
         .map(|s| s.active_state().preview_open())
         .unwrap_or(false);
-    let popup_w = area.width.min(64);
-    let popup_h = area.height.min(if is_multi {
-        // The is_multi branch already had slack for the multi-mode lines
-        // ("P: pick workflow", switch hints); bumping by 1 when preview is
-        // open keeps the new "o: open file" row visible. The Definition
-        // keybind adds one more line in every branch.
-        if preview_open {
-            25
-        } else {
-            24
-        }
-    } else if preview_open {
-        // +1 over the prior 20 for the new "o: open file" line, plus +1
-        // for the new "D: definition" line.
-        22
-    } else {
-        20
-    });
-    let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
-    let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
-    let popup = Rect {
-        x,
-        y,
-        width: popup_w,
-        height: popup_h,
-    };
-
     let mut lines = vec![
         Line::from(Span::styled(
             "Spacetop keymap",
@@ -58,8 +31,9 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("  Esc            close help"),
     ];
     if preview_open {
-        lines.push(Line::from("  PageUp         scroll preview up"));
-        lines.push(Line::from("  PageDown       scroll preview down"));
+        lines.push(Line::from("  Space / PgDn   page preview down"));
+        lines.push(Line::from("  b / PgUp       page preview up"));
+        lines.push(Line::from("  g / G          preview top / bottom"));
         lines.push(Line::from("  w              toggle word wrap"));
         lines.push(Line::from("  o              open file in $EDITOR"));
     } else {
@@ -83,6 +57,20 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         "press ? or Esc to close",
         Style::default().add_modifier(Modifier::DIM),
     )));
+
+    // Size to content: line count + top/bottom borders, clamped to the screen.
+    // Replaces the old hand-counted height constants, which silently clipped
+    // the bottom of the popup whenever a keybind row was added.
+    let popup_w = area.width.min(64);
+    let popup_h = (lines.len() as u16 + 2).min(area.height);
+    let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+    let popup = Rect {
+        x,
+        y,
+        width: popup_w,
+        height: popup_h,
+    };
 
     let paragraph = Paragraph::new(lines)
         .block(
