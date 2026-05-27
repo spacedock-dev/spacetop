@@ -1,9 +1,9 @@
 ---
 id: 047
 title: Color the sync result pill so the Y-sync outcome is readable at a glance
-status: design
+status: plan
 source: captain
-started:
+started: 2026-05-27T06:56:37Z
 completed:
 verdict:
 score:
