@@ -1,16 +1,17 @@
 ---
 id: 045
 title: Reload workflows live when README files are added, changed, or removed
-status: review
+status: done
 source: captain
 started: 2026-05-26T15:08:52Z
-completed:
-verdict:
+completed: 2026-05-27T06:36:22Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-045-reload-workflow-on-readme-change
+worktree: 
 issue:
 pr: #43
 mod-block: 
+archived: 2026-05-27T06:36:29Z
 ---
 
 Spacetop already runs a `notify`-based file watcher (`src/watcher.rs`) that picks up entity file changes inside a workflow directory. The captain reports that changes to the workflow's own `README.md` are not reflected live: editing `stages.states` / `stages.transitions`, creating a brand new workflow directory under the discovery root, or removing one, requires restarting `spacetop` before the picker or the DAG view shows the new shape.
