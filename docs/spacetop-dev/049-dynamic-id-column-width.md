@@ -4,10 +4,10 @@ title: "Dynamic ID column width in the task list (slug-ID overflow fix)"
 status: review
 source: captain
 started: 2026-06-09T02:55:50Z
-completed:
-verdict:
+completed: 2026-06-09T03:58:13Z
+verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-049-dynamic-id-column-width
+worktree:
 issue:
 pr: "#48"
 mod-block:
