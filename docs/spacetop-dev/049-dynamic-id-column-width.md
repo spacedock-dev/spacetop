@@ -16,6 +16,116 @@ The task list ID column is hardcoded to `{:>4}` chars in `src/ui/list.rs`, which
 
 Flagged as a follow-up in task 048's plan and implement stage reports.
 
+## Implementation plan
+
+### Root cause
+
+`src/ui/list.rs:136` formats every ID with a hardcoded width:
+
+```rust
+let id_str = format!("{:>4}", item.id);
+```
+
+The ID column is therefore 4 chars wide regardless of content. A slug ID
+(`adversarial-review` = 18 chars, `roadmap-v5` = 10 chars) blows past 4 chars,
+so the `Span` is longer than the column reserves. Because all later spans
+(`"  "` separator at line 165, worktree marker, Title) are laid out by
+concatenation — not absolute offsets — the Title start column shifts right by
+`max(0, id.len() - 4)` on each row. Rows with different ID lengths get different
+Title offsets, which is the visible misalignment.
+
+The phase column already solved the identical problem: lines 111-116 compute a
+per-render `pcw` (phase col width) from the longest visible status and feed it
+to the `phase_col()` helper. We mirror that exact pattern for the ID column.
+
+### Changes (all in `src/ui/list.rs`)
+
+1. **Add a per-render ID width, alongside the existing `pcw` computation
+   (after line 116).** Insert:
+
+   ```rust
+   // ID column width: widest visible ID, floored at 4 so numeric-ID
+   // workflows (047, 048) are visually unchanged (AC-2). No upper clamp —
+   // slug IDs may be long and the Title simply starts further right.
+   let icw = items
+       .iter()
+       .map(|item| item.id.chars().count())
+       .max()
+       .unwrap_or(4)
+       .max(4);
+   ```
+
+   Use `chars().count()` (not `.len()`) to match the existing `pcw` code and
+   stay correct for any multi-byte ID; the spec's `.len()` in AC-1 is
+   "or equivalent" and `chars().count()` is the established convention in this
+   file.
+
+2. **Replace the hardcoded format at line 136.** Change:
+
+   ```rust
+   let id_str = format!("{:>4}", item.id);
+   ```
+   to:
+   ```rust
+   let id_str = format!("{:>width$}", item.id, width = icw);
+   ```
+
+   Right-alignment is preserved (numeric IDs keep their current look). When
+   `icw == 4` the output is byte-for-byte identical to the old code, so AC-2
+   and the existing snapshot tests are unaffected.
+
+No other spans change. The broken-entity rows (lines 199-220) carry no ID and
+are unaffected. The fixed 4-char ID-column assumption documented in the
+`task_row_no_glyphs_in_phase_col` comment (line 236-237) only matters for the
+phase column it scans (x=2..14), which is left of the ID column and unchanged.
+
+### Test strategy (no terminal backend required)
+
+Two complementary tests in `src/ui/tests/task_list.rs`, following the existing
+`phase_col_width_*` precedent (lines 365-481) which proves column-width logic
+without a live terminal:
+
+- **AC-2 — pure-logic floor test (`id_col_width_floors_numeric_ids_at_4`).**
+  Build a `Vec<&WorkItem>` of numeric IDs (`"047"`, `"048"`) and assert the
+  `icw` expression returns `4`, and that `format!("{:>4}", "047")` yields
+  `" 047"` (4 chars) — i.e. numeric workflows are unchanged. This needs no
+  terminal; it exercises the same arithmetic the render path uses. (Mirrors
+  `phase_col_width_uniform_short_phases_clamped_to_4`.)
+
+- **AC-1 — render alignment test (`task_row_title_aligns_with_slug_ids`).**
+  Render via `TestBackend` (the harness already in this file: `app_with_items`,
+  `item`, `find_text`, `buffer_text`) with two items whose IDs differ in length
+  — e.g. `item("adversarial-review", "Title A", "Body")` and
+  `item("v5", "Title B", "Body")`. The titles are distinct sentinels. Use
+  `find_text(buffer, "Title A")` and `find_text(buffer, "Title B")` to get each
+  title's start `x`, and assert **both titles start at the same column** (equal
+  `x`). With the bug present the two titles land at different columns; with the
+  fix the column is `icw`-padded so both align. This is the direct AC-1 proof:
+  "the title starting at the correct offset" generalized to "all titles share
+  one offset regardless of ID length". Width 100, height 24, matching sibling
+  tests.
+
+  A secondary assertion in the same test confirms the long slug ID
+  `adversarial-review` renders in full (not truncated) via
+  `buffer_text(...).contains("adversarial-review")`, proving the column grew to
+  fit it.
+
+### Verification commands
+
+- **AC-1 + AC-2 (focused):**
+  `cargo test --test '*' id_col_width task_row_title_aligns_with_slug_ids`
+  is not reliable for inline `#[cfg(test)]` modules; instead run the two new
+  tests by name:
+  `cargo test id_col_width_floors_numeric_ids_at_4 task_row_title_aligns_with_slug_ids`
+- **AC-3 (no regression):** `cargo test` (full suite) then `make lint`
+  (clippy `-D warnings`, the project lint gate).
+
+### File ownership for worktree execution
+
+Single-file logic change (`src/ui/list.rs`) plus same-module tests
+(`src/ui/tests/task_list.rs`). No parser/domain/app-state changes; the work is
+contained entirely within the `ui` rendering layer. No new crate dependencies.
+
 ## Acceptance criteria
 
 **AC-1 — Title column aligns when slug IDs are present.**  
@@ -26,3 +136,16 @@ Verified by: the dynamic width has a floor of `max(4, longest_id_len)` so `047`-
 
 **AC-3 — No regression on existing task list tests.**  
 Verified by: `cargo test` passes; `make lint` clean.
+
+## Stage Report: plan
+
+- DONE: Plan names the specific line(s) in src/ui/list.rs to change and the cargo test invocation that proves AC-1 and AC-2
+  Names line 136 (`format!("{:>4}", item.id)` → `{:>width$}`) and the insertion point after line 116 for `icw`; verification cmd `cargo test id_col_width_floors_numeric_ids_at_4 task_row_title_aligns_with_slug_ids`.
+- DONE: Test strategy identifies how to assert dynamic column width without a terminal backend
+  Pure-logic floor test mirrors existing `phase_col_width_*` tests; render test uses the in-file `TestBackend` harness (`find_text`/`buffer_text`) to assert equal title `x` offset for differing ID lengths.
+- DONE: Minimum-4-char floor for numeric-ID workflows is explicit in the plan (AC-2)
+  Plan specifies `.max(4)` floor with no upper clamp; verified by exercise — `icw=4` for `["047","048"]` and `{:>4}`/`{:>width$}` outputs are byte-identical.
+
+### Summary
+
+Root cause is the hardcoded `{:>4}` ID width at src/ui/list.rs:136; the fix mirrors the existing phase-column `pcw` pattern (lines 111-116) with an `icw = items.iter().map(|i| i.id.chars().count()).max().unwrap_or(4).max(4)` and a `format!("{:>width$}", item.id, width = icw)`. Floor of 4 (no upper clamp) keeps numeric workflows byte-identical, satisfying AC-2. Both the floor arithmetic and the uniform-width alignment were proven by running a standalone rustc check rather than only asserting. Work is confined to the `ui` layer — one logic change plus two same-module tests, no parser/domain/app-state or dependency changes.
