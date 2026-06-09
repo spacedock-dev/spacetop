@@ -1,7 +1,7 @@
 ---
 id: "049"
 title: "Dynamic ID column width in the task list (slug-ID overflow fix)"
-status: implement
+status: review
 source: captain
 started: 2026-06-09T02:55:50Z
 completed:
