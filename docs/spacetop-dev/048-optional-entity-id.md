@@ -1,9 +1,9 @@
 ---
 id: "048"
 title: "Support optional entity ID (id-style: slug)"
-status: design
+status: plan
 source: captain
-started:
+started: 2026-06-09T01:20:12Z
 completed:
 verdict:
 score:
