@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-049-dynamic-id-column-width
 issue:
-pr:
+pr: "#48"
 mod-block: merge:pr-merge
 ---
 
