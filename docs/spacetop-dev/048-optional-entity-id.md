@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-048-optional-entity-id
 issue:
-pr:
+pr: "#47"
 mod-block: merge:pr-merge
 ---
 
