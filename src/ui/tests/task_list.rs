@@ -542,11 +542,13 @@ fn task_row_title_aligns_with_slug_ids() {
          (TitleAlpha at x={alpha_x}, TitleBeta at x={beta_x})"
     );
 
-    // The long slug ID must render in full — the column grew to fit it.
-    assert!(
-        buffer_text(buffer).contains("adversarial-review"),
-        "long slug ID must not be truncated"
-    );
+    // The long slug ID must render in full in the list pane — the column grew
+    // to fit it. Scoped to x < list_pane to avoid false-passing on the preview
+    // pane header, which also renders the ID.
+    let slug_in_list = find_text(buffer, "adversarial-review")
+        .into_iter()
+        .any(|(x, _)| x < list_pane);
+    assert!(slug_in_list, "long slug ID must render in full in the list pane");
 }
 
 // ---- Task 042: broken-entity row + preview + footer pill ----
