@@ -115,14 +115,24 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
         .unwrap_or(4)
         .clamp(4, 12);
 
+    // ID column width: widest visible ID, floored at 4 so numeric-ID
+    // workflows (047, 048) are visually unchanged. No upper clamp — slug IDs
+    // may be long and the Title simply starts further right.
+    let icw = items
+        .iter()
+        .map(|item| item.id.chars().count())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+
     let mut rendered: Vec<ListItem<'_>> = items
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            // Row format: "{gutter} {phase:<pcw} {id:>4}  {title}"
+            // Row format: "{gutter} {phase:<pcw} {id:>icw}  {title}"
             // Gutter: "▸ " for selected row, "  " otherwise (2 chars).
             // Phase column: user casing, pcw-char auto-sized width, ellipsized with "…" if longer.
-            // ID: 4-char right-aligned.
+            // ID: icw-char right-aligned, icw = max(4, longest visible ID).
             // Title: fills remaining width.
             let is_selected = index == selected_index && !items.is_empty();
 
@@ -133,7 +143,7 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
                 Style::default()
             };
 
-            let id_str = format!("{:>4}", item.id);
+            let id_str = format!("{:>width$}", item.id, width = icw);
             let phase = phase_col(&item.status, pcw);
 
             let id_style = Style::default().add_modifier(Modifier::DIM);

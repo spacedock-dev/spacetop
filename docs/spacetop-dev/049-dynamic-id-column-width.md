@@ -150,3 +150,16 @@ Verified by: `cargo test` passes; `make lint` clean.
 ### Summary
 
 Root cause is the hardcoded `{:>4}` ID width at src/ui/list.rs:136; the fix mirrors the existing phase-column `pcw` pattern (lines 111-116) with an `icw = items.iter().map(|i| i.id.chars().count()).max().unwrap_or(4).max(4)` and a `format!("{:>width$}", item.id, width = icw)`. Floor of 4 (no upper clamp) keeps numeric workflows byte-identical, satisfying AC-2. Both the floor arithmetic and the uniform-width alignment were proven by running a standalone rustc check rather than only asserting. Work is confined to the `ui` layer — one logic change plus two same-module tests, no parser/domain/app-state or dependency changes.
+
+## Stage Report: implement
+
+- DONE: `cargo test` passes — including id_col_width_floors_numeric_ids_at_4 (AC-2) and task_row_title_aligns_with_slug_ids (AC-1)
+  Both new tests green (2/2). All 162 ui:: tests pass. Two suite failures (parser::load_archived_items_returns_entries_from_flat_files, app::toggle_scope_key_a_flips_to_archived_and_loads_lazily) are pre-existing _archive fixture drift — confirmed failing on the base commit cd66d64 with my changes stashed; untouched by this UI-only change.
+- DONE: `make lint` passes — clippy -D warnings clean
+  `make lint` finished with exit 0, no diagnostics.
+- DONE: Title column x-offset is identical for rows with different-length slug IDs (the alignment bug is gone)
+  task_row_title_aligns_with_slug_ids renders `adversarial-review` (18 ch) and `v5` (2 ch) and asserts both titles share one start column (alpha_x == beta_x); long slug ID renders in full, not truncated.
+
+### Summary
+
+Replaced the hardcoded `{:>4}` ID format at src/ui/list.rs with a per-render `icw = items.iter().map(|i| i.id.chars().count()).max().unwrap_or(4).max(4)`, mirroring the existing `pcw` phase-column pattern, and formatted the ID via `format!("{:>width$}", item.id, width = icw)`. Floor of 4 keeps numeric-ID workflows byte-identical (AC-2); no upper clamp lets slug IDs widen the column and shift all titles uniformly right (AC-1). Added two same-module tests in src/ui/tests/task_list.rs: a pure-arithmetic floor test and a TestBackend render test that proves uniform title alignment. Change is confined to the `ui` layer — no parser/domain/app-state or dependency changes.

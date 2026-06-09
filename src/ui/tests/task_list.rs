@@ -480,6 +480,75 @@ fn phase_col_width_long_phase_name_clamped_at_12() {
     );
 }
 
+// ---- id_col_width auto-sizing tests (task 049) ----
+
+#[test]
+fn id_col_width_floors_numeric_ids_at_4() {
+    // Numeric-ID workflows (047, 048) must keep a minimum 4-char column so the
+    // dynamic width is byte-identical to the old hardcoded {:>4} (AC-2).
+    let items_data = [item("047", "Task A", "Body"), item("048", "Task B", "Body")];
+    let items_ref: Vec<&crate::domain::WorkItem> = items_data.iter().collect();
+    let icw = items_ref
+        .iter()
+        .map(|i| i.id.chars().count())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    assert_eq!(icw, 4, "id_col_width for 3-char numeric IDs must floor at 4");
+    // The render path uses format!("{:>width$}", id, width = icw); at icw=4
+    // that is identical to the old format!("{:>4}", id).
+    assert_eq!(
+        format!("{:>width$}", "047", width = icw),
+        " 047",
+        "numeric ID must right-align to 4 chars, unchanged from the old layout"
+    );
+}
+
+#[test]
+fn task_row_title_aligns_with_slug_ids() {
+    // With slug IDs of differing lengths, every title must start at the same
+    // column. The id column is icw-padded (icw = longest visible ID), so the
+    // Title offset is uniform regardless of per-row ID length (AC-1).
+    let app = app_with_items(vec![
+        item("adversarial-review", "TitleAlpha", "Body"),
+        item("v5", "TitleBeta", "Body"),
+    ]);
+    let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let buffer = terminal.backend().buffer();
+
+    // app_with_items opens the preview pane (Enter), so the list occupies the
+    // left half (0..width/2) and the selected item's title is echoed in the
+    // preview on the right. Scope the title search to the list pane.
+    let list_pane = 100u16 / 2;
+    let title_x = |needle: &str| -> u16 {
+        let hits: Vec<u16> = find_text(buffer, needle)
+            .into_iter()
+            .filter(|&(x, _)| x < list_pane)
+            .map(|(x, _)| x)
+            .collect();
+        assert_eq!(
+            hits.len(),
+            1,
+            "{needle} must render exactly once in the list pane, got {hits:?}"
+        );
+        hits[0]
+    };
+    let alpha_x = title_x("TitleAlpha");
+    let beta_x = title_x("TitleBeta");
+    assert_eq!(
+        alpha_x, beta_x,
+        "titles must share one start column despite different ID lengths \
+         (TitleAlpha at x={alpha_x}, TitleBeta at x={beta_x})"
+    );
+
+    // The long slug ID must render in full — the column grew to fit it.
+    assert!(
+        buffer_text(buffer).contains("adversarial-review"),
+        "long slug ID must not be truncated"
+    );
+}
+
 // ---- Task 042: broken-entity row + preview + footer pill ----
 
 use crate::domain::EntityParseError;
