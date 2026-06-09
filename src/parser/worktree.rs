@@ -46,6 +46,7 @@ pub(crate) fn scan_worktrees(
     repo_root: &Path,
     workflow_rel: &Path,
     allowed_statuses: &[String],
+    id_style: Option<&str>,
 ) -> Result<(Vec<WorkItem>, Vec<EntityParseError>), ParseError> {
     let mut all_items = Vec::new();
     let mut all_errors: Vec<EntityParseError> = Vec::new();
@@ -54,7 +55,7 @@ pub(crate) fn scan_worktrees(
         if !candidate.is_dir() {
             continue;
         }
-        let (items, errors) = load_worktree_items(&candidate, allowed_statuses)?;
+        let (items, errors) = load_worktree_items(&candidate, allowed_statuses, id_style)?;
         all_items.extend(items);
         all_errors.extend(errors);
     }
@@ -64,12 +65,13 @@ pub(crate) fn scan_worktrees(
 fn load_worktree_items(
     workflow_dir: &Path,
     allowed_statuses: &[String],
+    id_style: Option<&str>,
 ) -> Result<(Vec<WorkItem>, Vec<EntityParseError>), ParseError> {
     let item_paths = collect_worktree_item_paths(workflow_dir);
     let mut items = Vec::with_capacity(item_paths.len());
     let mut errors: Vec<EntityParseError> = Vec::new();
     for item_path in item_paths {
-        match parse_work_item(&item_path, allowed_statuses) {
+        match parse_work_item(&item_path, allowed_statuses, id_style) {
             Ok(item) => items.push(item),
             Err(err) if err.is_per_entity_parse_failure() => {
                 errors.push(entity_parse_error_from(&item_path, &err));

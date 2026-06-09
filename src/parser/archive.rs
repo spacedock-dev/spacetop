@@ -19,6 +19,7 @@ pub fn archive_dir(workflow_dir: &Path) -> PathBuf {
 pub fn load_archived_items(
     workflow_dir: &Path,
     allowed_statuses: &[String],
+    id_style: Option<&str>,
 ) -> Result<Vec<WorkItem>, ParseError> {
     let archive_root = archive_dir(workflow_dir);
     if !archive_root.exists() {
@@ -29,7 +30,7 @@ pub fn load_archived_items(
 
     let mut items = Vec::with_capacity(item_paths.len());
     for item_path in item_paths {
-        match parse_work_item(&item_path, allowed_statuses) {
+        match parse_work_item(&item_path, allowed_statuses, id_style) {
             Ok(item) => items.push(item),
             Err(err) if should_skip_archived_parse_error(&err) => continue,
             Err(err) => return Err(err),
