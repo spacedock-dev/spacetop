@@ -1103,12 +1103,12 @@ fn loads_slug_workflow_uses_filename_as_id() {
     );
 
     // AC-2 render: the overview ID column is `format!(\"{:>4}\", item.id)`
-    // (src/ui/list.rs). A pure-string check confirms the slug reaches that
-    // column without needing a terminal backend.
+    // (src/ui/list.rs). Assert the formatted value equals the slug exactly —
+    // this confirms {:>4} neither pads nor truncates a wide slug.
     let id_column = format!("{:>4}", item.id);
-    assert!(
-        id_column.contains("roadmap-v5"),
-        "ID column should contain the slug; got {id_column:?}"
+    assert_eq!(
+        id_column, "roadmap-v5",
+        "ID column should equal the slug unchanged; got {id_column:?}"
     );
 }
 
