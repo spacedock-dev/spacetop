@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-049-dynamic-id-column-width
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 The task list ID column is hardcoded to `{:>4}` chars in `src/ui/list.rs`, which fit numeric IDs (`047`, `048`) but overflows for slug IDs (`adversarial-review`, `roadmap-v5`), causing the Title column to misalign. The fix is a dynamic column width: measure the longest ID in the visible item list on each render and size the column to fit, so Title always aligns regardless of ID style.
