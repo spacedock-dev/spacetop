@@ -150,3 +150,31 @@ Verified by: `cargo test` passes; `make lint` clean.
 ### Summary
 
 Root cause is the hardcoded `{:>4}` ID width at src/ui/list.rs:136; the fix mirrors the existing phase-column `pcw` pattern (lines 111-116) with an `icw = items.iter().map(|i| i.id.chars().count()).max().unwrap_or(4).max(4)` and a `format!("{:>width$}", item.id, width = icw)`. Floor of 4 (no upper clamp) keeps numeric workflows byte-identical, satisfying AC-2. Both the floor arithmetic and the uniform-width alignment were proven by running a standalone rustc check rather than only asserting. Work is confined to the `ui` layer — one logic change plus two same-module tests, no parser/domain/app-state or dependency changes.
+
+## Stage Report: implement
+
+- DONE: `cargo test` passes — including id_col_width_floors_numeric_ids_at_4 (AC-2) and task_row_title_aligns_with_slug_ids (AC-1)
+  Both new tests green (2/2). All 162 ui:: tests pass. Two suite failures (parser::load_archived_items_returns_entries_from_flat_files, app::toggle_scope_key_a_flips_to_archived_and_loads_lazily) are pre-existing _archive fixture drift — confirmed failing on the base commit cd66d64 with my changes stashed; untouched by this UI-only change.
+- DONE: `make lint` passes — clippy -D warnings clean
+  `make lint` finished with exit 0, no diagnostics.
+- DONE: Title column x-offset is identical for rows with different-length slug IDs (the alignment bug is gone)
+  task_row_title_aligns_with_slug_ids renders `adversarial-review` (18 ch) and `v5` (2 ch) and asserts both titles share one start column (alpha_x == beta_x); long slug ID renders in full, not truncated.
+
+### Summary
+
+Replaced the hardcoded `{:>4}` ID format at src/ui/list.rs with a per-render `icw = items.iter().map(|i| i.id.chars().count()).max().unwrap_or(4).max(4)`, mirroring the existing `pcw` phase-column pattern, and formatted the ID via `format!("{:>width$}", item.id, width = icw)`. Floor of 4 keeps numeric-ID workflows byte-identical (AC-2); no upper clamp lets slug IDs widen the column and shift all titles uniformly right (AC-1). Added two same-module tests in src/ui/tests/task_list.rs: a pure-arithmetic floor test and a TestBackend render test that proves uniform title alignment. Change is confined to the `ui` layer — no parser/domain/app-state or dependency changes.
+
+## Stage Report: review
+
+**VERDICT: PASSED**
+
+- DONE: Verdict is explicit (PASSED or REJECTED) with per-AC evidence citations
+  AC-1 PASSED: `task_row_title_aligns_with_slug_ids` (src/ui/tests/task_list.rs:507) renders `adversarial-review` (18 ch) and `v5` (2 ch) via TestBackend and asserts `alpha_x == beta_x` — both titles share one start column; long slug renders in full. Test green when run by name (`cargo test --lib task_row_title_aligns_with_slug_ids` → 1 passed). AC-2 PASSED: `id_col_width_floors_numeric_ids_at_4` (src/ui/tests/task_list.rs:486) asserts `icw == 4` for `["047","048"]` and `format!("{:>4}","047") == " 047"` — numeric layout byte-identical; green (1 passed). The render path at src/ui/list.rs:121-126 + :146 (`.max(4)` floor, no upper clamp, `{:>width$}`) is the exact code both ACs describe. AC-3 PASSED: full `cargo test` = 340 passed / 2 failed (pre-existing, see below); `make lint` exit 0, no clippy diagnostics.
+- DONE: The two pre-existing test failures are confirmed unrelated to this change (not introduced by it)
+  Checked out merge-base cd66d64 in a throwaway worktree with NONE of this task's diff present — both `parser::tests::load_archived_items_returns_entries_from_flat_files` and `app::tests::toggle_scope_key_a_flips_to_archived_and_loads_lazily` FAIL identically there. The parser failure is `_archive` fixture drift (assertion `items.iter().all(|item| item.status == "done")` at src/parser/tests.rs:301); the app test depends on archived-item loading. Neither touches the `ui` rendering layer this change is confined to.
+- DONE: Review challenges whether the icw computation belongs in the render function or should be extracted, and rules on it
+  RULED: keep it inline. `icw` has a single consumer (the `format!` at src/ui/list.rs:146) inside one function, and is a 5-line iterator chain with no reusable branching logic and no second call site — extraction would add indirection without removing duplication. It sits beside the pre-existing `pcw` (src/ui/list.rs:111-116), which is itself an inline per-render `let`; the only thing the phase column factors into a `phase_col()` helper is genuine logic (casing + ellipsization), which `icw` does not have. Inline matches the file's established convention and is the correct altitude.
+
+### Summary
+
+Independent review of the dynamic ID column-width fix. All three ACs PASS with cited test/exercise evidence: AC-1 (uniform title alignment across slug IDs) and AC-2 (4-char floor keeps numeric IDs byte-identical) are proven by the two new tests, both green when run individually against the lib crate; AC-3 holds — lint is clean and the only suite failures are the two pre-existing `_archive` fixture tests, confirmed failing identically at merge-base cd66d64 with this diff absent. The implementation is minimal, confined to `src/ui/list.rs` plus same-module tests, faithfully mirrors the existing `pcw` pattern, and the inline `icw` computation is at the right altitude — no extraction warranted. Recommend advancing to done.
