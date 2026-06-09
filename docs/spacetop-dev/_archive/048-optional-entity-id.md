@@ -11,6 +11,7 @@ worktree:
 issue:
 pr: "#47"
 mod-block:
+archived: 2026-06-09T02:54:57Z
 ---
 
 The newer Spacedock README format declares `id-style: slug` in the workflow frontmatter, which means entity files carry a blank `id:` field — identity comes from the filename slug instead of a numeric or sd-b32 value. SpaceTop currently expects a populated `id` field on every entity; it should handle the slug-identity case gracefully and display the slug as the effective ID.
