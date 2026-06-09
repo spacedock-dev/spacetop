@@ -687,7 +687,8 @@ impl OverviewState {
             .iter()
             .map(|stage| stage.name.clone())
             .collect::<Vec<_>>();
-        load_archived_items(&self.workflow_dir, &allowed_statuses)
+        let id_style = self.snapshot.definition.id_style.as_deref();
+        load_archived_items(&self.workflow_dir, &allowed_statuses, id_style)
     }
 
     fn refresh_archived_done_count(&mut self) {

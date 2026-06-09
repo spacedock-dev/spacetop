@@ -104,3 +104,16 @@ Tests:
 ### Summary
 
 Wrote an implementation plan grounded in the current code: the only crash point is `required(raw.id, …)` at `src/parser/item.rs:29`, and its sole caller `snapshot.rs:23` already holds `definition.id_style`, so threading `id_style` into `parse_work_item` keeps slug resolution in the parser/domain layer and fully testable without a TUI. `WorkflowDefinition.id_style` is already parsed (`readme.rs:69`) and even displayed (`definition.rs:90`), so AC-3 reduces to adding a fixture exercising both `sequential` and `slug`. Effective slug = filename stem (matching the reference workflow); blank-id tolerance is scoped to slug workflows only so AC-4 sequential behavior is preserved. Noted one follow-up: the `{:>4}` ID column in `list.rs` visually right-truncates wide slugs — flagged for the validation stage, not fixed in this slice.
+
+## Stage Report: implement
+
+- DONE: `cargo test` passes — including new slug-identity tests proving AC-1 (no crash on blank id) and AC-2 (WorkItem.id equals filename stem)
+  Full suite 340 lib + integration tests pass (0 failed); new `parser::tests::loads_slug_workflow_uses_filename_as_id` asserts `WorkItem.id == "roadmap-v5"` and no `parse_errors`; `slug_workflow_blank_id_does_not_error` is the explicit AC-1 no-crash guard.
+- DONE: `make lint` passes — clippy -D warnings clean per CLAUDE.md lint gate
+  `make lint` finished with no warnings after the changes.
+- DONE: Blank-id tolerance is scoped to id-style: slug only — a sequential workflow with blank id still errors with MissingRequiredField (AC-4 preserved)
+  `resolve_id` (`src/parser/item.rs`) only derives the slug when `id_style == Some("slug")`; `sequential_workflow_id_behavior_unaffected` proves blank id under both default and explicit `sequential` still yields `MissingRequiredField{ field: "id" }`, and a populated numeric id round-trips.
+
+### Summary
+
+Threaded `id_style: Option<&str>` through `parse_work_item` and its three production callers (`snapshot.rs`, `worktree.rs`, `archive.rs` + the `overview.rs` archive caller), passing `definition.id_style.as_deref()`. The single crash point `required(raw.id, …)` became a new `resolve_id` helper: a populated `id:` always wins; a blank id resolves to the filename stem only when `id-style: slug`; any other blank id keeps today's `MissingRequiredField` error. Slug derivation mirrors `worktree::slug_of_path` (parent dir for `index.md` folder-form, file stem otherwise). Added committed fixture `tests/fixtures/slug-workflow/` (README with `id-style: slug` + blank-id `roadmap-v5.md`) and four parser tests covering AC-1–AC-4. AC-3's `id_style` was already parsed in `readme.rs`, so no parser change was needed there — only a test exercising both `slug` and `sequential`. Follow-up still open (from plan): `src/ui/list.rs` ID column is `{:>4}`, which visually right-pads/truncates slugs wider than 4 chars (e.g. `roadmap-v5` overflows the field but is not dropped); widening that column is left for the validation stage.

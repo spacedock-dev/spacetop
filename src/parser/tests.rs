@@ -105,7 +105,7 @@ Read Spacedock workflow files into typed models.
 Body text should be preserved without frontmatter.
 "#,
     );
-    let item = parse_work_item(&path, &allowed_statuses).expect("work item should parse");
+    let item = parse_work_item(&path, &allowed_statuses, None).expect("work item should parse");
 
     assert_eq!(item.id, "002");
     assert_eq!(item.title, "Parse Spacedock Workflow Files");
@@ -186,7 +186,7 @@ Ignored.
 #[test]
 fn missing_frontmatter_error_names_file_and_context() {
     let path = write_temp_markdown("missing.md", "# Missing\n");
-    let error = parse_work_item(&path, &["design".to_string()])
+    let error = parse_work_item(&path, &["design".to_string()], None)
         .expect_err("missing frontmatter should fail")
         .to_string();
 
@@ -207,7 +207,7 @@ status: impossible
 Body
 "#,
     );
-    let error = parse_work_item(&path, &["design".to_string(), "done".to_string()])
+    let error = parse_work_item(&path, &["design".to_string(), "done".to_string()], None)
         .expect_err("unknown status should fail")
         .to_string();
 
@@ -226,7 +226,7 @@ id: [
 Body
 "#,
     );
-    let error = parse_work_item(&path, &["design".to_string()])
+    let error = parse_work_item(&path, &["design".to_string()], None)
         .expect_err("malformed YAML should fail")
         .to_string();
 
@@ -256,6 +256,7 @@ Body
             "ideation".to_string(),
             "done".to_string(),
         ],
+        None,
     )
     .expect("flat frontmatter fallback should parse");
 
@@ -290,7 +291,7 @@ fn write_markdown(path: &Path, contents: &str) {
 fn load_archived_items_returns_entries_from_flat_files() {
     let root = fixture_root();
     let allowed = stage_names(&root);
-    let items = load_archived_items(&root, &allowed).expect("archive should load");
+    let items = load_archived_items(&root, &allowed, None).expect("archive should load");
 
     assert!(items.len() >= 3, "expected at least 3 archived entries");
     let titles: Vec<&str> = items.iter().map(|item| item.title.as_str()).collect();
@@ -342,7 +343,7 @@ Body
 "#,
     );
 
-    let items = load_archived_items(&dir, &["done".to_string()]).expect("archive load");
+    let items = load_archived_items(&dir, &["done".to_string()], None).expect("archive load");
     let titles: Vec<&str> = items.iter().map(|item| item.title.as_str()).collect();
     assert_eq!(titles, vec!["Late", "Early", "Unknown"]);
 }
@@ -378,7 +379,7 @@ Body
 "#,
     );
 
-    let items = load_archived_items(&dir, &["done".to_string()]).expect("archive load");
+    let items = load_archived_items(&dir, &["done".to_string()], None).expect("archive load");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Folder Entity");
 }
@@ -386,7 +387,7 @@ Body
 #[test]
 fn load_archived_items_missing_archive_dir_is_empty_ok() {
     let dir = unique_temp_dir("missing");
-    let items = load_archived_items(&dir, &["done".to_string()]).expect("should be Ok");
+    let items = load_archived_items(&dir, &["done".to_string()], None).expect("should be Ok");
     assert!(items.is_empty());
 }
 
@@ -405,7 +406,7 @@ Body
 "#,
     );
 
-    let items = load_archived_items(&dir, &["done".to_string()]).expect("archive load");
+    let items = load_archived_items(&dir, &["done".to_string()], None).expect("archive load");
     assert!(items.is_empty());
 }
 
@@ -442,7 +443,7 @@ Body
 "#,
     );
 
-    let items = load_archived_items(&dir, &["done".to_string()]).expect("archive load");
+    let items = load_archived_items(&dir, &["done".to_string()], None).expect("archive load");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Good");
 }
@@ -457,7 +458,8 @@ fn load_archived_items_returns_io_errors_instead_of_silently_skipping_them() {
         .expect("symlink");
 
     let err =
-        load_archived_items(&dir, &["done".to_string()]).expect_err("archive load should fail");
+        load_archived_items(&dir, &["done".to_string()], None)
+            .expect_err("archive load should fail");
     assert!(
         matches!(err, ParseError::ReadFile { .. }),
         "expected ReadFile error, got {err:?}"
@@ -476,7 +478,7 @@ status: design
 Body
 "#,
     );
-    let error = parse_work_item(&path, &["design".to_string()])
+    let error = parse_work_item(&path, &["design".to_string()], None)
         .expect_err("missing title should fail")
         .to_string();
 
@@ -1065,5 +1067,121 @@ fn load_workflow_dir_malformed_readme_still_fatal() {
     assert!(
         display.contains("README.md"),
         "error must reference README.md: {display}"
+    );
+}
+
+// ---- Slug-identity tests (id-style: slug) ----
+
+fn slug_fixture_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/slug-workflow")
+}
+
+/// AC-2: a slug-style workflow whose entity carries a blank `id:` resolves the
+/// effective ID to the filename stem, which is the value the overview ID column
+/// renders. Also proves AC-1: the blank-id entity loads as a real item with no
+/// `parse_errors` instead of crashing or becoming a broken row.
+#[test]
+fn loads_slug_workflow_uses_filename_as_id() {
+    let root = slug_fixture_root();
+    let snapshot = load_workflow_dir(&root, &root).expect("slug workflow should load");
+
+    assert_eq!(snapshot.definition.id_style.as_deref(), Some("slug"));
+    assert!(
+        snapshot.parse_errors.is_empty(),
+        "blank-id slug entity must not record a parse error: {:?}",
+        snapshot.parse_errors
+    );
+
+    let item = snapshot
+        .items
+        .iter()
+        .find(|item| item.title == "Roadmap v5")
+        .expect("roadmap-v5 entity should be present");
+    assert_eq!(
+        item.id, "roadmap-v5",
+        "blank id with id-style: slug resolves to the filename stem"
+    );
+
+    // AC-2 render: the overview ID column is `format!(\"{:>4}\", item.id)`
+    // (src/ui/list.rs). A pure-string check confirms the slug reaches that
+    // column without needing a terminal backend.
+    let id_column = format!("{:>4}", item.id);
+    assert!(
+        id_column.contains("roadmap-v5"),
+        "ID column should contain the slug; got {id_column:?}"
+    );
+}
+
+/// AC-1: explicit no-crash assertion — loading a slug workflow with a blank
+/// `id:` returns `Ok` and surfaces no per-entity parse error.
+#[test]
+fn slug_workflow_blank_id_does_not_error() {
+    let root = slug_fixture_root();
+    let snapshot = load_workflow_dir(&root, &root).expect("slug workflow must not error on blank id");
+    assert!(
+        snapshot.parse_errors.is_empty(),
+        "expected no parse errors, got {:?}",
+        snapshot.parse_errors
+    );
+    assert!(
+        snapshot.items.iter().any(|item| item.id == "roadmap-v5"),
+        "blank-id slug entity should appear as a loaded item"
+    );
+}
+
+/// AC-3: `id-style` is read from README frontmatter for both declared values.
+/// The committed slug fixture exercises `slug`; a temp workflow exercises
+/// `sequential`.
+#[test]
+fn id_style_read_from_readme_for_both_values() {
+    let slug = parse_workflow_readme(&slug_fixture_root().join("README.md"))
+        .expect("slug README should parse");
+    assert_eq!(slug.id_style.as_deref(), Some("slug"));
+
+    let dir = unique_temp_dir("id-style-sequential");
+    fs::write(
+        dir.join("README.md"),
+        "---\ncommissioned-by: spacedock@0.19.8\nid-style: sequential\nstages:\n  states:\n    - name: design\n      initial: true\n    - name: done\n      terminal: true\n---\n\n# Workflow\n",
+    )
+    .expect("write sequential README");
+    let sequential =
+        parse_workflow_readme(&dir.join("README.md")).expect("sequential README should parse");
+    assert_eq!(sequential.id_style.as_deref(), Some("sequential"));
+}
+
+/// AC-4: blank-id tolerance is scoped to `id-style: slug` only. A sequential
+/// (default `id-style`) workflow whose entity has a populated id keeps that id,
+/// and one with a blank id still fails with `MissingRequiredField { field: "id" }`.
+#[test]
+fn sequential_workflow_id_behavior_unaffected() {
+    // Populated numeric id round-trips.
+    let with_id = unique_temp_dir("seq-with-id");
+    write_minimal_workflow(&with_id, Some("task.md"), Some(&entity_md("042", "Task")));
+    let snapshot = load_workflow_dir(&with_id, &with_id).expect("sequential workflow should load");
+    let item = snapshot
+        .items
+        .iter()
+        .find(|item| item.title == "Task")
+        .expect("task entity present");
+    assert_eq!(item.id, "042");
+
+    // Blank id in a non-slug workflow still errors.
+    let blank = write_temp_markdown(
+        "blank-id.md",
+        "---\nid:\ntitle: Blank Id\nstatus: design\n---\n\nBody\n",
+    );
+    let err = parse_work_item(&blank, &["design".to_string()], None)
+        .expect_err("blank id without id-style: slug must error");
+    assert!(
+        matches!(err, ParseError::MissingRequiredField { field: "id", .. }),
+        "expected MissingRequiredField for id, got {err:?}"
+    );
+
+    // Even when id-style is explicitly sequential, blank id errors.
+    let err_seq = parse_work_item(&blank, &["design".to_string()], Some("sequential"))
+        .expect_err("blank id with id-style: sequential must error");
+    assert!(
+        matches!(err_seq, ParseError::MissingRequiredField { field: "id", .. }),
+        "expected MissingRequiredField for id under sequential, got {err_seq:?}"
     );
 }

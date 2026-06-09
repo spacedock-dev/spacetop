@@ -16,11 +16,12 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
         .map(|stage| stage.name.clone())
         .collect::<Vec<_>>();
     let item_paths = collect_active_item_paths(path)?;
+    let id_style = definition.id_style.as_deref();
 
     let mut items = Vec::with_capacity(item_paths.len());
     let mut parse_errors: Vec<EntityParseError> = Vec::new();
     for item_path in item_paths {
-        match parse_work_item(&item_path, &allowed_statuses) {
+        match parse_work_item(&item_path, &allowed_statuses, id_style) {
             Ok(item) => items.push(item),
             Err(err) if err.is_per_entity_parse_failure() => {
                 parse_errors.push(entity_parse_error_from(&item_path, &err));
@@ -30,7 +31,7 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
     }
 
     let (worktree_items, worktree_parse_errors) = match path.strip_prefix(repo_root) {
-        Ok(workflow_rel) => scan_worktrees(repo_root, workflow_rel, &allowed_statuses)?,
+        Ok(workflow_rel) => scan_worktrees(repo_root, workflow_rel, &allowed_statuses, id_style)?,
         Err(_) => (Vec::new(), Vec::new()),
     };
     parse_errors.extend(worktree_parse_errors);
