@@ -1,13 +1,13 @@
 ---
 id: "048"
 title: "Support optional entity ID (id-style: slug)"
-status: plan
+status: implement
 source: captain
 started: 2026-06-09T01:20:12Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-048-optional-entity-id
 issue:
 pr:
 ---
