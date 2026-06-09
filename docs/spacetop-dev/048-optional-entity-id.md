@@ -1,6 +1,6 @@
 ---
-id: 048
-title: Support optional entity ID (id-style: slug)
+id: "048"
+title: "Support optional entity ID (id-style: slug)"
 status: design
 source: captain
 started:
