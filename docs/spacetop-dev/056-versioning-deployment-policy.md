@@ -117,3 +117,16 @@ Fixed the AC-4 README defect by making the release install example use the binar
 ### Summary
 
 Fresh verification approves the gate after the feedback-cycle README fix. The version surface, CI workflow, GitHub Release workflow, release documentation, changelog, and corrected user install guidance all satisfy the acceptance criteria, with no blocking defects or missing required evidence found.
+
+## Stage Report: PR review follow-up
+
+- DONE: Limit release workflow write permission to the publish job.
+  Evidence: `.github/workflows/release.yml` now sets workflow-level `contents: read` and `publish.permissions.contents: write`.
+- DONE: Install release-validation Rust tooling explicitly.
+  Evidence: the release `validate` job installs `rustfmt` and `clippy` through `dtolnay/rust-toolchain@stable`.
+- DONE: Use Ubuntu-native checksum tooling.
+  Evidence: the release checksum step now runs `sha256sum *.tar.gz > SHA256SUMS`.
+
+### Summary
+
+Addressed all four active GitHub review threads on PR #50 and kept the release workflow's write token scoped to the draft-release publication job.

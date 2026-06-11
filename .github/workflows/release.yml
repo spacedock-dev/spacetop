@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,6 +25,8 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Validate tag and Cargo versions
         id: version
@@ -154,6 +156,8 @@ jobs:
       - validate
       - build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -170,7 +174,7 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          shasum -a 256 *.tar.gz > SHA256SUMS
+          sha256sum *.tar.gz > SHA256SUMS
 
       - name: Extract release notes
         shell: bash
