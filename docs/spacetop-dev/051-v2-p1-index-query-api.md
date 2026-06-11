@@ -13,7 +13,7 @@ verdict:
 score: 0.98
 worktree: .worktrees/spacedock-ensign-051-v2-p1-index-query-api
 issue:
-pr:
+pr: "#51"
 mod-block: merge:pr-merge
 ---
 
