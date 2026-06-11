@@ -13,6 +13,12 @@ pub(crate) enum OverviewKeyAction {
     OpenSelectedFile(PathBuf),
     /// `D` from Overview: open the full-pane Workflow Definition view.
     OpenDefinition,
+    OpenSearch,
+    OpenCommandPalette,
+    OpenTimeline,
+    OpenMetrics,
+    OpenActivity,
+    OpenRelations,
     /// `Y` from Overview: request a `git pull --ff-only` against the
     /// active workflow's repo root. Always emitted when the binding
     /// fires; the helper classifies availability and reports the result.
@@ -120,6 +126,12 @@ pub(crate) fn handle_overview_key(
             OverviewKeyAction::None
         }
         KeyCode::Char('D') if !state.preview_open() => OverviewKeyAction::OpenDefinition,
+        KeyCode::Char('/') if !state.preview_open() => OverviewKeyAction::OpenSearch,
+        KeyCode::Char(':') if !state.preview_open() => OverviewKeyAction::OpenCommandPalette,
+        KeyCode::Char('T') if !state.preview_open() => OverviewKeyAction::OpenTimeline,
+        KeyCode::Char('M') if !state.preview_open() => OverviewKeyAction::OpenMetrics,
+        KeyCode::Char('A') if !state.preview_open() => OverviewKeyAction::OpenActivity,
+        KeyCode::Char('R') if !state.preview_open() => OverviewKeyAction::OpenRelations,
         KeyCode::Char('Y') if !state.preview_open() => OverviewKeyAction::RequestSync,
         KeyCode::Right if is_multi => OverviewKeyAction::Switch(session.cycle_next()),
         KeyCode::Left if is_multi => OverviewKeyAction::Switch(session.cycle_prev()),
@@ -276,6 +288,54 @@ mod tests {
             matches!(action, OverviewKeyAction::OpenDefinition),
             "D with preview closed must emit OpenDefinition"
         );
+    }
+
+    #[test]
+    fn p3_view_bindings_emit_actions_when_preview_closed() {
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item(path);
+
+        assert!(matches!(
+            handle_overview_key(&mut session, key(KeyCode::Char('/'))),
+            OverviewKeyAction::OpenSearch
+        ));
+        assert!(matches!(
+            handle_overview_key(&mut session, key(KeyCode::Char(':'))),
+            OverviewKeyAction::OpenCommandPalette
+        ));
+        assert!(matches!(
+            handle_overview_key(&mut session, key(KeyCode::Char('T'))),
+            OverviewKeyAction::OpenTimeline
+        ));
+        assert!(matches!(
+            handle_overview_key(&mut session, key(KeyCode::Char('M'))),
+            OverviewKeyAction::OpenMetrics
+        ));
+        assert!(matches!(
+            handle_overview_key(&mut session, key(KeyCode::Char('A'))),
+            OverviewKeyAction::OpenActivity
+        ));
+        assert!(matches!(
+            handle_overview_key(&mut session, key(KeyCode::Char('R'))),
+            OverviewKeyAction::OpenRelations
+        ));
+    }
+
+    #[test]
+    fn p3_view_bindings_are_ignored_when_preview_open() {
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item(path);
+        session.active_state_mut().toggle_preview();
+
+        for code in ['/', ':', 'T', 'M', 'A', 'R'] {
+            assert!(
+                matches!(
+                    handle_overview_key(&mut session, key(KeyCode::Char(code))),
+                    OverviewKeyAction::None
+                ),
+                "{code} must be ignored while preview is open"
+            );
+        }
     }
 
     /// AC-1: `Y` from an overview with preview closed emits `RequestSync`.

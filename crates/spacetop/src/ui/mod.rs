@@ -64,6 +64,13 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             let definition = underlying.active_state().definition();
             definition::render_in(frame, frame.area(), definition, *scroll);
         }
+        AppMode::Search { underlying, .. }
+        | AppMode::Timeline { underlying, .. }
+        | AppMode::Metrics { underlying, .. }
+        | AppMode::Activity { underlying, .. }
+        | AppMode::Relations { underlying, .. } => {
+            render_overview(frame, frame.area(), underlying);
+        }
     }
 
     if app.help_open() {

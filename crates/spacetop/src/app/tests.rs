@@ -1672,6 +1672,117 @@ fn definition_scopes_to_active_tab_and_esc_preserves_index() {
     assert_eq!(app.selected_index(), probe_selected);
 }
 
+// --- P3 capability view app-mode tests ---
+
+#[test]
+fn slash_from_overview_enters_search_mode_and_esc_restores_state() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    app.handle_key(key(KeyCode::Down));
+    let probe_index = app.selected_index();
+
+    app.handle_key(key(KeyCode::Char('/')));
+    assert!(matches!(
+        app.mode(),
+        AppMode::Search {
+            state,
+            ..
+        } if state.mode() == super::SearchMode::Search
+    ));
+
+    app.handle_key(key(KeyCode::Char('q')));
+    assert!(matches!(app.mode(), AppMode::Search { .. }));
+    app.handle_key(key(KeyCode::Backspace));
+    app.handle_key(key(KeyCode::Esc));
+
+    assert!(matches!(app.mode(), AppMode::Overview(_)));
+    assert_eq!(app.selected_index(), probe_index);
+}
+
+#[test]
+fn command_palette_dispatches_metrics_activity_timeline_and_relations() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+
+    app.handle_key(key(KeyCode::Char(':')));
+    app.handle_key(key(KeyCode::Char('m')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(app.mode(), AppMode::Metrics { .. }));
+    app.handle_key(key(KeyCode::Esc));
+
+    app.handle_key(key(KeyCode::Char(':')));
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(app.mode(), AppMode::Activity { .. }));
+    app.handle_key(key(KeyCode::Esc));
+
+    app.handle_key(key(KeyCode::Char(':')));
+    app.handle_key(key(KeyCode::Char('t')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(
+        app.mode(),
+        AppMode::Timeline { entity_id, .. } if entity_id == "000"
+    ));
+    app.handle_key(key(KeyCode::Esc));
+
+    app.handle_key(key(KeyCode::Char(':')));
+    app.handle_key(key(KeyCode::Char('r')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(
+        app.mode(),
+        AppMode::Relations { entity_id, .. } if entity_id == "000"
+    ));
+}
+
+#[test]
+fn p3_view_keys_open_read_only_modes_for_selected_entity() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+    app.handle_key(key(KeyCode::Down));
+
+    app.handle_key(key(KeyCode::Char('T')));
+    assert!(matches!(
+        app.mode(),
+        AppMode::Timeline { entity_id, .. } if entity_id == "001"
+    ));
+    app.handle_key(key(KeyCode::Esc));
+
+    app.handle_key(key(KeyCode::Char('M')));
+    assert!(matches!(app.mode(), AppMode::Metrics { .. }));
+    app.handle_key(key(KeyCode::Esc));
+
+    app.handle_key(key(KeyCode::Char('A')));
+    assert!(matches!(app.mode(), AppMode::Activity { .. }));
+    app.handle_key(key(KeyCode::Esc));
+
+    app.handle_key(key(KeyCode::Char('R')));
+    assert!(matches!(
+        app.mode(),
+        AppMode::Relations { entity_id, .. } if entity_id == "001"
+    ));
+}
+
+#[test]
+fn p3_modes_preserve_underlying_session_plumbing() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    app.handle_key(key(KeyCode::Down));
+    let probe_index = app.selected_index();
+    let probe_dir = app.workflow_dir().to_path_buf();
+
+    for open_key in ['T', 'M', 'A', 'R'] {
+        let mut app = app.clone();
+        app.handle_key(key(KeyCode::Char(open_key)));
+        assert_eq!(app.workflow_dir(), probe_dir.as_path());
+        assert_eq!(app.selected_index(), probe_index);
+        assert!(
+            app.history_worker_request().is_some(),
+            "{open_key} mode must preserve history worker access"
+        );
+        app.set_sync_status(super::SyncStatus::InFlight);
+        assert_eq!(app.sync_status(), Some(&super::SyncStatus::InFlight));
+        app.handle_key(key(KeyCode::Esc));
+        assert!(matches!(app.mode(), AppMode::Overview(_)));
+        assert_eq!(app.selected_index(), probe_index);
+    }
+}
+
 // ---- Task 046: Sync action plumbing ----
 
 #[test]
