@@ -18,8 +18,9 @@ Spacedock stores workflow progress as markdown files in git. A workflow director
 
 Spacetop is an active read-first TUI. It can discover workflows, open an explicit
 workflow directory, parse active and archived work items, preview markdown,
-render workflow graphs, show selected worktree state, auto-refresh filesystem
-changes, and explicitly sync with `git pull --ff-only`.
+render workflow graphs, show selected worktree state, open query-backed search,
+timeline, metrics, activity, and relation views, auto-refresh filesystem changes,
+and explicitly sync with `git pull --ff-only`.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.

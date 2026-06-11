@@ -77,6 +77,26 @@ fn help_popup_lists_definition_keybind() {
 }
 
 #[test]
+fn help_popup_lists_p3_capability_view_keybinds() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
+    let mut app = App::load(root).expect("workflow should load");
+    app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+
+    let mut terminal = Terminal::new(TestBackend::new(160, 34)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(rendered.contains("/              search entities"));
+    assert!(rendered.contains(":              open command palette"));
+    assert!(rendered.contains("T              open selected entity timeline"));
+    assert!(rendered.contains("M              open metrics view"));
+    assert!(rendered.contains("A              open activity feed"));
+    assert!(rendered.contains("R              open selected entity relations"));
+}
+
+#[test]
 fn help_popup_renders_in_picker_mode() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use spacetop_core::discovery::DiscoveredWorkflow;
@@ -207,6 +227,21 @@ fn dashboard_status_footer_lists_help_affordance() {
     assert!(rendered.contains("?"), "footer must include ? glyph");
     assert!(rendered.contains("help"), "footer must mention 'help'");
     assert!(rendered.contains("q: quit"), "footer must mention quit");
+}
+
+#[test]
+fn dashboard_footer_lists_p3_capability_hints_when_preview_closed() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
+    let app = App::load(root).expect("workflow should load");
+    let mut terminal = Terminal::new(TestBackend::new(180, 24)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(rendered.contains("/: search"));
+    assert!(rendered.contains(":: command"));
+    assert!(rendered.contains("T/M/A/R: views"));
 }
 
 #[test]

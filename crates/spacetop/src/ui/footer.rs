@@ -78,6 +78,9 @@ pub(crate) fn status_footer_hints(session: &OverviewSession) -> Vec<(String, Col
     } else {
         hints.push(("PgUp/PgDn: page list".to_string(), Color::White));
         hints.push(("s: sort".to_string(), Color::White));
+        hints.push(("/: search".to_string(), Color::White));
+        hints.push((":: command".to_string(), Color::White));
+        hints.push(("T/M/A/R: views".to_string(), Color::White));
         hints.push(("D: definition".to_string(), Color::White));
         hints.push(("Y: sync".to_string(), Color::White));
     }
