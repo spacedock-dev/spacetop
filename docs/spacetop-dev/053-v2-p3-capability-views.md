@@ -1,7 +1,7 @@
 ---
 id: "053"
 title: "v2 P3: capability views"
-status: implement
+status: verify
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: medium
