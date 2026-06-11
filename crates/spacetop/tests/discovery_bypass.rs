@@ -35,7 +35,10 @@ body
 }
 
 fn cli_with(workflow_dir: Option<PathBuf>) -> Cli {
-    Cli { workflow_dir }
+    Cli {
+        workflow_dir,
+        command: None,
+    }
 }
 
 #[test]

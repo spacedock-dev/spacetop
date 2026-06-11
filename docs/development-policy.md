@@ -109,6 +109,36 @@ Strategic v2 boundary:
 - No async runtime is approved by default. Background threads plus channels are
   the current preferred pattern.
 
+### P5 Headless CLI Crate Split Decision
+
+P5 adds headless `list`, `timeline`, `metrics`, `activity`, and `export --json`
+commands to the existing `spacetop` binary. Measured on 2026-06-11, a clean
+`cargo build -p spacetop` took 25.93s, `cargo build -p spacetop --release` took
+48.81s, and `target/release/spacetop` was 9.4M.
+
+### Option A - Recommended: keep two-crate workspace
+
+| Pros | Cons | Choose this when |
+|------|------|------------------|
+| No extra workspace topology during CLI delivery; one user-facing `spacetop` command owns both TUI and headless dispatch; `spacetop-core` remains terminal-free and reusable | Headless-only builds still compile terminal dependencies | Build time and artifact size are acceptable, and no downstream consumer needs a TUI-free binary |
+
+### Option B - Split `spacetop-tui` later
+
+| Pros | Cons | Choose this when |
+|------|------|------------------|
+| Can reduce headless-only dependency surface and make packaging boundaries sharper | Adds workspace topology and cross-crate API churn before there is a measured need | Terminal/UI dependencies exceed 30% of clean build wall time or a real package target needs a smaller artifact |
+
+### Option C - Split now
+
+| Pros | Cons | Choose this when |
+|------|------|------------------|
+| Forces the headless/TUI boundary immediately | Slows P5 delivery and risks speculative abstraction | A downstream consumer needs a TUI-free binary during this phase |
+
+Recommendation: keep the P0 two-crate workspace for P5. The P5 headless CLI
+remains in the `spacetop` binary crate. `spacetop-core` is still terminal-free;
+a separate `spacetop-tui` crate is deferred until a measured build or
+artifact-size problem justifies it.
+
 ## Development Workflow
 
 Every non-trivial change should follow this sequence:

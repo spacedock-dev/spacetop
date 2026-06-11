@@ -1,5 +1,6 @@
 pub mod app;
 pub mod cli;
+pub mod headless;
 pub mod ui;
 
 use std::io::{self, IsTerminal, Write};
@@ -123,7 +124,11 @@ fn load_overview_state(root: &Path) -> anyhow::Result<app::OverviewState> {
         .with_context(|| format!("failed to load workflow directory {}", root.display()))
 }
 
-pub fn run(cli: Cli) -> anyhow::Result<()> {
+pub fn run(mut cli: Cli) -> anyhow::Result<()> {
+    if let Some(command) = cli.command.take() {
+        return headless::run_command(cli.workflow_dir.take(), command);
+    }
+
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
     let config_load = load_startup_config(&config::StdEnv);
     match decide_app_with_config(&cli, &cwd, config_load.config, config_load.warnings)? {

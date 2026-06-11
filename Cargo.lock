@@ -2594,6 +2594,8 @@ dependencies = [
  "ratatui",
  "ratskin",
  "sentry",
+ "serde",
+ "serde_json",
  "similar",
  "spacetop-core",
  "tempfile",
