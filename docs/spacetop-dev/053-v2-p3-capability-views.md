@@ -70,3 +70,16 @@ Verified by: app mode regression tests.
 ### Summary
 
 Implemented P3 capability views as read-only TUI surfaces backed by core query, history, metrics, activity, and relation/detail APIs. Updated footer, help, and README documentation for the new keybindings, with focused core, app, and Ratatui coverage plus the required full verification commands passing.
+
+## Stage Report: verify
+
+- FAILED: Independently validate AC-1 and AC-4: search/command palette input works, new modes close/route correctly, and reload/sync/help/footer/workflow switching still behave while P3 views are open.
+  `cargo test --workspace` covers search/command routing, but full-pane P3 modes do not handle `?`, `Left`, `Right`, or `P`; tests do not prove those AC-4 paths work while views are open.
+- DONE: Validate AC-2 and AC-3 from code and tests: timeline, metrics, activity, and details consume WorkflowIndex/core relation APIs and do not infer workflow schema facts in UI code.
+  Renderers call `WorkflowIndex::timeline`, `metrics`, `activity`, and `entity_details`; core relation and Ratatui view tests passed in `cargo test --workspace`.
+- DONE: Run or audit required proof commands for P3: cargo test --workspace, make lint, and cargo test -p spacetop-core --test no_terminal_deps; report PASS/FAIL and any blocking defects.
+  PASS: `cargo test --workspace`, `make lint`, and `cargo test -p spacetop-core --test no_terminal_deps` all exited 0.
+
+### Summary
+
+Verification rejects the implementation as incomplete on AC-4. Search, command routing, core-backed timeline/metrics/activity/details, docs, lint, and no-terminal-dependency proof all pass, but help and workflow-switch behavior is not available or evidenced while the full-pane P3 views are open.
