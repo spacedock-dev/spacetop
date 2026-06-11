@@ -115,3 +115,28 @@ Implemented the P5 headless CLI surface in the existing `spacetop` binary while 
 ### Verdict
 
 PASSED. The implementation preserves the TUI launch path, adds fully dispatched headless commands over the core query/history APIs, rejects ambiguous workflow resolution with stable errors, exports active and archived workflow data explicitly, and documents the measured two-crate decision. No blocking defects or missing required evidence found.
+
+## PR Review Fix: implement
+
+- DONE: Fixed archived-only headless list ordering. `list --scope archived` now queries with `EntitySort::ArchiveDefault`, preserving parser archive ordering by completed-desc; active and all scopes still use the configured default sort.
+- DONE: Removed the unnecessary `cli.command` clone in `run`. The launch path now takes the optional command out of `Cli`, preserving no-subcommand TUI launch behavior.
+- DONE: Fixed effective workflow-dir resolution for headless commands. Headless dispatch receives the top-level `--workflow-dir` and applies `subcommand.workflow_dir.or(top_level_workflow_dir)`, so subcommand-specific values still win.
+- DONE: Added regressions for archived-only ordering, top-level workflow-dir dispatch, subcommand override behavior, and top-level workflow-dir parse shape before a headless subcommand.
+
+### PR Review Proof Commands
+
+- `cargo test -p spacetop cli::tests::parses_top_level_workflow_dir_before_headless_subcommand` -> red initially because the headless dispatch regression tests did not compile against the old `run_command_with_io` signature; green after fix, 1 passed.
+- `cargo test -p spacetop headless::tests::list_archived_scope_preserves_archive_default_order` -> red initially with the old dispatch signature compile failure; green after fix, 1 passed.
+- `cargo test -p spacetop headless::tests::run_command_uses_top_level_workflow_dir_for_headless_list` -> red initially with the old dispatch signature compile failure; green after fix, 1 passed.
+- `cargo test -p spacetop headless::tests::subcommand_workflow_dir_overrides_top_level_workflow_dir` -> passed, 1 passed.
+- `cargo fmt` -> passed.
+- `cargo test -p spacetop headless::tests` -> passed, 15 passed, 0 failed.
+- `cargo test -p spacetop cli::tests` -> passed, 13 passed, 0 failed.
+- `cargo test --workspace` -> passed: spacetop lib 337 passed; spacetop main 4 passed; spacetop integration tests 10/4/5 passed; spacetop-core lib 145 passed; core integration tests 7/1/2 passed; watcher real-backend tests 3 ignored; doctests 0.
+- `make lint` -> passed: `cargo clippy --all-targets --all-features -- -D warnings`.
+- `cargo run -p spacetop -- list --workflow-dir docs/spacetop-dev --json` -> passed, exited 0, emitted JSON array with active task `055`.
+- `cargo run -p spacetop -- export --workflow-dir docs/spacetop-dev --json` -> passed, exited 0, emitted JSON with `definition`, `entities`, and `archived_entities`.
+
+### PR Review Commit List
+
+- This commit: `fix(cli): address headless review feedback`

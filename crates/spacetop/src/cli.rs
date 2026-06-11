@@ -121,6 +121,26 @@ mod tests {
     }
 
     #[test]
+    fn parses_top_level_workflow_dir_before_headless_subcommand() {
+        let cli = Cli::parse_from([
+            "spacetop",
+            "--workflow-dir",
+            "docs/spacetop-dev",
+            "list",
+            "--json",
+        ]);
+
+        assert_eq!(cli.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
+        match cli.command {
+            Some(Command::List(args)) => {
+                assert!(args.workflow_dir.is_none());
+                assert!(args.json);
+            }
+            other => panic!("expected list command, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn no_subcommand_still_launches_tui_shape() {
         let cli = Cli::parse_from(["spacetop", "--workflow-dir", "docs/spacetop-dev"]);
 

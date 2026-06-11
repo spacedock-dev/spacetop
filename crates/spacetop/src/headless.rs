@@ -49,13 +49,22 @@ pub fn resolve_workflow_arg(
     })
 }
 
-pub fn run_command(command: crate::cli::Command) -> anyhow::Result<()> {
+pub fn run_command(
+    top_level_workflow_dir: Option<PathBuf>,
+    command: crate::cli::Command,
+) -> anyhow::Result<()> {
     let stdout = io::stdout();
     let stderr = io::stderr();
-    run_command_with_io(command, &mut stdout.lock(), &mut stderr.lock())
+    run_command_with_io(
+        top_level_workflow_dir,
+        command,
+        &mut stdout.lock(),
+        &mut stderr.lock(),
+    )
 }
 
 fn run_command_with_io(
+    top_level_workflow_dir: Option<PathBuf>,
     command: crate::cli::Command,
     out: &mut impl Write,
     err: &mut impl Write,
@@ -66,11 +75,26 @@ fn run_command_with_io(
     }
 
     match command {
-        crate::cli::Command::List(args) => run_list(args, &config_load.config, out),
-        crate::cli::Command::Timeline(args) => run_timeline(args, &StdGitRunner, out),
-        crate::cli::Command::Metrics(args) => run_metrics(args, &StdGitRunner, out),
-        crate::cli::Command::Activity(args) => run_activity(args, &StdGitRunner, out),
-        crate::cli::Command::Export(args) => run_export(args, out),
+        crate::cli::Command::List(mut args) => {
+            args.workflow_dir = args.workflow_dir.or(top_level_workflow_dir);
+            run_list(args, &config_load.config, out)
+        }
+        crate::cli::Command::Timeline(mut args) => {
+            args.workflow_dir = args.workflow_dir.or(top_level_workflow_dir);
+            run_timeline(args, &StdGitRunner, out)
+        }
+        crate::cli::Command::Metrics(mut args) => {
+            args.workflow_dir = args.workflow_dir.or(top_level_workflow_dir);
+            run_metrics(args, &StdGitRunner, out)
+        }
+        crate::cli::Command::Activity(mut args) => {
+            args.workflow_dir = args.workflow_dir.or(top_level_workflow_dir);
+            run_activity(args, &StdGitRunner, out)
+        }
+        crate::cli::Command::Export(mut args) => {
+            args.workflow_dir = args.workflow_dir.or(top_level_workflow_dir);
+            run_export(args, out)
+        }
     }
 }
 
@@ -98,7 +122,7 @@ pub fn run_list(
         scope,
         status: args.status,
         text: args.text,
-        sort: list_sort(config.defaults.sort),
+        sort: list_sort(scope, config.defaults.sort),
         ..EntityQuery::default()
     });
 
@@ -344,10 +368,13 @@ fn list_scope(
     }
 }
 
-fn list_sort(default_sort: DefaultSort) -> EntitySort {
-    match default_sort {
-        DefaultSort::Id => EntitySort::Id,
-        DefaultSort::Status => EntitySort::Status,
+fn list_sort(scope: QueryScope, default_sort: DefaultSort) -> EntitySort {
+    match scope {
+        QueryScope::Archived => EntitySort::ArchiveDefault,
+        QueryScope::Active | QueryScope::All => match default_sort {
+            DefaultSort::Id => EntitySort::Id,
+            DefaultSort::Status => EntitySort::Status,
+        },
     }
 }
 
@@ -595,6 +622,100 @@ mod tests {
         assert_eq!(ids, ["010", "001"]);
     }
 
+    #[test]
+    fn list_archived_scope_preserves_archive_default_order() {
+        let fixture = fixture_repo_with_one_workflow();
+        write_archived_entity_with_completed(
+            &fixture.path().join("docs/workflow/_archive/001-early.md"),
+            "001",
+            "Early completed",
+            "2026-06-01T00:00:00Z",
+        );
+        write_archived_entity_with_completed(
+            &fixture.path().join("docs/workflow/_archive/010-late.md"),
+            "010",
+            "Late completed",
+            "2026-06-02T00:00:00Z",
+        );
+        let mut config = spacetop_core::config::SpacetopConfig::default();
+        config.defaults.sort = spacetop_core::config::DefaultSort::Id;
+
+        let ids = run_list_json_ids(
+            fixture.path().join("docs/workflow"),
+            Some(crate::cli::ListScopeArg::Archived),
+            &config,
+        );
+
+        assert_eq!(ids, ["010", "001"]);
+    }
+
+    #[test]
+    fn run_command_uses_top_level_workflow_dir_for_headless_list() {
+        let fixture = fixture_repo_with_one_workflow();
+        write_entity_with_status(
+            &fixture.path().join("docs/workflow/001.md"),
+            "001",
+            "From top level",
+            "plan",
+        );
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        run_command_with_io(
+            Some(fixture.path().join("docs/workflow")),
+            crate::cli::Command::List(crate::cli::ListArgs {
+                workflow_dir: None,
+                status: None,
+                text: None,
+                scope: None,
+                json: true,
+            }),
+            &mut out,
+            &mut err,
+        )
+        .expect("list");
+
+        assert_eq!(json_ids(&out), ["001"]);
+        assert!(err.is_empty());
+    }
+
+    #[test]
+    fn subcommand_workflow_dir_overrides_top_level_workflow_dir() {
+        let top_level_fixture = fixture_repo_with_one_workflow();
+        write_entity_with_status(
+            &top_level_fixture.path().join("docs/workflow/001.md"),
+            "001",
+            "Top level",
+            "plan",
+        );
+        let subcommand_fixture = fixture_repo_with_one_workflow();
+        write_entity_with_status(
+            &subcommand_fixture.path().join("docs/workflow/777.md"),
+            "777",
+            "Subcommand",
+            "plan",
+        );
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+
+        run_command_with_io(
+            Some(top_level_fixture.path().join("docs/workflow")),
+            crate::cli::Command::List(crate::cli::ListArgs {
+                workflow_dir: Some(subcommand_fixture.path().join("docs/workflow")),
+                status: None,
+                text: None,
+                scope: None,
+                json: true,
+            }),
+            &mut out,
+            &mut err,
+        )
+        .expect("list");
+
+        assert_eq!(json_ids(&out), ["777"]);
+        assert!(err.is_empty());
+    }
+
     fn assert_history_unavailable(response: spacetop_core::git::GitCmdResult, message: &str) {
         assert_history_unavailable_json(response.clone(), message);
         assert_history_unavailable_text(response, message);
@@ -726,6 +847,17 @@ mod tests {
             .collect()
     }
 
+    fn json_ids(out: &[u8]) -> Vec<String> {
+        let value: serde_json::Value =
+            serde_json::from_slice(out).expect("command output must be JSON");
+        value
+            .as_array()
+            .expect("command output array")
+            .iter()
+            .map(|entity| entity["id"].as_str().expect("id").to_string())
+            .collect()
+    }
+
     fn fixture_repo_with_one_workflow() -> tempfile::TempDir {
         let repo = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(repo.path().join(".git")).expect("git dir");
@@ -763,12 +895,18 @@ mod tests {
     }
 
     fn write_archived_entity(path: &Path) {
+        write_archived_entity_with_completed(path, "002", "Archived", "2026-06-01T00:00:00Z");
+    }
+
+    fn write_archived_entity_with_completed(path: &Path, id: &str, title: &str, completed: &str) {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).expect("archive dir");
         }
         std::fs::write(
             path,
-            "---\nid: \"002\"\ntitle: Archived\nstatus: done\ncompleted: 2026-06-01T00:00:00Z\n---\n\narchived body\n",
+            format!(
+                "---\nid: \"{id}\"\ntitle: {title}\nstatus: done\ncompleted: {completed}\n---\n\narchived body\n"
+            ),
         )
         .expect("write archived entity");
     }

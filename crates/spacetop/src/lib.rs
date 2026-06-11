@@ -124,9 +124,9 @@ fn load_overview_state(root: &Path) -> anyhow::Result<app::OverviewState> {
         .with_context(|| format!("failed to load workflow directory {}", root.display()))
 }
 
-pub fn run(cli: Cli) -> anyhow::Result<()> {
-    if let Some(command) = cli.command.clone() {
-        return headless::run_command(command);
+pub fn run(mut cli: Cli) -> anyhow::Result<()> {
+    if let Some(command) = cli.command.take() {
+        return headless::run_command(cli.workflow_dir.take(), command);
     }
 
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
