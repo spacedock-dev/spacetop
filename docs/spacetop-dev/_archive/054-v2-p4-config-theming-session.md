@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#54"
 mod-block:
+archived: 2026-06-11T13:21:30Z
 ---
 
 Implement phase P4 of the SpaceTop v2 internals rebuild: add YAML config,
