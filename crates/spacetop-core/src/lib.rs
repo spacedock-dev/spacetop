@@ -1,8 +1,11 @@
 pub mod discovery;
 pub mod domain;
 pub mod editor;
+pub mod git;
+pub mod git_history;
 pub mod git_sync;
 pub mod index;
+pub mod metrics;
 pub mod parser;
 pub mod query;
 pub mod sources;

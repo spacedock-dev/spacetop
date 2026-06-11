@@ -1,4 +1,4 @@
-use super::{App, AppMode, ViewScope};
+use super::{App, AppMode, HistoryWorkerResult, ViewScope};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1724,6 +1724,115 @@ fn set_sync_status_routes_to_active_overview_and_survives_reload_from_snapshot()
         ),
         "sync_status must survive reload_from_snapshot, got {:?}",
         app.sync_status()
+    );
+}
+
+#[test]
+fn load_marks_history_loading_without_hiding_active_items() {
+    let holder = tempfile::tempdir().expect("tempdir");
+    let root = holder.path().join("workflow");
+    std::fs::create_dir_all(&root).unwrap();
+    write_workflow(&root, "001");
+
+    let app = App::load(root.clone()).expect("load");
+
+    assert_eq!(app.visible_items().len(), 1);
+    assert_eq!(
+        app.as_overview().unwrap().index().timeline("001"),
+        Err(spacetop_core::query::HistoryUnavailable::Loading)
+    );
+    let request = app.history_worker_request().expect("history request");
+    assert_eq!(request.workflow_dir, root);
+    assert_eq!(request.workflow_rel, "");
+}
+
+#[test]
+fn apply_history_result_populates_loaded_overview_timeline() {
+    use spacetop_core::index::{CommitId, CommitTime, StageEvent};
+
+    let holder = tempfile::tempdir().expect("tempdir");
+    let root = holder.path().join("workflow");
+    std::fs::create_dir_all(&root).unwrap();
+    write_workflow(&root, "001");
+    let mut app = App::load(root.clone()).expect("load");
+    assert_eq!(
+        app.as_overview().unwrap().index().timeline("001"),
+        Err(spacetop_core::query::HistoryUnavailable::Loading)
+    );
+
+    app.apply_history_result(HistoryWorkerResult {
+        workflow_dir: root,
+        result: Ok(vec![StageEvent {
+            entity_id: "001".to_string(),
+            from: None,
+            to: "plan".to_string(),
+            at: CommitTime(100),
+            commit: CommitId("a".repeat(40)),
+        }]),
+    });
+
+    let timeline = app
+        .as_overview()
+        .unwrap()
+        .index()
+        .timeline("001")
+        .expect("timeline");
+    assert_eq!(timeline.len(), 1);
+    assert_eq!(timeline[0].to, "plan");
+}
+
+#[test]
+fn apply_history_result_surfaces_exact_unavailable_reason() {
+    let holder = tempfile::tempdir().expect("tempdir");
+    let root = holder.path().join("workflow");
+    std::fs::create_dir_all(&root).unwrap();
+    write_workflow(&root, "001");
+    let mut app = App::load(root.clone()).expect("load");
+
+    app.apply_history_result(HistoryWorkerResult {
+        workflow_dir: root,
+        result: Err(spacetop_core::query::HistoryUnavailable::ShallowClone),
+    });
+
+    let index = app.as_overview().unwrap().index();
+    assert_eq!(
+        index.timeline("001"),
+        Err(spacetop_core::query::HistoryUnavailable::ShallowClone)
+    );
+    assert_eq!(
+        index.metrics(),
+        Err(spacetop_core::query::HistoryUnavailable::ShallowClone)
+    );
+    assert_eq!(
+        index.activity(None),
+        Err(spacetop_core::query::HistoryUnavailable::ShallowClone)
+    );
+}
+
+#[test]
+fn stale_history_result_for_other_workflow_is_ignored() {
+    use spacetop_core::index::{CommitId, CommitTime, StageEvent};
+
+    let holder = tempfile::tempdir().expect("tempdir");
+    let root = holder.path().join("workflow");
+    std::fs::create_dir_all(&root).unwrap();
+    write_workflow(&root, "001");
+    let mut app = App::load(root.clone()).expect("load");
+
+    app.apply_history_result(HistoryWorkerResult {
+        workflow_dir: holder.path().join("other"),
+        result: Ok(vec![StageEvent {
+            entity_id: "001".to_string(),
+            from: None,
+            to: "plan".to_string(),
+            at: CommitTime(100),
+            commit: CommitId("a".repeat(40)),
+        }]),
+    });
+
+    assert_eq!(
+        app.as_overview().unwrap().index().timeline("001"),
+        Err(spacetop_core::query::HistoryUnavailable::Loading)
     );
 }
 

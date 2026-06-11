@@ -4,6 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{Entity, EntityParseError, WorkflowDefinition};
+pub use crate::metrics::Metrics;
 use crate::query::{
     EntityQuery, EntitySort, FieldFilter, HistoryResult, HistoryUnavailable, QueryScope,
 };
@@ -19,6 +20,8 @@ pub struct WorkflowIndex {
     archive_error: Option<String>,
     by_id: HashMap<String, Entity>,
     by_slug: HashMap<String, Entity>,
+    history_events: Vec<StageEvent>,
+    history_unavailable: Option<HistoryUnavailable>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -41,11 +44,6 @@ pub struct StageCount {
     pub name: String,
     pub items: usize,
 }
-
-/// P1 placeholder for the stable API surface. P2 replaces this with real
-/// dwell/cycle/WIP/throughput fields before `metrics()` can return `Ok`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Metrics {}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActivityEvent {
@@ -73,6 +71,8 @@ impl WorkflowIndex {
             archive_error,
             by_id: HashMap::new(),
             by_slug: HashMap::new(),
+            history_events: Vec::new(),
+            history_unavailable: Some(HistoryUnavailable::NotImplemented),
         };
         index.rebuild_lookup_maps();
         index
@@ -80,6 +80,18 @@ impl WorkflowIndex {
 
     pub fn load(workflow_dir: &Path, repo_root: &Path) -> Result<Self, crate::parser::ParseError> {
         WorkflowSources::load_active(workflow_dir, repo_root).map(Self::from_sources)
+    }
+
+    pub fn load_with_history<R: crate::git::GitRunner>(
+        workflow_dir: &Path,
+        repo_root: &Path,
+        workflow_rel: &str,
+        runner: &R,
+    ) -> Result<Self, crate::parser::ParseError> {
+        let index = Self::load(workflow_dir, repo_root)?;
+        let history =
+            crate::git_history::GitHistorySource::new(runner).load(repo_root, workflow_rel);
+        Ok(index.with_history_result(history))
     }
 
     pub fn with_archive(mut self, archive: ArchiveSnapshot) -> Self {
@@ -92,6 +104,34 @@ impl WorkflowIndex {
         self.archive_error = archive.error;
         self.archived = archive.entities;
         self.rebuild_lookup_maps();
+    }
+
+    pub fn with_history_result(mut self, result: HistoryResult<Vec<StageEvent>>) -> Self {
+        self.replace_history_result(result);
+        self
+    }
+
+    pub fn with_history_unavailable(mut self, reason: HistoryUnavailable) -> Self {
+        self.replace_history_result(Err(reason));
+        self
+    }
+
+    pub fn replace_history_result(&mut self, result: HistoryResult<Vec<StageEvent>>) {
+        match result {
+            Ok(events) => {
+                self.history_events = events;
+                self.history_unavailable = None;
+            }
+            Err(reason) => {
+                self.history_events.clear();
+                self.history_unavailable = Some(reason);
+            }
+        }
+    }
+
+    pub fn mark_history_loading(&mut self) {
+        self.history_events.clear();
+        self.history_unavailable = Some(HistoryUnavailable::Loading);
     }
 
     pub fn definition(&self) -> &WorkflowDefinition {
@@ -195,16 +235,47 @@ impl WorkflowIndex {
         entities
     }
 
-    pub fn timeline(&self, _entity_id: &str) -> HistoryResult<Vec<StageEvent>> {
-        Err(HistoryUnavailable::NotImplemented)
+    pub fn timeline(&self, entity_id: &str) -> HistoryResult<Vec<StageEvent>> {
+        if let Some(reason) = self.history_unavailable() {
+            return Err(reason);
+        }
+        let mut events: Vec<StageEvent> = self
+            .history_events
+            .iter()
+            .filter(|event| event.entity_id == entity_id)
+            .cloned()
+            .collect();
+        events.sort_by_key(|event| event.at);
+        Ok(events)
     }
 
     pub fn metrics(&self) -> HistoryResult<Metrics> {
-        Err(HistoryUnavailable::NotImplemented)
+        if let Some(reason) = self.history_unavailable() {
+            return Err(reason);
+        }
+        Ok(Metrics::from_events(&self.history_events))
     }
 
-    pub fn activity(&self, _since: Option<CommitTime>) -> HistoryResult<Vec<ActivityEvent>> {
-        Err(HistoryUnavailable::NotImplemented)
+    pub fn activity(&self, since: Option<CommitTime>) -> HistoryResult<Vec<ActivityEvent>> {
+        if let Some(reason) = self.history_unavailable() {
+            return Err(reason);
+        }
+        let mut events = self.history_events.clone();
+        if let Some(since) = since {
+            events.retain(|event| event.at >= since);
+        }
+        events.sort_by_key(|event| std::cmp::Reverse(event.at));
+        Ok(events
+            .into_iter()
+            .map(|event| ActivityEvent {
+                entity_id: event.entity_id.clone(),
+                event,
+            })
+            .collect())
+    }
+
+    fn history_unavailable(&self) -> Option<HistoryUnavailable> {
+        self.history_unavailable.clone()
     }
 
     fn rebuild_lookup_maps(&mut self) {
@@ -340,6 +411,16 @@ mod tests {
         })
     }
 
+    fn stage_event(entity_id: &str, from: Option<&str>, to: &str, at: i64) -> StageEvent {
+        StageEvent {
+            entity_id: entity_id.to_string(),
+            from: from.map(str::to_string),
+            to: to.to_string(),
+            at: CommitTime(at),
+            commit: CommitId(format!("{at:040}")),
+        }
+    }
+
     #[test]
     fn query_returns_owned_active_entities_sorted_by_numeric_id() {
         let result = index().query(EntityQuery::default());
@@ -389,6 +470,52 @@ mod tests {
         assert!(index.timeline("010").is_err());
         assert!(index.metrics().is_err());
         assert!(index.activity(None).is_err());
+    }
+
+    #[test]
+    fn history_methods_surface_exact_unavailable_reason() {
+        let index = index().with_history_unavailable(HistoryUnavailable::ShallowClone);
+
+        assert_eq!(index.timeline("010"), Err(HistoryUnavailable::ShallowClone));
+        assert_eq!(index.metrics(), Err(HistoryUnavailable::ShallowClone));
+        assert_eq!(index.activity(None), Err(HistoryUnavailable::ShallowClone));
+    }
+
+    #[test]
+    fn history_methods_read_stored_stage_events() {
+        let index = index().with_history_result(Ok(vec![
+            stage_event("010", None, "plan", 100),
+            stage_event("010", Some("plan"), "verify", 160),
+            stage_event("002", None, "verify", 140),
+        ]));
+
+        let timeline = index.timeline("010").expect("timeline");
+        assert_eq!(timeline.len(), 2);
+        assert_eq!(timeline[0].to, "plan");
+        assert_eq!(timeline[1].from.as_deref(), Some("plan"));
+        assert_eq!(timeline[1].to, "verify");
+
+        let metrics = index.metrics().expect("metrics");
+        assert_eq!(metrics.stage_dwell_seconds.get("plan"), Some(&60));
+        assert_eq!(metrics.wip_by_stage.get("verify"), Some(&2));
+
+        let activity = index.activity(Some(CommitTime(120))).expect("activity");
+        let ids: Vec<String> = activity.into_iter().map(|event| event.entity_id).collect();
+        assert_eq!(ids, ["010", "002"]);
+    }
+
+    #[test]
+    fn history_methods_accept_successfully_loaded_empty_history() {
+        let index = index().with_history_result(Ok(Vec::new()));
+
+        assert_eq!(index.timeline("010"), Ok(Vec::new()));
+        let metrics = index.metrics().expect("metrics");
+        assert!(metrics.stage_dwell_seconds.is_empty());
+        assert!(metrics.cycle_time_seconds.is_empty());
+        assert!(metrics.wip_by_stage.is_empty());
+        assert_eq!(metrics.throughput_completed, 0);
+        assert_eq!(metrics.completed_entities, 0);
+        assert_eq!(index.activity(None), Ok(Vec::new()));
     }
 
     #[test]
@@ -612,6 +739,15 @@ mod tests {
             index.activity(None),
             Err(HistoryUnavailable::NotImplemented)
         );
+    }
+
+    #[test]
+    fn fixture_history_loading_reason_is_explicit() {
+        let index = index().with_history_unavailable(HistoryUnavailable::Loading);
+
+        assert_eq!(index.timeline("010"), Err(HistoryUnavailable::Loading));
+        assert_eq!(index.metrics(), Err(HistoryUnavailable::Loading));
+        assert_eq!(index.activity(None), Err(HistoryUnavailable::Loading));
     }
 
     fn write_workflow_readme(workflow: &Path) {

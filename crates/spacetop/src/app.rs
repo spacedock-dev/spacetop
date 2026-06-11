@@ -6,11 +6,13 @@ use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{Entity, WorkflowSnapshot};
 use spacetop_core::parser::ParseError;
 
+mod history_worker;
 mod keys;
 mod overview;
 mod picker;
 mod session;
 
+pub use history_worker::{spawn_history_worker, HistoryWorkerRequest, HistoryWorkerResult};
 pub use overview::{OverviewState, SelectedRow, SortMode, StageCount, SyncStatus, ViewScope};
 pub use picker::PickerState;
 pub use session::{OverviewSession, WorkflowSwitch};
@@ -227,6 +229,32 @@ impl App {
             }
             AppMode::Definition { underlying, .. } => {
                 underlying.active_state_mut().set_sync_status(status)
+            }
+            AppMode::Picker(_) => {}
+        }
+    }
+
+    pub fn history_worker_request(&self) -> Option<HistoryWorkerRequest> {
+        match &self.mode {
+            AppMode::Overview(session) => session.active_state().history_worker_request(),
+            AppMode::PickerOverlay { underlying, .. } => {
+                underlying.active_state().history_worker_request()
+            }
+            AppMode::Definition { underlying, .. } => {
+                underlying.active_state().history_worker_request()
+            }
+            AppMode::Picker(_) => None,
+        }
+    }
+
+    pub fn apply_history_result(&mut self, result: HistoryWorkerResult) {
+        match &mut self.mode {
+            AppMode::Overview(session) => session.active_state_mut().apply_history_result(result),
+            AppMode::PickerOverlay { underlying, .. } => {
+                underlying.active_state_mut().apply_history_result(result)
+            }
+            AppMode::Definition { underlying, .. } => {
+                underlying.active_state_mut().apply_history_result(result)
             }
             AppMode::Picker(_) => {}
         }
