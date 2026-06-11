@@ -1,7 +1,7 @@
 ---
 id: "051"
 title: "v2 P1: index and query API"
-status: implement
+status: verify
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: refactor
 risk: high
