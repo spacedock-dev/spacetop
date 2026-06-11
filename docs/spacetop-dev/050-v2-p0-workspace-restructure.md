@@ -73,3 +73,18 @@ references remain in those files.
 ## Review notes
 
 (To be filled at the review gate.)
+
+## Stage Report: verify
+
+Verdict: REJECTED
+
+- FAILED: Verify the two-crate workspace layout and prove `spacetop-core` has no terminal UI dependencies.
+  `find . -maxdepth 3 -type f ...` found only `./Cargo.toml`, `./src/lib.rs`, and `./src/main.rs`; `find crates ...` failed with `crates: No such file or directory`; `cargo tree -p spacetop-core` failed because no such package exists.
+- FAILED: Verify the `WorkItem` to `Entity` rename and read-only/git-write guardrails match the task acceptance criteria.
+  `rg -n '\bWorkItem\b' crates src tests` failed with missing `crates/` and reported live source references including `src/domain/mod.rs:168:pub struct WorkItem`; `cargo test --test no_write_git_calls` passed 2/2 but still scans only the old `src/` tree, not both crate source trees.
+- FAILED: Verify required evidence is current: `cargo test --workspace`, `make lint`, relevant grep/dependency checks, smoke/docs checks, and any known fixture failures are explained.
+  `cargo test --workspace` failed with 334 passed and 8 failed; `make lint` passed; `cargo build --workspace` passed only the current single package; `cargo run -- --workflow-dir docs/spacetop-dev` launched and rendered the old TUI, then quit with `q`.
+
+### Summary
+
+The current checkout does not contain the P0 implementation. It is still a single `spacetop` package with terminal dependencies in the root manifest, no `crates/spacetop-core`, and many `WorkItem` source tokens. Docs are also stale for this AC set: `AGENTS.md`, `docs/development-policy.md`, and `CLAUDE.md` still document `src/...` single-crate ownership, and `CLAUDE.md` still names `WorkItem`.
