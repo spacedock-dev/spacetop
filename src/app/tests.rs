@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::discovery::DiscoveredWorkflow;
-use crate::domain::{StageDefinition, WorkItem, WorkflowDefinition, WorkflowSnapshot};
+use crate::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
 
 #[test]
 fn stores_workflow_directory() {
@@ -761,7 +761,7 @@ fn snapshot_with_items(count: usize) -> WorkflowSnapshot {
             transitions: Vec::new(),
         },
         items: (0..count)
-            .map(|index| WorkItem {
+            .map(|index| Entity {
                 path: PathBuf::from(format!("workflow/task-{index}.md")),
                 id: format!("{index:03}"),
                 title: format!("Task {index}"),
@@ -808,7 +808,7 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
         items: paths
             .iter()
             .enumerate()
-            .map(|(index, p)| WorkItem {
+            .map(|(index, p)| Entity {
                 path: PathBuf::from(p),
                 id: format!("{index:03}"),
                 title: format!("Task {p}"),
@@ -919,14 +919,14 @@ fn reload_from_snapshot_clears_prior_error() {
 
 #[test]
 fn reload_from_snapshot_preserves_view_scope() {
-    use crate::domain::WorkItem;
+    use crate::domain::Entity;
     let mut overview = super::OverviewState::from_snapshot(
         PathBuf::from("workflow"),
         snapshot_with_paths(&["workflow/alpha.md"]),
     );
     // Force into archived scope with synthetic archived items.
     overview.view_scope = ViewScope::Archived;
-    overview.archived_items = vec![WorkItem {
+    overview.archived_items = vec![Entity {
         path: PathBuf::from("workflow/_archive/old.md"),
         id: "old".into(),
         title: "Old".into(),

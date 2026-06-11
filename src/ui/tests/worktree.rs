@@ -2,7 +2,7 @@ use super::*;
 
 // ---- Task 038: worktree marker in task list + diff in preview ----
 
-fn item_with_worktree_source(id: &str, title: &str, body: &str) -> WorkItem {
+fn item_with_worktree_source(id: &str, title: &str, body: &str) -> Entity {
     let mut it = item(id, title, body);
     it.worktree_source = Some(PathBuf::from(format!("/tmp/wt/{id}.md")));
     it

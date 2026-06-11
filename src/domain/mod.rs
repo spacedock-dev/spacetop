@@ -172,7 +172,7 @@ pub struct StageDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct WorkItem {
+pub struct Entity {
     pub path: PathBuf,
     pub id: String,
     pub title: String,
@@ -198,7 +198,7 @@ pub struct WorkItem {
 #[derive(Debug, Clone, PartialEq)]
 pub struct WorkflowSnapshot {
     pub definition: WorkflowDefinition,
-    pub items: Vec<WorkItem>,
+    pub items: Vec<Entity>,
     /// Per-entity parse failures captured during a non-strict load. Empty on
     /// the happy path. The UI surfaces these as synthetic "broken" rows so a
     /// single malformed entity does not prevent the rest of the workflow from

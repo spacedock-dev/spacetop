@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::discovery::DiscoveredWorkflow;
-use crate::domain::{WorkItem, WorkflowSnapshot};
+use crate::domain::{Entity, WorkflowSnapshot};
 use crate::parser::ParseError;
 
 mod keys;
@@ -308,7 +308,7 @@ impl App {
         self.overview().selected_index()
     }
 
-    pub fn selected_item(&self) -> Option<&WorkItem> {
+    pub fn selected_item(&self) -> Option<&Entity> {
         self.overview().selected_item()
     }
 
@@ -320,11 +320,11 @@ impl App {
         self.overview().view_scope()
     }
 
-    pub fn visible_items(&self) -> &[WorkItem] {
+    pub fn visible_items(&self) -> &[Entity] {
         self.overview().visible_items()
     }
 
-    pub fn archived_items(&self) -> &[WorkItem] {
+    pub fn archived_items(&self) -> &[Entity] {
         self.overview().archived_items()
     }
 

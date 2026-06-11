@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::discovery::resolve_scan_root;
-use crate::domain::{EntityParseError, WorkItem, WorkflowSnapshot};
+use crate::domain::{Entity, EntityParseError, WorkflowSnapshot};
 use crate::parser::{load_archived_items, load_workflow_dir, ParseError};
 
 /// Selection target in the task list — either a real work item or a synthetic
 /// "broken" row representing an entity whose frontmatter failed to parse.
 #[derive(Debug, Clone, Copy)]
 pub enum SelectedRow<'a> {
-    Item(&'a WorkItem),
+    Item(&'a Entity),
     Broken(&'a EntityParseError),
 }
 
@@ -84,7 +84,7 @@ pub struct OverviewState {
     pub snapshot: WorkflowSnapshot,
     pub selected_index: usize,
     pub view_scope: ViewScope,
-    pub archived_items: Vec<WorkItem>,
+    pub archived_items: Vec<Entity>,
     pub archived_done_count: Option<usize>,
     pub archive_loaded: bool,
     pub archive_error: Option<String>,
@@ -104,7 +104,7 @@ pub struct OverviewState {
     pub preview_wrap: bool,
     pub task_page_size: Cell<usize>,
     pub sort_mode: SortMode,
-    pub sorted_active: Vec<WorkItem>,
+    pub sorted_active: Vec<Entity>,
     pub sync_status: Option<SyncStatus>,
 }
 
@@ -312,7 +312,7 @@ impl OverviewState {
         }
     }
 
-    pub fn selected_item(&self) -> Option<&WorkItem> {
+    pub fn selected_item(&self) -> Option<&Entity> {
         self.visible_items().get(self.selected_index())
     }
 
@@ -352,7 +352,7 @@ impl OverviewState {
         self.view_scope
     }
 
-    pub fn visible_items(&self) -> &[WorkItem] {
+    pub fn visible_items(&self) -> &[Entity] {
         match self.view_scope {
             ViewScope::Active => &self.sorted_active,
             ViewScope::Archived => &self.archived_items,
@@ -404,7 +404,7 @@ impl OverviewState {
     }
 
     fn rebuild_sorted_active(&mut self) {
-        let mut items: Vec<WorkItem> = self.snapshot.items.clone();
+        let mut items: Vec<Entity> = self.snapshot.items.clone();
         match self.sort_mode {
             SortMode::Id => {
                 items.sort_by(|a, b| compare_ids(&a.id, &b.id));
@@ -429,7 +429,7 @@ impl OverviewState {
         self.sorted_active = items;
     }
 
-    pub fn archived_items(&self) -> &[WorkItem] {
+    pub fn archived_items(&self) -> &[Entity] {
         &self.archived_items
     }
 
@@ -679,7 +679,7 @@ impl OverviewState {
 }
 
 impl OverviewState {
-    fn load_archive_items(&self) -> Result<Vec<WorkItem>, ParseError> {
+    fn load_archive_items(&self) -> Result<Vec<Entity>, ParseError> {
         let allowed_statuses = self
             .snapshot
             .definition
@@ -705,7 +705,7 @@ impl OverviewState {
     }
 }
 
-fn count_archived_terminal_items(items: &[WorkItem]) -> usize {
+fn count_archived_terminal_items(items: &[Entity]) -> usize {
     // Archive placement is the terminal signal. Older archived items may carry
     // `status: done`, while newer accepted items can preserve their pre-archive
     // gate status such as `review`.
@@ -717,8 +717,8 @@ mod tests {
     use super::*;
     use crate::domain::{StageDefinition, WorkflowDefinition};
 
-    fn fixture_item(id: &str) -> WorkItem {
-        WorkItem {
+    fn fixture_item(id: &str) -> Entity {
+        Entity {
             path: PathBuf::from(format!("/tmp/{id}.md")),
             id: id.to_string(),
             title: format!("item {id}"),
@@ -799,13 +799,13 @@ mod tests {
         }
     }
 
-    fn item_with_status(id: &str, status: &str) -> WorkItem {
+    fn item_with_status(id: &str, status: &str) -> Entity {
         let mut item = fixture_item(id);
         item.status = status.to_string();
         item
     }
 
-    fn snapshot_with(items: Vec<WorkItem>, stages: Vec<StageDefinition>) -> WorkflowSnapshot {
+    fn snapshot_with(items: Vec<Entity>, stages: Vec<StageDefinition>) -> WorkflowSnapshot {
         WorkflowSnapshot {
             definition: WorkflowDefinition {
                 root: PathBuf::from("/tmp/ow-test"),

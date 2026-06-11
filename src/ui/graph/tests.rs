@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crate::app::{App, OverviewState};
-use crate::domain::{StageDefinition, WorkItem, WorkflowDefinition, WorkflowSnapshot};
+use crate::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
 
 // Serialize tests that touch SPACETOP_ASCII env var.
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -2346,8 +2346,8 @@ fn dag_multi_row_chain_is_horizontally_centered_on_research_fixture() {
 }
 
 #[allow(dead_code)]
-fn make_item(id: &str, status: &str, title: &str) -> WorkItem {
-    WorkItem {
+fn make_item(id: &str, status: &str, title: &str) -> Entity {
+    Entity {
         path: PathBuf::from(format!("{id}.md")),
         id: id.to_string(),
         title: title.to_string(),

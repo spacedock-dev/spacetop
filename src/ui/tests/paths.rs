@@ -67,7 +67,7 @@ fn path_line_stays_visible_for_long_paths() {
     // (i) In-root item: path is /repo/docs/wf/039-foo.md, workflow_dir is
     //     /repo/docs/wf, so strip_prefix yields "039-foo.md" — short and
     //     visible on the same row as the "path:" label.
-    let in_root = WorkItem {
+    let in_root = Entity {
         path: PathBuf::from("/repo/docs/wf/039-foo.md"),
         id: "039".to_string(),
         title: "In root".to_string(),

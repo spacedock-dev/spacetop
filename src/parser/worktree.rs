@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use sha1::{Digest, Sha1};
 
-use crate::domain::{EntityParseError, WorkItem};
+use crate::domain::{Entity, EntityParseError};
 
 use super::snapshot::entity_parse_error_from;
 use super::{is_markdown_path, is_readme_path, parse_work_item, ParseError};
@@ -47,7 +47,7 @@ pub(crate) fn scan_worktrees(
     workflow_rel: &Path,
     allowed_statuses: &[String],
     id_style: Option<&str>,
-) -> Result<(Vec<WorkItem>, Vec<EntityParseError>), ParseError> {
+) -> Result<(Vec<Entity>, Vec<EntityParseError>), ParseError> {
     let mut all_items = Vec::new();
     let mut all_errors: Vec<EntityParseError> = Vec::new();
     for wt_root in worktree_roots(repo_root) {
@@ -66,7 +66,7 @@ fn load_worktree_items(
     workflow_dir: &Path,
     allowed_statuses: &[String],
     id_style: Option<&str>,
-) -> Result<(Vec<WorkItem>, Vec<EntityParseError>), ParseError> {
+) -> Result<(Vec<Entity>, Vec<EntityParseError>), ParseError> {
     let item_paths = collect_worktree_item_paths(workflow_dir);
     let mut items = Vec::with_capacity(item_paths.len());
     let mut errors: Vec<EntityParseError> = Vec::new();
@@ -118,13 +118,13 @@ fn slug_of_path(path: &Path) -> Option<std::ffi::OsString> {
 /// Worktree version wins when the same slug exists in both and hashes differ.
 /// Uses SHA-1 digest (not string equality on body) for content comparison.
 pub(crate) fn merge_worktree_items(
-    main_items: Vec<WorkItem>,
-    worktree_items: Vec<WorkItem>,
-) -> Vec<WorkItem> {
+    main_items: Vec<Entity>,
+    worktree_items: Vec<Entity>,
+) -> Vec<Entity> {
     if worktree_items.is_empty() {
         return main_items;
     }
-    let mut index: HashMap<std::ffi::OsString, WorkItem> = main_items
+    let mut index: HashMap<std::ffi::OsString, Entity> = main_items
         .into_iter()
         .filter_map(|item| {
             let slug = slug_of_path(&item.path)?;
@@ -159,7 +159,7 @@ pub(crate) fn merge_worktree_items(
     result
 }
 
-fn merged_worktree_item(main_item: &WorkItem, wt_item: WorkItem) -> Option<WorkItem> {
+fn merged_worktree_item(main_item: &Entity, wt_item: Entity) -> Option<Entity> {
     match (content_hash(&wt_item.path), content_hash(&main_item.path)) {
         (Some(wt_hash), Some(main_hash)) if wt_hash == main_hash => None,
         (None, Some(_)) => None,
@@ -181,9 +181,9 @@ fn content_hash(path: &Path) -> Option<[u8; 20]> {
     fs::read(path).map(|bytes| Sha1::digest(&bytes).into()).ok()
 }
 
-fn merge_main_frontmatter_with_worktree_body(main_item: &WorkItem, wt_item: WorkItem) -> WorkItem {
+fn merge_main_frontmatter_with_worktree_body(main_item: &Entity, wt_item: Entity) -> Entity {
     let wt_path = wt_item.path.clone();
-    WorkItem {
+    Entity {
         path: wt_item.path,
         id: main_item.id.clone(),
         title: main_item.title.clone(),

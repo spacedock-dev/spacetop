@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::domain::WorkItem;
+use crate::domain::Entity;
 
 use super::{display_path, is_markdown_path, parse_work_item, read_directory, ParseError};
 
@@ -20,7 +20,7 @@ pub fn load_archived_items(
     workflow_dir: &Path,
     allowed_statuses: &[String],
     id_style: Option<&str>,
-) -> Result<Vec<WorkItem>, ParseError> {
+) -> Result<Vec<Entity>, ParseError> {
     let archive_root = archive_dir(workflow_dir);
     if !archive_root.exists() {
         return Ok(Vec::new());

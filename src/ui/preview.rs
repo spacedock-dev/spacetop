@@ -270,7 +270,7 @@ pub(super) fn render_preview(
 }
 
 fn build_preview_header_lines<'a>(
-    item: &'a crate::domain::WorkItem,
+    item: &'a crate::domain::Entity,
     state: &OverviewState,
     inner_width: u16,
     placement: PreviewPlacement,

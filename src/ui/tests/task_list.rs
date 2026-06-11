@@ -371,7 +371,7 @@ fn phase_col_width_uniform_short_phases_clamped_to_4() {
     let mut run_item = item("001", "Task", "Body");
     run_item.status = "run".to_string(); // 3 chars, below minimum of 4
                                          // "run" is 3 chars < 4 minimum → phase_col_width returns 4.
-    let items_ref: Vec<&crate::domain::WorkItem> = vec![&run_item];
+    let items_ref: Vec<&crate::domain::Entity> = vec![&run_item];
     // Simulate what build_task_list_items does: collect refs and call phase_col_width.
     // We use a locally-constructed slice to test the helper.
     let pcw = items_ref
@@ -416,7 +416,7 @@ fn phase_col_width_mixed_phases_fits_longest() {
             i
         },
     ];
-    let items_ref: Vec<&crate::domain::WorkItem> = items_data.iter().collect();
+    let items_ref: Vec<&crate::domain::Entity> = items_data.iter().collect();
     let pcw = items_ref
         .iter()
         .map(|i| i.status.chars().count())
@@ -451,7 +451,7 @@ fn phase_col_width_long_phase_name_clamped_at_12() {
         i.status = "a-very-long-phase-name".to_string(); // 22 chars
         i
     };
-    let items_ref: Vec<&crate::domain::WorkItem> = vec![&long_item];
+    let items_ref: Vec<&crate::domain::Entity> = vec![&long_item];
     let pcw = items_ref
         .iter()
         .map(|i| i.status.chars().count())
@@ -487,7 +487,7 @@ fn id_col_width_floors_numeric_ids_at_4() {
     // Numeric-ID workflows (047, 048) must keep a minimum 4-char column so the
     // dynamic width is byte-identical to the old hardcoded {:>4} (AC-2).
     let items_data = [item("047", "Task A", "Body"), item("048", "Task B", "Body")];
-    let items_ref: Vec<&crate::domain::WorkItem> = items_data.iter().collect();
+    let items_ref: Vec<&crate::domain::Entity> = items_data.iter().collect();
     let icw = items_ref
         .iter()
         .map(|i| i.id.chars().count())

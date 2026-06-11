@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::domain::WorkItem;
+use crate::domain::Entity;
 
 use super::frontmatter::extract_frontmatter;
 use super::{display_path, optional_text, required, ParseError};
@@ -12,7 +12,7 @@ pub fn parse_work_item(
     path: &Path,
     allowed_statuses: &[String],
     id_style: Option<&str>,
-) -> Result<WorkItem, ParseError> {
+) -> Result<Entity, ParseError> {
     let path_label = display_path(path);
     let contents = fs::read_to_string(path).map_err(|source| ParseError::ReadFile {
         path: path_label.clone(),
@@ -26,7 +26,7 @@ fn parse_work_item_contents(
     contents: &str,
     allowed_statuses: &[String],
     id_style: Option<&str>,
-) -> Result<WorkItem, ParseError> {
+) -> Result<Entity, ParseError> {
     let path_label = display_path(path);
     let (frontmatter, body) = extract_frontmatter(contents, &path_label)?;
     let raw = parse_work_item_frontmatter(frontmatter, &path_label)?;
@@ -42,7 +42,7 @@ fn parse_work_item_contents(
         });
     }
 
-    Ok(WorkItem {
+    Ok(Entity {
         path: path.to_path_buf(),
         id,
         title,

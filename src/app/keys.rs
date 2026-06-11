@@ -137,7 +137,7 @@ mod tests {
 
     use super::{handle_overview_key, OverviewKeyAction};
     use crate::app::{OverviewSession, OverviewState};
-    use crate::domain::{StageDefinition, WorkItem, WorkflowDefinition, WorkflowSnapshot};
+    use crate::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -173,7 +173,7 @@ mod tests {
                 stage_prose: HashMap::new(),
                 transitions: Vec::new(),
             },
-            items: vec![WorkItem {
+            items: vec![Entity {
                 path,
                 id: "001".to_string(),
                 title: "T".to_string(),

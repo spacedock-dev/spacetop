@@ -8,7 +8,7 @@ use ratatui::{
 
 use super::{assign_stage_colors, fit_path_to_width, markdown, phase_col, render, stage_color};
 use crate::app::App;
-use crate::domain::{StageDefinition, WorkItem, WorkflowDefinition, WorkflowSnapshot};
+use crate::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
 
 mod chrome;
 mod code_blocks;
@@ -19,7 +19,7 @@ mod preview;
 mod task_list;
 mod worktree;
 
-fn app_with_items(items: Vec<WorkItem>) -> App {
+fn app_with_items(items: Vec<Entity>) -> App {
     let root = PathBuf::from("/tmp/spacetop-test");
     let snapshot = WorkflowSnapshot {
         definition: WorkflowDefinition {
@@ -53,8 +53,8 @@ fn app_with_items(items: Vec<WorkItem>) -> App {
     app
 }
 
-fn item(id: &str, title: &str, body: &str) -> WorkItem {
-    WorkItem {
+fn item(id: &str, title: &str, body: &str) -> Entity {
+    Entity {
         path: PathBuf::from(format!("/tmp/{id}.md")),
         id: id.to_string(),
         title: title.to_string(),
