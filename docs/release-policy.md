@@ -64,7 +64,7 @@ The release workflow fails before publishing when:
 - the tag does not start with `v`
 - the tag version is not valid SemVer
 - the tag version differs from the workspace version
-- `cargo test` or `make lint` fails
+- `cargo fmt --check`, `cargo test`, or `make lint` fails
 - any target binary fails to build
 - any built binary reports the wrong version
 - checksum generation fails
