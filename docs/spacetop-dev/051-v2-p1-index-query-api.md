@@ -94,6 +94,16 @@ Implemented the v2 P1 index/query spine in `spacetop-core`, including serializab
 
 No workflow-state write path was added. The only workflow markdown edit in this stage is this dispatched stage report appended to the entity file.
 
+### Feedback Cycles
+
+- **cycle 1 (2026-06-11, verify -> implement):** Verify rejected because archived
+  parse errors are exposed through `OverviewState::parse_errors()` and counted in
+  `row_count()`, but `ui/list.rs` only appends broken rows in active scope. In
+  archive scope, a broken archived row can be selected/previewed while the list
+  hides it or says "No archived items found." Fix: render broken archive rows in
+  archive scope consistently with app state and add a Ratatui assertion for that
+  path.
+
 ## Stage Report: verify
 
 - DONE: Verify AC-1 and the terminal-free core boundary: query/index/source types are owned by `spacetop-core`, return owned results or stable ids, serialize as needed, and `spacetop-core` has no terminal dependencies.
