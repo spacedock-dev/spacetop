@@ -26,9 +26,9 @@
 //! `Unavailable` hints) are pinned by tests below per the project's
 //! "stable user-facing strings" convention.
 
-use std::io;
 use std::path::Path;
-use std::process::{Command, ExitStatus};
+
+pub use crate::git::{GitCmdResult, GitRunner, StdGitRunner};
 
 /// Result of probing the workflow root for sync readiness.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,38 +68,6 @@ pub enum SyncOutcome {
     /// The pull failed; `message` is the trimmed stderr (or a synthesized
     /// reason for unavailability).
     Failed { message: String },
-}
-
-/// Result of one git invocation through the [`GitRunner`] seam.
-#[derive(Debug, Clone)]
-pub struct GitCmdResult {
-    pub status: ExitStatus,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-/// Abstracts the `git -C {repo_root} {args...}` invocation so the sync
-/// helper is testable without `git` on `PATH`.
-pub trait GitRunner {
-    fn run(&self, repo_root: &Path, args: &[&str]) -> io::Result<GitCmdResult>;
-}
-
-/// Production [`GitRunner`] that shells out to `git`.
-pub struct StdGitRunner;
-
-impl GitRunner for StdGitRunner {
-    fn run(&self, repo_root: &Path, args: &[&str]) -> io::Result<GitCmdResult> {
-        let out = Command::new("git")
-            .arg("-C")
-            .arg(repo_root)
-            .args(args)
-            .output()?;
-        Ok(GitCmdResult {
-            status: out.status,
-            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-        })
-    }
 }
 
 /// Probe the three independent prerequisites for syncing, in a fixed
@@ -205,81 +173,8 @@ fn first_nonempty_line(s: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-pub(crate) mod test_support {
-    //! Shared test seam: a `RecordingGitRunner` that returns a queue of
-    //! pre-canned [`GitCmdResult`]s in FIFO order and records every
-    //! invocation's argv. Exposed at crate-visibility so integration
-    //! tests under `tests/` can reuse the same double without
-    //! re-implementing it.
-    use std::cell::RefCell;
-    use std::io;
-    use std::os::unix::process::ExitStatusExt;
-    use std::path::{Path, PathBuf};
-    use std::process::ExitStatus;
-
-    use super::{GitCmdResult, GitRunner};
-
-    #[derive(Debug, Clone)]
-    pub struct GitCall {
-        #[allow(dead_code)] // exposed for future tests asserting repo-root targeting
-        pub repo_root: PathBuf,
-        pub args: Vec<String>,
-    }
-
-    pub struct RecordingGitRunner {
-        responses: RefCell<Vec<GitCmdResult>>,
-        calls: RefCell<Vec<GitCall>>,
-    }
-
-    impl RecordingGitRunner {
-        pub fn new(responses: Vec<GitCmdResult>) -> Self {
-            Self {
-                responses: RefCell::new(responses),
-                calls: RefCell::new(Vec::new()),
-            }
-        }
-
-        pub fn calls(&self) -> Vec<GitCall> {
-            self.calls.borrow().clone()
-        }
-    }
-
-    impl GitRunner for RecordingGitRunner {
-        fn run(&self, repo_root: &Path, args: &[&str]) -> io::Result<GitCmdResult> {
-            self.calls.borrow_mut().push(GitCall {
-                repo_root: repo_root.to_path_buf(),
-                args: args.iter().map(|s| s.to_string()).collect(),
-            });
-            let mut q = self.responses.borrow_mut();
-            if q.is_empty() {
-                return Err(io::Error::other("no more queued responses"));
-            }
-            Ok(q.remove(0))
-        }
-    }
-
-    pub fn ok(stdout: &str) -> GitCmdResult {
-        GitCmdResult {
-            status: ExitStatus::from_raw(0),
-            stdout: stdout.to_string(),
-            stderr: String::new(),
-        }
-    }
-
-    pub fn err(code: i32, stderr: &str) -> GitCmdResult {
-        // `from_raw` interprets its argument as a wait status word; on
-        // Linux the exit code lives in bits 8..15 (`code << 8`).
-        GitCmdResult {
-            status: ExitStatus::from_raw(code << 8),
-            stdout: String::new(),
-            stderr: stderr.to_string(),
-        }
-    }
-}
-
-#[cfg(test)]
 mod tests {
-    use super::test_support::{err, ok, RecordingGitRunner};
+    use crate::git::{err, ok, RecordingGitRunner};
     use super::*;
     use std::path::PathBuf;
 
