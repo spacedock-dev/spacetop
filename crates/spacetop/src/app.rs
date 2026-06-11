@@ -7,6 +7,7 @@ use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{Entity, WorkflowSnapshot};
 use spacetop_core::parser::ParseError;
 use spacetop_core::query::EntityQuery;
+use spacetop_core::session_state::{SessionState, WorkflowSessionKey};
 
 mod history_worker;
 mod keys;
@@ -185,6 +186,8 @@ pub struct App {
     config: SpacetopConfig,
     config_warnings: Vec<ConfigWarning>,
     resolved_keymap: ResolvedKeymap,
+    session_state: SessionState,
+    runtime_warnings: Vec<String>,
     should_quit: bool,
     help_open: bool,
     pending_switch: Option<WorkflowSwitch>,
@@ -324,6 +327,8 @@ impl App {
             config,
             config_warnings,
             resolved_keymap,
+            session_state: SessionState::default(),
+            runtime_warnings: Vec::new(),
             should_quit: false,
             help_open: false,
             pending_switch: None,
@@ -354,7 +359,12 @@ impl App {
             .iter()
             .map(|warning| warning.message.clone())
             .chain(self.resolved_keymap.warnings().iter().cloned())
+            .chain(self.runtime_warnings.iter().cloned())
             .collect()
+    }
+
+    pub fn add_status_warning(&mut self, message: String) {
+        self.runtime_warnings.push(message);
     }
 
     pub fn help_open(&self) -> bool {
@@ -382,6 +392,21 @@ impl App {
 
     pub fn as_session(&self) -> Option<&OverviewSession> {
         self.mode.as_session()
+    }
+
+    pub fn apply_session_state(&mut self, session_state: SessionState) {
+        self.session_state = session_state;
+        if let Some(session) = self.mode.as_session_mut() {
+            session.apply_session_state(&self.session_state);
+        }
+    }
+
+    pub fn session_state_snapshot(&self) -> SessionState {
+        let mut session_state = self.session_state.clone();
+        if let Some(session) = self.mode.as_session() {
+            session.write_session_state(&mut session_state);
+        }
+        session_state
     }
 
     /// True while the definition view is active.
@@ -609,6 +634,8 @@ impl App {
     /// a "workflow removed" message in `last_refresh_error` so the UI stays
     /// non-panicking until the user picks another workflow.
     pub fn reload_with_rediscovery(&mut self) -> Result<(), ParseError> {
+        let config = self.config.clone();
+        let session_state = self.session_state.clone();
         let Some(session) = self.mode.as_session_mut() else {
             return Ok(());
         };
@@ -652,7 +679,8 @@ impl App {
         // parse failure and records the error in `last_refresh_error`.
         if !session.active_slot_loaded() {
             match OverviewState::load(active_dir.clone()) {
-                Ok(state) => {
+                Ok(mut state) => {
+                    apply_config_and_session_state(&mut state, &config, &session_state);
                     session.install_active_state(state);
                     Ok(())
                 }
@@ -674,12 +702,17 @@ impl App {
     /// empty `OverviewState` with `last_refresh_error` set so the user sees
     /// the breadcrumb and the error rather than a hang or silent revert.
     pub fn materialize_active(&mut self) {
+        let config = self.config.clone();
+        let session_state = self.session_state.clone();
         let Some(session) = self.mode.as_session_mut() else {
             return;
         };
         let dir = session.active_dir().to_path_buf();
         match OverviewState::load(dir.clone()) {
-            Ok(state) => session.install_active_state(state),
+            Ok(mut state) => {
+                apply_config_and_session_state(&mut state, &config, &session_state);
+                session.install_active_state(state);
+            }
             Err(err) => {
                 let mut empty = OverviewState::empty(dir);
                 empty.set_refresh_error(err.to_string());
@@ -1005,6 +1038,20 @@ impl App {
             }
             _ => AppMode::Search { underlying, state },
         };
+    }
+}
+
+fn apply_config_and_session_state(
+    state: &mut OverviewState,
+    config: &SpacetopConfig,
+    session_state: &SessionState,
+) {
+    state.apply_config_defaults(config);
+    let Ok(key) = WorkflowSessionKey::from_workflow_dir(state.workflow_dir()) else {
+        return;
+    };
+    if let Some(saved) = session_state.workflows.get(key.as_str()) {
+        state.apply_session(saved);
     }
 }
 

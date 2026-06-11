@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use spacetop_core::config::SpacetopConfig;
 use spacetop_core::discovery::DiscoveredWorkflow;
+use spacetop_core::session_state::{SessionState, WorkflowSessionKey};
 
 use super::OverviewState;
 
@@ -85,6 +86,26 @@ impl OverviewSession {
     pub fn apply_config_defaults(&mut self, config: &SpacetopConfig) {
         for state in self.workflows.iter_mut().flatten() {
             state.apply_config_defaults(config);
+        }
+    }
+
+    pub fn apply_session_state(&mut self, session_state: &SessionState) {
+        for state in self.workflows.iter_mut().flatten() {
+            let Some(saved) = workflow_session_for(state.workflow_dir(), session_state) else {
+                continue;
+            };
+            state.apply_session(saved);
+        }
+    }
+
+    pub fn write_session_state(&self, session_state: &mut SessionState) {
+        for state in self.workflows.iter().flatten() {
+            let Some(key) = workflow_session_key(state.workflow_dir()) else {
+                continue;
+            };
+            session_state
+                .workflows
+                .insert(key, state.to_workflow_session());
         }
     }
 
@@ -202,4 +223,18 @@ impl OverviewSession {
             self.workflows[self.active] = Some(state);
         }
     }
+}
+
+fn workflow_session_for<'a>(
+    workflow_dir: &Path,
+    session_state: &'a SessionState,
+) -> Option<&'a spacetop_core::session_state::WorkflowSession> {
+    let key = workflow_session_key(workflow_dir)?;
+    session_state.workflows.get(&key)
+}
+
+fn workflow_session_key(workflow_dir: &Path) -> Option<String> {
+    WorkflowSessionKey::from_workflow_dir(workflow_dir)
+        .ok()
+        .map(|key| key.as_str().to_string())
 }

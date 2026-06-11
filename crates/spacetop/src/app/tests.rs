@@ -1,5 +1,6 @@
 use super::{App, AppMode, HistoryWorkerResult, ViewScope};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -78,6 +79,107 @@ fn session_scope_overrides_config_default_scope() {
     });
 
     assert_eq!(state.view_scope(), ViewScope::Active);
+}
+
+#[test]
+fn overview_applies_saved_selected_entity() {
+    let root = PathBuf::from("/tmp/spacetop-session-restore-test");
+    let snapshot = snapshot_from_items(vec![
+        item_at(root.join("001-first.md"), "001", "first", "plan"),
+        item_at(root.join("002-second.md"), "002", "second", "plan"),
+    ]);
+    let mut state = OverviewState::from_snapshot(root, snapshot);
+
+    state.apply_session(&spacetop_core::session_state::WorkflowSession {
+        selected_entity_id: Some("002".to_string()),
+        scope: spacetop_core::session_state::WorkflowScope::Active,
+    });
+
+    assert_eq!(state.selected_item().expect("selected").id, "002");
+}
+
+#[test]
+fn app_applies_session_state_by_canonical_workflow_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("workflow");
+    std::fs::create_dir_all(&root).expect("workflow dir");
+    let app = app_with_two_items_at(&root);
+    let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&root)
+        .expect("session key");
+    let state = spacetop_core::session_state::SessionState {
+        workflows: BTreeMap::from([(
+            key.as_str().to_string(),
+            spacetop_core::session_state::WorkflowSession {
+                selected_entity_id: Some("002".to_string()),
+                scope: spacetop_core::session_state::WorkflowScope::Active,
+            },
+        )]),
+    };
+    let mut app = app;
+
+    app.apply_session_state(state);
+
+    assert_eq!(app.selected_item().expect("selected").id, "002");
+}
+
+#[test]
+fn app_session_state_snapshot_uses_canonical_workflow_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("workflow");
+    std::fs::create_dir_all(&root).expect("workflow dir");
+    let mut app = app_with_two_items_at(&root);
+    app.handle_key(key(KeyCode::Down));
+
+    let state = app.session_state_snapshot();
+    let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&root)
+        .expect("session key");
+    let saved = state
+        .workflows
+        .get(key.as_str())
+        .expect("workflow session saved");
+
+    assert_eq!(saved.selected_entity_id.as_deref(), Some("002"));
+    assert_eq!(
+        saved.scope,
+        spacetop_core::session_state::WorkflowScope::Active
+    );
+}
+
+#[test]
+fn app_session_state_overrides_config_default_scope() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("workflow");
+    std::fs::create_dir_all(root.join("_archive")).expect("archive dir");
+    let mut snapshot = snapshot_from_items(vec![item_at(
+        root.join("001-first.md"),
+        "001",
+        "first",
+        "plan",
+    )]);
+    snapshot.definition.root = root.clone();
+    let config = spacetop_core::config::SpacetopConfig {
+        defaults: spacetop_core::config::DefaultsConfig {
+            scope: spacetop_core::config::DefaultScope::Archived,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut app = App::from_snapshot_with_config(root.clone(), snapshot, config);
+    assert_eq!(app.view_scope(), ViewScope::Archived);
+    let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&root)
+        .expect("session key");
+
+    app.apply_session_state(spacetop_core::session_state::SessionState {
+        workflows: BTreeMap::from([(
+            key.as_str().to_string(),
+            spacetop_core::session_state::WorkflowSession {
+                selected_entity_id: None,
+                scope: spacetop_core::session_state::WorkflowScope::Active,
+            },
+        )]),
+    });
+
+    assert_eq!(app.view_scope(), ViewScope::Active);
 }
 
 #[test]
@@ -991,6 +1093,15 @@ fn snapshot_from_items(items: Vec<Entity>) -> WorkflowSnapshot {
     let mut snapshot = snapshot_with_items(0);
     snapshot.items = items;
     snapshot
+}
+
+fn app_with_two_items_at(root: &Path) -> App {
+    let mut snapshot = snapshot_from_items(vec![
+        item_at(root.join("001-first.md"), "001", "first", "plan"),
+        item_at(root.join("002-second.md"), "002", "second", "plan"),
+    ]);
+    snapshot.definition.root = root.to_path_buf();
+    App::from_snapshot(root.to_path_buf(), snapshot)
 }
 
 fn overview_state_with_active_and_archived_items() -> OverviewState {

@@ -20,6 +20,7 @@ use spacetop_core::config::{self, ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery;
 use spacetop_core::editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
 use spacetop_core::git_sync::{self, GitRunner, StdGitRunner, SyncOutcome};
+use spacetop_core::session_state;
 use spacetop_core::watcher::{self, WatcherBackend, WatcherConfig, WorkflowWatcher};
 
 /// Result of resolving a CLI invocation into a launch decision, prior to any
@@ -138,6 +139,9 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
 }
 
 fn run_terminal(mut app: App) -> anyhow::Result<()> {
+    let session_state_path = session_state::state_path(&config::StdEnv);
+    load_session_state_for_app(&mut app, session_state_path.as_deref());
+
     // OSC 7 must land on the primary screen, before raw mode is enabled and
     // before EnterAlternateScreen, so terminals that support Smart Selection
     // on relative paths can resolve them against the right cwd.
@@ -278,11 +282,33 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
     drop(watcher_state);
     drop(history_worker_state);
 
+    save_session_state_for_app(&mut app, session_state_path.as_deref());
+
     terminal
         .show_cursor()
         .context("failed to restore terminal cursor")?;
 
     Ok(())
+}
+
+fn load_session_state_for_app(app: &mut App, path: Option<&Path>) {
+    let Some(path) = path else {
+        return;
+    };
+    match session_state::load_session_file(path) {
+        Ok(session_state) => app.apply_session_state(session_state),
+        Err(err) => app.add_status_warning(format!("failed to load session state: {err}")),
+    }
+}
+
+fn save_session_state_for_app(app: &mut App, path: Option<&Path>) {
+    let Some(path) = path else {
+        return;
+    };
+    let session_state = app.session_state_snapshot();
+    if let Err(err) = session_state::save_session_file(path, &session_state) {
+        app.add_status_warning(format!("failed to save session state: {err}"));
+    }
 }
 
 fn start_history_worker_for(app: &App) -> Option<std::sync::mpsc::Receiver<HistoryWorkerResult>> {
@@ -577,6 +603,87 @@ mod tests {
         // without panicking the loop. We verified that by `drop` above
         // returning cleanly.
         drop(new_watcher_state);
+    }
+
+    #[test]
+    fn load_session_state_for_app_applies_saved_selection() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let workflow = holder.path().join("workflow");
+        std::fs::create_dir_all(&workflow).unwrap();
+        write_minimal_workflow(&workflow, "000");
+        std::fs::write(
+            workflow.join("task-001.md"),
+            "---\nid: 001\ntitle: T001\nstatus: plan\n---\n\nbody\n",
+        )
+        .unwrap();
+        let mut app = App::load(workflow.clone()).expect("load workflow");
+        let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&workflow)
+            .expect("session key");
+        let session_file = holder.path().join("state").join("session.yaml");
+        spacetop_core::session_state::save_session_file(
+            &session_file,
+            &spacetop_core::session_state::SessionState {
+                workflows: std::collections::BTreeMap::from([(
+                    key.as_str().to_string(),
+                    spacetop_core::session_state::WorkflowSession {
+                        selected_entity_id: Some("001".to_string()),
+                        scope: spacetop_core::session_state::WorkflowScope::Active,
+                    },
+                )]),
+            },
+        )
+        .expect("save session");
+
+        load_session_state_for_app(&mut app, Some(&session_file));
+
+        assert_eq!(app.selected_item().expect("selected").id, "001");
+    }
+
+    #[test]
+    fn save_session_state_for_app_writes_canonical_workflow_session() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let workflow = holder.path().join("workflow");
+        std::fs::create_dir_all(&workflow).unwrap();
+        write_minimal_workflow(&workflow, "000");
+        std::fs::write(
+            workflow.join("task-001.md"),
+            "---\nid: 001\ntitle: T001\nstatus: plan\n---\n\nbody\n",
+        )
+        .unwrap();
+        let mut app = App::load(workflow.clone()).expect("load workflow");
+        app.handle_key(key(KeyCode::Down));
+        let session_file = holder.path().join("state").join("session.yaml");
+
+        save_session_state_for_app(&mut app, Some(&session_file));
+
+        let saved =
+            spacetop_core::session_state::load_session_file(&session_file).expect("load session");
+        let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&workflow)
+            .expect("session key");
+        assert_eq!(
+            saved
+                .workflows
+                .get(key.as_str())
+                .and_then(|session| session.selected_entity_id.as_deref()),
+            Some("001")
+        );
+        assert!(app.warning_messages().is_empty());
+    }
+
+    #[test]
+    fn save_session_state_for_app_surfaces_save_errors_as_warning() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let workflow = holder.path().join("workflow");
+        std::fs::create_dir_all(&workflow).unwrap();
+        write_minimal_workflow(&workflow, "000");
+        let mut app = App::load(workflow).expect("load workflow");
+
+        save_session_state_for_app(&mut app, Some(Path::new("relative/session.yaml")));
+
+        assert!(app
+            .warning_messages()
+            .iter()
+            .any(|warning| warning.contains("failed to save session state")));
     }
 
     #[test]
