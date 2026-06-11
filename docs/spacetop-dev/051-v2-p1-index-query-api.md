@@ -14,6 +14,7 @@ score: 0.98
 worktree: .worktrees/spacedock-ensign-051-v2-p1-index-query-api
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Implement phase P1 of the SpaceTop v2 internals rebuild: introduce
