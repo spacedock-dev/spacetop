@@ -1,13 +1,13 @@
 ---
 id: "050"
 title: "v2 P0: workspace restructure + WorkItem to Entity rename"
-status: verify
+status: implement
 source: "captain — v2 design + plan (this session)"
 started: 2026-06-11
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-050-v2-p0-workspace-restructure
 issue:
 pr:
 ---
