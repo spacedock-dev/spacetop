@@ -1,7 +1,7 @@
 ---
 id: "050"
 title: "v2 P0: workspace restructure + WorkItem to Entity rename"
-status: implement
+status: verify
 source: "captain — v2 design + plan (this session)"
 started: 2026-06-11
 completed:
