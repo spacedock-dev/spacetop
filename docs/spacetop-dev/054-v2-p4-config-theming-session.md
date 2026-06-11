@@ -1,7 +1,7 @@
 ---
 id: "054"
 title: "v2 P4: config, theming, and session persistence"
-status: plan
+status: implement
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-06-11
 completed:
 verdict:
 score: 0.84
-worktree:
+worktree: .worktrees/spacedock-ensign-054-v2-p4-config-theming-session
 issue:
 pr:
 ---
