@@ -389,8 +389,8 @@ mod tests {
 
     #[test]
     fn load_from_paths_uses_existing_workflow_parser() {
-        let workflow = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/slug-workflow");
+        let workflow =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/slug-workflow");
         let repo_root = workflow.parent().expect("fixtures parent");
         let index = WorkflowIndex::load(&workflow, repo_root).expect("load index");
         let result = index.query(EntityQuery::default());
@@ -403,8 +403,20 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let workflow = temp.path().join("docs/wf");
         write_workflow_readme(&workflow);
-        write_entity(&workflow.join("010-query.md"), "010", "Query", "plan", "body");
-        write_entity(&workflow.join("002-render.md"), "002", "Render", "review", "body");
+        write_entity(
+            &workflow.join("010-query.md"),
+            "010",
+            "Query",
+            "plan",
+            "body",
+        );
+        write_entity(
+            &workflow.join("002-render.md"),
+            "002",
+            "Render",
+            "review",
+            "body",
+        );
 
         let index = WorkflowIndex::load(&workflow, temp.path()).expect("load index");
         let ids: Vec<String> = index
@@ -438,7 +450,13 @@ mod tests {
             "completed: 2026-04-24T15:00:00Z\n",
             "body",
         );
-        write_entity(&archive.join("unknown.md"), "003", "Unknown", "done", "body");
+        write_entity(
+            &archive.join("unknown.md"),
+            "003",
+            "Unknown",
+            "done",
+            "body",
+        );
 
         let index = WorkflowIndex::load(&workflow, temp.path()).expect("load index");
         let archive = WorkflowSources::load_archive(&workflow, index.definition());
@@ -539,7 +557,10 @@ mod tests {
         assert_eq!(filtered_ids(FieldFilter::HasIssue), ["001"]);
         assert_eq!(filtered_ids(FieldFilter::HasPr), ["002"]);
         assert_eq!(filtered_ids(FieldFilter::HasWorktreeSource), ["003"]);
-        assert_eq!(filtered_ids(FieldFilter::Verdict("pass".to_string())), ["002"]);
+        assert_eq!(
+            filtered_ids(FieldFilter::Verdict("pass".to_string())),
+            ["002"]
+        );
         assert_eq!(filtered_ids(FieldFilter::MinScore(0.9)), ["002"]);
     }
 
@@ -568,7 +589,13 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         let workflow = temp.path().join("docs/wf");
         write_workflow_readme(&workflow);
-        write_entity(&workflow.join("001-query.md"), "001", "Query", "plan", "body");
+        write_entity(
+            &workflow.join("001-query.md"),
+            "001",
+            "Query",
+            "plan",
+            "body",
+        );
 
         let index = WorkflowIndex::load(&workflow, temp.path()).expect("load index");
 

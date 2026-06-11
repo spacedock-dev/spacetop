@@ -58,3 +58,38 @@ Verified by: reload tests and `cargo test --workspace`.
 - Required commands: `cargo test --workspace`; `make lint`; `cargo test -p spacetop-core --test no_terminal_deps`.
 - Manual check, if any: optional TUI smoke only if render behavior appears ambiguous.
 - Docs/policy update needed: update code maps for `index.rs`, `query.rs`, and `sources.rs`.
+
+## Stage Report: implement
+
+### Checklist
+
+- DONE - Build the terminal-free core query/index spine: `WorkflowIndex`, owned `EntityQuery` results, serializable DTOs, source wrappers, and no terminal dependencies in `spacetop-core`.
+- DONE - Preserve existing TUI behavior through query-backed app/UI accessors, including list, preview, graph/header counts, archive scope, sort, picker, sync, and help behavior.
+- DONE - Prove archive/reload semantics and the read-only boundary: lazy archive loading, fresh index rebuilds on reload, focused tests, docs/code-map updates, `cargo test --workspace`, `make lint`, and `cargo test -p spacetop-core --test no_terminal_deps`.
+
+### Summary
+
+Implemented the v2 P1 index/query spine in `spacetop-core`, including serializable workflow DTOs, `EntityQuery` filtering/sorting, source wrappers, and full-rebuild `WorkflowIndex` loading. Migrated overview/app/UI accessors to read through the index while preserving existing list, preview, graph, archive, sort, picker, sync, and help behavior. Archive loading remains lazy, archive parse errors surface only after archive scope loads, and reload replaces the index instead of attempting incremental updates.
+
+### Commands And Outcomes
+
+- PASS - `cargo test --workspace`
+  - `spacetop` lib: 257 passed.
+  - `spacetop` main: 4 passed.
+  - Integration suites: `discovery_bypass` 10 passed, `git_sync_e2e` 4 passed, `readme_reload` 5 passed.
+  - `spacetop-core` lib: 109 passed.
+  - Guard tests: `no_terminal_deps` 1 passed, `no_write_git_calls` 2 passed.
+  - `watcher_fs`: 3 ignored by design because they exercise the real notify backend.
+- PASS - `make lint`
+  - Ran `cargo clippy --all-targets --all-features -- -D warnings`.
+- PASS - `cargo test -p spacetop-core --test no_terminal_deps`
+  - `core_dependency_tree_has_no_terminal_crates` passed.
+
+### Known Failures
+
+- FIXED - An earlier `make lint` run failed on `clippy::large-enum-variant` after `SelectedRow` began owning `Entity`; fixed by boxing the `SelectedRow::Item` payload.
+- FIXED - Earlier workspace test runs exposed stale assertions that hard-coded the old `design`/`review` stage names from `docs/spacetop-dev`; fixed by aligning parser tests with current `shape`/`verify` metadata and making UI graph/definition tests derive real stage names from the loaded definition.
+
+### Read-Only Boundary
+
+No workflow-state write path was added. The only workflow markdown edit in this stage is this dispatched stage report appended to the entity file.

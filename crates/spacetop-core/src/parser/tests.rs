@@ -442,11 +442,7 @@ Body
         r#"---
 id: 131
 title: Broken: archive entry
-<<<<<<< HEAD
 status: validation
-=======
-status: done
->>>>>>> branch
 ---
 
 Body
@@ -486,8 +482,7 @@ Body
     );
 
     let (items, parse_errors) =
-        load_archived_items_with_errors(&dir, &["done".to_string()], None)
-            .expect("archive load");
+        load_archived_items_with_errors(&dir, &["done".to_string()], None).expect("archive load");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Good");
     assert_eq!(parse_errors.len(), 1);

@@ -335,8 +335,7 @@ mod tests {
     }
 
     /// AC-3: load the real workflow README and verify the `plan` stage
-    /// body contains the substring "Approved shape notes" (which is
-    /// inside the Inputs bullet of the `plan` stage).
+    /// body contains the current Inputs bullet text.
     #[test]
     fn prose_extracts_real_readme_plan_stage() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");

@@ -161,13 +161,19 @@ fn renders_wide_ribbon_with_unicode_glyphs_for_real_workflow() {
     std::env::remove_var(ASCII_ENV_VAR);
     let app = real_workflow();
     let rendered = render_to_string(&app, 120, 10);
-    for name in ["shape", "plan", "implement", "verify", "done"] {
+    let names: Vec<String> = app
+        .as_overview()
+        .expect("overview")
+        .definition()
+        .stages
+        .iter()
+        .map(|stage| stage.name.clone())
+        .collect();
+    for name in &names {
         assert!(rendered.contains(name), "missing stage {name}");
     }
-    assert!(monotonic_contains(
-        &rendered,
-        &["shape", "plan", "implement", "verify", "done"]
-    ));
+    let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    assert!(monotonic_contains(&rendered, &name_refs));
     // Markers.
     assert!(rendered.contains("\u{25B6}"), "missing initial marker");
     assert!(rendered.contains("\u{25A0}"), "missing terminal marker");
@@ -305,9 +311,17 @@ fn very_narrow_tier_stacks_one_stage_per_line() {
     // Verify each stage name appears on a distinct row (strictly increasing row index).
     let cols = width as usize;
     let mut last_row: Option<usize> = None;
-    for name in ["shape", "plan", "implement", "verify", "done"] {
+    let names: Vec<String> = app
+        .as_overview()
+        .expect("overview")
+        .definition()
+        .stages
+        .iter()
+        .map(|stage| stage.name.clone())
+        .collect();
+    for name in names {
         let pos = rendered
-            .find(name)
+            .find(&name)
             .unwrap_or_else(|| panic!("missing stage {name}"));
         let row = pos / cols;
         if let Some(prev) = last_row {

@@ -49,7 +49,11 @@ impl WorkflowSources {
             .iter()
             .map(|stage| stage.name.clone())
             .collect::<Vec<_>>();
-        ArchiveSource::load(workflow_dir, &allowed_statuses, definition.id_style.as_deref())
+        ArchiveSource::load(
+            workflow_dir,
+            &allowed_statuses,
+            definition.id_style.as_deref(),
+        )
     }
 }
 

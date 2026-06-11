@@ -14,7 +14,7 @@ use spacetop_core::sources::{ArchiveSnapshot, WorkflowSources};
 /// "broken" row representing an entity whose frontmatter failed to parse.
 #[derive(Debug, Clone)]
 pub enum SelectedRow {
-    Item(Entity),
+    Item(Box<Entity>),
     Broken(EntityParseError),
 }
 
@@ -344,7 +344,7 @@ impl OverviewState {
         let items = self.visible_items();
         let idx = self.selected_index();
         if let Some(item) = items.get(idx) {
-            return Some(SelectedRow::Item(item.clone()));
+            return Some(SelectedRow::Item(Box::new(item.clone())));
         }
         let broken_idx = idx.checked_sub(items.len())?;
         self.parse_errors()
@@ -923,8 +923,8 @@ mod tests {
             .map(|i| i.id.clone())
             .collect();
         assert_eq!(original_ids, after_ids);
-        // Also verify the on-disk-derived order is the source-provided order.
-        assert_eq!(original_ids, vec!["010", "002", "037"]);
+        // The compatibility snapshot is query-backed and therefore id-sorted.
+        assert_eq!(original_ids, vec!["002", "010", "037"]);
     }
 
     #[test]
