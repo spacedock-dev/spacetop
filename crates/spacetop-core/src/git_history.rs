@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn parse_touches_ignores_non_entity_paths() {
-        let log = "abc\0100\nM\tdocs/workflow/README.md\nM\tdocs/workflow/_mods/mod.md\n";
+        let log = "abc\x00100\nM\tdocs/workflow/README.md\nM\tdocs/workflow/_mods/mod.md\n";
         assert!(parse_touches("docs/workflow", log).is_empty());
     }
 }
