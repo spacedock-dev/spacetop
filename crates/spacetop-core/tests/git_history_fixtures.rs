@@ -233,3 +233,26 @@ fn first_parent_merge_topology_ignores_body_branch() {
         ]
     );
 }
+
+#[test]
+fn workflow_index_loads_history_events() {
+    if !git_available() {
+        return;
+    }
+    let repo = RepoFixture::new();
+    repo.write_entity("001.md", "plan", "body");
+    repo.commit("plan");
+    repo.write_entity("001.md", "verify", "body");
+    repo.commit("verify");
+
+    let active = spacetop_core::sources::WorkflowSources::load_active(&repo.workflow, &repo.root)
+        .expect("sources");
+    let events = GitHistorySource::new(&StdGitRunner).load(&repo.root, "docs/workflow");
+    let index =
+        spacetop_core::index::WorkflowIndex::from_sources(active).with_history_result(events);
+
+    let timeline = index.timeline("test").expect("timeline");
+    assert_eq!(timeline.len(), 2);
+    assert_eq!(timeline[0].to, "plan");
+    assert_eq!(timeline[1].to, "verify");
+}
