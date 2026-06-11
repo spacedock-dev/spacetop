@@ -68,3 +68,16 @@ Verified by: app tests for pending and completed history worker results.
 ### Summary
 
 Implemented P2 git history source on branch `spacedock-ensign/052-v2-p2-git-history-source`. The core now derives per-entity stage timelines from read-only first-parent git history, refuses shallow/non-git history with explicit reasons, computes metrics only from stored events, and keeps TUI loading non-blocking through a background worker and guarded result application.
+
+## Stage Report: verify
+
+- DONE: Independently inspect the implementation diff and confirm AC-1/AC-3: history events are frontmatter-only or archive-rename synthesized, shallow/non-git/git-error cases return explicit unavailable reasons, and history invokes only approved read-only git commands.
+  Inspected `main...HEAD` through implementation commit `497c34e`; `git_history` uses `rev-parse`, `log`, and `show` only, with fixture/mocked tests for frontmatter decoys, archive rename synthesis, shallow clone, non-git, and read-only command shape.
+- DONE: Confirm AC-2/AC-4 with code and test evidence: metrics/timeline/activity derive only from stored history events, unavailable/loading states are preserved, and TUI load/reload remains non-blocking while folding worker results safely.
+  `WorkflowIndex` stores `StageEvent`s before timeline/metrics/activity queries, app tests cover loading, exact unavailable reasons, accepted worker results, and stale-result rejection, and `run_terminal` polls the history worker with `try_recv`.
+- DONE: Run or audit the required proof commands for this task: cargo test --workspace, make lint, and cargo test -p spacetop-core --test no_write_git_calls; report PASS/FAIL with any defects or missing evidence.
+  PASS: `cargo test --workspace` passed, `make lint` passed, and `cargo test -p spacetop-core --test no_write_git_calls` passed separately.
+
+### Summary
+
+Verification found no blocking defects against AC-1 through AC-4. One non-blocking follow-up is worth tracking later: the current index has no explicit test for a successfully loaded but empty history result, so that edge should be clarified if empty-history workflows become user-visible.
