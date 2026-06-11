@@ -1,8 +1,11 @@
 use std::path::{Path, PathBuf};
 
-use crate::domain::Entity;
+use crate::domain::{Entity, EntityParseError};
 
-use super::{display_path, is_markdown_path, parse_work_item, read_directory, ParseError};
+use super::{
+    display_path, is_markdown_path, parse_work_item, read_directory,
+    snapshot::entity_parse_error_from, ParseError,
+};
 
 pub fn archive_dir(workflow_dir: &Path) -> PathBuf {
     workflow_dir.join("_archive")
@@ -21,18 +24,30 @@ pub fn load_archived_items(
     allowed_statuses: &[String],
     id_style: Option<&str>,
 ) -> Result<Vec<Entity>, ParseError> {
+    load_archived_items_with_errors(workflow_dir, allowed_statuses, id_style)
+        .map(|(items, _parse_errors)| items)
+}
+
+pub fn load_archived_items_with_errors(
+    workflow_dir: &Path,
+    allowed_statuses: &[String],
+    id_style: Option<&str>,
+) -> Result<(Vec<Entity>, Vec<EntityParseError>), ParseError> {
     let archive_root = archive_dir(workflow_dir);
     if !archive_root.exists() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
 
     let item_paths = collect_archived_item_paths(&archive_root)?;
 
     let mut items = Vec::with_capacity(item_paths.len());
+    let mut parse_errors = Vec::new();
     for item_path in item_paths {
         match parse_work_item(&item_path, allowed_statuses, id_style) {
             Ok(item) => items.push(item),
-            Err(err) if should_skip_archived_parse_error(&err) => continue,
+            Err(err) if err.is_per_entity_parse_failure() => {
+                parse_errors.push(entity_parse_error_from(&item_path, &err));
+            }
             Err(err) => return Err(err),
         }
     }
@@ -46,18 +61,7 @@ pub fn load_archived_items(
         },
     );
 
-    Ok(items)
-}
-
-fn should_skip_archived_parse_error(error: &ParseError) -> bool {
-    matches!(
-        error,
-        ParseError::MissingFrontmatter { .. }
-            | ParseError::UnterminatedFrontmatter { .. }
-            | ParseError::MalformedYaml { .. }
-            | ParseError::MissingRequiredField { .. }
-            | ParseError::UnknownStatus { .. }
-    )
+    Ok((items, parse_errors))
 }
 
 fn collect_archived_item_paths(archive_root: &Path) -> Result<Vec<PathBuf>, ParseError> {

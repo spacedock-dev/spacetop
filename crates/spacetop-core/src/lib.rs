@@ -4,4 +4,5 @@ pub mod editor;
 pub mod git_sync;
 pub mod parser;
 pub mod query;
+pub mod sources;
 pub mod watcher;
