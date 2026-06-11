@@ -8,7 +8,7 @@ use std::sync::mpsc::TryRecvError;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
-use app::{App, AppMode, SyncStatus};
+use app::{App, AppMode, HistoryWorkerResult, SyncStatus};
 use cli::Cli;
 use crossterm::{
     event::{self, Event},
@@ -134,6 +134,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
         WorkflowWatcher,
         std::sync::mpsc::Receiver<watcher::RefreshSignal>,
     )> = start_watcher_for(&mut app);
+    let mut history_worker_state = start_history_worker_for(&app);
 
     loop {
         terminal
@@ -144,12 +145,16 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
             break;
         }
 
+        drain_history_worker(&mut app, &mut history_worker_state);
+
         // 1. Drain any pending refresh signals.
         if let Some((_, ref rx)) = watcher_state {
             loop {
                 match rx.try_recv() {
                     Ok(_) => {
-                        let _ = app.reload_with_rediscovery();
+                        if app.reload_with_rediscovery().is_ok() {
+                            history_worker_state = start_history_worker_for(&app);
+                        }
                     }
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
@@ -173,6 +178,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
         // watcher on the selected workflow dir.
         if prior_mode_was_picker && matches!(app.mode(), AppMode::Overview(_)) {
             watcher_state = start_watcher_for(&mut app);
+            history_worker_state = start_history_worker_for(&app);
         }
 
         // 3. Drain pending picker-overlay open request: re-run discovery
@@ -204,6 +210,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
                 let _ = app.reload();
             }
             watcher_state = start_watcher_for(&mut app);
+            history_worker_state = start_history_worker_for(&app);
         }
 
         // 5. Drain pending sync request: redraw once with the in-flight
@@ -215,6 +222,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
                 .draw(|frame| ui::render(frame, &app))
                 .context("failed to draw terminal UI")?;
             apply_pending_sync(&mut app, &StdGitRunner);
+            history_worker_state = start_history_worker_for(&app);
         }
 
         // 6. Drain pending "open file in $EDITOR" intent: suspend the TUI,
@@ -238,12 +246,39 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
     }
 
     drop(watcher_state);
+    drop(history_worker_state);
 
     terminal
         .show_cursor()
         .context("failed to restore terminal cursor")?;
 
     Ok(())
+}
+
+fn start_history_worker_for(app: &App) -> Option<std::sync::mpsc::Receiver<HistoryWorkerResult>> {
+    app.history_worker_request().map(app::spawn_history_worker)
+}
+
+fn drain_history_worker(
+    app: &mut App,
+    worker: &mut Option<std::sync::mpsc::Receiver<HistoryWorkerResult>>,
+) {
+    let mut clear_worker = false;
+    if let Some(rx) = worker.as_ref() {
+        match rx.try_recv() {
+            Ok(result) => {
+                app.apply_history_result(result);
+                clear_worker = true;
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                clear_worker = true;
+            }
+        }
+    }
+    if clear_worker {
+        *worker = None;
+    }
 }
 
 /// Run a sync against the active workflow's repo root and reflect the

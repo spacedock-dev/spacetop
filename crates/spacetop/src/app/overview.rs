@@ -10,6 +10,8 @@ use spacetop_core::parser::ParseError;
 use spacetop_core::query::{EntityQuery, EntitySort, QueryScope};
 use spacetop_core::sources::{ArchiveSnapshot, WorkflowSources};
 
+use super::history_worker::{HistoryWorkerRequest, HistoryWorkerResult};
+
 /// Selection target in the task list — either a real work item or a synthetic
 /// "broken" row representing an entity whose frontmatter failed to parse.
 #[derive(Debug, Clone)]
@@ -154,7 +156,8 @@ impl OverviewState {
 
     pub fn load(workflow_dir: PathBuf) -> Result<Self, ParseError> {
         let repo_root = resolve_scan_root(&workflow_dir);
-        let index = WorkflowIndex::load(&workflow_dir, &repo_root)?;
+        let mut index = WorkflowIndex::load(&workflow_dir, &repo_root)?;
+        index.mark_history_loading();
         Ok(Self::from_index_with_root(workflow_dir, repo_root, index))
     }
 
@@ -260,7 +263,8 @@ impl OverviewState {
     /// and records the error in `last_refresh_error`.
     pub fn reload(&mut self) -> Result<(), ParseError> {
         match WorkflowIndex::load(&self.workflow_dir, &self.repo_root) {
-            Ok(index) => {
+            Ok(mut index) => {
+                index.mark_history_loading();
                 self.reload_from_index(index);
                 Ok(())
             }
@@ -298,6 +302,16 @@ impl OverviewState {
 
     pub fn index(&self) -> &WorkflowIndex {
         &self.index
+    }
+
+    pub fn history_worker_request(&self) -> Option<HistoryWorkerRequest> {
+        HistoryWorkerRequest::from_paths(&self.workflow_dir, &self.repo_root)
+    }
+
+    pub fn apply_history_result(&mut self, result: HistoryWorkerResult) {
+        if result.workflow_dir == self.workflow_dir {
+            self.index.replace_history_result(result.result);
+        }
     }
 
     pub fn snapshot(&self) -> WorkflowSnapshot {

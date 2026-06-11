@@ -32,7 +32,11 @@ impl<'a, R: GitRunner> GitHistorySource<'a, R> {
 
     pub fn load(&self, repo_root: &Path, workflow_rel: &str) -> HistoryResult<Vec<StageEvent>> {
         self.ensure_not_shallow(repo_root)?;
-        let pathspec = format!("{workflow_rel}/**");
+        let pathspec = if workflow_rel.is_empty() || workflow_rel == "." {
+            "**".to_string()
+        } else {
+            format!("{workflow_rel}/**")
+        };
         let out = self
             .runner
             .run(
@@ -204,10 +208,7 @@ fn parse_commit_header(line: &str) -> Option<(&str, i64)> {
 }
 
 fn is_entity_path(workflow_rel: &str, path: &str) -> bool {
-    let Some(rel) = path
-        .strip_prefix(workflow_rel)
-        .and_then(|path| path.strip_prefix('/'))
-    else {
+    let Some(rel) = workflow_item_rel(workflow_rel, path) else {
         return false;
     };
     if rel == "README.md" || rel.starts_with("_mods/") || !rel.ends_with(".md") {
@@ -224,9 +225,15 @@ fn is_entity_path(workflow_rel: &str, path: &str) -> bool {
 }
 
 fn is_archive_path(workflow_rel: &str, path: &str) -> bool {
+    workflow_item_rel(workflow_rel, path).is_some_and(|rel| rel.starts_with("_archive/"))
+}
+
+fn workflow_item_rel<'a>(workflow_rel: &str, path: &'a str) -> Option<&'a str> {
+    if workflow_rel.is_empty() || workflow_rel == "." {
+        return Some(path);
+    }
     path.strip_prefix(workflow_rel)
         .and_then(|path| path.strip_prefix('/'))
-        .is_some_and(|rel| rel.starts_with("_archive/"))
 }
 
 fn frontmatter_metadata(body: &str) -> Option<EntityMetadata> {
