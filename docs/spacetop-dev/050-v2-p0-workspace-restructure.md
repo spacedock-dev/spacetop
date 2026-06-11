@@ -74,6 +74,17 @@ references remain in those files.
 
 (To be filled at the review gate.)
 
+### Feedback Cycles
+
+- **cycle 1 (2026-06-11, verify -> implement):** Verify rejected because the
+  current checkout does not contain the P0 implementation. The repo is still a
+  single `spacetop` package, `crates/spacetop-core` does not exist, `WorkItem`
+  still appears in live source, the no-write guardrail still scans only `src/`,
+  and docs still describe the single-crate layout. Fix: complete the planned P0
+  workspace restructure, rename `WorkItem` to `Entity`, update guardrail tests
+  and docs, then provide current `cargo test --workspace`, `make lint`,
+  dependency/grep checks, and smoke evidence.
+
 ## Stage Report: verify
 
 Verdict: REJECTED
