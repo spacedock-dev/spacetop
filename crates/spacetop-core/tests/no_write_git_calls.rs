@@ -1,6 +1,6 @@
 //! AC-5: Spacetop's sync feature must NOT introduce any code path that
 //! mutates the workflow tree beyond what `git pull --ff-only` itself
-//! writes. This guardrail test walks the `src/` tree and asserts that no
+//! writes. This guardrail test walks both crate `src/` trees and asserts that no
 //! production source file references the disallowed write subcommands
 //! (`push`, `commit`, `checkout`) anywhere near a git invocation, while
 //! `--ff-only` does appear exactly once (in the sync helper).
@@ -12,8 +12,20 @@ use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
-fn src_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")
+fn src_roots() -> Vec<PathBuf> {
+    // CARGO_MANIFEST_DIR is crates/spacetop-core; workspace root is two up.
+    let ws = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    vec![
+        ws.join("crates/spacetop-core/src"),
+        ws.join("crates/spacetop/src"),
+    ]
+}
+
+fn all_rust_files() -> Vec<PathBuf> {
+    src_roots()
+        .iter()
+        .flat_map(|root| rust_files(root))
+        .collect()
 }
 
 fn rust_files(root: &Path) -> Vec<PathBuf> {
@@ -70,10 +82,10 @@ fn static_assert_disallowed(needles: &[&str]) {
 
 #[test]
 fn src_tree_does_not_reference_disallowed_git_write_subcommands() {
-    let files = rust_files(&src_root());
+    let files = all_rust_files();
     assert!(
         !files.is_empty(),
-        "expected to find some .rs files under src/"
+        "expected to find some .rs files under crate src trees"
     );
     let mut offenders: Vec<(PathBuf, &'static str)> = Vec::new();
     for path in &files {
@@ -90,7 +102,7 @@ fn src_tree_does_not_reference_disallowed_git_write_subcommands() {
 
 #[test]
 fn src_tree_references_ff_only_exactly_once() {
-    let files = rust_files(&src_root());
+    let files = all_rust_files();
     let mut count = 0usize;
     let mut hits: Vec<PathBuf> = Vec::new();
     for path in &files {
@@ -104,6 +116,6 @@ fn src_tree_references_ff_only_exactly_once() {
     }
     assert_eq!(
         count, 1,
-        "expected exactly one --ff-only reference in src/, found {count} in {hits:?}"
+        "expected exactly one --ff-only reference in crate src trees, found {count} in {hits:?}"
     );
 }
