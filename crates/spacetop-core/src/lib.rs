@@ -2,6 +2,7 @@ pub mod discovery;
 pub mod domain;
 pub mod editor;
 pub mod git_sync;
+pub mod index;
 pub mod parser;
 pub mod query;
 pub mod sources;
