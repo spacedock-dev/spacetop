@@ -112,3 +112,7 @@ Verified by: session round-trip tests and app restore tests.
 ### Verdict
 
 REJECTED. The required proof commands pass, and AC-1/AC-2/AC-4 are supported by code and tests, but AC-3 is not complete because the final resolved keymap can contain duplicate bindings created by fallback behavior.
+
+### Feedback Cycles
+
+- Cycle 1: Verify rejected AC-3 because `ResolvedKeymap::from_config` checks duplicates before invalid/reserved bindings fall back to defaults. Configs such as `search: ""` plus `command: "/"`, or `search: "a"` plus `command: "/"`, can resolve both actions to `/`, making command unreachable with no final duplicate warning. Fix final keymap validation so fallback-created duplicates cannot survive, and add targeted tests for these cases.
