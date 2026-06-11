@@ -1,0 +1,200 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Validate release version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate tag and Cargo versions
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "${tag}" =~ ${semver} ]]; then
+            echo "release tag must look like vX.Y.Z or vX.Y.Z-prerelease: ${tag}" >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          cargo metadata --locked --no-deps --format-version 1 > cargo-metadata.json
+          python3 - "${version}" cargo-metadata.json <<'PY'
+          import json
+          import sys
+
+          expected_version = sys.argv[1]
+          metadata_path = sys.argv[2]
+          with open(metadata_path, encoding="utf-8") as handle:
+              metadata = json.load(handle)
+
+          packages = {package["name"]: package["version"] for package in metadata["packages"]}
+          for package_name in ("spacetop", "spacetop-core"):
+              actual_version = packages.get(package_name)
+              if actual_version != expected_version:
+                  raise SystemExit(
+                      f"{package_name} version {actual_version!r} does not match tag version {expected_version!r}"
+                  )
+          PY
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            echo "GitHub Release ${tag} already exists" >&2
+            exit 1
+          fi
+
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Run tests
+        run: cargo test
+
+      - name: Run lint
+        run: make lint
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: validate
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: release-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            release-${{ matrix.target }}-
+
+      - name: Build release binary
+        run: cargo build --release --target "${{ matrix.target }}" -p spacetop
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+
+      - name: Validate binary version
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary="target/${{ matrix.target }}/release/spacetop"
+          actual="$("${binary}" --version)"
+          expected="spacetop ${{ needs.validate.outputs.version }}"
+          if [[ "${actual}" != "${expected}" ]]; then
+            echo "expected '${expected}', got '${actual}'" >&2
+            exit 1
+          fi
+
+      - name: Package archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate.outputs.version }}"
+          target="${{ matrix.target }}"
+          package_dir="dist/spacetop-v${version}-${target}"
+          mkdir -p "${package_dir}"
+          cp "target/${target}/release/spacetop" "${package_dir}/"
+          cp README.md "${package_dir}/"
+          cp CHANGELOG.md "${package_dir}/"
+          tar -C dist -czf "dist/spacetop-v${version}-${target}.tar.gz" "spacetop-v${version}-${target}"
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spacetop-${{ matrix.target }}
+          path: dist/spacetop-v${{ needs.validate.outputs.version }}-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish draft GitHub Release
+    needs:
+      - validate
+      - build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 *.tar.gz > SHA256SUMS
+
+      - name: Extract release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate.outputs.version }}"
+          awk -v version="v${version}" '
+            $0 == "## " version { capture=1; next }
+            capture && /^## / { exit }
+            capture { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [[ ! -s RELEASE_NOTES.md ]]; then
+            cat > RELEASE_NOTES.md <<EOF
+          Spacetop v${version}
+
+          See CHANGELOG.md for release details.
+          EOF
+          fi
+
+      - name: Create draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ needs.validate.outputs.tag }}"
+          gh release create "${tag}" dist/*.tar.gz dist/SHA256SUMS \
+            --draft \
+            --title "${tag}" \
+            --notes-file RELEASE_NOTES.md
+        env:
+          GH_TOKEN: ${{ github.token }}
