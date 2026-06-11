@@ -91,11 +91,7 @@ const BG2: Color = Color::Rgb(40, 52, 84);
 fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
     let scope = state.view_scope();
     let items = state.visible_items();
-    let broken = if scope == ViewScope::Active {
-        state.parse_errors()
-    } else {
-        &[][..]
-    };
+    let broken = state.parse_errors();
     if items.is_empty() && broken.is_empty() {
         let empty_text = match (scope, state.archive_error()) {
             (ViewScope::Archived, Some(err)) => format!("archive load failed: {err}"),
@@ -192,8 +188,9 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
         .collect();
 
     // Append synthetic "broken" rows for entities whose frontmatter failed to
-    // parse. These rows are visually distinct (dim + red) and never carry a
-    // worktree marker. Selection indices >= items.len() target broken rows.
+    // parse in the current scope. These rows are visually distinct (dim + red)
+    // and never carry a worktree marker. Selection indices >= items.len()
+    // target broken rows.
     let items_len = items.len();
     for (offset, err) in broken.iter().enumerate() {
         let index = items_len + offset;

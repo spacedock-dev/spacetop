@@ -118,3 +118,16 @@ No workflow-state write path was added. The only workflow markdown edit in this 
 Verification rejects this implementation pending an archived parse-error UI fix and a Ratatui assertion for that path. The core query/index spine and reload strategy look consistent with the P1 constraints, and the required proof gates pass.
 
 Commands run: `spacedock dispatch show-stage-def --workflow-dir /Users/kent/Dev/InfuseAI/GitHub/spacetop/docs/spacetop-dev --stage verify` passed; `cargo test --workspace` passed with 257 spacetop lib tests, 4 main tests, integration suites 10/4/5 passed, 109 core tests, `no_terminal_deps` 1 passed, `no_write_git_calls` 2 passed, and 3 watcher tests ignored by design; `make lint` passed; `cargo test -p spacetop-core --test no_terminal_deps` passed.
+
+## Stage Report: implement (cycle 1 fix)
+
+- DONE: Render broken archive rows in archive scope consistently with app state.
+  `ui/list.rs` now renders `state.parse_errors()` for the current scope, so archived parse errors are visible as broken rows instead of hidden behind the empty archive state.
+- DONE: Add a Ratatui assertion for this archived-parse-error path.
+  Added `archived_task_list_renders_broken_entity_row_when_archive_has_parse_errors`; the red run failed on the missing archived broken row before the renderer fix and passed afterward.
+- DONE: Run focused tests plus `cargo test --workspace`, `make lint`, and `cargo test -p spacetop-core --test no_terminal_deps` unless a command is impossible, in which case explain why.
+  Focused task-list tests passed 26/26; `cargo test --workspace` passed with 258 spacetop lib tests, 4 main tests, integration suites 10/4/5 passed, 109 core tests, guard tests passed, and 3 watcher tests ignored by design; `make lint` passed; `cargo test -p spacetop-core --test no_terminal_deps` passed 1/1.
+
+### Summary
+
+Fixed the verify rejection by making the task list render synthetic broken rows for whichever scope is active, matching `OverviewState::parse_errors()` and `row_count()`. The new Ratatui regression covers an archive view with no valid archived items and one archived parse error, asserting that the broken row is visible, the empty archived message is absent, and the selected broken row still drives the preview pane.
