@@ -1,7 +1,7 @@
 ---
 id: "056"
 title: "Implement versioning and GitHub Release deployment policy"
-status: implement
+status: verify
 source: "captain - approved versioning/deployment policy design and plan"
 kind: feature
 risk: medium
