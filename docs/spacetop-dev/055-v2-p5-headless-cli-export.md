@@ -1,17 +1,17 @@
 ---
 id: "055"
 title: "v2 P5: headless CLI and export"
-status: verify
+status: done
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: medium
 milestone: v2-p5
 proof: "cargo test --workspace; make lint; cargo run -p spacetop -- list --workflow-dir docs/spacetop-dev --json"
 started: 2026-06-11
-completed:
-verdict:
+completed: 2026-06-11T14:20:58Z
+verdict: PASSED
 score: 0.8
-worktree: .worktrees/spacedock-ensign-055-v2-p5-headless-cli-export
+worktree:
 issue:
 pr: "#55"
 mod-block:
