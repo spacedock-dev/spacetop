@@ -77,6 +77,26 @@ fn help_popup_lists_definition_keybind() {
 }
 
 #[test]
+fn help_popup_lists_p3_capability_view_keybinds() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
+    let mut app = App::load(root).expect("workflow should load");
+    app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+
+    let mut terminal = Terminal::new(TestBackend::new(160, 34)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(rendered.contains("/              search entities"));
+    assert!(rendered.contains(":              open command palette"));
+    assert!(rendered.contains("T              entity timeline (preview closed)"));
+    assert!(rendered.contains("M              metrics view (preview closed)"));
+    assert!(rendered.contains("A              activity feed (preview closed)"));
+    assert!(rendered.contains("R              entity relations (preview closed)"));
+}
+
+#[test]
 fn help_popup_renders_in_picker_mode() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use spacetop_core::discovery::DiscoveredWorkflow;
@@ -207,6 +227,25 @@ fn dashboard_status_footer_lists_help_affordance() {
     assert!(rendered.contains("?"), "footer must include ? glyph");
     assert!(rendered.contains("help"), "footer must mention 'help'");
     assert!(rendered.contains("q: quit"), "footer must mention quit");
+}
+
+#[test]
+fn dashboard_footer_lists_p3_capability_hints_when_preview_closed() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
+    let app = App::load(root).expect("workflow should load");
+    let mut terminal = Terminal::new(TestBackend::new(180, 24)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(rendered.contains("/: search"));
+    assert!(rendered.contains(": command"));
+    assert!(!rendered.contains(":: command"));
+    assert!(rendered.contains("T/M/A/R: views"));
+    let hints = crate::ui::footer::status_footer_hints(app.as_session().unwrap());
+    assert!(hints.iter().any(|(label, _)| label == ": command"));
+    assert!(!hints.iter().any(|(label, _)| label == ":: command"));
 }
 
 #[test]
@@ -558,6 +597,10 @@ fn help_popup_includes_arrow_keys_in_multi_session() {
     assert!(
         !rendered.contains("switch to next workflow"),
         "preview-open help should not show workflow switching on arrows"
+    );
+    assert!(
+        !rendered.contains("entity timeline (preview closed)"),
+        "preview-open help should not list preview-closed capability views"
     );
 
     // Single session: the existing `App::load` path produces a pinned

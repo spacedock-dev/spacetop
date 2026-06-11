@@ -377,12 +377,16 @@ impl OverviewState {
         self.view_scope
     }
 
+    pub fn current_query_scope(&self) -> QueryScope {
+        match self.view_scope {
+            ViewScope::Active => QueryScope::Active,
+            ViewScope::Archived => QueryScope::Archived,
+        }
+    }
+
     pub fn visible_items(&self) -> Vec<Entity> {
         self.index.query(EntityQuery {
-            scope: match self.view_scope {
-                ViewScope::Active => QueryScope::Active,
-                ViewScope::Archived => QueryScope::Archived,
-            },
+            scope: self.current_query_scope(),
             status: None,
             text: None,
             field_filters: Vec::new(),
@@ -394,6 +398,18 @@ impl OverviewState {
                 },
             },
         })
+    }
+
+    pub(crate) fn select_visible_entity_by_id(&mut self, entity_id: &str) -> bool {
+        let Some(index) = self
+            .visible_items()
+            .iter()
+            .position(|entity| entity.id == entity_id)
+        else {
+            return false;
+        };
+        self.set_scope_index(index);
+        true
     }
 
     pub fn sort_mode(&self) -> SortMode {

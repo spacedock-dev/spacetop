@@ -8,5 +8,6 @@ pub mod index;
 pub mod metrics;
 pub mod parser;
 pub mod query;
+pub mod relations;
 pub mod sources;
 pub mod watcher;

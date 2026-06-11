@@ -5,16 +5,22 @@ use crossterm::event::{KeyCode, KeyEvent};
 use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{Entity, WorkflowSnapshot};
 use spacetop_core::parser::ParseError;
+use spacetop_core::query::EntityQuery;
 
 mod history_worker;
 mod keys;
 mod overview;
 mod picker;
+mod search;
 mod session;
 
 pub use history_worker::{spawn_history_worker, HistoryWorkerRequest, HistoryWorkerResult};
 pub use overview::{OverviewState, SelectedRow, SortMode, StageCount, SyncStatus, ViewScope};
 pub use picker::PickerState;
+pub use search::{
+    matching_commands, CommandAction, CommandEntry, SearchMode, SearchState,
+    SEARCH_VISIBLE_RESULT_LIMIT,
+};
 pub use session::{OverviewSession, WorkflowSwitch};
 
 use keys::{handle_overview_key, OverviewKeyAction};
@@ -40,6 +46,135 @@ pub enum AppMode {
         underlying: OverviewSession,
         scroll: usize,
     },
+    Search {
+        underlying: OverviewSession,
+        state: SearchState,
+    },
+    Timeline {
+        underlying: OverviewSession,
+        entity_id: String,
+        scroll: usize,
+    },
+    Metrics {
+        underlying: OverviewSession,
+        scroll: usize,
+    },
+    Activity {
+        underlying: OverviewSession,
+        scroll: usize,
+    },
+    Relations {
+        underlying: OverviewSession,
+        entity_id: String,
+        scroll: usize,
+    },
+}
+
+impl AppMode {
+    pub(crate) fn as_session(&self) -> Option<&OverviewSession> {
+        match self {
+            Self::Overview(session)
+            | Self::PickerOverlay {
+                underlying: session,
+                ..
+            }
+            | Self::Definition {
+                underlying: session,
+                ..
+            }
+            | Self::Search {
+                underlying: session,
+                ..
+            }
+            | Self::Timeline {
+                underlying: session,
+                ..
+            }
+            | Self::Metrics {
+                underlying: session,
+                ..
+            }
+            | Self::Activity {
+                underlying: session,
+                ..
+            }
+            | Self::Relations {
+                underlying: session,
+                ..
+            } => Some(session),
+            Self::Picker(_) => None,
+        }
+    }
+
+    pub(crate) fn as_session_mut(&mut self) -> Option<&mut OverviewSession> {
+        match self {
+            Self::Overview(session)
+            | Self::PickerOverlay {
+                underlying: session,
+                ..
+            }
+            | Self::Definition {
+                underlying: session,
+                ..
+            }
+            | Self::Search {
+                underlying: session,
+                ..
+            }
+            | Self::Timeline {
+                underlying: session,
+                ..
+            }
+            | Self::Metrics {
+                underlying: session,
+                ..
+            }
+            | Self::Activity {
+                underlying: session,
+                ..
+            }
+            | Self::Relations {
+                underlying: session,
+                ..
+            } => Some(session),
+            Self::Picker(_) => None,
+        }
+    }
+
+    pub(crate) fn into_session(self) -> Option<OverviewSession> {
+        match self {
+            Self::Overview(session)
+            | Self::PickerOverlay {
+                underlying: session,
+                ..
+            }
+            | Self::Definition {
+                underlying: session,
+                ..
+            }
+            | Self::Search {
+                underlying: session,
+                ..
+            }
+            | Self::Timeline {
+                underlying: session,
+                ..
+            }
+            | Self::Metrics {
+                underlying: session,
+                ..
+            }
+            | Self::Activity {
+                underlying: session,
+                ..
+            }
+            | Self::Relations {
+                underlying: session,
+                ..
+            } => Some(session),
+            Self::Picker(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -145,12 +280,7 @@ impl App {
     }
 
     pub fn as_session(&self) -> Option<&OverviewSession> {
-        match &self.mode {
-            AppMode::Overview(session) => Some(session),
-            AppMode::PickerOverlay { underlying, .. } => Some(underlying),
-            AppMode::Definition { underlying, .. } => Some(underlying),
-            _ => None,
-        }
+        self.mode.as_session()
     }
 
     /// True while the definition view is active.
@@ -222,41 +352,20 @@ impl App {
     /// Set the sync status pill on the active overview tab. Used by the
     /// event loop after running the git_sync helper.
     pub fn set_sync_status(&mut self, status: SyncStatus) {
-        match &mut self.mode {
-            AppMode::Overview(session) => session.active_state_mut().set_sync_status(status),
-            AppMode::PickerOverlay { underlying, .. } => {
-                underlying.active_state_mut().set_sync_status(status)
-            }
-            AppMode::Definition { underlying, .. } => {
-                underlying.active_state_mut().set_sync_status(status)
-            }
-            AppMode::Picker(_) => {}
+        if let Some(session) = self.mode.as_session_mut() {
+            session.active_state_mut().set_sync_status(status);
         }
     }
 
     pub fn history_worker_request(&self) -> Option<HistoryWorkerRequest> {
-        match &self.mode {
-            AppMode::Overview(session) => session.active_state().history_worker_request(),
-            AppMode::PickerOverlay { underlying, .. } => {
-                underlying.active_state().history_worker_request()
-            }
-            AppMode::Definition { underlying, .. } => {
-                underlying.active_state().history_worker_request()
-            }
-            AppMode::Picker(_) => None,
-        }
+        self.mode
+            .as_session()
+            .and_then(|session| session.active_state().history_worker_request())
     }
 
     pub fn apply_history_result(&mut self, result: HistoryWorkerResult) {
-        match &mut self.mode {
-            AppMode::Overview(session) => session.active_state_mut().apply_history_result(result),
-            AppMode::PickerOverlay { underlying, .. } => {
-                underlying.active_state_mut().apply_history_result(result)
-            }
-            AppMode::Definition { underlying, .. } => {
-                underlying.active_state_mut().apply_history_result(result)
-            }
-            AppMode::Picker(_) => {}
+        if let Some(session) = self.mode.as_session_mut() {
+            session.active_state_mut().apply_history_result(result);
         }
     }
 
@@ -274,17 +383,18 @@ impl App {
     pub fn open_picker_overlay_with(&mut self, result: Result<Vec<DiscoveredWorkflow>, String>) {
         // Take the current session out of the mode (we're transitioning to
         // PickerOverlay).
-        let session = match std::mem::replace(
+        let prior_mode = std::mem::replace(
             &mut self.mode,
             AppMode::Picker(PickerState::new(PathBuf::new(), Vec::new())),
-        ) {
-            AppMode::Overview(s) => s,
-            // If we somehow got called from a non-overview state, restore
-            // and bail.
-            other => {
-                self.mode = other;
+        );
+        let session = match prior_mode {
+            AppMode::Picker(state) => {
+                self.mode = AppMode::Picker(state);
                 return;
             }
+            other => other
+                .into_session()
+                .expect("session-backed modes must open picker overlay"),
         };
         // Build picker state. Use scan_root if known; fallback to active dir.
         let scan_root = session
@@ -316,12 +426,10 @@ impl App {
     // --- Back-compat accessors so existing overview tests keep compiling. ---
 
     fn overview(&self) -> &OverviewState {
-        match &self.mode {
-            AppMode::Overview(session) => session.active_state(),
-            AppMode::PickerOverlay { underlying, .. } => underlying.active_state(),
-            AppMode::Definition { underlying, .. } => underlying.active_state(),
-            AppMode::Picker(_) => panic!("called overview accessor while in picker mode"),
-        }
+        self.mode
+            .as_session()
+            .expect("called overview accessor while in picker mode")
+            .active_state()
     }
 
     pub fn workflow_dir(&self) -> &Path {
@@ -365,50 +473,27 @@ impl App {
     }
 
     pub fn last_refresh_error(&self) -> Option<&str> {
-        match &self.mode {
-            AppMode::Overview(session) => session.active_state().last_refresh_error(),
-            AppMode::PickerOverlay { underlying, .. } => {
-                underlying.active_state().last_refresh_error()
-            }
-            AppMode::Definition { underlying, .. } => {
-                underlying.active_state().last_refresh_error()
-            }
-            AppMode::Picker(_) => None,
-        }
+        self.mode
+            .as_session()
+            .and_then(|session| session.active_state().last_refresh_error())
     }
 
     pub fn set_refresh_error(&mut self, message: String) {
-        match &mut self.mode {
-            AppMode::Overview(session) => session.active_state_mut().set_refresh_error(message),
-            AppMode::PickerOverlay { underlying, .. } => {
-                underlying.active_state_mut().set_refresh_error(message)
-            }
-            AppMode::Definition { underlying, .. } => {
-                underlying.active_state_mut().set_refresh_error(message)
-            }
-            AppMode::Picker(_) => {}
+        if let Some(session) = self.mode.as_session_mut() {
+            session.active_state_mut().set_refresh_error(message);
         }
     }
 
     pub fn reload_from_snapshot(&mut self, snapshot: WorkflowSnapshot) {
-        match &mut self.mode {
-            AppMode::Overview(session) => session.active_state_mut().reload_from_snapshot(snapshot),
-            AppMode::PickerOverlay { underlying, .. } => {
-                underlying.active_state_mut().reload_from_snapshot(snapshot)
-            }
-            AppMode::Definition { underlying, .. } => {
-                underlying.active_state_mut().reload_from_snapshot(snapshot)
-            }
-            AppMode::Picker(_) => {}
+        if let Some(session) = self.mode.as_session_mut() {
+            session.active_state_mut().reload_from_snapshot(snapshot);
         }
     }
 
     pub fn reload(&mut self) -> Result<(), ParseError> {
-        match &mut self.mode {
-            AppMode::Overview(session) => session.active_state_mut().reload(),
-            AppMode::PickerOverlay { underlying, .. } => underlying.active_state_mut().reload(),
-            AppMode::Definition { underlying, .. } => underlying.active_state_mut().reload(),
-            AppMode::Picker(_) => Ok(()),
+        match self.mode.as_session_mut() {
+            Some(session) => session.active_state_mut().reload(),
+            None => Ok(()),
         }
     }
 
@@ -423,11 +508,8 @@ impl App {
     /// a "workflow removed" message in `last_refresh_error` so the UI stays
     /// non-panicking until the user picks another workflow.
     pub fn reload_with_rediscovery(&mut self) -> Result<(), ParseError> {
-        let session = match &mut self.mode {
-            AppMode::Overview(s) => s,
-            AppMode::PickerOverlay { underlying, .. } => underlying,
-            AppMode::Definition { underlying, .. } => underlying,
-            AppMode::Picker(_) => return Ok(()),
+        let Some(session) = self.mode.as_session_mut() else {
+            return Ok(());
         };
 
         let prior_active_dir = session.active_dir().to_path_buf();
@@ -491,9 +573,8 @@ impl App {
     /// empty `OverviewState` with `last_refresh_error` set so the user sees
     /// the breadcrumb and the error rather than a hang or silent revert.
     pub fn materialize_active(&mut self) {
-        let session = match &mut self.mode {
-            AppMode::Overview(s) => s,
-            _ => return,
+        let Some(session) = self.mode.as_session_mut() else {
+            return;
         };
         let dir = session.active_dir().to_path_buf();
         match OverviewState::load(dir.clone()) {
@@ -549,6 +630,54 @@ impl App {
                         OverviewSession::single(OverviewState::empty(PathBuf::new()), true),
                     );
                     self.mode = AppMode::Overview(restored);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    *scroll = scroll.saturating_add(1);
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    *scroll = scroll.saturating_sub(1);
+                }
+                KeyCode::PageDown => {
+                    *scroll = scroll.saturating_add(10);
+                }
+                KeyCode::PageUp => {
+                    *scroll = scroll.saturating_sub(10);
+                }
+                KeyCode::Home => {
+                    *scroll = 0;
+                }
+                KeyCode::End => {
+                    *scroll = usize::MAX;
+                }
+                _ => {}
+            },
+            AppMode::Search { .. } => {
+                self.handle_search_key(key);
+            }
+            AppMode::Timeline {
+                underlying, scroll, ..
+            }
+            | AppMode::Metrics { underlying, scroll }
+            | AppMode::Activity { underlying, scroll }
+            | AppMode::Relations {
+                underlying, scroll, ..
+            } => match key.code {
+                KeyCode::Char('?') => self.help_open = true,
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    let restored = std::mem::replace(
+                        underlying,
+                        OverviewSession::single(OverviewState::empty(PathBuf::new()), true),
+                    );
+                    self.mode = AppMode::Overview(restored);
+                }
+                KeyCode::Right if underlying.is_multi() => {
+                    self.pending_switch = Some(underlying.cycle_next());
+                }
+                KeyCode::Left if underlying.is_multi() => {
+                    self.pending_switch = Some(underlying.cycle_prev());
+                }
+                KeyCode::Char('P') if underlying.is_multi() && !underlying.pinned_single() => {
+                    self.pending_overlay_open = true;
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     *scroll = scroll.saturating_add(1);
@@ -644,6 +773,12 @@ impl App {
                 self.pending_open_file = Some(path);
             }
             OverviewKeyAction::OpenDefinition => self.open_definition(),
+            OverviewKeyAction::OpenSearch => self.open_search(SearchMode::Search),
+            OverviewKeyAction::OpenCommandPalette => self.open_search(SearchMode::Command),
+            OverviewKeyAction::OpenTimeline => self.open_timeline(),
+            OverviewKeyAction::OpenMetrics => self.open_metrics(),
+            OverviewKeyAction::OpenActivity => self.open_activity(),
+            OverviewKeyAction::OpenRelations => self.open_relations(),
             OverviewKeyAction::RequestSync => self.pending_sync = true,
         }
     }
@@ -666,6 +801,197 @@ impl App {
             underlying: session,
             scroll: 0,
         };
+    }
+
+    fn open_search(&mut self, mode: SearchMode) {
+        let Some(session) = self.take_overview_session() else {
+            return;
+        };
+        self.mode = AppMode::Search {
+            underlying: session,
+            state: SearchState::new(mode),
+        };
+    }
+
+    fn open_timeline(&mut self) {
+        let Some(session) = self.take_overview_session() else {
+            return;
+        };
+        self.mode = timeline_mode_or_overview(session);
+    }
+
+    fn open_metrics(&mut self) {
+        let Some(session) = self.take_overview_session() else {
+            return;
+        };
+        self.mode = AppMode::Metrics {
+            underlying: session,
+            scroll: 0,
+        };
+    }
+
+    fn open_activity(&mut self) {
+        let Some(session) = self.take_overview_session() else {
+            return;
+        };
+        self.mode = AppMode::Activity {
+            underlying: session,
+            scroll: 0,
+        };
+    }
+
+    fn open_relations(&mut self) {
+        let Some(session) = self.take_overview_session() else {
+            return;
+        };
+        self.mode = relations_mode_or_overview(session);
+    }
+
+    fn take_overview_session(&mut self) -> Option<OverviewSession> {
+        let placeholder = AppMode::Picker(PickerState::new(PathBuf::new(), Vec::new()));
+        match std::mem::replace(&mut self.mode, placeholder) {
+            AppMode::Overview(session) => Some(session),
+            other => {
+                self.mode = other;
+                None
+            }
+        }
+    }
+
+    fn handle_search_key(&mut self, key: KeyEvent) {
+        let placeholder = AppMode::Picker(PickerState::new(PathBuf::new(), Vec::new()));
+        let prior = std::mem::replace(&mut self.mode, placeholder);
+        let AppMode::Search {
+            underlying,
+            mut state,
+        } = prior
+        else {
+            self.mode = prior;
+            return;
+        };
+
+        self.mode = match key.code {
+            KeyCode::Esc => AppMode::Overview(
+                AppMode::Search { underlying, state }
+                    .into_session()
+                    .expect("search mode stores an overview session"),
+            ),
+            KeyCode::Backspace => {
+                state.backspace();
+                AppMode::Search { underlying, state }
+            }
+            KeyCode::Char('?') => {
+                self.help_open = true;
+                AppMode::Search { underlying, state }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let len = search_result_len(&underlying, &state);
+                state.select_next(len);
+                AppMode::Search { underlying, state }
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                state.select_previous();
+                AppMode::Search { underlying, state }
+            }
+            KeyCode::Enter => activate_search(underlying, state),
+            KeyCode::Char(ch) => {
+                state.push(ch);
+                AppMode::Search { underlying, state }
+            }
+            _ => AppMode::Search { underlying, state },
+        };
+    }
+}
+
+fn search_result_len(session: &OverviewSession, state: &SearchState) -> usize {
+    let len = match state.mode() {
+        SearchMode::Search => search_results(session, state).len(),
+        SearchMode::Command => matching_commands(state.query()).len(),
+    };
+    len.min(SEARCH_VISIBLE_RESULT_LIMIT)
+}
+
+fn search_results(session: &OverviewSession, state: &SearchState) -> Vec<Entity> {
+    let active = session.active_state();
+    active.index().query(EntityQuery {
+        scope: active.current_query_scope(),
+        text: Some(state.query().to_string()),
+        ..EntityQuery::default()
+    })
+}
+
+fn activate_search(mut session: OverviewSession, state: SearchState) -> AppMode {
+    match state.mode() {
+        SearchMode::Search => {
+            if let Some(entity) = search_results(&session, &state)
+                .into_iter()
+                .take(SEARCH_VISIBLE_RESULT_LIMIT)
+                .nth(state.selected_index())
+            {
+                session
+                    .active_state_mut()
+                    .select_visible_entity_by_id(&entity.id);
+            }
+            AppMode::Overview(session)
+        }
+        SearchMode::Command => {
+            let Some(command) = matching_commands(state.query())
+                .into_iter()
+                .take(SEARCH_VISIBLE_RESULT_LIMIT)
+                .nth(state.selected_index())
+            else {
+                return AppMode::Search {
+                    underlying: session,
+                    state,
+                };
+            };
+            command_mode_or_overview(session, command.action)
+        }
+    }
+}
+
+fn command_mode_or_overview(session: OverviewSession, action: CommandAction) -> AppMode {
+    match action {
+        CommandAction::Metrics => AppMode::Metrics {
+            underlying: session,
+            scroll: 0,
+        },
+        CommandAction::Activity => AppMode::Activity {
+            underlying: session,
+            scroll: 0,
+        },
+        CommandAction::Timeline => timeline_mode_or_overview(session),
+        CommandAction::Relations => relations_mode_or_overview(session),
+    }
+}
+
+fn timeline_mode_or_overview(session: OverviewSession) -> AppMode {
+    let Some(entity_id) = session
+        .active_state()
+        .selected_item()
+        .map(|entity| entity.id)
+    else {
+        return AppMode::Overview(session);
+    };
+    AppMode::Timeline {
+        underlying: session,
+        entity_id,
+        scroll: 0,
+    }
+}
+
+fn relations_mode_or_overview(session: OverviewSession) -> AppMode {
+    let Some(entity_id) = session
+        .active_state()
+        .selected_item()
+        .map(|entity| entity.id)
+    else {
+        return AppMode::Overview(session);
+    };
+    AppMode::Relations {
+        underlying: session,
+        entity_id,
+        scroll: 0,
     }
 }
 
