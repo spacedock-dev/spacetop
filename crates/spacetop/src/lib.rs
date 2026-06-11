@@ -16,9 +16,11 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use spacetop_core::config::{self, ConfigLoad, ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery;
 use spacetop_core::editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
 use spacetop_core::git_sync::{self, GitRunner, StdGitRunner, SyncOutcome};
+use spacetop_core::session_state;
 use spacetop_core::watcher::{self, WatcherBackend, WatcherConfig, WorkflowWatcher};
 
 /// Result of resolving a CLI invocation into a launch decision, prior to any
@@ -36,22 +38,38 @@ pub enum DecideOutcome {
 }
 
 pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
+    decide_app_with_config(cli, cwd, SpacetopConfig::default(), Vec::new())
+}
+
+fn decide_app_with_config(
+    cli: &Cli,
+    cwd: &Path,
+    config: SpacetopConfig,
+    config_warnings: Vec<ConfigWarning>,
+) -> anyhow::Result<DecideOutcome> {
     if let Some(explicit) = cli.workflow_dir.clone() {
-        if let Ok(app) = App::load(explicit.clone()) {
+        if let Ok(app) = App::load_with_config_warnings(
+            explicit.clone(),
+            config.clone(),
+            config_warnings.clone(),
+        ) {
             return Ok(DecideOutcome::Overview(app));
         }
 
         let workflows = discovery::discover_workflows(&explicit)
             .with_context(|| format!("failed to scan {}", explicit.display()))?;
         if workflows.is_empty() {
-            let app = App::load(explicit.clone()).with_context(|| {
-                format!("failed to load workflow directory {}", explicit.display())
-            })?;
+            let app = App::load_with_config_warnings(
+                explicit.clone(),
+                config.clone(),
+                config_warnings.clone(),
+            )
+            .with_context(|| format!("failed to load workflow directory {}", explicit.display()))?;
             return Ok(DecideOutcome::Overview(app));
         }
 
         let scan_root = explicit.canonicalize().unwrap_or_else(|_| explicit.clone());
-        return overview_from_discovered_workflows(scan_root, workflows);
+        return overview_from_discovered_workflows(scan_root, workflows, &config, &config_warnings);
     }
 
     let scan_root = discovery::resolve_scan_root(cwd);
@@ -61,21 +79,30 @@ pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
     if workflows.is_empty() {
         return Ok(DecideOutcome::ZeroWorkflows { scan_root });
     }
-    overview_from_discovered_workflows(scan_root, workflows)
+    overview_from_discovered_workflows(scan_root, workflows, &config, &config_warnings)
 }
 
 fn overview_from_discovered_workflows(
     scan_root: PathBuf,
     workflows: Vec<discovery::DiscoveredWorkflow>,
+    config: &SpacetopConfig,
+    config_warnings: &[ConfigWarning],
 ) -> anyhow::Result<DecideOutcome> {
     if workflows.len() == 1 {
         let only = workflows.into_iter().next().expect("one workflow");
-        let state = load_overview_state(&only.root)?;
+        let mut state = load_overview_state(&only.root)?;
+        state.apply_config_defaults(config);
         // Discovery path with exactly one workflow: not `-w` pinned, but
         // is_multi() is false because len() == 1, so cycle/P keys stay
         // inert per the design.
         let session = app::OverviewSession::single(state, false);
-        return Ok(DecideOutcome::Overview(App::from_session(session)));
+        return Ok(DecideOutcome::Overview(
+            App::from_session_with_config_warnings(
+                session,
+                config.clone(),
+                config_warnings.to_vec(),
+            ),
+        ));
     }
 
     let first = workflows
@@ -83,9 +110,12 @@ fn overview_from_discovered_workflows(
         .expect("non-empty workflow list")
         .root
         .clone();
-    let state = load_overview_state(&first)?;
+    let mut state = load_overview_state(&first)?;
+    state.apply_config_defaults(config);
     let session = app::OverviewSession::from_discovery(scan_root, workflows, 0, state);
-    Ok(DecideOutcome::Overview(App::from_session(session)))
+    Ok(DecideOutcome::Overview(
+        App::from_session_with_config_warnings(session, config.clone(), config_warnings.to_vec()),
+    ))
 }
 
 fn load_overview_state(root: &Path) -> anyhow::Result<app::OverviewState> {
@@ -95,7 +125,8 @@ fn load_overview_state(root: &Path) -> anyhow::Result<app::OverviewState> {
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
-    match decide_app(&cli, &cwd)? {
+    let config_load = load_startup_config(&config::StdEnv);
+    match decide_app_with_config(&cli, &cwd, config_load.config, config_load.warnings)? {
         DecideOutcome::Overview(app) | DecideOutcome::Picker(app) => run_terminal(app),
         DecideOutcome::ZeroWorkflows { scan_root } => {
             eprintln!(
@@ -107,7 +138,22 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
     }
 }
 
+fn load_startup_config(env: &impl config::ConfigEnv) -> ConfigLoad {
+    match config::load_config_with_warnings(env) {
+        Ok(load) => load,
+        Err(err) => ConfigLoad {
+            config: SpacetopConfig::default(),
+            warnings: vec![ConfigWarning {
+                message: format!("failed to load config: {err}"),
+            }],
+        },
+    }
+}
+
 fn run_terminal(mut app: App) -> anyhow::Result<()> {
+    let session_state_path = session_state::state_path(&config::StdEnv);
+    load_session_state_for_app(&mut app, session_state_path.as_deref());
+
     // OSC 7 must land on the primary screen, before raw mode is enabled and
     // before EnterAlternateScreen, so terminals that support Smart Selection
     // on relative paths can resolve them against the right cwd.
@@ -248,11 +294,33 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
     drop(watcher_state);
     drop(history_worker_state);
 
+    save_session_state_for_app(&mut app, session_state_path.as_deref());
+
     terminal
         .show_cursor()
         .context("failed to restore terminal cursor")?;
 
     Ok(())
+}
+
+fn load_session_state_for_app(app: &mut App, path: Option<&Path>) {
+    let Some(path) = path else {
+        return;
+    };
+    match session_state::load_session_file(path) {
+        Ok(session_state) => app.apply_session_state(session_state),
+        Err(err) => app.add_status_warning(format!("failed to load session state: {err}")),
+    }
+}
+
+fn save_session_state_for_app(app: &mut App, path: Option<&Path>) {
+    let Some(path) = path else {
+        return;
+    };
+    let session_state = app.session_state_snapshot();
+    if let Err(err) = session_state::save_session_file(path, &session_state) {
+        app.add_status_warning(format!("failed to save session state: {err}"));
+    }
 }
 
 fn start_history_worker_for(app: &App) -> Option<std::sync::mpsc::Receiver<HistoryWorkerResult>> {
@@ -496,6 +564,37 @@ mod tests {
         .unwrap();
     }
 
+    struct TestConfigEnv {
+        vars: std::collections::HashMap<String, String>,
+    }
+
+    impl config::ConfigEnv for TestConfigEnv {
+        fn var(&self, key: &str) -> Option<String> {
+            self.vars.get(key).cloned()
+        }
+    }
+
+    #[test]
+    fn startup_config_io_errors_fall_back_to_default_warning() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("spacetop").join("config.yaml"))
+            .expect("create config path as directory");
+        let env = TestConfigEnv {
+            vars: std::collections::HashMap::from([(
+                "XDG_CONFIG_HOME".to_string(),
+                dir.path().to_string_lossy().into_owned(),
+            )]),
+        };
+
+        let load = load_startup_config(&env);
+
+        assert_eq!(load.config, SpacetopConfig::default());
+        assert!(load
+            .warnings
+            .iter()
+            .any(|warning| warning.message.contains("failed to load config")));
+    }
+
     #[test]
     fn watcher_restarts_on_switch() {
         // Build a 2-workflow session; press `]`; tear down + restart the
@@ -547,6 +646,87 @@ mod tests {
         // without panicking the loop. We verified that by `drop` above
         // returning cleanly.
         drop(new_watcher_state);
+    }
+
+    #[test]
+    fn load_session_state_for_app_applies_saved_selection() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let workflow = holder.path().join("workflow");
+        std::fs::create_dir_all(&workflow).unwrap();
+        write_minimal_workflow(&workflow, "000");
+        std::fs::write(
+            workflow.join("task-001.md"),
+            "---\nid: 001\ntitle: T001\nstatus: plan\n---\n\nbody\n",
+        )
+        .unwrap();
+        let mut app = App::load(workflow.clone()).expect("load workflow");
+        let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&workflow)
+            .expect("session key");
+        let session_file = holder.path().join("state").join("session.yaml");
+        spacetop_core::session_state::save_session_file(
+            &session_file,
+            &spacetop_core::session_state::SessionState {
+                workflows: std::collections::BTreeMap::from([(
+                    key.as_str().to_string(),
+                    spacetop_core::session_state::WorkflowSession {
+                        selected_entity_id: Some("001".to_string()),
+                        scope: spacetop_core::session_state::WorkflowScope::Active,
+                    },
+                )]),
+            },
+        )
+        .expect("save session");
+
+        load_session_state_for_app(&mut app, Some(&session_file));
+
+        assert_eq!(app.selected_item().expect("selected").id, "001");
+    }
+
+    #[test]
+    fn save_session_state_for_app_writes_canonical_workflow_session() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let workflow = holder.path().join("workflow");
+        std::fs::create_dir_all(&workflow).unwrap();
+        write_minimal_workflow(&workflow, "000");
+        std::fs::write(
+            workflow.join("task-001.md"),
+            "---\nid: 001\ntitle: T001\nstatus: plan\n---\n\nbody\n",
+        )
+        .unwrap();
+        let mut app = App::load(workflow.clone()).expect("load workflow");
+        app.handle_key(key(KeyCode::Down));
+        let session_file = holder.path().join("state").join("session.yaml");
+
+        save_session_state_for_app(&mut app, Some(&session_file));
+
+        let saved =
+            spacetop_core::session_state::load_session_file(&session_file).expect("load session");
+        let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&workflow)
+            .expect("session key");
+        assert_eq!(
+            saved
+                .workflows
+                .get(key.as_str())
+                .and_then(|session| session.selected_entity_id.as_deref()),
+            Some("001")
+        );
+        assert!(app.warning_messages().is_empty());
+    }
+
+    #[test]
+    fn save_session_state_for_app_surfaces_save_errors_as_warning() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let workflow = holder.path().join("workflow");
+        std::fs::create_dir_all(&workflow).unwrap();
+        write_minimal_workflow(&workflow, "000");
+        let mut app = App::load(workflow).expect("load workflow");
+
+        save_session_state_for_app(&mut app, Some(Path::new("relative/session.yaml")));
+
+        assert!(app
+            .warning_messages()
+            .iter()
+            .any(|warning| warning.contains("failed to save session state")));
     }
 
     #[test]

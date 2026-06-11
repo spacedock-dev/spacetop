@@ -2,10 +2,12 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
+use spacetop_core::config::{ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{Entity, WorkflowSnapshot};
 use spacetop_core::parser::ParseError;
 use spacetop_core::query::EntityQuery;
+use spacetop_core::session_state::{SessionState, WorkflowSessionKey};
 
 mod history_worker;
 mod keys;
@@ -23,7 +25,8 @@ pub use search::{
 };
 pub use session::{OverviewSession, WorkflowSwitch};
 
-use keys::{handle_overview_key, OverviewKeyAction};
+pub(crate) use keys::ResolvedKeymap;
+use keys::{handle_overview_key_with_keymap, OverviewKeyAction};
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
@@ -180,6 +183,11 @@ impl AppMode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct App {
     mode: AppMode,
+    config: SpacetopConfig,
+    config_warnings: Vec<ConfigWarning>,
+    resolved_keymap: ResolvedKeymap,
+    session_state: SessionState,
+    runtime_warnings: Vec<String>,
     should_quit: bool,
     help_open: bool,
     pending_switch: Option<WorkflowSwitch>,
@@ -190,63 +198,137 @@ pub struct App {
 
 impl App {
     pub fn new(workflow_dir: impl Into<PathBuf>) -> Self {
-        let state = OverviewState::empty(workflow_dir.into());
-        Self {
-            mode: AppMode::Overview(OverviewSession::single(state, true)),
-            should_quit: false,
-            help_open: false,
-            pending_switch: None,
-            pending_overlay_open: false,
-            pending_open_file: None,
-            pending_sync: false,
-        }
+        Self::new_with_config(workflow_dir, SpacetopConfig::default())
+    }
+
+    pub fn new_with_config(workflow_dir: impl Into<PathBuf>, config: SpacetopConfig) -> Self {
+        Self::new_with_config_warnings(workflow_dir, config, Vec::new())
+    }
+
+    pub fn new_with_config_warnings(
+        workflow_dir: impl Into<PathBuf>,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
+        let mut state = OverviewState::empty(workflow_dir.into());
+        state.apply_config_defaults(&config);
+        Self::from_mode_with_config(
+            AppMode::Overview(OverviewSession::single(state, true)),
+            config,
+            config_warnings,
+        )
     }
 
     pub fn load(workflow_dir: PathBuf) -> Result<Self, ParseError> {
-        let state = OverviewState::load(workflow_dir)?;
-        Ok(Self {
-            mode: AppMode::Overview(OverviewSession::single(state, true)),
-            should_quit: false,
-            help_open: false,
-            pending_switch: None,
-            pending_overlay_open: false,
-            pending_open_file: None,
-            pending_sync: false,
-        })
+        Self::load_with_config(workflow_dir, SpacetopConfig::default())
+    }
+
+    pub fn load_with_config(
+        workflow_dir: PathBuf,
+        config: SpacetopConfig,
+    ) -> Result<Self, ParseError> {
+        Self::load_with_config_warnings(workflow_dir, config, Vec::new())
+    }
+
+    pub fn load_with_config_warnings(
+        workflow_dir: PathBuf,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Result<Self, ParseError> {
+        let mut state = OverviewState::load(workflow_dir)?;
+        state.apply_config_defaults(&config);
+        Ok(Self::from_mode_with_config(
+            AppMode::Overview(OverviewSession::single(state, true)),
+            config,
+            config_warnings,
+        ))
     }
 
     pub fn from_snapshot(workflow_dir: PathBuf, snapshot: WorkflowSnapshot) -> Self {
-        let state = OverviewState::from_snapshot(workflow_dir, snapshot);
-        Self {
-            mode: AppMode::Overview(OverviewSession::single(state, true)),
-            should_quit: false,
-            help_open: false,
-            pending_switch: None,
-            pending_overlay_open: false,
-            pending_open_file: None,
-            pending_sync: false,
-        }
+        Self::from_snapshot_with_config(workflow_dir, snapshot, SpacetopConfig::default())
+    }
+
+    pub fn from_snapshot_with_config(
+        workflow_dir: PathBuf,
+        snapshot: WorkflowSnapshot,
+        config: SpacetopConfig,
+    ) -> Self {
+        Self::from_snapshot_with_config_warnings(workflow_dir, snapshot, config, Vec::new())
+    }
+
+    pub fn from_snapshot_with_config_warnings(
+        workflow_dir: PathBuf,
+        snapshot: WorkflowSnapshot,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
+        let mut state = OverviewState::from_snapshot(workflow_dir, snapshot);
+        state.apply_config_defaults(&config);
+        Self::from_mode_with_config(
+            AppMode::Overview(OverviewSession::single(state, true)),
+            config,
+            config_warnings,
+        )
     }
 
     pub fn from_session(session: OverviewSession) -> Self {
-        Self {
-            mode: AppMode::Overview(session),
-            should_quit: false,
-            help_open: false,
-            pending_switch: None,
-            pending_overlay_open: false,
-            pending_open_file: None,
-            pending_sync: false,
-        }
+        Self::from_session_with_config(session, SpacetopConfig::default())
+    }
+
+    pub fn from_session_with_config(session: OverviewSession, config: SpacetopConfig) -> Self {
+        Self::from_session_with_config_warnings(session, config, Vec::new())
+    }
+
+    pub fn from_session_with_config_warnings(
+        session: OverviewSession,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
+        Self::from_mode_with_config(AppMode::Overview(session), config, config_warnings)
     }
 
     pub fn from_picker(scan_root: PathBuf, workflows: Vec<DiscoveredWorkflow>) -> Self {
+        Self::from_picker_with_config(scan_root, workflows, SpacetopConfig::default())
+    }
+
+    pub fn from_picker_with_config(
+        scan_root: PathBuf,
+        workflows: Vec<DiscoveredWorkflow>,
+        config: SpacetopConfig,
+    ) -> Self {
+        Self::from_picker_with_config_warnings(scan_root, workflows, config, Vec::new())
+    }
+
+    pub fn from_picker_with_config_warnings(
+        scan_root: PathBuf,
+        workflows: Vec<DiscoveredWorkflow>,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
         debug_assert!(
             workflows.len() >= 2,
             "picker mode requires at least two workflows"
         );
+        Self::from_mode_with_config(
+            AppMode::Picker(PickerState::new(scan_root, workflows)),
+            config,
+            config_warnings,
+        )
+    }
+
+    fn from_mode_with_config(
+        mode: AppMode,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
+        let resolved_keymap = ResolvedKeymap::from_config(&config);
         Self {
-            mode: AppMode::Picker(PickerState::new(scan_root, workflows)),
+            mode,
+            config,
+            config_warnings,
+            resolved_keymap,
+            session_state: SessionState::default(),
+            runtime_warnings: Vec::new(),
             should_quit: false,
             help_open: false,
             pending_switch: None,
@@ -254,6 +336,35 @@ impl App {
             pending_open_file: None,
             pending_sync: false,
         }
+    }
+
+    pub fn config(&self) -> &SpacetopConfig {
+        &self.config
+    }
+
+    pub fn config_warnings(&self) -> &[ConfigWarning] {
+        &self.config_warnings
+    }
+
+    pub(crate) fn keymap(&self) -> &ResolvedKeymap {
+        &self.resolved_keymap
+    }
+
+    pub fn keymap_warnings(&self) -> &[String] {
+        self.resolved_keymap.warnings()
+    }
+
+    pub(crate) fn warning_messages(&self) -> Vec<String> {
+        self.config_warnings
+            .iter()
+            .map(|warning| warning.message.clone())
+            .chain(self.resolved_keymap.warnings().iter().cloned())
+            .chain(self.runtime_warnings.iter().cloned())
+            .collect()
+    }
+
+    pub fn add_status_warning(&mut self, message: String) {
+        self.runtime_warnings.push(message);
     }
 
     pub fn help_open(&self) -> bool {
@@ -281,6 +392,21 @@ impl App {
 
     pub fn as_session(&self) -> Option<&OverviewSession> {
         self.mode.as_session()
+    }
+
+    pub fn apply_session_state(&mut self, session_state: SessionState) {
+        self.session_state = session_state;
+        if let Some(session) = self.mode.as_session_mut() {
+            session.apply_session_state(&self.session_state);
+        }
+    }
+
+    pub fn session_state_snapshot(&self) -> SessionState {
+        let mut session_state = self.session_state.clone();
+        if let Some(session) = self.mode.as_session() {
+            session.write_session_state(&mut session_state);
+        }
+        session_state
     }
 
     /// True while the definition view is active.
@@ -508,6 +634,8 @@ impl App {
     /// a "workflow removed" message in `last_refresh_error` so the UI stays
     /// non-panicking until the user picks another workflow.
     pub fn reload_with_rediscovery(&mut self) -> Result<(), ParseError> {
+        let config = self.config.clone();
+        let session_state = self.session_state.clone();
         let Some(session) = self.mode.as_session_mut() else {
             return Ok(());
         };
@@ -551,7 +679,8 @@ impl App {
         // parse failure and records the error in `last_refresh_error`.
         if !session.active_slot_loaded() {
             match OverviewState::load(active_dir.clone()) {
-                Ok(state) => {
+                Ok(mut state) => {
+                    apply_config_and_session_state(&mut state, &config, &session_state);
                     session.install_active_state(state);
                     Ok(())
                 }
@@ -573,12 +702,17 @@ impl App {
     /// empty `OverviewState` with `last_refresh_error` set so the user sees
     /// the breadcrumb and the error rather than a hang or silent revert.
     pub fn materialize_active(&mut self) {
+        let config = self.config.clone();
+        let session_state = self.session_state.clone();
         let Some(session) = self.mode.as_session_mut() else {
             return;
         };
         let dir = session.active_dir().to_path_buf();
         match OverviewState::load(dir.clone()) {
-            Ok(state) => session.install_active_state(state),
+            Ok(mut state) => {
+                apply_config_and_session_state(&mut state, &config, &session_state);
+                session.install_active_state(state);
+            }
             Err(err) => {
                 let mut empty = OverviewState::empty(dir);
                 empty.set_refresh_error(err.to_string());
@@ -596,7 +730,11 @@ impl App {
             return;
         }
         let overview_action = match &mut self.mode {
-            AppMode::Overview(session) => Some(handle_overview_key(session, key)),
+            AppMode::Overview(session) => Some(handle_overview_key_with_keymap(
+                session,
+                key,
+                &self.resolved_keymap,
+            )),
             _ => None,
         };
         if let Some(action) = overview_action {
@@ -900,6 +1038,20 @@ impl App {
             }
             _ => AppMode::Search { underlying, state },
         };
+    }
+}
+
+fn apply_config_and_session_state(
+    state: &mut OverviewState,
+    config: &SpacetopConfig,
+    session_state: &SessionState,
+) {
+    state.apply_config_defaults(config);
+    let Ok(key) = WorkflowSessionKey::from_workflow_dir(state.workflow_dir()) else {
+        return;
+    };
+    if let Some(saved) = session_state.workflows.get(key.as_str()) {
+        state.apply_session(saved);
     }
 }
 

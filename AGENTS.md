@@ -45,6 +45,10 @@ The app is no longer just a scaffold. It currently provides a read-first TUI tha
 - Toggle between active and archived scopes with `a`.
 - Preview selected markdown bodies with `Enter`, scroll preview content, and toggle preview wrapping with `w`.
 - Auto-refresh a workflow after relevant filesystem changes using `notify`, with a polling fallback.
+- Read YAML config from `$XDG_CONFIG_HOME/spacetop/config.yaml` or
+  `~/.config/spacetop/config.yaml` and persist per-workflow TUI session state
+  under `$XDG_STATE_HOME/spacetop/session.yaml` or
+  `~/.local/state/spacetop/session.yaml`; relative env-derived roots are ignored.
 - Sync from the workflow's git remote with the explicit `Y` action, limited to
   `git pull --ff-only` and guarded by tests.
 
@@ -55,7 +59,9 @@ shape while making the internals easier to reason about and test.
 
 - **Read-only by default:** never mutate Spacedock workflow markdown unless a
   future task explicitly adds audited write support. The existing `Y` sync action
-  is the only sanctioned write path and must stay `git pull --ff-only`.
+  is the only sanctioned workflow-adjacent write path and must stay
+  `git pull --ff-only`. Config/session writes are allowed only under absolute
+  user config/state paths, never inside workflow directories.
 - **Clean Code is required, not aspirational:** small functions, clear names,
   typed boundaries, limited side effects, no hidden parsing in UI code, and no
   speculative abstractions.
@@ -102,6 +108,9 @@ Keep module boundaries clear and testable:
 - `crates/spacetop-core/src/editor.rs` owns opening selected files in an
   external editor/viewer path; it must not become a workflow-state writer
   without explicit policy change.
+- `crates/spacetop-core/src/config.rs` and
+  `crates/spacetop-core/src/session_state.rs` own user config/session models,
+  absolute XDG/HOME path resolution, and YAML load/save behavior.
 - `crates/spacetop/src/ui/mod.rs` and `crates/spacetop/src/ui/*` own Ratatui
   rendering, layout, task list, preview pane, markdown rendering, help popup,
   footer, workflow tabs, chrome, and definition/diff views.
@@ -156,6 +165,8 @@ Keep the TUI read-oriented, dense, and predictable:
 ## Safety
 
 - Do not mutate Spacedock workflow markdown by default.
+- Do not read or write config/session files in workflow directories. User config
+  and session persistence may use only absolute XDG/HOME-derived paths.
 - Preserve user changes and workflow state files.
 - Do not rewrite or clean up docs workflow files unless the task specifically asks for workflow state changes.
 - When write features are added later, make writes explicit, narrow, and easy to audit in git.

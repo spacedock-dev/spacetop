@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use crate::app::{OverviewState, ViewScope};
+use spacetop_core::config::SpacetopConfig;
 use spacetop_core::domain::{Entity, EntityParseError};
 
 /// Format a phase name into a fixed `width`-character column, preserving the
@@ -27,7 +28,12 @@ pub(crate) fn phase_col(stage: &str, width: usize) -> String {
     }
 }
 
-pub(super) fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &OverviewState) {
+pub(super) fn render_task_list(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    config: &SpacetopConfig,
+    state: &OverviewState,
+) {
     let scope = state.view_scope();
     let title = match scope {
         ViewScope::Active => "Tasks",
@@ -81,13 +87,9 @@ pub(super) fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &Overvi
     // the selection background — no manual trailing spacer needed.
     let list = List::new(items)
         .highlight_symbol("")
-        .highlight_style(Style::default().bg(BG2));
+        .highlight_style(Style::default().bg(crate::ui::color::selection_bg(config)));
     frame.render_stateful_widget(list, list_area, &mut list_state);
 }
-
-/// Tokyo Night selection/visual color for selected rows.
-/// Provides a distinct blue-tinted contrast against the dark terminal background (~Rgb(26,27,38)).
-const BG2: Color = Color::Rgb(40, 52, 84);
 
 fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListItem<'static>> {
     let scope = state.view_scope();

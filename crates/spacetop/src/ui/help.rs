@@ -13,57 +13,62 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .as_session()
         .map(|s| s.active_state().preview_open())
         .unwrap_or(false);
+    let keymap = app.keymap();
     let mut lines = vec![
         Line::from(Span::styled(
             "Spacetop keymap",
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("  Up / k         move selection up"),
-        Line::from("  Down / j       move selection down"),
-        Line::from("  Home           jump to first item"),
-        Line::from("  End            jump to last item"),
-        Line::from("  Enter          toggle preview mode"),
-        Line::from("  a              toggle active / archived view"),
-        Line::from("  s              cycle sort mode (when preview closed)"),
-        Line::from("  /              search entities"),
-        Line::from("  :              open command palette"),
-        Line::from("  D              open workflow definition"),
-        Line::from("  Y              sync workflow (git pull)"),
-        Line::from("  ?              toggle this help popup"),
-        Line::from("  Esc            close help"),
+        key_line("Up / k", "move selection up"),
+        key_line("Down / j", "move selection down"),
+        key_line("Home", "jump to first item"),
+        key_line("End", "jump to last item"),
+        key_line("Enter", "toggle preview mode"),
+        key_line("a", "toggle active / archived view"),
+        key_line("s", "cycle sort mode (when preview closed)"),
+        key_line(keymap.search.label(), "search entities"),
+        key_line(keymap.command.label(), "open command palette"),
+        key_line("D", "open workflow definition"),
+        key_line("Y", "sync workflow (git pull)"),
+        key_line("?", "toggle this help popup"),
+        key_line("Esc", "close help"),
     ];
     if preview_open {
-        lines.push(Line::from("  Space / PgDn   page preview down"));
-        lines.push(Line::from("  b / PgUp       page preview up"));
-        lines.push(Line::from("  g / G          preview top / bottom"));
-        lines.push(Line::from("  w              toggle word wrap"));
-        lines.push(Line::from("  o              open file in $EDITOR"));
+        lines.push(key_line("Space / PgDn", "page preview down"));
+        lines.push(key_line("b / PgUp", "page preview up"));
+        lines.push(key_line("g / G", "preview top / bottom"));
+        lines.push(key_line("w", "toggle word wrap"));
+        lines.push(key_line("o", "open file in $EDITOR"));
     } else {
-        lines.push(Line::from("  PageUp         page list up"));
-        lines.push(Line::from("  PageDown       page list down"));
-        lines.push(Line::from(
-            "  T              entity timeline (preview closed)",
+        lines.push(key_line("PageUp", "page list up"));
+        lines.push(key_line("PageDown", "page list down"));
+        lines.push(key_line(
+            keymap.timeline.label(),
+            "entity timeline (preview closed)",
         ));
-        lines.push(Line::from("  M              metrics view (preview closed)"));
-        lines.push(Line::from(
-            "  A              activity feed (preview closed)",
+        lines.push(key_line(
+            keymap.metrics.label(),
+            "metrics view (preview closed)",
         ));
-        lines.push(Line::from(
-            "  R              entity relations (preview closed)",
+        lines.push(key_line(
+            keymap.activity.label(),
+            "activity feed (preview closed)",
+        ));
+        lines.push(key_line(
+            keymap.relations.label(),
+            "entity relations (preview closed)",
         ));
     }
     if preview_open {
-        lines.push(Line::from("  \u{2192} / Right     scroll preview right"));
-        lines.push(Line::from("  \u{2190} / Left      scroll preview left"));
+        lines.push(key_line("\u{2192} / Right", "scroll preview right"));
+        lines.push(key_line("\u{2190} / Left", "scroll preview left"));
     } else if is_multi {
-        lines.push(Line::from("  \u{2192} / Right     switch to next workflow"));
-        lines.push(Line::from(
-            "  \u{2190} / Left      switch to previous workflow",
-        ));
+        lines.push(key_line("\u{2192} / Right", "switch to next workflow"));
+        lines.push(key_line("\u{2190} / Left", "switch to previous workflow"));
     }
     if is_multi {
-        lines.push(Line::from("  P              pick workflow"));
+        lines.push(key_line("P", "pick workflow"));
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
@@ -96,4 +101,8 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
 
     frame.render_widget(Clear, popup);
     frame.render_widget(paragraph, popup);
+}
+
+fn key_line(key: &str, description: &str) -> Line<'static> {
+    Line::from(format!("  {key:<14} {description}"))
 }

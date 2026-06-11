@@ -1,8 +1,266 @@
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
+use spacetop_core::config::{KeybindingConfig, SpacetopConfig};
 
 use super::{OverviewSession, WorkflowSwitch};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedKey {
+    key: char,
+    label: String,
+}
+
+impl ResolvedKey {
+    fn new(key: char) -> Self {
+        let label = match key {
+            ' ' => "Space".to_string(),
+            ch => ch.to_string(),
+        };
+        Self { key, label }
+    }
+
+    pub(crate) fn label(&self) -> &str {
+        &self.label
+    }
+
+    fn matches(&self, code: KeyCode) -> bool {
+        matches!(code, KeyCode::Char(ch) if ch == self.key)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedKeymap {
+    pub(crate) search: ResolvedKey,
+    pub(crate) command: ResolvedKey,
+    pub(crate) timeline: ResolvedKey,
+    pub(crate) metrics: ResolvedKey,
+    pub(crate) activity: ResolvedKey,
+    pub(crate) relations: ResolvedKey,
+    warnings: Vec<String>,
+}
+
+impl Default for ResolvedKeymap {
+    fn default() -> Self {
+        Self::from_config(&SpacetopConfig::default())
+    }
+}
+
+impl ResolvedKeymap {
+    pub(crate) fn from_config(config: &SpacetopConfig) -> Self {
+        let specs = binding_specs(&config.keybindings);
+        let parsed = specs
+            .iter()
+            .map(|spec| parse_binding(spec.configured))
+            .collect::<Vec<_>>();
+        let mut counts = HashMap::<char, usize>::new();
+        for key in parsed.iter().flatten() {
+            *counts.entry(*key).or_default() += 1;
+        }
+
+        let mut warnings = Vec::new();
+        let mut resolved = Vec::with_capacity(specs.len());
+        for (spec, parsed_key) in specs.iter().zip(parsed) {
+            let binding = match parsed_key {
+                None => {
+                    warnings.push(format!(
+                        "invalid keybinding for {}: expected a single printable character",
+                        spec.name
+                    ));
+                    ResolvedBinding::fallback(spec, spec.default)
+                }
+                Some(key) if is_reserved_key(key) && key != spec.default => {
+                    warnings.push(format!("reserved keybinding for {}: {key}", spec.name));
+                    ResolvedBinding::fallback(spec, spec.default)
+                }
+                Some(key)
+                    if counts.get(&key).copied().unwrap_or_default() > 1 && key != spec.default =>
+                {
+                    warnings.push(format!("duplicate keybinding for {}: {key}", spec.name));
+                    ResolvedBinding::fallback(spec, spec.default)
+                }
+                Some(key) => ResolvedBinding::configured(spec, key),
+            };
+            resolved.push(binding);
+        }
+        resolve_final_duplicates(&mut resolved, &mut warnings);
+        let resolved = resolved
+            .into_iter()
+            .map(|binding| ResolvedKey::new(binding.key))
+            .collect::<Vec<_>>();
+
+        Self {
+            search: resolved[0].clone(),
+            command: resolved[1].clone(),
+            timeline: resolved[2].clone(),
+            metrics: resolved[3].clone(),
+            activity: resolved[4].clone(),
+            relations: resolved[5].clone(),
+            warnings,
+        }
+    }
+
+    pub(crate) fn warnings(&self) -> &[String] {
+        &self.warnings
+    }
+}
+
+struct BindingSpec<'a> {
+    name: &'static str,
+    configured: &'a str,
+    default: char,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindingOrigin {
+    Configured,
+    Fallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedBinding {
+    name: &'static str,
+    default: char,
+    key: char,
+    origin: BindingOrigin,
+}
+
+impl ResolvedBinding {
+    fn configured(spec: &BindingSpec<'_>, key: char) -> Self {
+        Self {
+            name: spec.name,
+            default: spec.default,
+            key,
+            origin: BindingOrigin::Configured,
+        }
+    }
+
+    fn fallback(spec: &BindingSpec<'_>, key: char) -> Self {
+        Self {
+            name: spec.name,
+            default: spec.default,
+            key,
+            origin: BindingOrigin::Fallback,
+        }
+    }
+}
+
+fn binding_specs(config: &KeybindingConfig) -> [BindingSpec<'_>; 6] {
+    [
+        BindingSpec {
+            name: "search",
+            configured: &config.search,
+            default: '/',
+        },
+        BindingSpec {
+            name: "command",
+            configured: &config.command,
+            default: ':',
+        },
+        BindingSpec {
+            name: "timeline",
+            configured: &config.timeline,
+            default: 'T',
+        },
+        BindingSpec {
+            name: "metrics",
+            configured: &config.metrics,
+            default: 'M',
+        },
+        BindingSpec {
+            name: "activity",
+            configured: &config.activity,
+            default: 'A',
+        },
+        BindingSpec {
+            name: "relations",
+            configured: &config.relations,
+            default: 'R',
+        },
+    ]
+}
+
+fn parse_binding(value: &str) -> Option<char> {
+    let mut chars = value.chars();
+    let key = chars.next()?;
+    if chars.next().is_some() || key.is_control() {
+        return None;
+    }
+    Some(key)
+}
+
+fn is_reserved_key(key: char) -> bool {
+    matches!(
+        key,
+        'a' | 's' | 'D' | 'Y' | '?' | 'q' | 'j' | 'k' | 'w' | 'o' | 'b' | 'g' | 'G' | 'P' | ' '
+    )
+}
+
+fn resolve_final_duplicates(resolved: &mut [ResolvedBinding], warnings: &mut Vec<String>) {
+    let duplicate_groups = duplicate_binding_groups(resolved);
+    if duplicate_groups.is_empty() {
+        return;
+    }
+
+    let mut keep = HashSet::new();
+    for group in duplicate_groups {
+        let winner = group
+            .iter()
+            .copied()
+            .find(|index| resolved[*index].origin == BindingOrigin::Configured)
+            .unwrap_or(group[0]);
+        keep.insert(winner);
+    }
+
+    let mut reassign = duplicate_binding_groups(resolved)
+        .into_iter()
+        .flatten()
+        .filter(|index| !keep.contains(index))
+        .collect::<Vec<_>>();
+    reassign.sort_unstable();
+    reassign.dedup();
+
+    let mut used = resolved
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !reassign.contains(index))
+        .map(|(_, binding)| binding.key)
+        .collect::<HashSet<_>>();
+
+    for index in reassign {
+        let old_key = resolved[index].key;
+        let replacement = fallback_key_for(resolved[index].default, &used);
+        warnings.push(format!(
+            "final duplicate keybinding for {}: {old_key}; using {replacement}",
+            resolved[index].name
+        ));
+        resolved[index].key = replacement;
+        resolved[index].origin = BindingOrigin::Fallback;
+        used.insert(replacement);
+    }
+}
+
+fn duplicate_binding_groups(resolved: &[ResolvedBinding]) -> Vec<Vec<usize>> {
+    let mut groups = HashMap::<char, Vec<usize>>::new();
+    for (index, binding) in resolved.iter().enumerate() {
+        groups.entry(binding.key).or_default().push(index);
+    }
+    groups
+        .into_values()
+        .filter(|group| group.len() > 1)
+        .collect()
+}
+
+fn fallback_key_for(default: char, used: &HashSet<char>) -> char {
+    if !used.contains(&default) {
+        return default;
+    }
+    ['/', ':', 'T', 'M', 'A', 'R']
+        .into_iter()
+        .find(|key| !used.contains(key))
+        .unwrap_or(default)
+}
 
 pub(crate) enum OverviewKeyAction {
     None,
@@ -25,9 +283,18 @@ pub(crate) enum OverviewKeyAction {
     RequestSync,
 }
 
+#[allow(dead_code)]
 pub(crate) fn handle_overview_key(
     session: &mut OverviewSession,
     key: KeyEvent,
+) -> OverviewKeyAction {
+    handle_overview_key_with_keymap(session, key, &ResolvedKeymap::default())
+}
+
+pub(crate) fn handle_overview_key_with_keymap(
+    session: &mut OverviewSession,
+    key: KeyEvent,
+    keymap: &ResolvedKeymap,
 ) -> OverviewKeyAction {
     let is_multi = session.is_multi();
     let pinned = session.pinned_single();
@@ -126,12 +393,24 @@ pub(crate) fn handle_overview_key(
             OverviewKeyAction::None
         }
         KeyCode::Char('D') if !state.preview_open() => OverviewKeyAction::OpenDefinition,
-        KeyCode::Char('/') if !state.preview_open() => OverviewKeyAction::OpenSearch,
-        KeyCode::Char(':') if !state.preview_open() => OverviewKeyAction::OpenCommandPalette,
-        KeyCode::Char('T') if !state.preview_open() => OverviewKeyAction::OpenTimeline,
-        KeyCode::Char('M') if !state.preview_open() => OverviewKeyAction::OpenMetrics,
-        KeyCode::Char('A') if !state.preview_open() => OverviewKeyAction::OpenActivity,
-        KeyCode::Char('R') if !state.preview_open() => OverviewKeyAction::OpenRelations,
+        code if keymap.search.matches(code) && !state.preview_open() => {
+            OverviewKeyAction::OpenSearch
+        }
+        code if keymap.command.matches(code) && !state.preview_open() => {
+            OverviewKeyAction::OpenCommandPalette
+        }
+        code if keymap.timeline.matches(code) && !state.preview_open() => {
+            OverviewKeyAction::OpenTimeline
+        }
+        code if keymap.metrics.matches(code) && !state.preview_open() => {
+            OverviewKeyAction::OpenMetrics
+        }
+        code if keymap.activity.matches(code) && !state.preview_open() => {
+            OverviewKeyAction::OpenActivity
+        }
+        code if keymap.relations.matches(code) && !state.preview_open() => {
+            OverviewKeyAction::OpenRelations
+        }
         KeyCode::Char('Y') if !state.preview_open() => OverviewKeyAction::RequestSync,
         KeyCode::Right if is_multi => OverviewKeyAction::Switch(session.cycle_next()),
         KeyCode::Left if is_multi => OverviewKeyAction::Switch(session.cycle_prev()),
@@ -147,8 +426,10 @@ mod tests {
 
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    use super::{handle_overview_key, OverviewKeyAction};
-    use crate::app::{OverviewSession, OverviewState};
+    use super::{
+        handle_overview_key, handle_overview_key_with_keymap, OverviewKeyAction, ResolvedKeymap,
+    };
+    use crate::app::{App, AppMode, OverviewSession, OverviewState};
     use spacetop_core::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -318,6 +599,170 @@ mod tests {
         assert!(matches!(
             handle_overview_key(&mut session, key(KeyCode::Char('R'))),
             OverviewKeyAction::OpenRelations
+        ));
+    }
+
+    #[test]
+    fn configured_search_key_opens_search() {
+        let config = spacetop_core::config::SpacetopConfig {
+            keybindings: spacetop_core::config::KeybindingConfig {
+                search: "f".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let keymap = ResolvedKeymap::from_config(&config);
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item(path);
+
+        let action =
+            handle_overview_key_with_keymap(&mut session, key(KeyCode::Char('f')), &keymap);
+
+        assert!(matches!(action, OverviewKeyAction::OpenSearch));
+    }
+
+    #[test]
+    fn app_handle_key_uses_configured_search_key() {
+        let config = spacetop_core::config::SpacetopConfig {
+            keybindings: spacetop_core::config::KeybindingConfig {
+                search: "f".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let session = single_session_with_item(path);
+        let mut app = App::from_session_with_config(session, config);
+
+        app.handle_key(key(KeyCode::Char('f')));
+
+        assert!(matches!(app.mode(), AppMode::Search { .. }));
+    }
+
+    #[test]
+    fn duplicate_configured_keys_fall_back_to_defaults() {
+        let config = spacetop_core::config::SpacetopConfig {
+            keybindings: spacetop_core::config::KeybindingConfig {
+                search: "f".to_string(),
+                activity: "f".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let resolved = ResolvedKeymap::from_config(&config);
+
+        assert_eq!(resolved.search.label(), "/");
+        assert_eq!(resolved.activity.label(), "A");
+        assert!(resolved
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains("duplicate")));
+    }
+
+    #[test]
+    fn reserved_overview_keys_fall_back_to_defaults() {
+        let config = spacetop_core::config::SpacetopConfig {
+            keybindings: spacetop_core::config::KeybindingConfig {
+                search: "a".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let resolved = ResolvedKeymap::from_config(&config);
+
+        assert_eq!(resolved.search.label(), "/");
+        assert!(resolved
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains("reserved")));
+    }
+
+    #[test]
+    fn invalid_keybinding_strings_fall_back_to_defaults() {
+        let config = spacetop_core::config::SpacetopConfig {
+            keybindings: spacetop_core::config::KeybindingConfig {
+                search: String::new(),
+                command: "Ctrl-X".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let resolved = ResolvedKeymap::from_config(&config);
+
+        assert_eq!(resolved.search.label(), "/");
+        assert_eq!(resolved.command.label(), ":");
+        assert!(resolved
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains("invalid")));
+    }
+
+    #[test]
+    fn invalid_search_fallback_does_not_collide_with_configured_command_slash() {
+        let config = spacetop_core::config::SpacetopConfig {
+            keybindings: spacetop_core::config::KeybindingConfig {
+                search: String::new(),
+                command: "/".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let resolved = ResolvedKeymap::from_config(&config);
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item(path);
+
+        assert_ne!(resolved.search.label(), resolved.command.label());
+        assert_eq!(resolved.command.label(), "/");
+        assert!(resolved
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains("final duplicate")));
+        assert!(matches!(
+            handle_overview_key_with_keymap(
+                &mut session,
+                key(KeyCode::Char(resolved.command.key)),
+                &resolved
+            ),
+            OverviewKeyAction::OpenCommandPalette
+        ));
+    }
+
+    #[test]
+    fn reserved_search_fallback_does_not_collide_with_configured_command_slash() {
+        let config = spacetop_core::config::SpacetopConfig {
+            keybindings: spacetop_core::config::KeybindingConfig {
+                search: "a".to_string(),
+                command: "/".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let resolved = ResolvedKeymap::from_config(&config);
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item(path);
+
+        assert_ne!(resolved.search.label(), resolved.command.label());
+        assert_eq!(resolved.command.label(), "/");
+        assert!(resolved
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains("reserved")));
+        assert!(resolved
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains("final duplicate")));
+        assert!(matches!(
+            handle_overview_key_with_keymap(
+                &mut session,
+                key(KeyCode::Char(resolved.command.key)),
+                &resolved
+            ),
+            OverviewKeyAction::OpenCommandPalette
         ));
     }
 

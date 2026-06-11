@@ -1,16 +1,185 @@
 use super::{App, AppMode, HistoryWorkerResult, ViewScope};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
+use spacetop_core::sources::ArchiveSnapshot;
 
 #[test]
 fn stores_workflow_directory() {
     let app = App::new("docs/spacetop-dev");
 
     assert_eq!(app.workflow_dir(), Path::new("docs/spacetop-dev"));
+}
+
+#[test]
+fn app_stores_config_for_key_handling() {
+    let config = spacetop_core::config::SpacetopConfig {
+        keybindings: spacetop_core::config::KeybindingConfig {
+            search: "f".to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let app = App::new_with_config("/tmp/workflow", config.clone());
+
+    assert_eq!(app.config(), &config);
+}
+
+#[test]
+fn app_stores_config_warnings_for_status_rendering() {
+    let warning = spacetop_core::config::ConfigWarning {
+        message: "failed to parse config: test".to_string(),
+    };
+
+    let app = App::new_with_config_warnings(
+        "/tmp/workflow",
+        spacetop_core::config::SpacetopConfig::default(),
+        vec![warning.clone()],
+    );
+
+    assert_eq!(app.config_warnings(), &[warning]);
+}
+
+#[test]
+fn config_default_scope_applies_when_session_has_no_saved_scope() {
+    let config = spacetop_core::config::SpacetopConfig {
+        defaults: spacetop_core::config::DefaultsConfig {
+            scope: spacetop_core::config::DefaultScope::Archived,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut state = overview_state_with_active_and_archived_items();
+
+    state.apply_config_defaults(&config);
+
+    assert_eq!(state.view_scope(), ViewScope::Archived);
+}
+
+#[test]
+fn session_scope_overrides_config_default_scope() {
+    let config = spacetop_core::config::SpacetopConfig {
+        defaults: spacetop_core::config::DefaultsConfig {
+            scope: spacetop_core::config::DefaultScope::Archived,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut state = overview_state_with_active_and_archived_items();
+
+    state.apply_config_defaults(&config);
+    state.apply_session(&spacetop_core::session_state::WorkflowSession {
+        selected_entity_id: None,
+        scope: spacetop_core::session_state::WorkflowScope::Active,
+    });
+
+    assert_eq!(state.view_scope(), ViewScope::Active);
+}
+
+#[test]
+fn overview_applies_saved_selected_entity() {
+    let root = PathBuf::from("/tmp/spacetop-session-restore-test");
+    let snapshot = snapshot_from_items(vec![
+        item_at(root.join("001-first.md"), "001", "first", "plan"),
+        item_at(root.join("002-second.md"), "002", "second", "plan"),
+    ]);
+    let mut state = OverviewState::from_snapshot(root, snapshot);
+
+    state.apply_session(&spacetop_core::session_state::WorkflowSession {
+        selected_entity_id: Some("002".to_string()),
+        scope: spacetop_core::session_state::WorkflowScope::Active,
+    });
+
+    assert_eq!(state.selected_item().expect("selected").id, "002");
+}
+
+#[test]
+fn app_applies_session_state_by_canonical_workflow_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("workflow");
+    std::fs::create_dir_all(&root).expect("workflow dir");
+    let app = app_with_two_items_at(&root);
+    let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&root)
+        .expect("session key");
+    let state = spacetop_core::session_state::SessionState {
+        workflows: BTreeMap::from([(
+            key.as_str().to_string(),
+            spacetop_core::session_state::WorkflowSession {
+                selected_entity_id: Some("002".to_string()),
+                scope: spacetop_core::session_state::WorkflowScope::Active,
+            },
+        )]),
+    };
+    let mut app = app;
+
+    app.apply_session_state(state);
+
+    assert_eq!(app.selected_item().expect("selected").id, "002");
+}
+
+#[test]
+fn app_session_state_snapshot_uses_canonical_workflow_key() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("workflow");
+    std::fs::create_dir_all(&root).expect("workflow dir");
+    let mut app = app_with_two_items_at(&root);
+    app.handle_key(key(KeyCode::Down));
+
+    let state = app.session_state_snapshot();
+    let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&root)
+        .expect("session key");
+    let saved = state
+        .workflows
+        .get(key.as_str())
+        .expect("workflow session saved");
+
+    assert_eq!(saved.selected_entity_id.as_deref(), Some("002"));
+    assert_eq!(
+        saved.scope,
+        spacetop_core::session_state::WorkflowScope::Active
+    );
+}
+
+#[test]
+fn app_session_state_overrides_config_default_scope() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("workflow");
+    std::fs::create_dir_all(root.join("_archive")).expect("archive dir");
+    let mut snapshot = snapshot_from_items(vec![item_at(
+        root.join("001-first.md"),
+        "001",
+        "first",
+        "plan",
+    )]);
+    snapshot.definition.root = root.clone();
+    let config = spacetop_core::config::SpacetopConfig {
+        defaults: spacetop_core::config::DefaultsConfig {
+            scope: spacetop_core::config::DefaultScope::Archived,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut app = App::from_snapshot_with_config(root.clone(), snapshot, config);
+    assert_eq!(app.view_scope(), ViewScope::Archived);
+    let key = spacetop_core::session_state::WorkflowSessionKey::from_workflow_dir(&root)
+        .expect("session key");
+
+    app.apply_session_state(spacetop_core::session_state::SessionState {
+        workflows: BTreeMap::from([(
+            key.as_str().to_string(),
+            spacetop_core::session_state::WorkflowSession {
+                selected_entity_id: None,
+                scope: spacetop_core::session_state::WorkflowScope::Active,
+            },
+        )]),
+    });
+
+    assert_eq!(app.view_scope(), ViewScope::Active);
 }
 
 #[test]
@@ -924,6 +1093,62 @@ fn snapshot_from_items(items: Vec<Entity>) -> WorkflowSnapshot {
     let mut snapshot = snapshot_with_items(0);
     snapshot.items = items;
     snapshot
+}
+
+fn app_with_two_items_at(root: &Path) -> App {
+    let mut snapshot = snapshot_from_items(vec![
+        item_at(root.join("001-first.md"), "001", "first", "plan"),
+        item_at(root.join("002-second.md"), "002", "second", "plan"),
+    ]);
+    snapshot.definition.root = root.to_path_buf();
+    App::from_snapshot(root.to_path_buf(), snapshot)
+}
+
+fn overview_state_with_active_and_archived_items() -> OverviewState {
+    let root = PathBuf::from("/tmp/spacetop-config-default-test");
+    let mut snapshot = snapshot_from_items(vec![item_at(
+        root.join("001-active.md"),
+        "001",
+        "active",
+        "plan",
+    )]);
+    snapshot.definition.root = root.clone();
+    snapshot.definition.stages = vec![
+        StageDefinition {
+            name: "plan".to_string(),
+            initial: true,
+            terminal: false,
+            gate: false,
+            fresh: false,
+            feedback_to: None,
+            worktree: false,
+            concurrency: None,
+        },
+        StageDefinition {
+            name: "done".to_string(),
+            initial: false,
+            terminal: true,
+            gate: false,
+            fresh: false,
+            feedback_to: None,
+            worktree: false,
+            concurrency: None,
+        },
+    ];
+    let mut state = OverviewState::from_snapshot(root.clone(), snapshot);
+    state.index = state.index.clone().with_archive(ArchiveSnapshot {
+        entities: vec![item_at(
+            root.join("_archive").join("999-done.md"),
+            "999",
+            "archived",
+            "done",
+        )],
+        parse_errors: Vec::new(),
+        error: None,
+    });
+    state.archive_loaded = true;
+    state.archived_done_count = Some(1);
+    state
 }
 
 #[test]

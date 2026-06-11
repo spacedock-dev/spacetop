@@ -10,7 +10,8 @@ Spacetop is an active Rust TUI, not a scaffold. The current product can discover
 Spacedock workflows, parse README metadata and work item frontmatter, browse
 active and archived items, render workflow graphs, preview markdown, merge
 selected worktree copies into the visible snapshot, auto-refresh filesystem
-changes, and explicitly sync with `git pull --ff-only`.
+changes, read user YAML config, persist per-workflow TUI session state under the
+user state path, and explicitly sync with `git pull --ff-only`.
 
 The repository is still early enough that architecture decisions matter. The
 v2 design under `docs/superpowers/specs/2026-06-11-spacetop-v2-design.md`
@@ -34,6 +35,13 @@ Spacetop is a read-first inspection tool for Spacedock markdown workflows.
 - Spacetop must not rewrite workflow state by default.
 - The current `Y` sync action is the only approved write path. It may run
   `git pull --ff-only` and nothing broader.
+- User config and session persistence are not workflow-state writes. They are
+  allowed only under absolute XDG/HOME-derived user paths:
+  `$XDG_CONFIG_HOME/spacetop/config.yaml` or `~/.config/spacetop/config.yaml`,
+  and `$XDG_STATE_HOME/spacetop/session.yaml` or
+  `~/.local/state/spacetop/session.yaml`.
+- Spacetop must not read or write config/session files inside Spacedock workflow
+  directories.
 - Any future write feature requires an explicit design, a narrow command path,
   git-auditable output, and tests that prove no other write path exists.
 - Parser failures should be visible and understandable; they should not be
@@ -78,6 +86,9 @@ Current two-crate workspace boundaries:
 - Filesystem watching belongs in `crates/spacetop-core/src/watcher.rs`.
 - Explicit git sync belongs in `crates/spacetop-core/src/git_sync.rs`.
 - External file opening belongs in `crates/spacetop-core/src/editor.rs`.
+- User config and session persistence models, XDG/HOME path resolution, and YAML
+  load/save helpers belong in `crates/spacetop-core/src/config.rs` and
+  `crates/spacetop-core/src/session_state.rs`.
 - `spacetop` contains the CLI, TUI app state, terminal event loop, and Ratatui
   views.
 - CLI parsing belongs in `crates/spacetop/src/cli.rs`.
@@ -162,6 +173,8 @@ Docs are part of the product contract.
 - If a task changes keyboard behavior, update footer/help expectations and tests.
 - If a task changes workflow schema assumptions, update parser tests and the
   relevant docs together.
+- If a task changes config/session behavior, update README and this policy in
+  the same change, including the user-path safety boundary.
 - Do not rewrite Spacedock workflow state files unless the task specifically
   asks for workflow state changes.
 

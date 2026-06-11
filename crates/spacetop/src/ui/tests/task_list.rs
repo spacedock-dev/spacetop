@@ -77,6 +77,105 @@ fn selected_row_fill_covers_full_pane_width() {
     );
 }
 
+#[test]
+fn task_list_uses_configured_selection_background() {
+    let root = PathBuf::from("/tmp/spacetop-configured-selection");
+    let selected_title = "Configured selected title";
+    let config = spacetop_core::config::SpacetopConfig {
+        theme: spacetop_core::config::ThemeConfig {
+            selection_bg: "#102030".to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let snapshot = spacetop_core::domain::WorkflowSnapshot {
+        definition: spacetop_core::domain::WorkflowDefinition {
+            root: root.clone(),
+            stages: vec![spacetop_core::domain::StageDefinition {
+                name: "design".to_string(),
+                initial: true,
+                terminal: false,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: false,
+                concurrency: None,
+            }],
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
+        },
+        items: vec![item("001", selected_title, "Body")],
+        parse_errors: Vec::new(),
+    };
+    let mut app = App::from_snapshot_with_config(root, snapshot, config);
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    let mut terminal = Terminal::new(TestBackend::new(100, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let buffer = terminal.backend().buffer();
+
+    assert!(
+        find_styled_text(buffer, selected_title, |style| {
+            style.bg == Some(Color::Rgb(16, 32, 48))
+        }),
+        "selected row title should use configured selection background"
+    );
+}
+
+#[test]
+fn footer_uses_configured_background() {
+    let config = spacetop_core::config::SpacetopConfig {
+        theme: spacetop_core::config::ThemeConfig {
+            footer_bg: "#203040".to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let root = PathBuf::from("/tmp/spacetop-configured-footer");
+    let snapshot = spacetop_core::domain::WorkflowSnapshot {
+        definition: spacetop_core::domain::WorkflowDefinition {
+            root: root.clone(),
+            stages: vec![spacetop_core::domain::StageDefinition {
+                name: "design".to_string(),
+                initial: true,
+                terminal: false,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: false,
+                concurrency: None,
+            }],
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
+        },
+        items: vec![item("001", "Task", "Body")],
+        parse_errors: Vec::new(),
+    };
+    let app = App::from_snapshot_with_config(root, snapshot, config);
+
+    let height: u16 = 24;
+    let width: u16 = 120;
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let buffer = terminal.backend().buffer();
+
+    let footer_y = height - 1;
+    assert!(
+        (0..width).any(|x| buffer[(x, footer_y)].style().bg == Some(Color::Rgb(32, 48, 64))),
+        "footer should use configured background"
+    );
+}
+
 // ---- AC snapshot tests ----
 
 #[test]

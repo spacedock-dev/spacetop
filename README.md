@@ -20,7 +20,8 @@ Spacetop is an active read-first TUI. It can discover workflows, open an explici
 workflow directory, parse active and archived work items, preview markdown,
 render workflow graphs, show selected worktree state, open query-backed search,
 timeline, metrics, activity, and relation views, auto-refresh filesystem changes,
-and explicitly sync with `git pull --ff-only`.
+read YAML user config, restore per-workflow session state, and explicitly sync
+with `git pull --ff-only`.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.
@@ -72,6 +73,39 @@ Workspace layout:
 - `tests/fixtures/` contains shared integration-test fixtures.
 
 Release and versioning policy lives in `docs/release-policy.md`.
+
+## Configuration
+
+Spacetop reads YAML config from `$XDG_CONFIG_HOME/spacetop/config.yaml`, falling
+back to `~/.config/spacetop/config.yaml` when `XDG_CONFIG_HOME` is unset,
+empty, or relative. It stores TUI session state under
+`$XDG_STATE_HOME/spacetop/session.yaml`, falling back to
+`~/.local/state/spacetop/session.yaml` when `XDG_STATE_HOME` is unset, empty, or
+relative. Relative `HOME` values are ignored, so config and session paths are
+derived only from absolute user config/state roots.
+
+Config supports theme colors, default scope/sort, and the P3 view keybindings:
+
+```yaml
+theme:
+  selection_bg: "#283454"
+  footer_bg: "#3b4252"
+defaults:
+  sort: id
+  scope: active
+keybindings:
+  search: "/"
+  command: ":"
+  timeline: "T"
+  metrics: "M"
+  activity: "A"
+  relations: "R"
+```
+
+Malformed config falls back to built-in defaults and is shown as a warning in
+the TUI. Invalid, duplicate, or reserved keybindings also fall back to defaults
+with warnings. Config and session files are never read from or written into
+Spacedock workflow directories.
 
 ### Setup
 
@@ -126,4 +160,7 @@ make uninstall
 
 ## Safety
 
-Spacetop should be read-only by default. Future write features should make state changes explicit and easy to audit through git.
+Spacetop should be read-only by default. The only current writes are the explicit
+`Y` sync action (`git pull --ff-only`) and session persistence under the user
+state path described above. Future workflow-state write features should make
+state changes explicit and easy to audit through git.

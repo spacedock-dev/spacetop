@@ -249,6 +249,93 @@ fn dashboard_footer_lists_p3_capability_hints_when_preview_closed() {
 }
 
 #[test]
+fn dashboard_footer_uses_configured_keybinding_labels() {
+    let config = spacetop_core::config::SpacetopConfig {
+        keybindings: spacetop_core::config::KeybindingConfig {
+            search: "f".to_string(),
+            command: "c".to_string(),
+            timeline: "x".to_string(),
+            metrics: "m".to_string(),
+            activity: "i".to_string(),
+            relations: "l".to_string(),
+        },
+        ..Default::default()
+    };
+    let app = App::from_snapshot_with_config(PathBuf::from("/tmp/p3-ui"), p3_snapshot(), config);
+    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(rendered.contains("f: search"));
+    assert!(rendered.contains("c: command"));
+    assert!(rendered.contains("x/m/i/l: views"));
+    assert!(!rendered.contains("/: search"));
+    assert!(!rendered.contains("T/M/A/R: views"));
+}
+
+#[test]
+fn help_popup_uses_configured_keybinding_labels() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let config = spacetop_core::config::SpacetopConfig {
+        keybindings: spacetop_core::config::KeybindingConfig {
+            search: "f".to_string(),
+            command: "c".to_string(),
+            timeline: "x".to_string(),
+            metrics: "m".to_string(),
+            activity: "i".to_string(),
+            relations: "l".to_string(),
+        },
+        ..Default::default()
+    };
+    let mut app =
+        App::from_snapshot_with_config(PathBuf::from("/tmp/p3-ui"), p3_snapshot(), config);
+    app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+
+    let mut terminal = Terminal::new(TestBackend::new(160, 34)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(rendered.contains("f              search entities"));
+    assert!(rendered.contains("c              open command palette"));
+    assert!(rendered.contains("x              entity timeline (preview closed)"));
+    assert!(rendered.contains("m              metrics view (preview closed)"));
+    assert!(rendered.contains("i              activity feed (preview closed)"));
+    assert!(rendered.contains("l              entity relations (preview closed)"));
+}
+
+#[test]
+fn footer_surfaces_config_and_keymap_warnings() {
+    let config = spacetop_core::config::SpacetopConfig {
+        keybindings: spacetop_core::config::KeybindingConfig {
+            search: "a".to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let app = App::from_snapshot_with_config_warnings(
+        PathBuf::from("/tmp/p3-ui"),
+        p3_snapshot(),
+        config,
+        vec![spacetop_core::config::ConfigWarning {
+            message: "failed to parse config: bad yaml".to_string(),
+        }],
+    );
+    let mut terminal = Terminal::new(TestBackend::new(240, 24)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(rendered.contains("failed to parse config"));
+    assert!(rendered.contains("reserved"));
+}
+
+#[test]
 fn multi_footer_shows_switch_workflow_when_preview_closed() {
     let session = synthetic_session(2);
     let app = App::from_session(session);
