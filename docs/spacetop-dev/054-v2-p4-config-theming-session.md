@@ -131,3 +131,20 @@ REJECTED. The required proof commands pass, and AC-1/AC-2/AC-4 are supported by 
 - `cargo test --workspace` -> passed: spacetop lib 313 passed; main 4 passed; integration tests 10/4/5 passed; spacetop-core lib 144 passed; core integration tests 7/1/2 passed; watcher real-backend tests 3 ignored; doctests 0.
 - `make lint` -> passed, `cargo clippy --all-targets --all-features -- -D warnings`.
 - `cargo test -p spacetop-core --test no_write_git_calls` -> passed, 2 passed.
+
+## Stage Report: verify cycle 2
+
+- DONE: AC-1 config and session paths are safe. Evidence: `config_path` and `state_path` only accept non-empty absolute `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, and `HOME` values, with relative XDG values falling back and relative HOME values yielding no path. Production startup loads config through `load_config_with_warnings(&StdEnv)` and uses `state_path(&StdEnv)` for session persistence; `save_session_file` rejects relative paths before creating directories or writing. Workspace tests include relative/empty XDG and relative HOME path cases, and the explicit no-write git guard still passes.
+- DONE: AC-2 malformed config is visible but non-fatal. Evidence: `load_config_file_with_warnings` returns default config plus a `failed to parse config` warning on malformed YAML, `App` preserves config/keymap/runtime warnings, and the footer renders them through the shared warning surface. Workspace tests include `malformed_config_returns_default_with_warning` and `footer_surfaces_config_and_keymap_warnings`.
+- DONE: AC-3 keybindings resolve through a validated final keymap. Evidence: `ResolvedKeymap::from_config` rejects invalid, duplicate, and reserved bindings before input handling, then runs `resolve_final_duplicates` over the final resolved bindings so fallback-created collisions cannot survive. The cycle-1 repros are covered by `invalid_search_fallback_does_not_collide_with_configured_command_slash` and `reserved_search_fallback_does_not_collide_with_configured_command_slash`; both assert distinct final labels, preserved configured command `/`, `final duplicate` warnings, and reachable command action. Help and footer render labels from `app.keymap()`.
+- DONE: AC-4 session state is typed and stable per workflow. Evidence: `SessionState`, `WorkflowSession`, `WorkflowScope`, and `WorkflowSessionKey` are typed in core; workflow keys require absolute paths and canonicalize the workflow directory. App startup and lazy workflow materialization apply config defaults first, then saved session state, so persisted selected entity and scope override config defaults. Tests cover canonical session save/restore, saved selected entity restore, and session scope overriding config default scope.
+- DONE: Proof commands:
+  - `cargo test -p spacetop fallback_does_not_collide` -> passed, 2 passed.
+  - `cargo test -p spacetop app::keys::tests` -> passed, 17 passed.
+  - `cargo test --workspace` -> passed: spacetop lib 313 passed; main 4 passed; integration tests 10/4/5 passed; spacetop-core lib 144 passed; core integration tests 7/1/2 passed; watcher real-backend tests 3 ignored; doctests 0.
+  - `make lint` -> passed: `cargo clippy --all-targets --all-features -- -D warnings`.
+  - `cargo test -p spacetop-core --test no_write_git_calls` -> passed, 2 passed.
+
+### Verdict
+
+PASSED. The cycle-1 AC-3 defect is fixed: final keymap validation now repairs fallback-created duplicate bindings with warnings, and the required regression tests prove the formerly unreachable command binding remains reachable. AC-1, AC-2, and AC-4 are supported by code inspection and passing targeted/workspace tests.
