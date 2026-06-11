@@ -61,21 +61,30 @@ and future changes harder to get wrong.
 
 ## Architecture Boundaries
 
-Current single-crate boundaries:
+Current two-crate workspace boundaries:
 
-- CLI parsing belongs in `src/cli.rs`.
+- `spacetop-core` contains pure workflow logic and must not depend on terminal
+  crates.
+- Workflow data structures, including the `Entity` model, belong in
+  `crates/spacetop-core/src/domain/mod.rs`.
+- Frontmatter, README, entity, archive, and worktree parsing belong in
+  `crates/spacetop-core/src/parser.rs` and
+  `crates/spacetop-core/src/parser/*`.
+- Discovery and git-root resolution belong in
+  `crates/spacetop-core/src/discovery.rs`.
+- Filesystem watching belongs in `crates/spacetop-core/src/watcher.rs`.
+- Explicit git sync belongs in `crates/spacetop-core/src/git_sync.rs`.
+- External file opening belongs in `crates/spacetop-core/src/editor.rs`.
+- `spacetop` contains the CLI, TUI app state, terminal event loop, and Ratatui
+  views.
+- CLI parsing belongs in `crates/spacetop/src/cli.rs`.
 - Launch decisions, terminal setup, event loop wiring, and watcher lifecycle
-  belong in `src/lib.rs`.
-- App state and input semantics belong in `src/app.rs` and `src/app/*`.
-- Workflow data structures belong in `src/domain/mod.rs`.
-- Frontmatter, README, item, archive, and worktree parsing belong in
-  `src/parser.rs` and `src/parser/*`.
-- Discovery and git-root resolution belong in `src/discovery.rs`.
-- Filesystem watching belongs in `src/watcher.rs`.
-- Explicit git sync belongs in `src/git_sync.rs`.
-- External file opening belongs in `src/editor.rs`.
-- Ratatui rendering belongs in `src/ui/*`.
-- Integration checks belong in `tests/`.
+  belong in `crates/spacetop/src/lib.rs`.
+- App state and input semantics belong in `crates/spacetop/src/app.rs` and
+  `crates/spacetop/src/app/*`.
+- Ratatui rendering belongs in `crates/spacetop/src/ui/*`.
+- Integration checks belong in each owning crate's `tests/` directory, while
+  shared fixtures remain in workspace-root `tests/fixtures/`.
 
 Strategic v2 boundary:
 
@@ -113,7 +122,10 @@ Test at the boundary where the behavior actually lives.
 - Discovery/root behavior: discovery unit tests or `tests/discovery_bypass.rs`.
 - Watcher filtering/debounce behavior: watcher tests, plus ignored real backend
   smoke only when the backend itself matters.
-- Git sync: `git_sync` tests and `tests/no_write_git_calls.rs`.
+- Git sync: `git_sync` tests and
+  `crates/spacetop-core/tests/no_write_git_calls.rs`.
+- Terminal-free core boundary:
+  `crates/spacetop-core/tests/no_terminal_deps.rs`.
 - Rendering behavior: Ratatui `TestBackend` assertions over manual screenshots
   whenever practical.
 
