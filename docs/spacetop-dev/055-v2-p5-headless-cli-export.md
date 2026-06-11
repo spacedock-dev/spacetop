@@ -13,7 +13,7 @@ verdict:
 score: 0.8
 worktree: .worktrees/spacedock-ensign-055-v2-p5-headless-cli-export
 issue:
-pr:
+pr: "#55"
 mod-block: merge:pr-merge
 ---
 
