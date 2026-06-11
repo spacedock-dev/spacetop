@@ -95,7 +95,7 @@ A worker sets this status while making code or documentation changes for the tas
 The first officer sets this status when implementation is ready for independent verification and captain approval.
 
 - **Inputs:** Implementation diff, test output, task acceptance criteria, proof plan, and any screenshots or terminal output relevant to TUI behavior.
-- **Outputs:** Verification verdict, defects or missing evidence if rejected, and approval notes if the task can move to done.
+- **Outputs:** Verification verdict, defects or missing evidence if rejected, and approval notes if the task can move to done through the PR merge flow.
 - **Good:** Challenges whether the change helps users inspect Spacedock state, checks parser failures and terminal edge cases, and confirms every acceptance criterion has evidence.
 - **Bad:** Rubber-stamps code, treats prose as proof when a test or guardrail could enforce the behavior, or ignores required `make lint` evidence for code changes.
 
@@ -120,6 +120,12 @@ Every task should prove the most important property at the lowest practical laye
 - Rendering behavior should use Ratatui `TestBackend` assertions before relying on manual terminal checks.
 
 For code changes, `make lint` is the completion gate. A task may skip a command only when the stage report explains why it was not applicable or could not run.
+
+## PR And Review Comment Flow
+
+Approving the `verify` gate authorizes PR publication. After that approval, the merge hook pushes the implementation branch and creates the GitHub PR directly, without asking for a second push or PR approval. GitHub Copilot PR review is expected to trigger automatically after PR creation.
+
+When the captain says "check PR review comments" or equivalent, inspect unresolved GitHub PR review comments, fix actionable feedback on the PR branch, push the updates, and reply to each review comment one by one. If a comment is not changed, reply with the reason.
 
 ## Workflow State
 

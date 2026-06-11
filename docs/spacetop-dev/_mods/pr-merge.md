@@ -1,7 +1,7 @@
 ---
 name: pr-merge
 description: Push branches and create/track GitHub PRs for workflow entities
-version: 0.12.1
+version: 0.12.1-spacetop.1
 ---
 
 # PR Merge
@@ -26,13 +26,15 @@ Check PR-pending entities using the same logic as the startup hook: scan entity 
 
 ## Hook: merge
 
-**PR APPROVAL GUARDRAIL — Do NOT push or create a PR without explicit captain approval.** Before presenting the draft, construct the full PR body so the captain reviews the actual prose that will land on GitHub.
+**Automatic PR publication after verification approval.** The captain's approval of the `verify` gate is the approval to publish the implementation branch. Do NOT ask for a second push/PR approval after the `verify` gate is approved.
+
+Before pushing, construct the full PR body so the exact prose that will land on GitHub is determined before publication.
 
 Compute the audit-link inputs first: short SHA via `git rev-parse --short HEAD` in the worktree directory (if it exits non-zero — no commits, detached HEAD — substitute the literal string `main` and report the fallback to the captain); owner/repo via `gh repo view --json nameWithOwner --jq '.nameWithOwner'`; short entity-id slot via `spacedock status --short-id {entity ref}` from the workflow directory (shortest-unique-prefix for sd-b32 workflows, literal stored ID for sequential and slug, matching the status table's ID column).
 
 Build the full PR body using the template below — motivation lead, `## What changed`, `## Evidence`, `---` separator, `[{short-id}](...)` audit link, and `Closes {issue}` line if frontmatter `issue` is set. This is the body that will be passed to `gh pr create` verbatim; do not reconstruct it after approval.
 
-Then present the draft to the captain:
+Report the publication summary to the captain while proceeding:
 
 - **Title:** {entity title}
 - **Branch:** {branch} -> main
@@ -44,11 +46,13 @@ Then present the draft to the captain:
   {constructed body}
   ```
 
-Wait for the captain's explicit approval before pushing. Do NOT infer approval from silence, acknowledgment of the summary, or the gate approval that preceded this step — only an explicit "push it", "go ahead", "yes", or equivalent counts.
+Then push main to ensure the remote is up to date with local state commits: `git push origin main`. Rebase the worktree branch onto main: `git rebase main` (from the worktree directory). Push the worktree branch: `git push origin {branch}`.
 
-**On approval:** First, push main to ensure the remote is up to date with local state commits: `git push origin main`. Then rebase the worktree branch onto main: `git rebase main` (from the worktree directory). Then push the worktree branch: `git push origin {branch}`. If any step fails (no remote, auth error, rebase conflict), report to the captain and fall back to local merge.
+Then create the PR by running `gh pr create --base main --head {branch} --title "{entity title}" --body "{constructed body}"` against the body already constructed above — do not rebuild it. If `gh` is not available, warn the captain and stop with the merge mod-block still set.
 
-Then create the PR by running `gh pr create --base main --head {branch} --title "{entity title}" --body "{constructed body}"` against the body already constructed above — do not rebuild it. If `gh` is not available, warn the captain and fall back to local merge.
+If push, rebase, or PR creation fails because of remote state, authentication, rebase conflicts, or GitHub availability, report the failure to the captain and stop with the merge mod-block still set. Do not silently local-merge, because this workflow expects GitHub Copilot PR review to run after PR creation.
+
+After PR creation, GitHub Copilot PR review is expected to trigger automatically from GitHub. Do not wait for Copilot inside the merge hook.
 
 ### PR body template
 
@@ -89,6 +93,15 @@ Target total length: **60-120 words**.
 
 Set the entity's `pr` field to the PR number (e.g., `#57`). Report the PR to the captain.
 
-**On decline:** Do NOT automatically fall back to local merge. Ask the captain how to proceed — options include local merge or leaving the branch unmerged. Only act on the captain's explicit choice.
-
 Do NOT archive yet. The entity stays at its current stage with `pr` set until the PR is merged. The FO handles advancement to the terminal stage and archival when it detects the merge (via the event loop PR check, idle hook, or startup hook).
+
+## PR Review Comment Follow-Up
+
+When the captain says "check PR review comments" or equivalent for a PR-backed entity:
+
+1. Inspect unresolved GitHub PR review comments, including GitHub Copilot comments.
+2. Fix each actionable comment on the same worktree branch.
+3. Push the updated branch.
+4. Reply to every reviewed comment one by one, either with the fix summary or a concise reason for not changing it.
+
+Keep the entity PR-backed and unarchived until the PR is merged.

@@ -1,5 +1,7 @@
 # SpaceTop v2 — Phase P0: Workspace Restructure + Model Rename — Implementation Plan
 
+> **Status:** Historical baseline. The current repository already has the P0 workspace split (`crates/spacetop-core` + `crates/spacetop`) and `Entity` model rename. Do not execute this plan against the current checkout as active work; use it only as provenance or as a verification checklist when auditing the P0 baseline.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Convert the single `spacetop` binary crate into a two-crate Cargo workspace — `spacetop-core` (pure logic, zero terminal dependencies) and `spacetop` (bin: TUI + CLI) — and rename the `WorkItem` model to `Entity`, with **behavior identical** and every existing test still passing.
