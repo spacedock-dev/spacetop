@@ -125,6 +125,10 @@ fn load_overview_state(root: &Path) -> anyhow::Result<app::OverviewState> {
 }
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {
+    if let Some(command) = cli.command.clone() {
+        return headless::run_command(command);
+    }
+
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
     let config_load = load_startup_config(&config::StdEnv);
     match decide_app_with_config(&cli, &cwd, config_load.config, config_load.warnings)? {
