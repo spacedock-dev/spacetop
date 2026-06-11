@@ -9,7 +9,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-050-v2-p0-workspace-restructure
 issue:
-pr:
+pr: "#49"
 mod-block: merge:pr-merge
 ---
 
