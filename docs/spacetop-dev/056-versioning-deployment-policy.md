@@ -59,3 +59,18 @@ Verified by: README, `docs/release-policy.md`, and `CHANGELOG.md`.
 - Required commands: `cargo fmt --check`; `cargo test`; `make lint`; `SENTRY_DSN= cargo build --release -p spacetop`; `target/release/spacetop --version`.
 - Manual check, if any: no live tag release required in the implementation stage.
 - Docs/policy update needed: README install guidance, `docs/release-policy.md`, and `CHANGELOG.md`.
+
+## Stage Report: implement
+
+- DONE: `spacetop --version` is wired to the Cargo package version and covered by a focused test plus release-binary proof.
+  Evidence: commit `6f03cb4` adds the Clap version surface and focused CLI test; fresh `cargo test` passed; `target/release/spacetop --version` printed `spacetop 0.1.0`.
+- DONE: CI and release workflows enforce the approved policy: fmt/tests/lint, tag-version agreement, macOS arm64 and Linux x64 archives, SHA256SUMS, and draft release publication.
+  Evidence: commits `0e73467`, `134fcfc`, and `94a5f6c` add CI plus release jobs; Ruby YAML parse, `rg` coverage, and Cargo metadata version static checks passed.
+- DONE: README, release policy, and changelog document the supported install/release path and the stage report cites evidence for all four acceptance criteria.
+  Evidence: commits `4015db6` and `506e871` add `CHANGELOG.md`, `docs/release-policy.md`, and release-first README install guidance; this report maps AC-1 through AC-4.
+- DONE: Required implementation verification commands.
+  Evidence: fresh `cargo fmt --check`, `cargo test`, `make lint`, `SENTRY_DSN= cargo build --release -p spacetop`, and `target/release/spacetop --version` all passed on current HEAD.
+
+### Summary
+
+Implemented the versioning and deployment policy with Cargo-backed `spacetop --version`, read-only CI, and a draft-first GitHub Release workflow for `aarch64-apple-darwin` and `x86_64-unknown-linux-gnu`. Added release docs and changelog, updated README install guidance, and aligned stale real-workflow test assertions with the current `shape/plan/implement/verify/done` workflow so the full verification gate passes.
