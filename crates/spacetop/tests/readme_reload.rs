@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use spacetop::app::{App, OverviewSession, OverviewState};
-use spacetop::discovery::{discover_workflows, DiscoveredWorkflow};
+use spacetop_core::discovery::{discover_workflows, DiscoveredWorkflow};
 use tempfile::tempdir;
 
 const COMMISSION_HEADER: &str = "commissioned-by: spacedock@0.10.1\n";

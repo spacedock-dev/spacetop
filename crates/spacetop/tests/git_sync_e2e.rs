@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use spacetop::app::{App, SyncStatus};
-use spacetop::git_sync::StdGitRunner;
-use spacetop::{apply_pending_sync, git_sync};
+use spacetop::apply_pending_sync;
+use spacetop_core::git_sync::{self, StdGitRunner};
 
 /// Probe `git --version`; return `false` and emit an `eprintln!` if git
 /// is not on `PATH`. Each test guards on this so a missing git in CI

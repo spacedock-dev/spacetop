@@ -7,7 +7,7 @@
 use std::fs;
 use std::time::Duration;
 
-use spacetop::watcher::{WatcherConfig, WorkflowWatcher};
+use spacetop_core::watcher::{WatcherConfig, WorkflowWatcher};
 
 #[test]
 #[ignore = "exercises the real notify backend; run with --ignored locally"]
