@@ -1,17 +1,17 @@
 ---
 id: "056"
 title: "Implement versioning and GitHub Release deployment policy"
-status: verify
+status: done
 source: "captain - approved versioning/deployment policy design and plan"
 kind: feature
 risk: medium
 milestone: v1-maintenance
 proof: "cargo fmt --check; cargo test; make lint; SENTRY_DSN= cargo build --release -p spacetop; target/release/spacetop --version"
 started: 2026-06-11
-completed:
-verdict:
+completed: 2026-06-11T08:21:04Z
+verdict: PASSED
 score: 0.99
-worktree: .worktrees/spacedock-ensign-056-versioning-deployment-policy
+worktree:
 issue:
 pr: "#50"
 mod-block:
