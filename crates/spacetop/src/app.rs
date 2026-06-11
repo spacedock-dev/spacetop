@@ -380,17 +380,18 @@ impl App {
     pub fn open_picker_overlay_with(&mut self, result: Result<Vec<DiscoveredWorkflow>, String>) {
         // Take the current session out of the mode (we're transitioning to
         // PickerOverlay).
-        let session = match std::mem::replace(
+        let prior_mode = std::mem::replace(
             &mut self.mode,
             AppMode::Picker(PickerState::new(PathBuf::new(), Vec::new())),
-        ) {
-            AppMode::Overview(s) => s,
-            // If we somehow got called from a non-overview state, restore
-            // and bail.
-            other => {
-                self.mode = other;
+        );
+        let session = match prior_mode {
+            AppMode::Picker(state) => {
+                self.mode = AppMode::Picker(state);
                 return;
             }
+            other => other
+                .into_session()
+                .expect("session-backed modes must open picker overlay"),
         };
         // Build picker state. Use scan_root if known; fallback to active dir.
         let scan_root = session
@@ -569,9 +570,8 @@ impl App {
     /// empty `OverviewState` with `last_refresh_error` set so the user sees
     /// the breadcrumb and the error rather than a hang or silent revert.
     pub fn materialize_active(&mut self) {
-        let session = match &mut self.mode {
-            AppMode::Overview(s) => s,
-            _ => return,
+        let Some(session) = self.mode.as_session_mut() else {
+            return;
         };
         let dir = session.active_dir().to_path_buf();
         match OverviewState::load(dir.clone()) {
@@ -659,12 +659,22 @@ impl App {
             | AppMode::Relations {
                 underlying, scroll, ..
             } => match key.code {
+                KeyCode::Char('?') => self.help_open = true,
                 KeyCode::Esc | KeyCode::Char('q') => {
                     let restored = std::mem::replace(
                         underlying,
                         OverviewSession::single(OverviewState::empty(PathBuf::new()), true),
                     );
                     self.mode = AppMode::Overview(restored);
+                }
+                KeyCode::Right if underlying.is_multi() => {
+                    self.pending_switch = Some(underlying.cycle_next());
+                }
+                KeyCode::Left if underlying.is_multi() => {
+                    self.pending_switch = Some(underlying.cycle_prev());
+                }
+                KeyCode::Char('P') if underlying.is_multi() && !underlying.pinned_single() => {
+                    self.pending_overlay_open = true;
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     *scroll = scroll.saturating_add(1);

@@ -1783,6 +1783,99 @@ fn p3_modes_preserve_underlying_session_plumbing() {
     }
 }
 
+#[test]
+fn p3_full_pane_modes_open_help_and_esc_still_restores_overview() {
+    for open_key in P3_FULL_PANE_KEYS {
+        let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+        open_p3_full_pane_mode(&mut app, open_key);
+
+        app.handle_key(key(KeyCode::Char('?')));
+        assert!(app.help_open(), "{open_key} mode must open help with ?");
+        assert_p3_full_pane_mode(&app, open_key);
+
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.help_open(), "Esc must close help first");
+        assert_p3_full_pane_mode(&app, open_key);
+
+        app.handle_key(key(KeyCode::Esc));
+        assert!(matches!(app.mode(), AppMode::Overview(_)));
+    }
+}
+
+#[test]
+fn p3_full_pane_modes_switch_workflows_left_and_right() {
+    for open_key in P3_FULL_PANE_KEYS {
+        let (session, _holder, roots) = multi_session(3);
+        let mut app = App::from_session(session);
+        open_p3_full_pane_mode(&mut app, open_key);
+
+        app.handle_key(key(KeyCode::Right));
+        let switch = app
+            .take_pending_switch()
+            .unwrap_or_else(|| panic!("{open_key} mode must emit switch on Right"));
+        assert_eq!(switch.target_index, 1);
+        assert!(switch.needs_first_load);
+        assert_eq!(app.as_session().unwrap().active_index(), 1);
+        assert_p3_full_pane_mode(&app, open_key);
+
+        app.materialize_active();
+        assert_eq!(app.workflow_dir(), roots[1].as_path());
+        assert_eq!(
+            app.selected_item().map(|entity| entity.id),
+            Some("001".to_string())
+        );
+        assert_p3_full_pane_mode(&app, open_key);
+
+        app.handle_key(key(KeyCode::Left));
+        let switch = app
+            .take_pending_switch()
+            .unwrap_or_else(|| panic!("{open_key} mode must emit switch on Left"));
+        assert_eq!(switch.target_index, 0);
+        assert!(!switch.needs_first_load);
+        assert_eq!(app.as_session().unwrap().active_index(), 0);
+    }
+}
+
+#[test]
+fn p3_full_pane_modes_can_open_picker_overlay() {
+    for open_key in P3_FULL_PANE_KEYS {
+        let (session, _holder, _roots) = multi_session(2);
+        let mut app = App::from_session(session);
+        open_p3_full_pane_mode(&mut app, open_key);
+
+        app.handle_key(key(KeyCode::Char('P')));
+        assert!(
+            app.take_pending_overlay_open(),
+            "{open_key} mode must schedule picker overlay with P"
+        );
+        let same_list = app.as_session().unwrap().discovery().to_vec();
+        app.open_picker_overlay_with(Ok(same_list));
+        assert!(app.is_overlay(), "{open_key} mode must open picker overlay");
+
+        app.handle_key(key(KeyCode::Esc));
+        assert!(matches!(app.mode(), AppMode::Overview(_)));
+        assert!(!app.should_quit());
+    }
+}
+
+const P3_FULL_PANE_KEYS: [char; 4] = ['T', 'M', 'A', 'R'];
+
+fn open_p3_full_pane_mode(app: &mut App, open_key: char) {
+    app.handle_key(key(KeyCode::Char(open_key)));
+    assert_p3_full_pane_mode(app, open_key);
+}
+
+fn assert_p3_full_pane_mode(app: &App, open_key: char) {
+    let mode_matches = matches!(
+        (open_key, app.mode()),
+        ('T', AppMode::Timeline { .. })
+            | ('M', AppMode::Metrics { .. })
+            | ('A', AppMode::Activity { .. })
+            | ('R', AppMode::Relations { .. })
+    );
+    assert!(mode_matches, "expected full-pane P3 mode for {open_key}");
+}
+
 // ---- Task 046: Sync action plumbing ----
 
 #[test]
