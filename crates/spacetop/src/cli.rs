@@ -25,6 +25,7 @@ pub enum Command {
     Timeline(TimelineArgs),
     Metrics(WorkflowOutputArgs),
     Activity(WorkflowOutputArgs),
+    Export(WorkflowOutputArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -183,6 +184,25 @@ mod tests {
                 assert!(args.json);
             }
             other => panic!("expected activity command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_export_subcommand() {
+        let cli = Cli::parse_from([
+            "spacetop",
+            "export",
+            "--workflow-dir",
+            "docs/spacetop-dev",
+            "--json",
+        ]);
+
+        match cli.command {
+            Some(Command::Export(args)) => {
+                assert_eq!(args.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
+                assert!(args.json);
+            }
+            other => panic!("expected export command, got {other:?}"),
         }
     }
 

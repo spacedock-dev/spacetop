@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use spacetop_core::config::{self, ConfigLoad, ConfigWarning, DefaultScope, DefaultSort};
 use spacetop_core::discovery;
+use spacetop_core::domain::{Entity, WorkflowDefinition};
 use spacetop_core::git::{GitRunner, StdGitRunner};
 use spacetop_core::index::{ActivityEvent, Metrics, StageEvent, WorkflowIndex};
 use spacetop_core::query::{EntityQuery, EntitySort, HistoryUnavailable, QueryScope};
@@ -69,6 +70,7 @@ fn run_command_with_io(
         crate::cli::Command::Timeline(args) => run_timeline(args, &StdGitRunner, out),
         crate::cli::Command::Metrics(args) => run_metrics(args, &StdGitRunner, out),
         crate::cli::Command::Activity(args) => run_activity(args, &StdGitRunner, out),
+        crate::cli::Command::Export(args) => run_export(args, out),
     }
 }
 
@@ -154,6 +156,39 @@ pub fn run_activity<R: GitRunner>(
     }
 }
 
+pub fn run_export(
+    args: crate::cli::WorkflowOutputArgs,
+    out: &mut impl Write,
+) -> anyhow::Result<()> {
+    if !args.json {
+        anyhow::bail!("spacetop export requires --json");
+    }
+
+    let cwd = std::env::current_dir().context("failed to resolve current directory")?;
+    let resolved = resolve_workflow_arg(args.workflow_dir, &cwd)?;
+    let index =
+        WorkflowIndex::load(&resolved.workflow_dir, &resolved.repo_root).with_context(|| {
+            format!(
+                "failed to load workflow {}",
+                resolved.workflow_dir.display()
+            )
+        })?;
+    let archive = WorkflowSources::load_archive(&resolved.workflow_dir, index.definition());
+    let index = index.with_archive(archive);
+
+    write_json(
+        out,
+        &ExportOutput {
+            definition: index.definition().clone(),
+            entities: index.query(EntityQuery::default()),
+            archived_entities: index.query(EntityQuery {
+                scope: QueryScope::Archived,
+                ..EntityQuery::default()
+            }),
+        },
+    )
+}
+
 fn load_index_with_history<R: GitRunner>(
     workflow_dir: Option<PathBuf>,
     runner: &R,
@@ -177,6 +212,13 @@ fn load_index_with_history<R: GitRunner>(
 #[derive(serde::Serialize)]
 struct UnavailableOutput<'a> {
     unavailable: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct ExportOutput {
+    definition: WorkflowDefinition,
+    entities: Vec<Entity>,
+    archived_entities: Vec<Entity>,
 }
 
 fn write_unavailable(
@@ -327,6 +369,7 @@ fn command_outputs_json(command: &crate::cli::Command) -> bool {
         crate::cli::Command::Timeline(args) => args.json,
         crate::cli::Command::Metrics(args) => args.json,
         crate::cli::Command::Activity(args) => args.json,
+        crate::cli::Command::Export(args) => args.json,
     }
 }
 
@@ -444,6 +487,49 @@ mod tests {
             spacetop_core::query::HistoryUnavailable::GitError("fatal: bad object\n".to_string())
                 .user_message(),
         );
+    }
+
+    #[test]
+    fn export_json_contains_definition_active_and_archived_entities() {
+        let fixture = fixture_repo_with_one_workflow();
+        write_entity(&fixture.path().join("docs/workflow/001.md"));
+        write_archived_entity(&fixture.path().join("docs/workflow/_archive/002.md"));
+        let mut out = Vec::new();
+
+        run_export(
+            crate::cli::WorkflowOutputArgs {
+                workflow_dir: Some(fixture.path().join("docs/workflow")),
+                json: true,
+            },
+            &mut out,
+        )
+        .expect("export");
+
+        let value: serde_json::Value =
+            serde_json::from_slice(&out).expect("export output must be JSON");
+        assert!(value.get("definition").is_some());
+        assert_eq!(value["entities"][0]["id"], "001");
+        assert_eq!(value["archived_entities"][0]["id"], "002");
+    }
+
+    #[test]
+    fn export_requires_json() {
+        let fixture = fixture_repo_with_one_workflow();
+        write_entity(&fixture.path().join("docs/workflow/001.md"));
+        let mut out = Vec::new();
+
+        let err = run_export(
+            crate::cli::WorkflowOutputArgs {
+                workflow_dir: Some(fixture.path().join("docs/workflow")),
+                json: false,
+            },
+            &mut out,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(err, "spacetop export requires --json");
+        assert!(out.is_empty());
     }
 
     fn assert_history_unavailable(response: spacetop_core::git::GitCmdResult, message: &str) {
@@ -579,6 +665,17 @@ mod tests {
             "---\nid: \"001\"\ntitle: First\nstatus: plan\n---\n\nbody\n",
         )
         .expect("write entity");
+    }
+
+    fn write_archived_entity(path: &Path) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("archive dir");
+        }
+        std::fs::write(
+            path,
+            "---\nid: \"002\"\ntitle: Archived\nstatus: done\ncompleted: 2026-06-01T00:00:00Z\n---\n\narchived body\n",
+        )
+        .expect("write archived entity");
     }
 
     struct TestGitRunner {
