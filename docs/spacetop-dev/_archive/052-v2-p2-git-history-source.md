@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#52"
 mod-block:
+archived: 2026-06-11T10:49:56Z
 ---
 
 Implement phase P2 of the SpaceTop v2 internals rebuild: derive trustworthy
