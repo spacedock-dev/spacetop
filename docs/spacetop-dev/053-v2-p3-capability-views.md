@@ -13,7 +13,7 @@ verdict:
 score: 0.9
 worktree: .worktrees/spacedock-ensign-053-v2-p3-capability-views
 issue:
-pr:
+pr: "#53"
 mod-block: merge:pr-merge
 ---
 
