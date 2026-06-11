@@ -20,8 +20,8 @@ Spacetop is an active read-first TUI. It can discover workflows, open an explici
 workflow directory, parse active and archived work items, preview markdown,
 render workflow graphs, show selected worktree state, open query-backed search,
 timeline, metrics, activity, and relation views, auto-refresh filesystem changes,
-read YAML user config, restore per-workflow session state, and explicitly sync
-with `git pull --ff-only`.
+read YAML user config, restore per-workflow session state, expose headless
+query/export commands, and explicitly sync with `git pull --ff-only`.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.
@@ -62,6 +62,8 @@ cargo fmt
 cargo test
 make lint
 cargo run -p spacetop -- --workflow-dir docs/spacetop-dev
+cargo run -p spacetop -- list --workflow-dir docs/spacetop-dev --json
+cargo run -p spacetop -- export --workflow-dir docs/spacetop-dev --json
 ```
 
 Workspace layout:
@@ -73,6 +75,33 @@ Workspace layout:
 - `tests/fixtures/` contains shared integration-test fixtures.
 
 Release and versioning policy lives in `docs/release-policy.md`.
+
+## Headless CLI
+
+No-argument and `--workflow-dir` invocations still launch the TUI:
+
+```bash
+spacetop
+spacetop --workflow-dir docs/spacetop-dev
+```
+
+Headless subcommands resolve exactly one workflow. Direct workflow paths,
+repository roots, and omitted paths use discovery; zero or multiple workflows
+return a stable error and ask for `--workflow-dir`.
+
+```bash
+spacetop list --workflow-dir docs/spacetop-dev
+spacetop list --workflow-dir docs/spacetop-dev --status verify --text sync --json
+spacetop timeline 050 --workflow-dir docs/spacetop-dev --json
+spacetop metrics --workflow-dir docs/spacetop-dev --json
+spacetop activity --workflow-dir docs/spacetop-dev --json
+spacetop export --workflow-dir docs/spacetop-dev --json
+```
+
+`list` supports `--scope active`, `--scope archived`, and `--scope all`.
+When omitted, scope and sort follow the user config defaults. `export` requires
+`--json` and emits the workflow definition, active entities, and archived
+entities.
 
 ## Configuration
 
