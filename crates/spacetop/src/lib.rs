@@ -16,6 +16,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
+use spacetop_core::config::{self, ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery;
 use spacetop_core::editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
 use spacetop_core::git_sync::{self, GitRunner, StdGitRunner, SyncOutcome};
@@ -36,22 +37,38 @@ pub enum DecideOutcome {
 }
 
 pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
+    decide_app_with_config(cli, cwd, SpacetopConfig::default(), Vec::new())
+}
+
+fn decide_app_with_config(
+    cli: &Cli,
+    cwd: &Path,
+    config: SpacetopConfig,
+    config_warnings: Vec<ConfigWarning>,
+) -> anyhow::Result<DecideOutcome> {
     if let Some(explicit) = cli.workflow_dir.clone() {
-        if let Ok(app) = App::load(explicit.clone()) {
+        if let Ok(app) = App::load_with_config_warnings(
+            explicit.clone(),
+            config.clone(),
+            config_warnings.clone(),
+        ) {
             return Ok(DecideOutcome::Overview(app));
         }
 
         let workflows = discovery::discover_workflows(&explicit)
             .with_context(|| format!("failed to scan {}", explicit.display()))?;
         if workflows.is_empty() {
-            let app = App::load(explicit.clone()).with_context(|| {
-                format!("failed to load workflow directory {}", explicit.display())
-            })?;
+            let app = App::load_with_config_warnings(
+                explicit.clone(),
+                config.clone(),
+                config_warnings.clone(),
+            )
+            .with_context(|| format!("failed to load workflow directory {}", explicit.display()))?;
             return Ok(DecideOutcome::Overview(app));
         }
 
         let scan_root = explicit.canonicalize().unwrap_or_else(|_| explicit.clone());
-        return overview_from_discovered_workflows(scan_root, workflows);
+        return overview_from_discovered_workflows(scan_root, workflows, &config, &config_warnings);
     }
 
     let scan_root = discovery::resolve_scan_root(cwd);
@@ -61,12 +78,14 @@ pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
     if workflows.is_empty() {
         return Ok(DecideOutcome::ZeroWorkflows { scan_root });
     }
-    overview_from_discovered_workflows(scan_root, workflows)
+    overview_from_discovered_workflows(scan_root, workflows, &config, &config_warnings)
 }
 
 fn overview_from_discovered_workflows(
     scan_root: PathBuf,
     workflows: Vec<discovery::DiscoveredWorkflow>,
+    config: &SpacetopConfig,
+    config_warnings: &[ConfigWarning],
 ) -> anyhow::Result<DecideOutcome> {
     if workflows.len() == 1 {
         let only = workflows.into_iter().next().expect("one workflow");
@@ -75,7 +94,13 @@ fn overview_from_discovered_workflows(
         // is_multi() is false because len() == 1, so cycle/P keys stay
         // inert per the design.
         let session = app::OverviewSession::single(state, false);
-        return Ok(DecideOutcome::Overview(App::from_session(session)));
+        return Ok(DecideOutcome::Overview(
+            App::from_session_with_config_warnings(
+                session,
+                config.clone(),
+                config_warnings.to_vec(),
+            ),
+        ));
     }
 
     let first = workflows
@@ -85,7 +110,9 @@ fn overview_from_discovered_workflows(
         .clone();
     let state = load_overview_state(&first)?;
     let session = app::OverviewSession::from_discovery(scan_root, workflows, 0, state);
-    Ok(DecideOutcome::Overview(App::from_session(session)))
+    Ok(DecideOutcome::Overview(
+        App::from_session_with_config_warnings(session, config.clone(), config_warnings.to_vec()),
+    ))
 }
 
 fn load_overview_state(root: &Path) -> anyhow::Result<app::OverviewState> {
@@ -95,7 +122,8 @@ fn load_overview_state(root: &Path) -> anyhow::Result<app::OverviewState> {
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
-    match decide_app(&cli, &cwd)? {
+    let config_load = config::load_config_with_warnings(&config::StdEnv)?;
+    match decide_app_with_config(&cli, &cwd, config_load.config, config_load.warnings)? {
         DecideOutcome::Overview(app) | DecideOutcome::Picker(app) => run_terminal(app),
         DecideOutcome::ZeroWorkflows { scan_root } => {
             eprintln!(

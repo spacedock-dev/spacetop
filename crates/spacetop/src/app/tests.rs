@@ -5,12 +5,79 @@ use std::path::{Path, PathBuf};
 
 use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
+use spacetop_core::sources::ArchiveSnapshot;
 
 #[test]
 fn stores_workflow_directory() {
     let app = App::new("docs/spacetop-dev");
 
     assert_eq!(app.workflow_dir(), Path::new("docs/spacetop-dev"));
+}
+
+#[test]
+fn app_stores_config_for_key_handling() {
+    let config = spacetop_core::config::SpacetopConfig {
+        keybindings: spacetop_core::config::KeybindingConfig {
+            search: "f".to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let app = App::new_with_config("/tmp/workflow", config.clone());
+
+    assert_eq!(app.config(), &config);
+}
+
+#[test]
+fn app_stores_config_warnings_for_status_rendering() {
+    let warning = spacetop_core::config::ConfigWarning {
+        message: "failed to parse config: test".to_string(),
+    };
+
+    let app = App::new_with_config_warnings(
+        "/tmp/workflow",
+        spacetop_core::config::SpacetopConfig::default(),
+        vec![warning.clone()],
+    );
+
+    assert_eq!(app.config_warnings(), &[warning]);
+}
+
+#[test]
+fn config_default_scope_applies_when_session_has_no_saved_scope() {
+    let config = spacetop_core::config::SpacetopConfig {
+        defaults: spacetop_core::config::DefaultsConfig {
+            scope: spacetop_core::config::DefaultScope::Archived,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut state = overview_state_with_active_and_archived_items();
+
+    state.apply_config_defaults(&config);
+
+    assert_eq!(state.view_scope(), ViewScope::Archived);
+}
+
+#[test]
+fn session_scope_overrides_config_default_scope() {
+    let config = spacetop_core::config::SpacetopConfig {
+        defaults: spacetop_core::config::DefaultsConfig {
+            scope: spacetop_core::config::DefaultScope::Archived,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut state = overview_state_with_active_and_archived_items();
+
+    state.apply_config_defaults(&config);
+    state.apply_session(&spacetop_core::session_state::WorkflowSession {
+        selected_entity_id: None,
+        scope: spacetop_core::session_state::WorkflowScope::Active,
+    });
+
+    assert_eq!(state.view_scope(), ViewScope::Active);
 }
 
 #[test]
@@ -924,6 +991,53 @@ fn snapshot_from_items(items: Vec<Entity>) -> WorkflowSnapshot {
     let mut snapshot = snapshot_with_items(0);
     snapshot.items = items;
     snapshot
+}
+
+fn overview_state_with_active_and_archived_items() -> OverviewState {
+    let root = PathBuf::from("/tmp/spacetop-config-default-test");
+    let mut snapshot = snapshot_from_items(vec![item_at(
+        root.join("001-active.md"),
+        "001",
+        "active",
+        "plan",
+    )]);
+    snapshot.definition.root = root.clone();
+    snapshot.definition.stages = vec![
+        StageDefinition {
+            name: "plan".to_string(),
+            initial: true,
+            terminal: false,
+            gate: false,
+            fresh: false,
+            feedback_to: None,
+            worktree: false,
+            concurrency: None,
+        },
+        StageDefinition {
+            name: "done".to_string(),
+            initial: false,
+            terminal: true,
+            gate: false,
+            fresh: false,
+            feedback_to: None,
+            worktree: false,
+            concurrency: None,
+        },
+    ];
+    let mut state = OverviewState::from_snapshot(root.clone(), snapshot);
+    state.index = state.index.clone().with_archive(ArchiveSnapshot {
+        entities: vec![item_at(
+            root.join("_archive").join("999-done.md"),
+            "999",
+            "archived",
+            "done",
+        )],
+        parse_errors: Vec::new(),
+        error: None,
+    });
+    state.archive_loaded = true;
+    state.archived_done_count = Some(1);
+    state
 }
 
 #[test]

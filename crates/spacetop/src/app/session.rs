@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use spacetop_core::config::SpacetopConfig;
 use spacetop_core::discovery::DiscoveredWorkflow;
 
 use super::OverviewState;
@@ -79,6 +80,12 @@ impl OverviewSession {
         self.workflows[self.active]
             .as_mut()
             .expect("active workflow slot is materialized")
+    }
+
+    pub fn apply_config_defaults(&mut self, config: &SpacetopConfig) {
+        for state in self.workflows.iter_mut().flatten() {
+            state.apply_config_defaults(config);
+        }
     }
 
     pub fn discovery(&self) -> &[DiscoveredWorkflow] {

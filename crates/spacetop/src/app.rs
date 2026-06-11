@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
+use spacetop_core::config::{ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{Entity, WorkflowSnapshot};
 use spacetop_core::parser::ParseError;
@@ -180,6 +181,8 @@ impl AppMode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct App {
     mode: AppMode,
+    config: SpacetopConfig,
+    config_warnings: Vec<ConfigWarning>,
     should_quit: bool,
     help_open: bool,
     pending_switch: Option<WorkflowSwitch>,
@@ -190,63 +193,134 @@ pub struct App {
 
 impl App {
     pub fn new(workflow_dir: impl Into<PathBuf>) -> Self {
-        let state = OverviewState::empty(workflow_dir.into());
-        Self {
-            mode: AppMode::Overview(OverviewSession::single(state, true)),
-            should_quit: false,
-            help_open: false,
-            pending_switch: None,
-            pending_overlay_open: false,
-            pending_open_file: None,
-            pending_sync: false,
-        }
+        Self::new_with_config(workflow_dir, SpacetopConfig::default())
+    }
+
+    pub fn new_with_config(workflow_dir: impl Into<PathBuf>, config: SpacetopConfig) -> Self {
+        Self::new_with_config_warnings(workflow_dir, config, Vec::new())
+    }
+
+    pub fn new_with_config_warnings(
+        workflow_dir: impl Into<PathBuf>,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
+        let mut state = OverviewState::empty(workflow_dir.into());
+        state.apply_config_defaults(&config);
+        Self::from_mode_with_config(
+            AppMode::Overview(OverviewSession::single(state, true)),
+            config,
+            config_warnings,
+        )
     }
 
     pub fn load(workflow_dir: PathBuf) -> Result<Self, ParseError> {
-        let state = OverviewState::load(workflow_dir)?;
-        Ok(Self {
-            mode: AppMode::Overview(OverviewSession::single(state, true)),
-            should_quit: false,
-            help_open: false,
-            pending_switch: None,
-            pending_overlay_open: false,
-            pending_open_file: None,
-            pending_sync: false,
-        })
+        Self::load_with_config(workflow_dir, SpacetopConfig::default())
+    }
+
+    pub fn load_with_config(
+        workflow_dir: PathBuf,
+        config: SpacetopConfig,
+    ) -> Result<Self, ParseError> {
+        Self::load_with_config_warnings(workflow_dir, config, Vec::new())
+    }
+
+    pub fn load_with_config_warnings(
+        workflow_dir: PathBuf,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Result<Self, ParseError> {
+        let mut state = OverviewState::load(workflow_dir)?;
+        state.apply_config_defaults(&config);
+        Ok(Self::from_mode_with_config(
+            AppMode::Overview(OverviewSession::single(state, true)),
+            config,
+            config_warnings,
+        ))
     }
 
     pub fn from_snapshot(workflow_dir: PathBuf, snapshot: WorkflowSnapshot) -> Self {
-        let state = OverviewState::from_snapshot(workflow_dir, snapshot);
-        Self {
-            mode: AppMode::Overview(OverviewSession::single(state, true)),
-            should_quit: false,
-            help_open: false,
-            pending_switch: None,
-            pending_overlay_open: false,
-            pending_open_file: None,
-            pending_sync: false,
-        }
+        Self::from_snapshot_with_config(workflow_dir, snapshot, SpacetopConfig::default())
+    }
+
+    pub fn from_snapshot_with_config(
+        workflow_dir: PathBuf,
+        snapshot: WorkflowSnapshot,
+        config: SpacetopConfig,
+    ) -> Self {
+        Self::from_snapshot_with_config_warnings(workflow_dir, snapshot, config, Vec::new())
+    }
+
+    pub fn from_snapshot_with_config_warnings(
+        workflow_dir: PathBuf,
+        snapshot: WorkflowSnapshot,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
+        let mut state = OverviewState::from_snapshot(workflow_dir, snapshot);
+        state.apply_config_defaults(&config);
+        Self::from_mode_with_config(
+            AppMode::Overview(OverviewSession::single(state, true)),
+            config,
+            config_warnings,
+        )
     }
 
     pub fn from_session(session: OverviewSession) -> Self {
-        Self {
-            mode: AppMode::Overview(session),
-            should_quit: false,
-            help_open: false,
-            pending_switch: None,
-            pending_overlay_open: false,
-            pending_open_file: None,
-            pending_sync: false,
-        }
+        Self::from_session_with_config(session, SpacetopConfig::default())
+    }
+
+    pub fn from_session_with_config(session: OverviewSession, config: SpacetopConfig) -> Self {
+        Self::from_session_with_config_warnings(session, config, Vec::new())
+    }
+
+    pub fn from_session_with_config_warnings(
+        mut session: OverviewSession,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
+        session.apply_config_defaults(&config);
+        Self::from_mode_with_config(AppMode::Overview(session), config, config_warnings)
     }
 
     pub fn from_picker(scan_root: PathBuf, workflows: Vec<DiscoveredWorkflow>) -> Self {
+        Self::from_picker_with_config(scan_root, workflows, SpacetopConfig::default())
+    }
+
+    pub fn from_picker_with_config(
+        scan_root: PathBuf,
+        workflows: Vec<DiscoveredWorkflow>,
+        config: SpacetopConfig,
+    ) -> Self {
+        Self::from_picker_with_config_warnings(scan_root, workflows, config, Vec::new())
+    }
+
+    pub fn from_picker_with_config_warnings(
+        scan_root: PathBuf,
+        workflows: Vec<DiscoveredWorkflow>,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
         debug_assert!(
             workflows.len() >= 2,
             "picker mode requires at least two workflows"
         );
+        Self::from_mode_with_config(
+            AppMode::Picker(PickerState::new(scan_root, workflows)),
+            config,
+            config_warnings,
+        )
+    }
+
+    fn from_mode_with_config(
+        mode: AppMode,
+        config: SpacetopConfig,
+        config_warnings: Vec<ConfigWarning>,
+    ) -> Self {
         Self {
-            mode: AppMode::Picker(PickerState::new(scan_root, workflows)),
+            mode,
+            config,
+            config_warnings,
             should_quit: false,
             help_open: false,
             pending_switch: None,
@@ -254,6 +328,14 @@ impl App {
             pending_open_file: None,
             pending_sync: false,
         }
+    }
+
+    pub fn config(&self) -> &SpacetopConfig {
+        &self.config
+    }
+
+    pub fn config_warnings(&self) -> &[ConfigWarning] {
+        &self.config_warnings
     }
 
     pub fn help_open(&self) -> bool {

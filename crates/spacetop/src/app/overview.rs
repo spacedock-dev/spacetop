@@ -2,12 +2,14 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use spacetop_core::config::{DefaultScope, DefaultSort, SpacetopConfig};
 use spacetop_core::discovery::resolve_scan_root;
 use spacetop_core::domain::{Entity, EntityParseError, WorkflowSnapshot};
 pub use spacetop_core::index::StageCount;
 use spacetop_core::index::WorkflowIndex;
 use spacetop_core::parser::ParseError;
 use spacetop_core::query::{EntityQuery, EntitySort, QueryScope};
+use spacetop_core::session_state::{WorkflowScope, WorkflowSession};
 use spacetop_core::sources::{ArchiveSnapshot, WorkflowSources};
 
 use super::history_worker::{HistoryWorkerRequest, HistoryWorkerResult};
@@ -377,6 +379,37 @@ impl OverviewState {
         self.view_scope
     }
 
+    pub fn apply_config_defaults(&mut self, config: &SpacetopConfig) {
+        self.sort_mode = match config.defaults.sort {
+            DefaultSort::Id => SortMode::Id,
+            DefaultSort::Status => SortMode::Status,
+        };
+        self.set_view_scope(match config.defaults.scope {
+            DefaultScope::Active => ViewScope::Active,
+            DefaultScope::Archived => ViewScope::Archived,
+        });
+    }
+
+    pub fn apply_session(&mut self, saved: &WorkflowSession) {
+        self.set_view_scope(match saved.scope {
+            WorkflowScope::Active => ViewScope::Active,
+            WorkflowScope::Archived => ViewScope::Archived,
+        });
+        if let Some(id) = &saved.selected_entity_id {
+            self.select_visible_entity_by_id(id);
+        }
+    }
+
+    pub fn to_workflow_session(&self) -> WorkflowSession {
+        WorkflowSession {
+            selected_entity_id: self.selected_item().map(|entity| entity.id),
+            scope: match self.view_scope {
+                ViewScope::Active => WorkflowScope::Active,
+                ViewScope::Archived => WorkflowScope::Archived,
+            },
+        }
+    }
+
     pub fn current_query_scope(&self) -> QueryScope {
         match self.view_scope {
             ViewScope::Active => QueryScope::Active,
@@ -503,6 +536,17 @@ impl OverviewState {
         self.archived_done_count = Some(count_archived_terminal_items(&archive.entities));
         self.index.replace_archive(archive);
         self.archive_loaded = true;
+    }
+
+    fn set_view_scope(&mut self, scope: ViewScope) {
+        if scope == ViewScope::Archived {
+            self.ensure_archive_loaded();
+        }
+        if self.view_scope != scope {
+            self.view_scope = scope;
+            self.reset_preview_scroll();
+        }
+        self.clamp_selection();
     }
 
     pub(crate) fn toggle_scope(&mut self) {
