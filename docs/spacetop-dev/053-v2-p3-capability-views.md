@@ -14,7 +14,7 @@ score: 0.9
 worktree: .worktrees/spacedock-ensign-053-v2-p3-capability-views
 issue:
 pr: "#53"
-mod-block: merge:pr-merge
+mod-block:
 ---
 
 Implement phase P3 of the SpaceTop v2 internals rebuild: add read-only TUI
