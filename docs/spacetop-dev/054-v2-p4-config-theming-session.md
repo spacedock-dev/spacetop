@@ -97,3 +97,18 @@ Verified by: session round-trip tests and app restore tests.
 
 - Subagent spawning was not available in this runtime, so I followed the required fallback locally: TDD by slice, focused tests before integration tests, scoped commits, and self-review.
 - No workflow markdown was modified except this implement-stage report. Config/session writes are constrained to absolute XDG/HOME-derived user paths.
+
+## Stage Report: verify
+
+- DONE: AC-1 config and session paths are safe. Evidence: `crates/spacetop-core/src/config.rs` resolves config only from absolute `XDG_CONFIG_HOME` or absolute `HOME` fallback, with tests for relative and empty XDG plus relative HOME; `crates/spacetop-core/src/session_state.rs` does the same for `XDG_STATE_HOME` and rejects relative session file paths before load/save. Targeted tests passed: `cargo test -p spacetop-core config::tests` (9 passed), `cargo test -p spacetop-core session_state::tests` (9 passed), and `cargo test -p spacetop save_session_state_for_app` (2 passed).
+- DONE: AC-2 malformed config is visible but non-fatal. Evidence: malformed YAML returns default config with a `failed to parse config` warning in `load_config_file_with_warnings`, and UI tests render config/keymap warnings in the footer. Targeted evidence: `cargo test -p spacetop-core config::tests` and `cargo test -p spacetop ui::tests` both passed.
+- FAILED: AC-3 keybindings do not always resolve to a validated final keymap. Evidence: `ResolvedKeymap::from_config` counts duplicates only across parsed configured keys before invalid/reserved/duplicate entries fall back to defaults (`crates/spacetop/src/app/keys.rs:52-84`). A config such as `search: ""` or `search: "a"` plus `command: "/"` resolves both search and command to `/`; input matching checks search before command (`crates/spacetop/src/app/keys.rs:291-295`), so command becomes unreachable and no duplicate warning is produced for the final keymap. Existing key tests passed (`cargo test -p spacetop app::keys::tests`, 15 passed), but they do not cover fallback-created duplicate bindings.
+- DONE: AC-4 session state is typed and stable per workflow. Evidence: `WorkflowSession`, `WorkflowScope`, and `WorkflowSessionKey` are typed in core; workflow keys canonicalize absolute workflow paths; app/session restore applies config defaults first and then saved session state. Targeted tests passed for canonical session save/restore and config-vs-session precedence.
+- DONE: Proof commands:
+  - `cargo test --workspace` -> passed: spacetop lib 311 passed; spacetop main 4 passed; spacetop integration tests 10/4/5 passed; spacetop-core lib 144 passed; core integration tests 7/1/2 passed; watcher real-backend tests 3 ignored; doctests 0.
+  - `make lint` -> passed: `cargo clippy --all-targets --all-features -- -D warnings`.
+  - `cargo test -p spacetop-core --test no_write_git_calls` -> passed, 2 passed.
+
+### Verdict
+
+REJECTED. The required proof commands pass, and AC-1/AC-2/AC-4 are supported by code and tests, but AC-3 is not complete because the final resolved keymap can contain duplicate bindings created by fallback behavior.
