@@ -74,3 +74,16 @@ Verified by: README, `docs/release-policy.md`, and `CHANGELOG.md`.
 ### Summary
 
 Implemented the versioning and deployment policy with Cargo-backed `spacetop --version`, read-only CI, and a draft-first GitHub Release workflow for `aarch64-apple-darwin` and `x86_64-unknown-linux-gnu`. Added release docs and changelog, updated README install guidance, and aligned stale real-workflow test assertions with the current `shape/plan/implement/verify/done` workflow so the full verification gate passes.
+
+## Stage Report: verify
+
+- DONE: Independently verify all four acceptance criteria against the implementation diff, not just the implement report.
+  Evidence: AC-1, AC-2, and AC-3 passed by diff inspection and command evidence; AC-4 is rejected because the README release-install example does not match the archive layout.
+- DONE: Re-run or inspect evidence for the required proof path: `cargo fmt --check`, `cargo test`, `make lint`, release build, and `target/release/spacetop --version`.
+  Evidence: `cargo fmt --check`, `cargo test` (370 executed tests passed; 3 watcher tests ignored), `make lint`, `SENTRY_DSN= cargo build --release -p spacetop`, and `target/release/spacetop --version` all passed; version output was `spacetop 0.1.0`.
+- DONE: Return a clear verification verdict with any defects or missing evidence; approve only if the PR merge flow can safely proceed.
+  Evidence: VERDICT: rejected. `README.md:98-99` runs `install -m 755 spacetop ...` after extracting an archive that contains `spacetop-vX.Y.Z-<target>/spacetop`; exercising that shape failed with `install: spacetop: No such file or directory`.
+
+### Summary
+
+Verification rejects this gate due to an AC-4 documentation defect: the README install example will fail for users following the GitHub Release archive path. The implementation otherwise satisfies the version surface, CI, and GitHub Release workflow requirements; fix the README example to install from the extracted `spacetop-vX.Y.Z-<target>/spacetop` path or to `cd` into that directory before installing.
