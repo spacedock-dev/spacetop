@@ -236,8 +236,8 @@ impl WorkflowIndex {
     }
 
     pub fn timeline(&self, entity_id: &str) -> HistoryResult<Vec<StageEvent>> {
-        if self.history_events.is_empty() {
-            return Err(self.history_unavailable());
+        if let Some(reason) = self.history_unavailable() {
+            return Err(reason);
         }
         let mut events: Vec<StageEvent> = self
             .history_events
@@ -250,15 +250,15 @@ impl WorkflowIndex {
     }
 
     pub fn metrics(&self) -> HistoryResult<Metrics> {
-        if self.history_events.is_empty() {
-            return Err(self.history_unavailable());
+        if let Some(reason) = self.history_unavailable() {
+            return Err(reason);
         }
         Ok(Metrics::from_events(&self.history_events))
     }
 
     pub fn activity(&self, since: Option<CommitTime>) -> HistoryResult<Vec<ActivityEvent>> {
-        if self.history_events.is_empty() {
-            return Err(self.history_unavailable());
+        if let Some(reason) = self.history_unavailable() {
+            return Err(reason);
         }
         let mut events = self.history_events.clone();
         if let Some(since) = since {
@@ -274,10 +274,8 @@ impl WorkflowIndex {
             .collect())
     }
 
-    fn history_unavailable(&self) -> HistoryUnavailable {
-        self.history_unavailable
-            .clone()
-            .unwrap_or(HistoryUnavailable::NotImplemented)
+    fn history_unavailable(&self) -> Option<HistoryUnavailable> {
+        self.history_unavailable.clone()
     }
 
     fn rebuild_lookup_maps(&mut self) {
@@ -504,6 +502,20 @@ mod tests {
         let activity = index.activity(Some(CommitTime(120))).expect("activity");
         let ids: Vec<String> = activity.into_iter().map(|event| event.entity_id).collect();
         assert_eq!(ids, ["010", "002"]);
+    }
+
+    #[test]
+    fn history_methods_accept_successfully_loaded_empty_history() {
+        let index = index().with_history_result(Ok(Vec::new()));
+
+        assert_eq!(index.timeline("010"), Ok(Vec::new()));
+        let metrics = index.metrics().expect("metrics");
+        assert!(metrics.stage_dwell_seconds.is_empty());
+        assert!(metrics.cycle_time_seconds.is_empty());
+        assert!(metrics.wip_by_stage.is_empty());
+        assert_eq!(metrics.throughput_completed, 0);
+        assert_eq!(metrics.completed_entities, 0);
+        assert_eq!(index.activity(None), Ok(Vec::new()));
     }
 
     #[test]
