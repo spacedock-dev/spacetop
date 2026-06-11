@@ -13,7 +13,7 @@ verdict:
 score: 0.96
 worktree: .worktrees/spacedock-ensign-052-v2-p2-git-history-source
 issue:
-pr:
+pr: "#52"
 mod-block: merge:pr-merge
 ---
 
