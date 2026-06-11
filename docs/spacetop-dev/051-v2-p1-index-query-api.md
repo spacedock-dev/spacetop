@@ -1,7 +1,7 @@
 ---
 id: "051"
 title: "v2 P1: index and query API"
-status: plan
+status: implement
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: refactor
 risk: high
@@ -11,7 +11,7 @@ started: 2026-06-11
 completed:
 verdict:
 score: 0.98
-worktree:
+worktree: .worktrees/spacedock-ensign-051-v2-p1-index-query-api
 issue:
 pr:
 ---
