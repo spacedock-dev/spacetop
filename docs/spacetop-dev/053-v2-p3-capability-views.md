@@ -104,3 +104,16 @@ Verification rejects the implementation as incomplete on AC-4. Search, command r
 ### Summary
 
 Fixed the AC-4 rejection by letting full-pane P3 views handle help, multi-workflow switching, picker access, and lazy active-workflow materialization through the same app plumbing used by overview. The focused P3 full-pane regression tests, full workspace test suite, and lint gate all pass.
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Verify the cycle-1 AC-4 fix: full-pane P3 modes handle ? help, Left/Right workflow switching, P picker access, Esc back to overview, and do not regress existing archive/sort/preview/sync behavior.
+  PASS: `cargo test -p spacetop p3_full_pane_modes` passed 3/3; `cargo test --workspace` also passed existing archive, sort, preview, and sync suites.
+- DONE: Re-check AC-1 through AC-3 after the fix: search/command palette remain operable, timeline/metrics/activity consume WorkflowIndex/core APIs, and entity details stay typed in core.
+  PASS: app/search and UI tests passed; renderers call `WorkflowIndex::timeline`, `metrics`, `activity`, and `entity_details`, with relation DTOs owned by core.
+- DONE: Run or audit required proof commands after the fix: cargo test --workspace, make lint, and cargo test -p spacetop-core --test no_terminal_deps; report PASS/FAIL and any remaining blocker.
+  PASS: `cargo test --workspace`, `make lint`, and `cargo test -p spacetop-core --test no_terminal_deps` all exited 0; no remaining blocker found.
+
+### Summary
+
+Verification accepts the cycle-2 AC-4 fix. Full-pane P3 modes now preserve help, workflow switching, picker access, Esc restoration, and existing app plumbing while AC-1 through AC-3 remain covered by core, app, and Ratatui tests.
