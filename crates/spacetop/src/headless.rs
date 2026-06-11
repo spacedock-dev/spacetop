@@ -302,7 +302,7 @@ fn write_i64_map(
     values: &std::collections::HashMap<String, i64>,
 ) -> anyhow::Result<()> {
     let mut rows: Vec<_> = values.iter().collect();
-    rows.sort_by(|(left, _), (right, _)| left.cmp(right));
+    rows.sort_by_key(|(key, _)| *key);
     for (key, value) in rows {
         writeln!(out, "{label}.{key}\t{value}")?;
     }
@@ -315,7 +315,7 @@ fn write_usize_map(
     values: &std::collections::HashMap<String, usize>,
 ) -> anyhow::Result<()> {
     let mut rows: Vec<_> = values.iter().collect();
-    rows.sort_by(|(left, _), (right, _)| left.cmp(right));
+    rows.sort_by_key(|(key, _)| *key);
     for (key, value) in rows {
         writeln!(out, "{label}.{key}\t{value}")?;
     }
