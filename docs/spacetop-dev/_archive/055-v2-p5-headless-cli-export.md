@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#55"
 mod-block:
+archived: 2026-06-11T14:21:11Z
 ---
 
 Implement phase P5 of the SpaceTop v2 internals rebuild: add headless CLI
