@@ -70,6 +70,9 @@ Current two-crate workspace boundaries:
 - Frontmatter, README, entity, archive, and worktree parsing belong in
   `crates/spacetop-core/src/parser.rs` and
   `crates/spacetop-core/src/parser/*`.
+- `crates/spacetop-core/src/index.rs`, `query.rs`, and `sources.rs` own the v2
+  index/query spine; TUI code must consume `WorkflowIndex` through query methods
+  instead of inferring schema rules from raw vectors.
 - Discovery and git-root resolution belong in
   `crates/spacetop-core/src/discovery.rs`.
 - Filesystem watching belongs in `crates/spacetop-core/src/watcher.rs`.

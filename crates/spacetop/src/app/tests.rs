@@ -17,15 +17,15 @@ fn stores_workflow_directory() {
 fn loads_real_workflow_state_and_derives_stage_counts() {
     let root = PathBuf::from("workflow");
     let app = App::from_snapshot(root.clone(), snapshot_with_items(3));
-    let expected_stage_counts = app
-        .snapshot()
+    let snapshot = app.snapshot();
+    let expected_stage_counts = snapshot
         .definition
         .stages
         .iter()
         .map(|stage| {
             (
                 stage.name.as_str(),
-                app.snapshot()
+                snapshot
                     .items
                     .iter()
                     .filter(|item| item.status == stage.name)
@@ -45,26 +45,25 @@ fn loads_real_workflow_state_and_derives_stage_counts() {
     // Selection defaults to the first item; assert against the snapshot
     // rather than hard-coding a title that drifts as tasks ship.
     assert_eq!(
-        app.selected_item().map(|item| item.title.as_str()),
-        app.snapshot().items.first().map(|item| item.title.as_str())
+        app.selected_item().map(|item| item.title),
+        snapshot.items.first().map(|item| item.title.clone())
     );
     assert_eq!(
-        app.selected_item().map(|item| item.status.as_str()),
-        app.snapshot()
-            .items
-            .first()
-            .map(|item| item.status.as_str())
+        app.selected_item().map(|item| item.status),
+        snapshot.items.first().map(|item| item.status.clone())
     );
     // The workflow has at least one stage and at least one item — these
     // are intrinsic invariants of the loaded fixture, not specific titles.
-    assert!(!app.snapshot().definition.stages.is_empty());
-    assert!(!app.snapshot().items.is_empty());
+    assert!(!snapshot.definition.stages.is_empty());
+    assert!(!snapshot.items.is_empty());
 }
 
 #[test]
 fn stage_counts_include_archived_done_items_from_the_workflow_archive() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
-    let app = App::load(root).expect("workflow should load");
+    let mut app = App::load(root).expect("workflow should load");
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Char('a')));
 
     let counts = app.stage_counts();
     let done = counts
@@ -76,8 +75,8 @@ fn stage_counts_include_archived_done_items_from_the_workflow_archive() {
         "done count should come from archived workflow items"
     );
 
-    let expected_active_counts = app
-        .snapshot()
+    let snapshot = app.snapshot();
+    let expected_active_counts = snapshot
         .definition
         .stages
         .iter()
@@ -85,7 +84,7 @@ fn stage_counts_include_archived_done_items_from_the_workflow_archive() {
         .map(|stage| {
             (
                 stage.name.as_str(),
-                app.snapshot()
+                snapshot
                     .items
                     .iter()
                     .filter(|item| item.status == stage.name)
@@ -109,7 +108,9 @@ fn stage_counts_reuse_cached_archived_done_count_after_archive_disappears() {
     let root = dir.path();
     write_workflow_with_archive(root, "001");
 
-    let app = App::load(root.to_path_buf()).expect("workflow should load");
+    let mut app = App::load(root.to_path_buf()).expect("workflow should load");
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Char('a')));
     std::fs::remove_dir_all(root.join("_archive")).expect("archive dir should be removable");
 
     let counts = app.stage_counts();
@@ -139,7 +140,9 @@ fn stage_counts_active_only_done_contributes_to_count() {
     )
     .unwrap();
 
-    let app = App::load(root.to_path_buf()).expect("workflow should load");
+    let mut app = App::load(root.to_path_buf()).expect("workflow should load");
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Char('a')));
 
     let counts = app.stage_counts();
     let done = counts
@@ -181,7 +184,9 @@ fn stage_counts_sum_active_and_archived_done_without_double_counting() {
         .unwrap();
     }
 
-    let app = App::load(root.to_path_buf()).expect("workflow should load");
+    let mut app = App::load(root.to_path_buf()).expect("workflow should load");
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Char('a')));
 
     let counts = app.stage_counts();
     let done = counts
@@ -545,6 +550,71 @@ fn toggle_scope_key_a_flips_to_archived_and_loads_lazily() {
 }
 
 #[test]
+fn archive_parse_errors_surface_only_after_archive_scope_loads() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_workflow(root, "001");
+    std::fs::create_dir_all(root.join("_archive")).unwrap();
+    std::fs::write(
+        root.join("_archive").join("bad.md"),
+        "---\nid: [\n---\n\nbroken\n",
+    )
+    .unwrap();
+
+    let mut app = App::load(root.to_path_buf()).expect("workflow should load");
+    assert!(!app.as_overview().unwrap().archive_loaded);
+    assert!(app.as_overview().unwrap().parse_errors().is_empty());
+
+    app.handle_key(key(KeyCode::Char('a')));
+
+    let overview = app.as_overview().unwrap();
+    assert_eq!(overview.view_scope(), ViewScope::Archived);
+    assert!(overview.archive_loaded);
+    assert_eq!(overview.parse_errors().len(), 1);
+    assert!(overview.parse_errors()[0]
+        .message
+        .contains("malformed YAML"));
+}
+
+#[test]
+fn archive_reload_clamps_archived_selection_with_scope_aware_index() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_workflow(root, "001");
+    std::fs::create_dir_all(root.join("_archive")).unwrap();
+    std::fs::write(
+        root.join("_archive").join("new.md"),
+        "---\nid: new\ntitle: Archived New\nstatus: done\ncompleted: 2026-04-28T00:00:00Z\n---\n\nnew body\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("_archive").join("old.md"),
+        "---\nid: old\ntitle: Archived Old\nstatus: done\ncompleted: 2026-04-27T00:00:00Z\n---\n\nold body\n",
+    )
+    .unwrap();
+
+    let mut app = App::load(root.to_path_buf()).expect("workflow should load");
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.view_scope(), ViewScope::Archived);
+    assert_eq!(app.selected_index(), 1);
+    assert_eq!(
+        app.selected_item().map(|item| item.title),
+        Some("Archived Old".to_string())
+    );
+
+    std::fs::remove_file(root.join("_archive").join("old.md")).unwrap();
+    app.reload().expect("reload should succeed");
+
+    assert_eq!(app.view_scope(), ViewScope::Archived);
+    assert_eq!(app.selected_index(), 0);
+    assert_eq!(
+        app.selected_item().map(|item| item.title),
+        Some("Archived New".to_string())
+    );
+}
+
+#[test]
 fn archived_view_selection_is_independent_of_active_selection() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
     let mut app = App::load(root).expect("workflow should load");
@@ -830,6 +900,90 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
     }
 }
 
+fn item_at(path: PathBuf, id: &str, title: &str, status: &str) -> Entity {
+    Entity {
+        path,
+        id: id.to_string(),
+        title: title.to_string(),
+        status: status.to_string(),
+        source: Some("test".to_string()),
+        started: None,
+        completed: None,
+        verdict: None,
+        score: Some(0.5),
+        worktree: None,
+        issue: None,
+        pr: None,
+        body: format!("Body excerpt for {title}."),
+        worktree_source: None,
+        main_body: None,
+    }
+}
+
+fn snapshot_from_items(items: Vec<Entity>) -> WorkflowSnapshot {
+    let mut snapshot = snapshot_with_items(0);
+    snapshot.items = items;
+    snapshot
+}
+
+#[test]
+fn reload_from_index_preserves_selection_by_slug() {
+    let root = PathBuf::from("/tmp/spacetop-index-test");
+    let first = snapshot_from_items(vec![
+        item_at(root.join("001-first.md"), "001", "first", "plan"),
+        item_at(root.join("002-second.md"), "002", "second", "plan"),
+    ]);
+    let mut state = OverviewState::from_snapshot(root.clone(), first);
+    state.select_next();
+    assert_eq!(state.selected_item().expect("selected").id, "002");
+
+    let second = snapshot_from_items(vec![
+        item_at(root.join("002-second.md"), "002", "second changed", "plan"),
+        item_at(root.join("003-third.md"), "003", "third", "plan"),
+    ]);
+    let index = spacetop_core::index::WorkflowIndex::from_sources(
+        spacetop_core::sources::WorkflowSources {
+            active: second,
+            archive: spacetop_core::sources::ArchiveSnapshot::empty(),
+        },
+    );
+    state.reload_from_index(index);
+
+    assert_eq!(state.selected_item().expect("selected").id, "002");
+}
+
+#[test]
+fn reload_replaces_index_contents() {
+    let root = PathBuf::from("/tmp/spacetop-index-reload-test");
+    let first = snapshot_from_items(vec![item_at(
+        root.join("001-first.md"),
+        "001",
+        "first",
+        "plan",
+    )]);
+    let mut state = OverviewState::from_snapshot(root.clone(), first);
+    assert_eq!(state.visible_items().len(), 1);
+
+    let second = snapshot_from_items(vec![
+        item_at(root.join("001-first.md"), "001", "first", "plan"),
+        item_at(root.join("002-second.md"), "002", "second", "plan"),
+    ]);
+    let index = spacetop_core::index::WorkflowIndex::from_sources(
+        spacetop_core::sources::WorkflowSources {
+            active: second,
+            archive: spacetop_core::sources::ArchiveSnapshot::empty(),
+        },
+    );
+    state.reload_from_index(index);
+
+    let ids: Vec<String> = state
+        .visible_items()
+        .iter()
+        .map(|entity| entity.id.clone())
+        .collect();
+    assert_eq!(ids, ["001", "002"]);
+}
+
 #[test]
 fn reload_from_snapshot_preserves_selection_by_slug() {
     let mut app = App::from_snapshot(
@@ -919,30 +1073,23 @@ fn reload_from_snapshot_clears_prior_error() {
 
 #[test]
 fn reload_from_snapshot_preserves_view_scope() {
-    use spacetop_core::domain::Entity;
+    use spacetop_core::sources::ArchiveSnapshot;
     let mut overview = super::OverviewState::from_snapshot(
         PathBuf::from("workflow"),
         snapshot_with_paths(&["workflow/alpha.md"]),
     );
     // Force into archived scope with synthetic archived items.
     overview.view_scope = ViewScope::Archived;
-    overview.archived_items = vec![Entity {
-        path: PathBuf::from("workflow/_archive/old.md"),
-        id: "old".into(),
-        title: "Old".into(),
-        status: "done".into(),
-        source: None,
-        started: None,
-        completed: None,
-        verdict: None,
-        score: None,
-        worktree: None,
-        issue: None,
-        pr: None,
-        body: String::new(),
-        worktree_source: None,
-        main_body: None,
-    }];
+    overview.index = overview.index.clone().with_archive(ArchiveSnapshot {
+        entities: vec![item_at(
+            PathBuf::from("workflow/_archive/old.md"),
+            "old",
+            "Old",
+            "done",
+        )],
+        parse_errors: Vec::new(),
+        error: None,
+    });
     overview.archive_loaded = true;
 
     overview.reload_from_snapshot(snapshot_with_paths(&[
@@ -1311,6 +1458,8 @@ fn reload_from_snapshot_updates_counts_and_clamps_selection() {
     .unwrap();
 
     let mut app = App::load(root.to_path_buf()).expect("load ok");
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Char('a')));
     // Advance selection to the last active item.
     app.handle_key(key(KeyCode::End));
     assert_eq!(app.selected_index(), 1);
@@ -1353,6 +1502,8 @@ fn reload_from_snapshot_updates_counts_and_clamps_selection() {
     .unwrap();
 
     app.reload().expect("reload ok");
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Char('a')));
 
     // Selection must clamp without panic: visible list shrank to 1 entry.
     assert_eq!(app.snapshot().items.len(), 1);
@@ -1666,12 +1817,12 @@ fn reload_with_rediscovery_handles_removed_active_workflow() {
         "active must move off the removed workflow"
     );
     // The surviving workflow's snapshot has the expected stages.
-    let stages: Vec<&str> = app
-        .snapshot()
+    let snapshot = app.snapshot();
+    let stages: Vec<String> = snapshot
         .definition
         .stages
         .iter()
-        .map(|s| s.name.as_str())
+        .map(|s| s.name.clone())
         .collect();
     assert_eq!(stages, vec!["plan", "done"]);
 }

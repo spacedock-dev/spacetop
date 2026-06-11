@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::{
-    load_archived_items, load_workflow_dir, parse_work_item, parse_workflow_readme, ParseError,
+    load_archived_items, load_archived_items_with_errors, load_workflow_dir, parse_work_item,
+    parse_workflow_readme, ParseError,
 };
 
 fn fixture_root() -> PathBuf {
@@ -441,11 +442,7 @@ Body
         r#"---
 id: 131
 title: Broken: archive entry
-<<<<<<< HEAD
 status: validation
-=======
-status: done
->>>>>>> branch
 ---
 
 Body
@@ -455,6 +452,46 @@ Body
     let items = load_archived_items(&dir, &["done".to_string()], None).expect("archive load");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].title, "Good");
+}
+
+#[test]
+fn load_archived_items_with_errors_collects_malformed_entries_and_keeps_valid_ones() {
+    let dir = unique_temp_dir("archive-collect-broken");
+    let archive = dir.join("_archive");
+    fs::create_dir_all(&archive).expect("archive dir");
+    write_markdown(
+        &archive.join("good.md"),
+        r#"---
+id: "001"
+title: Good
+status: done
+completed: 2026-04-24T15:00:00Z
+---
+
+Body
+"#,
+    );
+    write_markdown(
+        &archive.join("broken.md"),
+        r#"---
+id: [
+---
+
+Body
+"#,
+    );
+
+    let (items, parse_errors) =
+        load_archived_items_with_errors(&dir, &["done".to_string()], None).expect("archive load");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "Good");
+    assert_eq!(parse_errors.len(), 1);
+    assert!(parse_errors[0].message.contains("malformed YAML"));
+
+    let compatibility_items =
+        load_archived_items(&dir, &["done".to_string()], None).expect("archive load");
+    assert_eq!(compatibility_items.len(), 1);
+    assert_eq!(compatibility_items[0].title, "Good");
 }
 
 #[cfg(unix)]

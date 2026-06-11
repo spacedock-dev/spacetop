@@ -595,6 +595,57 @@ fn app_with_broken_entity() -> App {
     App::from_snapshot(root, snapshot)
 }
 
+fn app_with_archived_broken_entity_only() -> App {
+    use crate::app::{OverviewSession, OverviewState, ViewScope};
+    use spacetop_core::index::WorkflowIndex;
+    use spacetop_core::sources::{ArchiveSnapshot, WorkflowSources};
+
+    let root = PathBuf::from("/tmp/spacetop-archived-broken");
+    let definition = spacetop_core::domain::WorkflowDefinition {
+        root: root.clone(),
+        stages: vec![spacetop_core::domain::StageDefinition {
+            name: "done".to_string(),
+            initial: true,
+            terminal: true,
+            gate: false,
+            fresh: false,
+            feedback_to: None,
+            worktree: false,
+            concurrency: None,
+        }],
+        id_style: None,
+        entity_type: None,
+        entity_label: None,
+        entity_label_plural: None,
+        stage_colors: std::collections::HashMap::new(),
+        stage_prose: std::collections::HashMap::new(),
+        transitions: Vec::new(),
+    };
+    let active = spacetop_core::domain::WorkflowSnapshot {
+        definition,
+        items: Vec::new(),
+        parse_errors: Vec::new(),
+    };
+    let archive = ArchiveSnapshot {
+        entities: Vec::new(),
+        parse_errors: vec![EntityParseError {
+            path: root.join("_archive/bad-archive.md"),
+            message: "bad-archive.md: malformed YAML frontmatter: missing field `status`"
+                .to_string(),
+            line: Some(3),
+            column: Some(1),
+        }],
+        error: None,
+    };
+    let mut state = OverviewState::empty(root.clone());
+    state.index = WorkflowIndex::from_sources(WorkflowSources { active, archive });
+    state.view_scope = ViewScope::Archived;
+    state.archive_loaded = true;
+    state.preview_open = true;
+    state.selected_index_archived = 0;
+    App::from_session(OverviewSession::single(state, true))
+}
+
 #[test]
 fn task_list_renders_broken_entity_row_after_items() {
     // AC-2: synthetic "broken" row labeled `⚠ broken: <file>` appears after
@@ -611,6 +662,28 @@ fn task_list_renders_broken_entity_row_after_items() {
         rendered.contains("\u{26A0} broken: bad.md"),
         "broken-entity row label must be visible; rendered: {:?}",
         &rendered[..rendered.len().min(400)]
+    );
+}
+
+#[test]
+fn archived_task_list_renders_broken_entity_row_when_archive_has_parse_errors() {
+    let app = app_with_archived_broken_entity_only();
+    let mut terminal = Terminal::new(TestBackend::new(160, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(
+        rendered.contains("\u{26A0} broken: bad-archive.md"),
+        "archived parse-error row must be visible in archive scope; rendered: {:?}",
+        &rendered[..rendered.len().min(600)]
+    );
+    assert!(
+        !rendered.contains("No archived items found."),
+        "archive scope must not show the empty-state message when archived parse errors exist"
+    );
+    assert!(
+        rendered.contains("Cannot parse"),
+        "selected archived parse-error row must still drive the preview pane"
     );
 }
 

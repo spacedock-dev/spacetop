@@ -79,12 +79,12 @@ fn readme_edit_reparses_definition_live() {
     app.reload_with_rediscovery()
         .expect("reload should succeed after a valid README rewrite");
 
-    let stages: Vec<&str> = app
-        .snapshot()
+    let snapshot = app.snapshot();
+    let stages: Vec<String> = snapshot
         .definition
         .stages
         .iter()
-        .map(|s| s.name.as_str())
+        .map(|s| s.name.clone())
         .collect();
     assert_eq!(stages, vec!["design", "plan", "done"]);
 }
@@ -152,12 +152,12 @@ fn removing_active_workflow_yields_empty_state_without_panic() {
         "active falls back to surviving workflow"
     );
     // Beta's stages should be loaded into the snapshot.
-    let stages: Vec<&str> = app
-        .snapshot()
+    let snapshot = app.snapshot();
+    let stages: Vec<String> = snapshot
         .definition
         .stages
         .iter()
-        .map(|s| s.name.as_str())
+        .map(|s| s.name.clone())
         .collect();
     assert_eq!(stages, vec!["plan", "done"]);
 }
@@ -179,7 +179,8 @@ fn removing_only_workflow_yields_empty_overview_with_error() {
     // synthetic state isn't a parse error, just an absence).
     app.reload_with_rediscovery().expect("reload");
 
-    let stages = &app.as_overview().unwrap().snapshot().definition.stages;
+    let snapshot = app.as_overview().unwrap().snapshot();
+    let stages = &snapshot.definition.stages;
     assert!(
         stages.is_empty(),
         "synthetic empty state must have no stages, got {stages:?}"

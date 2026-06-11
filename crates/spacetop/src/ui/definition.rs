@@ -495,11 +495,18 @@ mod tests {
                 stage.name
             );
         }
-        // The real README's `plan` stage Inputs bullet starts with
-        // "Approved shape notes" — assert that propagates through.
+        let prose_sample = definition
+            .stages
+            .iter()
+            .filter_map(|stage| definition.stage_prose.get(&stage.name))
+            .flat_map(|prose| prose.lines())
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .expect("real README should include stage prose");
+        let prose_needle: String = prose_sample.chars().take(24).collect();
         assert!(
-            rendered.contains("Approved shape notes"),
-            "plan prose substring 'Approved shape notes' must appear; rendered=\n{rendered}"
+            rendered.contains(&prose_needle),
+            "stage prose substring '{prose_needle}' must appear; rendered=\n{rendered}"
         );
     }
 

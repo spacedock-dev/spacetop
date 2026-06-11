@@ -6,7 +6,7 @@ use ratatui::{
 };
 
 use crate::app::{OverviewState, ViewScope};
-use spacetop_core::domain::EntityParseError;
+use spacetop_core::domain::{Entity, EntityParseError};
 
 /// Format a phase name into a fixed `width`-character column, preserving the
 /// user's original casing exactly. Names longer than `width` chars are
@@ -37,8 +37,9 @@ pub(super) fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &Overvi
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let items = build_task_list_items(state);
-    let item_count = state.visible_items().len();
+    let visible_items = state.visible_items();
+    let item_count = visible_items.len();
+    let items = build_task_list_items(state, &visible_items);
 
     // Section header: "Tasks  ·  N" (or "Archived  ·  N") above the list.
     let section_header_text = format!("{}  \u{00B7}  {}", title, item_count);
@@ -88,14 +89,9 @@ pub(super) fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &Overvi
 /// Provides a distinct blue-tinted contrast against the dark terminal background (~Rgb(26,27,38)).
 const BG2: Color = Color::Rgb(40, 52, 84);
 
-fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
+fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListItem<'static>> {
     let scope = state.view_scope();
-    let items = state.visible_items();
-    let broken = if scope == ViewScope::Active {
-        state.parse_errors()
-    } else {
-        &[][..]
-    };
+    let broken = state.parse_errors();
     if items.is_empty() && broken.is_empty() {
         let empty_text = match (scope, state.archive_error()) {
             (ViewScope::Archived, Some(err)) => format!("archive load failed: {err}"),
@@ -147,9 +143,8 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
             let phase = phase_col(&item.status, pcw);
 
             let id_style = Style::default().add_modifier(Modifier::DIM);
-            let stage_color = crate::ui::color::to_color(
-                state.snapshot().definition.stage_color_for(&item.status),
-            );
+            let stage_color =
+                crate::ui::color::to_color(state.definition().stage_color_for(&item.status));
             let stage_style = Style::default().fg(stage_color);
             let title_style = if scope == ViewScope::Archived {
                 Style::default().add_modifier(Modifier::DIM)
@@ -193,8 +188,9 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
         .collect();
 
     // Append synthetic "broken" rows for entities whose frontmatter failed to
-    // parse. These rows are visually distinct (dim + red) and never carry a
-    // worktree marker. Selection indices >= items.len() target broken rows.
+    // parse in the current scope. These rows are visually distinct (dim + red)
+    // and never carry a worktree marker. Selection indices >= items.len()
+    // target broken rows.
     let items_len = items.len();
     for (offset, err) in broken.iter().enumerate() {
         let index = items_len + offset;

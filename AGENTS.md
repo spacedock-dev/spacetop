@@ -90,6 +90,9 @@ Keep module boundaries clear and testable:
 - `crates/spacetop-core/src/parser.rs` and `crates/spacetop-core/src/parser/*`
   own README/entity parsing, archive loading, frontmatter splitting, status
   validation, `.worktrees` scanning, and worktree merge behavior.
+- `crates/spacetop-core/src/index.rs`, `query.rs`, and `sources.rs` own the
+  v2 index/query spine; TUI code must consume `WorkflowIndex` through query
+  methods instead of inferring schema rules from raw vectors.
 - `crates/spacetop-core/src/discovery.rs` owns workflow discovery and git-root
   scan-root resolution.
 - `crates/spacetop-core/src/watcher.rs` owns filesystem watching, event
