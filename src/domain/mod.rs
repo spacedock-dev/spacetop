@@ -1,10 +1,17 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use ratatui::style::Color;
-
 const STAGE_LIGHTNESS: f32 = 0.78;
 const STAGE_CHROMA: f32 = 0.12;
+
+/// A plain RGB color owned by the core (no terminal-crate dependency).
+/// The UI layer converts this to its terminal color type at render time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Rgb {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
 
 /// Convert an oklch color to an sRGB triple (r, g, b) each in [0, 255].
 ///
@@ -46,8 +53,8 @@ pub fn oklch_to_srgb(l: f32, c: f32, h_deg: f32) -> (u8, u8, u8) {
 /// stage index across [0°, 360°). This produces perceptually uniform, muted
 /// colors that are distinct regardless of stage name or order.
 ///
-/// The returned `HashMap<String, Color>` maps stage name → assigned color.
-pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color> {
+/// The returned `HashMap<String, Rgb>` maps stage name → assigned color.
+pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Rgb> {
     let n = stages.len();
     if n == 0 {
         return HashMap::new();
@@ -59,7 +66,7 @@ pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color>
         .map(|(i, s)| {
             let hue = i as f32 * step;
             let (r, g, b) = oklch_to_srgb(STAGE_LIGHTNESS, STAGE_CHROMA, hue);
-            (s.name.clone(), Color::Rgb(r, g, b))
+            (s.name.clone(), Rgb { r, g, b })
         })
         .collect()
 }
@@ -67,11 +74,11 @@ pub fn assign_stage_colors(stages: &[StageDefinition]) -> HashMap<String, Color>
 /// Map a stage name to a stable fallback color for archived/unknown stages
 /// not found in the graph-aware color map. Derives a deterministic hue from
 /// the stage name's bytes, then converts oklch (lightness=0.78, chroma=0.12)
-/// to `Color::Rgb` — so the fallback path never emits named `Color::*` variants.
-pub fn stage_color(stage_name: &str) -> Color {
+/// to `Rgb`.
+pub fn stage_color(stage_name: &str) -> Rgb {
     let hue = stable_stage_hue(stage_name);
     let (r, g, b) = oklch_to_srgb(STAGE_LIGHTNESS, STAGE_CHROMA, hue);
-    Color::Rgb(r, g, b)
+    Rgb { r, g, b }
 }
 
 fn stable_stage_hue(stage_name: &str) -> f32 {
@@ -92,7 +99,7 @@ pub struct WorkflowDefinition {
     pub entity_label_plural: Option<String>,
     /// Graph-aware color assignment: stage name → color.
     /// Populated at parse time by `assign_stage_colors`. Empty until populated.
-    pub stage_colors: HashMap<String, Color>,
+    pub stage_colors: HashMap<String, Rgb>,
     /// Per-stage README prose extracted from the `### {stage}` blocks under
     /// the `## Stages` heading. Populated at parse time by
     /// `parse_stage_prose`. Empty for fixtures and synthetic definitions
@@ -109,7 +116,7 @@ impl WorkflowDefinition {
     /// Look up the graph-aware color for a stage by name (O(1) HashMap lookup).
     /// Falls back to the name-based `stage_color()` function when the stage
     /// is not found in the map (e.g. archived items from an older workflow version).
-    pub fn stage_color_for(&self, stage_name: &str) -> Color {
+    pub fn stage_color_for(&self, stage_name: &str) -> Rgb {
         self.stage_colors
             .get(stage_name)
             .copied()
@@ -223,16 +230,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rgb_is_plain_value_type() {
+        let a = Rgb {
+            r: 10,
+            g: 20,
+            b: 30,
+        };
+        let b = Rgb {
+            r: 10,
+            g: 20,
+            b: 30,
+        };
+        assert_eq!(a, b);
+        assert_eq!((a.r, a.g, a.b), (10, 20, 30));
+    }
+
+    #[test]
     fn oklch_palette_produces_rgb_values() {
         // Five evenly-spaced hues around the oklch wheel (lightness=0.78, chroma=0.12).
         let hues = [0.0_f32, 72.0, 144.0, 216.0, 288.0];
         let mut results = Vec::new();
         for h in hues {
             let (r, g, b) = oklch_to_srgb(0.78, 0.12, h);
-            results.push(Color::Rgb(r, g, b));
+            results.push(Rgb { r, g, b });
         }
-        // All results must be distinct Color::Rgb values.
-        let distinct: std::collections::HashSet<Color> = results.iter().copied().collect();
+        // All results must be distinct Rgb values.
+        let distinct: std::collections::HashSet<Rgb> = results.iter().copied().collect();
         assert_eq!(
             distinct.len(),
             5,
@@ -395,11 +418,7 @@ mod tests {
         ];
         let colors = assign_stage_colors(&stages);
         assert_eq!(colors.len(), 5);
-        for (name, color) in &colors {
-            assert!(
-                matches!(color, Color::Rgb(_, _, _)),
-                "stage {name} should have Color::Rgb color, got {color:?}"
-            );
-        }
+        let distinct: std::collections::HashSet<Rgb> = colors.values().copied().collect();
+        assert_eq!(distinct.len(), 5);
     }
 }

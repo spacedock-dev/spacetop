@@ -789,7 +789,7 @@ fn narrow_tier_colors_each_stage_name_per_stage() {
             // assert it carries the per-stage color + BOLD.
             for name in RESEARCH_STAGES {
                 if span.content.contains(name) && !span.content.starts_with('(') {
-                    let expected = definition.stage_color_for(name);
+                    let expected = crate::ui::color::to_color(definition.stage_color_for(name));
                     if span.style.fg == Some(expected)
                         && span.style.add_modifier.contains(Modifier::BOLD)
                     {
@@ -861,7 +861,7 @@ fn very_narrow_tier_colors_each_stage_name_per_stage() {
             }
             for name in RESEARCH_STAGES {
                 if span.content.contains(name) {
-                    let expected = definition.stage_color_for(name);
+                    let expected = crate::ui::color::to_color(definition.stage_color_for(name));
                     if span.style.fg == Some(expected)
                         && span.style.add_modifier.contains(Modifier::BOLD)
                     {
@@ -1718,7 +1718,7 @@ fn dag_each_stage_span_carries_per_stage_color_and_bold() {
         for span in &line.spans {
             for s in &stages {
                 if span.content.contains(&s.name) {
-                    let expected = definition.stage_color_for(&s.name);
+                    let expected = crate::ui::color::to_color(definition.stage_color_for(&s.name));
                     if span.style.fg == Some(expected)
                         && span.style.add_modifier.contains(Modifier::BOLD)
                     {

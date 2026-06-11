@@ -546,7 +546,9 @@ fn render_dag<'a>(
             }
             let col = &cols[col_i];
             let mut style = Style::default()
-                .fg(definition.stage_color_for(&col.stage_name))
+                .fg(crate::ui::color::to_color(
+                    definition.stage_color_for(&col.stage_name),
+                ))
                 .add_modifier(Modifier::BOLD);
             if col.is_active {
                 style = style.add_modifier(Modifier::REVERSED);
@@ -1096,7 +1098,9 @@ fn render_narrow<'a>(
             }
             let seg = &segments[plan.first_seg + i];
             let mut stage_style = Style::default()
-                .fg(definition.stage_color_for(seg.stage_name))
+                .fg(crate::ui::color::to_color(
+                    definition.stage_color_for(seg.stage_name),
+                ))
                 .add_modifier(Modifier::BOLD);
             if seg.is_active {
                 stage_style = stage_style.add_modifier(Modifier::REVERSED);
@@ -1410,7 +1414,9 @@ fn render_very_narrow<'a>(
             let pad = col_width.saturating_sub(visible_width(cell));
             let is_active = active.map(|s| s == stages[idx].name).unwrap_or(false);
             let mut style = Style::default()
-                .fg(definition.stage_color_for(&stages[idx].name))
+                .fg(crate::ui::color::to_color(
+                    definition.stage_color_for(&stages[idx].name),
+                ))
                 .add_modifier(Modifier::BOLD);
             if is_active {
                 style = style.add_modifier(Modifier::REVERSED);

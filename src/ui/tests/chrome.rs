@@ -450,6 +450,7 @@ fn graph_ribbon_uses_stage_colors_per_stage() {
         .stage_colors
         .values()
         .copied()
+        .map(crate::ui::color::to_color)
         .collect();
     let overlap = stage_colors.intersection(&seen_colors).count();
     assert!(

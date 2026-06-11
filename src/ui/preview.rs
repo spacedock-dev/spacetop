@@ -318,7 +318,8 @@ fn build_preview_header_lines<'a>(
         ),
     ]));
 
-    let status_color = state.snapshot().definition.stage_color_for(&item.status);
+    let status_color =
+        crate::ui::color::to_color(state.snapshot().definition.stage_color_for(&item.status));
     let status_spans = vec![
         Span::styled("status: ", dim),
         Span::styled("\u{25CF}", Style::default().fg(status_color)),

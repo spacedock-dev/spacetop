@@ -128,7 +128,7 @@ fn render_stages_table(frame: &mut Frame<'_>, area: Rect, definition: &WorkflowD
 
 fn stage_row<'a>(stage: &'a StageDefinition, definition: &'a WorkflowDefinition) -> Row<'a> {
     let dim = Style::default().add_modifier(Modifier::DIM);
-    let stage_color = definition.stage_color_for(&stage.name);
+    let stage_color = crate::ui::color::to_color(definition.stage_color_for(&stage.name));
     let stage_cell = Line::from(Span::styled(
         stage.name.clone(),
         Style::default()
@@ -145,7 +145,7 @@ fn stage_row<'a>(stage: &'a StageDefinition, definition: &'a WorkflowDefinition)
 
     let feedback_cell = match stage.feedback_to.as_deref() {
         Some(target) => {
-            let target_color = definition.stage_color_for(target);
+            let target_color = crate::ui::color::to_color(definition.stage_color_for(target));
             Line::from(vec![
                 Span::styled("\u{2192} ", dim),
                 Span::styled(target.to_string(), Style::default().fg(target_color)),
@@ -205,7 +205,7 @@ fn render_prose_body(
 
     let mut lines: Vec<Line<'static>> = Vec::new();
     for stage in &definition.stages {
-        let stage_color = definition.stage_color_for(&stage.name);
+        let stage_color = crate::ui::color::to_color(definition.stage_color_for(&stage.name));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             format!("### {}", stage.name),

@@ -1,3 +1,4 @@
+pub(crate) mod color;
 mod definition;
 mod diff;
 pub(crate) mod footer;
@@ -74,7 +75,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 /// so existing direct callers in tests keep compiling without path changes.
 #[cfg(test)]
 pub(crate) fn stage_color(stage_name: &str) -> Color {
-    crate::domain::stage_color(stage_name)
+    color::to_color(crate::domain::stage_color(stage_name))
 }
 
 /// Assign graph-aware colors to stages. Thin re-export of
@@ -84,6 +85,9 @@ pub(crate) fn assign_stage_colors(
     stages: &[crate::domain::StageDefinition],
 ) -> std::collections::HashMap<String, Color> {
     crate::domain::assign_stage_colors(stages)
+        .into_iter()
+        .map(|(k, v)| (k, color::to_color(v)))
+        .collect()
 }
 
 fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
