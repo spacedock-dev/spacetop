@@ -6,7 +6,7 @@ use ratatui::{
 };
 
 use crate::app::{OverviewState, ViewScope};
-use spacetop_core::domain::EntityParseError;
+use spacetop_core::domain::{Entity, EntityParseError};
 
 /// Format a phase name into a fixed `width`-character column, preserving the
 /// user's original casing exactly. Names longer than `width` chars are
@@ -37,8 +37,9 @@ pub(super) fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &Overvi
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let items = build_task_list_items(state);
-    let item_count = state.visible_items().len();
+    let visible_items = state.visible_items();
+    let item_count = visible_items.len();
+    let items = build_task_list_items(state, &visible_items);
 
     // Section header: "Tasks  ·  N" (or "Archived  ·  N") above the list.
     let section_header_text = format!("{}  \u{00B7}  {}", title, item_count);
@@ -88,9 +89,8 @@ pub(super) fn render_task_list(frame: &mut Frame<'_>, area: Rect, state: &Overvi
 /// Provides a distinct blue-tinted contrast against the dark terminal background (~Rgb(26,27,38)).
 const BG2: Color = Color::Rgb(40, 52, 84);
 
-fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
+fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListItem<'static>> {
     let scope = state.view_scope();
-    let items = state.visible_items();
     let broken = state.parse_errors();
     if items.is_empty() && broken.is_empty() {
         let empty_text = match (scope, state.archive_error()) {

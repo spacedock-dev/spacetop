@@ -244,10 +244,10 @@ impl OverviewState {
                 .position(|entity| slug_of(&entity.path).as_deref() == Some(slug.as_str()))
             {
                 self.set_scope_index(pos);
-            } else if self.selected_index >= len {
+            } else if self.selected_index() >= len {
                 self.set_scope_index(len - 1);
             }
-        } else if self.selected_index >= len {
+        } else if self.selected_index() >= len {
             self.set_scope_index(len - 1);
         }
 
@@ -471,7 +471,7 @@ impl OverviewState {
         let archive = WorkflowSources::load_archive(&self.workflow_dir, self.index.definition());
         self.archive_error = archive.error.clone();
         self.archived_done_count = Some(count_archived_terminal_items(&archive.entities));
-        self.index = self.index.clone().with_archive(archive);
+        self.index.replace_archive(archive);
         self.archive_loaded = true;
     }
 
@@ -498,7 +498,7 @@ impl OverviewState {
                 }
             }
             ViewScope::Archived => {
-                let len = self.archived_items().len();
+                let len = self.row_count();
                 if len == 0 {
                     self.selected_index_archived = 0;
                 } else if self.selected_index_archived >= len {

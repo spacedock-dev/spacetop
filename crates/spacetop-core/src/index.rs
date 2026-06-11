@@ -83,11 +83,15 @@ impl WorkflowIndex {
     }
 
     pub fn with_archive(mut self, archive: ArchiveSnapshot) -> Self {
+        self.replace_archive(archive);
+        self
+    }
+
+    pub fn replace_archive(&mut self, archive: ArchiveSnapshot) {
         self.archive_parse_errors = archive.parse_errors;
         self.archive_error = archive.error;
         self.archived = archive.entities;
         self.rebuild_lookup_maps();
-        self
     }
 
     pub fn definition(&self) -> &WorkflowDefinition {

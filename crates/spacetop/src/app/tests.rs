@@ -577,6 +577,44 @@ fn archive_parse_errors_surface_only_after_archive_scope_loads() {
 }
 
 #[test]
+fn archive_reload_clamps_archived_selection_with_scope_aware_index() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_workflow(root, "001");
+    std::fs::create_dir_all(root.join("_archive")).unwrap();
+    std::fs::write(
+        root.join("_archive").join("new.md"),
+        "---\nid: new\ntitle: Archived New\nstatus: done\ncompleted: 2026-04-28T00:00:00Z\n---\n\nnew body\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("_archive").join("old.md"),
+        "---\nid: old\ntitle: Archived Old\nstatus: done\ncompleted: 2026-04-27T00:00:00Z\n---\n\nold body\n",
+    )
+    .unwrap();
+
+    let mut app = App::load(root.to_path_buf()).expect("workflow should load");
+    app.handle_key(key(KeyCode::Char('a')));
+    app.handle_key(key(KeyCode::Down));
+    assert_eq!(app.view_scope(), ViewScope::Archived);
+    assert_eq!(app.selected_index(), 1);
+    assert_eq!(
+        app.selected_item().map(|item| item.title),
+        Some("Archived Old".to_string())
+    );
+
+    std::fs::remove_file(root.join("_archive").join("old.md")).unwrap();
+    app.reload().expect("reload should succeed");
+
+    assert_eq!(app.view_scope(), ViewScope::Archived);
+    assert_eq!(app.selected_index(), 0);
+    assert_eq!(
+        app.selected_item().map(|item| item.title),
+        Some("Archived New".to_string())
+    );
+}
+
+#[test]
 fn archived_view_selection_is_independent_of_active_selection() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
     let mut app = App::load(root).expect("workflow should load");
