@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct SpacetopConfig {
     #[serde(default)]
     pub theme: ThemeConfig,
@@ -10,16 +10,6 @@ pub struct SpacetopConfig {
     pub keybindings: KeybindingConfig,
     #[serde(default)]
     pub defaults: DefaultsConfig,
-}
-
-impl Default for SpacetopConfig {
-    fn default() -> Self {
-        Self {
-            theme: ThemeConfig::default(),
-            keybindings: KeybindingConfig::default(),
-            defaults: DefaultsConfig::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,30 +107,20 @@ impl Default for DefaultsConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DefaultSort {
+    #[default]
     Id,
     Status,
 }
 
-impl Default for DefaultSort {
-    fn default() -> Self {
-        Self::Id
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DefaultScope {
+    #[default]
     Active,
     Archived,
-}
-
-impl Default for DefaultScope {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 pub trait ConfigEnv {

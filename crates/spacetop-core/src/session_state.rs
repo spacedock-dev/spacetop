@@ -19,17 +19,12 @@ pub struct WorkflowSession {
     pub scope: WorkflowScope,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkflowScope {
+    #[default]
     Active,
     Archived,
-}
-
-impl Default for WorkflowScope {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
