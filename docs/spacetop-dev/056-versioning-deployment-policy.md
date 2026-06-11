@@ -13,7 +13,7 @@ verdict:
 score: 0.99
 worktree: .worktrees/spacedock-ensign-056-versioning-deployment-policy
 issue:
-pr:
+pr: "#50"
 mod-block: merge:pr-merge
 ---
 
