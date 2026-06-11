@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#53"
 mod-block:
+archived: 2026-06-11T12:03:09Z
 ---
 
 Implement phase P3 of the SpaceTop v2 internals rebuild: add read-only TUI
