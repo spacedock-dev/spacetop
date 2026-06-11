@@ -18,6 +18,8 @@ pub struct CommandEntry {
     pub action: CommandAction,
 }
 
+pub const SEARCH_VISIBLE_RESULT_LIMIT: usize = 8;
+
 pub const COMMAND_ENTRIES: &[CommandEntry] = &[
     CommandEntry {
         label: "metrics",

@@ -17,7 +17,10 @@ mod session;
 pub use history_worker::{spawn_history_worker, HistoryWorkerRequest, HistoryWorkerResult};
 pub use overview::{OverviewState, SelectedRow, SortMode, StageCount, SyncStatus, ViewScope};
 pub use picker::PickerState;
-pub use search::{matching_commands, CommandAction, CommandEntry, SearchMode, SearchState};
+pub use search::{
+    matching_commands, CommandAction, CommandEntry, SearchMode, SearchState,
+    SEARCH_VISIBLE_RESULT_LIMIT,
+};
 pub use session::{OverviewSession, WorkflowSwitch};
 
 use keys::{handle_overview_key, OverviewKeyAction};
@@ -877,6 +880,10 @@ impl App {
                 state.backspace();
                 AppMode::Search { underlying, state }
             }
+            KeyCode::Char('?') => {
+                self.help_open = true;
+                AppMode::Search { underlying, state }
+            }
             KeyCode::Down | KeyCode::Char('j') => {
                 let len = search_result_len(&underlying, &state);
                 state.select_next(len);
@@ -897,10 +904,11 @@ impl App {
 }
 
 fn search_result_len(session: &OverviewSession, state: &SearchState) -> usize {
-    match state.mode() {
+    let len = match state.mode() {
         SearchMode::Search => search_results(session, state).len(),
         SearchMode::Command => matching_commands(state.query()).len(),
-    }
+    };
+    len.min(SEARCH_VISIBLE_RESULT_LIMIT)
 }
 
 fn search_results(session: &OverviewSession, state: &SearchState) -> Vec<Entity> {
@@ -916,8 +924,9 @@ fn activate_search(mut session: OverviewSession, state: SearchState) -> AppMode 
     match state.mode() {
         SearchMode::Search => {
             if let Some(entity) = search_results(&session, &state)
-                .get(state.selected_index())
-                .cloned()
+                .into_iter()
+                .take(SEARCH_VISIBLE_RESULT_LIMIT)
+                .nth(state.selected_index())
             {
                 session
                     .active_state_mut()
@@ -927,8 +936,9 @@ fn activate_search(mut session: OverviewSession, state: SearchState) -> AppMode 
         }
         SearchMode::Command => {
             let Some(command) = matching_commands(state.query())
-                .get(state.selected_index())
-                .copied()
+                .into_iter()
+                .take(SEARCH_VISIBLE_RESULT_LIMIT)
+                .nth(state.selected_index())
             else {
                 return AppMode::Search {
                     underlying: session,

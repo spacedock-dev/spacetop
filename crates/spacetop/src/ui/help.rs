@@ -28,10 +28,6 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("  s              cycle sort mode (when preview closed)"),
         Line::from("  /              search entities"),
         Line::from("  :              open command palette"),
-        Line::from("  T              open selected entity timeline"),
-        Line::from("  M              open metrics view"),
-        Line::from("  A              open activity feed"),
-        Line::from("  R              open selected entity relations"),
         Line::from("  D              open workflow definition"),
         Line::from("  Y              sync workflow (git pull)"),
         Line::from("  ?              toggle this help popup"),
@@ -46,6 +42,16 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
     } else {
         lines.push(Line::from("  PageUp         page list up"));
         lines.push(Line::from("  PageDown       page list down"));
+        lines.push(Line::from(
+            "  T              entity timeline (preview closed)",
+        ));
+        lines.push(Line::from("  M              metrics view (preview closed)"));
+        lines.push(Line::from(
+            "  A              activity feed (preview closed)",
+        ));
+        lines.push(Line::from(
+            "  R              entity relations (preview closed)",
+        ));
     }
     if preview_open {
         lines.push(Line::from("  \u{2192} / Right     scroll preview right"));

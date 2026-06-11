@@ -1699,6 +1699,96 @@ fn slash_from_overview_enters_search_mode_and_esc_restores_state() {
 }
 
 #[test]
+fn search_overlay_question_mark_opens_help_and_esc_keeps_overlay_usable() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('?')));
+
+    assert!(app.help_open(), "? should open help from Search overlay");
+    assert!(
+        matches!(
+            app.mode(),
+            AppMode::Search {
+                state,
+                ..
+            } if state.mode() == super::SearchMode::Search && state.query().is_empty()
+        ),
+        "? must not be inserted into the search query"
+    );
+
+    app.handle_key(key(KeyCode::Esc));
+    assert!(!app.help_open(), "Esc should close help first");
+    assert!(matches!(app.mode(), AppMode::Search { .. }));
+
+    app.handle_key(key(KeyCode::Char('1')));
+    assert!(matches!(
+        app.mode(),
+        AppMode::Search {
+            state,
+            ..
+        } if state.query() == "1"
+    ));
+
+    app.handle_key(key(KeyCode::Esc));
+    assert!(matches!(app.mode(), AppMode::Overview(_)));
+}
+
+#[test]
+fn command_overlay_question_mark_opens_help_and_esc_keeps_overlay_usable() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+
+    app.handle_key(key(KeyCode::Char(':')));
+    app.handle_key(key(KeyCode::Char('?')));
+
+    assert!(app.help_open(), "? should open help from Command overlay");
+    assert!(
+        matches!(
+            app.mode(),
+            AppMode::Search {
+                state,
+                ..
+            } if state.mode() == super::SearchMode::Command && state.query().is_empty()
+        ),
+        "? must not be inserted into the command query"
+    );
+
+    app.handle_key(key(KeyCode::Esc));
+    assert!(!app.help_open(), "Esc should close help first");
+    assert!(matches!(app.mode(), AppMode::Search { .. }));
+
+    app.handle_key(key(KeyCode::Char('m')));
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(app.mode(), AppMode::Metrics { .. }));
+}
+
+#[test]
+fn search_overlay_selection_and_activation_are_bounded_to_visible_results() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(10));
+
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Char('T')));
+    for _ in 0..20 {
+        app.handle_key(key(KeyCode::Down));
+    }
+
+    assert!(matches!(
+        app.mode(),
+        AppMode::Search {
+            state,
+            ..
+        } if state.selected_index() == 7
+    ));
+
+    app.handle_key(key(KeyCode::Enter));
+    assert_eq!(
+        app.selected_item().map(|entity| entity.id),
+        Some("007".to_string()),
+        "Enter should activate the last visible search result, not an off-screen match"
+    );
+}
+
+#[test]
 fn command_palette_dispatches_metrics_activity_timeline_and_relations() {
     let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
 

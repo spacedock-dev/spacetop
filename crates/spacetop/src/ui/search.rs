@@ -6,7 +6,9 @@ use ratatui::{
 };
 use spacetop_core::query::EntityQuery;
 
-use crate::app::{matching_commands, OverviewSession, SearchMode, SearchState};
+use crate::app::{
+    matching_commands, OverviewSession, SearchMode, SearchState, SEARCH_VISIBLE_RESULT_LIMIT,
+};
 
 pub(super) fn render_overlay(
     frame: &mut Frame<'_>,
@@ -39,7 +41,11 @@ pub(super) fn render_overlay(
             if rows.is_empty() {
                 lines.push(Line::from("No matches"));
             } else {
-                for (index, entity) in rows.into_iter().take(8).enumerate() {
+                for (index, entity) in rows
+                    .into_iter()
+                    .take(SEARCH_VISIBLE_RESULT_LIMIT)
+                    .enumerate()
+                {
                     lines.push(selectable_line(
                         index == state.selected_index(),
                         format!("{}  {}  {}", entity.id, entity.status, entity.title),
@@ -52,7 +58,11 @@ pub(super) fn render_overlay(
             if rows.is_empty() {
                 lines.push(Line::from("No commands"));
             } else {
-                for (index, command) in rows.into_iter().enumerate() {
+                for (index, command) in rows
+                    .into_iter()
+                    .take(SEARCH_VISIBLE_RESULT_LIMIT)
+                    .enumerate()
+                {
                     lines.push(selectable_line(
                         index == state.selected_index(),
                         command.label.to_string(),

@@ -90,10 +90,10 @@ fn help_popup_lists_p3_capability_view_keybinds() {
     let rendered = buffer_text(terminal.backend().buffer());
     assert!(rendered.contains("/              search entities"));
     assert!(rendered.contains(":              open command palette"));
-    assert!(rendered.contains("T              open selected entity timeline"));
-    assert!(rendered.contains("M              open metrics view"));
-    assert!(rendered.contains("A              open activity feed"));
-    assert!(rendered.contains("R              open selected entity relations"));
+    assert!(rendered.contains("T              entity timeline (preview closed)"));
+    assert!(rendered.contains("M              metrics view (preview closed)"));
+    assert!(rendered.contains("A              activity feed (preview closed)"));
+    assert!(rendered.contains("R              entity relations (preview closed)"));
 }
 
 #[test]
@@ -240,8 +240,12 @@ fn dashboard_footer_lists_p3_capability_hints_when_preview_closed() {
     let rendered = buffer_text(terminal.backend().buffer());
 
     assert!(rendered.contains("/: search"));
-    assert!(rendered.contains(":: command"));
+    assert!(rendered.contains(": command"));
+    assert!(!rendered.contains(":: command"));
     assert!(rendered.contains("T/M/A/R: views"));
+    let hints = crate::ui::footer::status_footer_hints(app.as_session().unwrap());
+    assert!(hints.iter().any(|(label, _)| label == ": command"));
+    assert!(!hints.iter().any(|(label, _)| label == ":: command"));
 }
 
 #[test]
@@ -593,6 +597,10 @@ fn help_popup_includes_arrow_keys_in_multi_session() {
     assert!(
         !rendered.contains("switch to next workflow"),
         "preview-open help should not show workflow switching on arrows"
+    );
+    assert!(
+        !rendered.contains("entity timeline (preview closed)"),
+        "preview-open help should not list preview-closed capability views"
     );
 
     // Single session: the existing `App::load` path produces a pinned
