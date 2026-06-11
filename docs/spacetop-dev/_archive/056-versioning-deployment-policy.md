@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#50"
 mod-block:
+archived: 2026-06-11T08:21:17Z
 ---
 
 Implement the approved versioning and deployment policy for Spacetop. The work
