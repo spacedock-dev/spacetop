@@ -174,8 +174,8 @@ fn first_nonempty_line(s: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::git::{err, ok, RecordingGitRunner};
     use super::*;
+    use crate::git::{err, ok, RecordingGitRunner};
     use std::path::PathBuf;
 
     fn root() -> PathBuf {
