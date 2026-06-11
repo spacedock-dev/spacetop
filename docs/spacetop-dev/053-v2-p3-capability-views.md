@@ -1,7 +1,7 @@
 ---
 id: "053"
 title: "v2 P3: capability views"
-status: plan
+status: implement
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-06-11
 completed:
 verdict:
 score: 0.9
-worktree:
+worktree: .worktrees/spacedock-ensign-053-v2-p3-capability-views
 issue:
 pr:
 ---
