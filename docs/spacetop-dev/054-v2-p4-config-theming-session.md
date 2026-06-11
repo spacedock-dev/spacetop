@@ -13,7 +13,7 @@ verdict:
 score: 0.84
 worktree: .worktrees/spacedock-ensign-054-v2-p4-config-theming-session
 issue:
-pr:
+pr: "#54"
 mod-block: merge:pr-merge
 ---
 
