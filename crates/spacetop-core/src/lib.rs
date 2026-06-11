@@ -10,5 +10,6 @@ pub mod metrics;
 pub mod parser;
 pub mod query;
 pub mod relations;
+pub mod session_state;
 pub mod sources;
 pub mod watcher;
