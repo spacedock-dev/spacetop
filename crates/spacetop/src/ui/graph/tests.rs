@@ -161,12 +161,12 @@ fn renders_wide_ribbon_with_unicode_glyphs_for_real_workflow() {
     std::env::remove_var(ASCII_ENV_VAR);
     let app = real_workflow();
     let rendered = render_to_string(&app, 120, 10);
-    for name in ["design", "plan", "implement", "review", "done"] {
+    for name in ["shape", "plan", "implement", "verify", "done"] {
         assert!(rendered.contains(name), "missing stage {name}");
     }
     assert!(monotonic_contains(
         &rendered,
-        &["design", "plan", "implement", "review", "done"]
+        &["shape", "plan", "implement", "verify", "done"]
     ));
     // Markers.
     assert!(rendered.contains("\u{25B6}"), "missing initial marker");
@@ -305,7 +305,7 @@ fn very_narrow_tier_stacks_one_stage_per_line() {
     // Verify each stage name appears on a distinct row (strictly increasing row index).
     let cols = width as usize;
     let mut last_row: Option<usize> = None;
-    for name in ["design", "plan", "implement", "review", "done"] {
+    for name in ["shape", "plan", "implement", "verify", "done"] {
         let pos = rendered
             .find(name)
             .unwrap_or_else(|| panic!("missing stage {name}"));

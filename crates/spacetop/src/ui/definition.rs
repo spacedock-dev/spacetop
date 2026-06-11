@@ -496,10 +496,10 @@ mod tests {
             );
         }
         // The real README's `plan` stage Inputs bullet starts with
-        // "Approved design notes" — assert that propagates through.
+        // "Approved shape notes" — assert that propagates through.
         assert!(
-            rendered.contains("Approved design notes"),
-            "plan prose substring 'Approved design notes' must appear; rendered=\n{rendered}"
+            rendered.contains("Approved shape notes"),
+            "plan prose substring 'Approved shape notes' must appear; rendered=\n{rendered}"
         );
     }
 
