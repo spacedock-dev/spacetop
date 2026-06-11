@@ -93,3 +93,18 @@ Implemented the v2 P1 index/query spine in `spacetop-core`, including serializab
 ### Read-Only Boundary
 
 No workflow-state write path was added. The only workflow markdown edit in this stage is this dispatched stage report appended to the entity file.
+
+## Stage Report: verify
+
+- DONE: Verify AC-1 and the terminal-free core boundary: query/index/source types are owned by `spacetop-core`, return owned results or stable ids, serialize as needed, and `spacetop-core` has no terminal dependencies.
+  `WorkflowIndex`, `EntityQuery`, `ArchiveSnapshot`, and `WorkflowSources` live in core; entity queries return owned `Vec<Entity>` or `Option<Entity>`; serde DTO tests and `no_terminal_deps` passed.
+- FAILED: Verify AC-2 across app/UI behavior: existing list, preview, graph/header counts, archive scope, sort, picker, sync, and help behavior are preserved through query-backed accessors.
+  Archived parse errors are exposed through `OverviewState::parse_errors()` and counted in `row_count()`, but `ui/list.rs` only appends broken rows in active scope, so an archived broken row can be selected/previewed while the list hides it or says "No archived items found."
+- FAILED: Verify AC-3 and AC-4 plus proof evidence: archive loading remains lazy and auditable, reload paths rebuild a fresh index, docs/code maps mention index/query/sources, and `cargo test --workspace`, `make lint`, and `cargo test -p spacetop-core --test no_terminal_deps` pass.
+  Lazy archive loading, full index rebuilds, docs/code maps, and all required commands passed, but AC-3 is not fully met because archived parse-error details are not rendered as visible archive rows.
+
+### Summary
+
+Verification rejects this implementation pending an archived parse-error UI fix and a Ratatui assertion for that path. The core query/index spine and reload strategy look consistent with the P1 constraints, and the required proof gates pass.
+
+Commands run: `spacedock dispatch show-stage-def --workflow-dir /Users/kent/Dev/InfuseAI/GitHub/spacetop/docs/spacetop-dev --stage verify` passed; `cargo test --workspace` passed with 257 spacetop lib tests, 4 main tests, integration suites 10/4/5 passed, 109 core tests, `no_terminal_deps` 1 passed, `no_write_git_calls` 2 passed, and 3 watcher tests ignored by design; `make lint` passed; `cargo test -p spacetop-core --test no_terminal_deps` passed.
