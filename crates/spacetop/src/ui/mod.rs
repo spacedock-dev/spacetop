@@ -27,7 +27,7 @@ use ratatui::{
 };
 use spacetop_core::config::SpacetopConfig;
 
-use crate::app::{App, AppMode, OverviewSession};
+use crate::app::{App, AppMode, OverviewSession, ResolvedKeymap};
 use graph::render_stage_graph;
 use layout::{picker_centered, preview_placement, PreviewPlacement};
 
@@ -46,6 +46,7 @@ pub fn render_placeholder(frame: &mut Frame<'_>) {
 }
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
+    let warning_messages = app.warning_messages();
     match app.mode() {
         AppMode::Picker(state) => {
             // Picker overlays a centered dialog; the dashboard responsive-
@@ -54,12 +55,26 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             picker::render_in(frame, inner, state);
         }
         AppMode::Overview(session) => {
-            render_overview(frame, frame.area(), app.config(), session);
+            render_overview(
+                frame,
+                frame.area(),
+                app.config(),
+                app.keymap(),
+                &warning_messages,
+                session,
+            );
         }
         AppMode::PickerOverlay { underlying, picker } => {
             // Draw the underlying overview at full width, then overlay a
             // centered picker dialog atop a `Clear` widget.
-            render_overview(frame, frame.area(), app.config(), underlying);
+            render_overview(
+                frame,
+                frame.area(),
+                app.config(),
+                app.keymap(),
+                &warning_messages,
+                underlying,
+            );
             let inner = picker_centered(frame.area(), picker);
             frame.render_widget(Clear, inner);
             picker::render_in(frame, inner, picker);
@@ -71,7 +86,14 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             definition::render_in(frame, frame.area(), definition, *scroll);
         }
         AppMode::Search { underlying, state } => {
-            render_overview(frame, frame.area(), app.config(), underlying);
+            render_overview(
+                frame,
+                frame.area(),
+                app.config(),
+                app.keymap(),
+                &warning_messages,
+                underlying,
+            );
             search::render_overlay(frame, frame.area(), underlying, state);
         }
         AppMode::Timeline {
@@ -124,6 +146,8 @@ fn render_overview(
     frame: &mut Frame<'_>,
     area: Rect,
     config: &SpacetopConfig,
+    keymap: &ResolvedKeymap,
+    warnings: &[String],
     session: &OverviewSession,
 ) {
     let state = session.active_state();
@@ -177,7 +201,7 @@ fn render_overview(
         list::render_task_list(frame, content_area, config, state);
     }
 
-    footer::render_status_footer(frame, footer_area, config, session);
+    footer::render_status_footer(frame, footer_area, config, keymap, warnings, session);
 }
 
 #[cfg(test)]

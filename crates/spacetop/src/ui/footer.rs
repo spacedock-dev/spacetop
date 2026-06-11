@@ -6,7 +6,7 @@ use ratatui::{
 };
 use spacetop_core::config::SpacetopConfig;
 
-use crate::app::{OverviewSession, SyncStatus};
+use crate::app::{OverviewSession, ResolvedKeymap, SyncStatus};
 
 /// Marker glyph prefixed to the sync-failed pill label, mirroring the
 /// `SUCCESS_MARKER` on success so failure and success read symmetrically.
@@ -25,9 +25,11 @@ pub(super) fn render_status_footer(
     frame: &mut Frame<'_>,
     area: Rect,
     config: &SpacetopConfig,
+    keymap: &ResolvedKeymap,
+    warnings: &[String],
     session: &OverviewSession,
 ) {
-    let hints = status_footer_hints(session);
+    let hints = status_footer_hints_with_keymap(session, keymap, warnings);
     let pill_bg = crate::ui::color::footer_bg(config);
     let sep_style = Style::default();
     let mut spans: Vec<Span<'_>> = Vec::new();
@@ -49,9 +51,21 @@ pub(super) fn render_status_footer(
 /// outcome when a sync has been attempted, followed by the parse-error
 /// count (`⚠ N broken`, red) when any per-entity parse failures are present;
 /// the remainder are the static key hints, which stay neutral white.
+#[allow(dead_code)]
 pub(crate) fn status_footer_hints(session: &OverviewSession) -> Vec<(String, Color)> {
+    status_footer_hints_with_keymap(session, &ResolvedKeymap::default(), &[])
+}
+
+pub(crate) fn status_footer_hints_with_keymap(
+    session: &OverviewSession,
+    keymap: &ResolvedKeymap,
+    warnings: &[String],
+) -> Vec<(String, Color)> {
     let preview_open = session.active_state().preview_open();
     let mut hints: Vec<(String, Color)> = Vec::new();
+    for warning in warnings {
+        hints.push((format!("\u{26A0} {warning}"), Color::Yellow));
+    }
     let sync_status = session.active_state().sync_status();
     if let Some(label) = sync_pill_label(sync_status) {
         // `sync_pill_label` returned `Some`, so `sync_status` is `Some`.
@@ -83,9 +97,18 @@ pub(crate) fn status_footer_hints(session: &OverviewSession) -> Vec<(String, Col
     } else {
         hints.push(("PgUp/PgDn: page list".to_string(), Color::White));
         hints.push(("s: sort".to_string(), Color::White));
-        hints.push(("/: search".to_string(), Color::White));
-        hints.push((": command".to_string(), Color::White));
-        hints.push(("T/M/A/R: views".to_string(), Color::White));
+        hints.push((key_hint(keymap.search.label(), "search"), Color::White));
+        hints.push((key_hint(keymap.command.label(), "command"), Color::White));
+        hints.push((
+            format!(
+                "{}/{}/{}/{}: views",
+                keymap.timeline.label(),
+                keymap.metrics.label(),
+                keymap.activity.label(),
+                keymap.relations.label()
+            ),
+            Color::White,
+        ));
         hints.push(("D: definition".to_string(), Color::White));
         hints.push(("Y: sync".to_string(), Color::White));
     }
@@ -94,6 +117,14 @@ pub(crate) fn status_footer_hints(session: &OverviewSession) -> Vec<(String, Col
     }
     hints.push(("q: quit".to_string(), Color::White));
     hints
+}
+
+fn key_hint(key: &str, action: &str) -> String {
+    if key == ":" {
+        format!(": {action}")
+    } else {
+        format!("{key}: {action}")
+    }
 }
 
 /// Format the sync-status pill label. Success labels carry a leading

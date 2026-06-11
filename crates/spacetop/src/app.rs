@@ -24,7 +24,8 @@ pub use search::{
 };
 pub use session::{OverviewSession, WorkflowSwitch};
 
-use keys::{handle_overview_key, OverviewKeyAction};
+pub(crate) use keys::ResolvedKeymap;
+use keys::{handle_overview_key_with_keymap, OverviewKeyAction};
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
@@ -183,6 +184,7 @@ pub struct App {
     mode: AppMode,
     config: SpacetopConfig,
     config_warnings: Vec<ConfigWarning>,
+    resolved_keymap: ResolvedKeymap,
     should_quit: bool,
     help_open: bool,
     pending_switch: Option<WorkflowSwitch>,
@@ -316,10 +318,12 @@ impl App {
         config: SpacetopConfig,
         config_warnings: Vec<ConfigWarning>,
     ) -> Self {
+        let resolved_keymap = ResolvedKeymap::from_config(&config);
         Self {
             mode,
             config,
             config_warnings,
+            resolved_keymap,
             should_quit: false,
             help_open: false,
             pending_switch: None,
@@ -335,6 +339,22 @@ impl App {
 
     pub fn config_warnings(&self) -> &[ConfigWarning] {
         &self.config_warnings
+    }
+
+    pub(crate) fn keymap(&self) -> &ResolvedKeymap {
+        &self.resolved_keymap
+    }
+
+    pub fn keymap_warnings(&self) -> &[String] {
+        self.resolved_keymap.warnings()
+    }
+
+    pub(crate) fn warning_messages(&self) -> Vec<String> {
+        self.config_warnings
+            .iter()
+            .map(|warning| warning.message.clone())
+            .chain(self.resolved_keymap.warnings().iter().cloned())
+            .collect()
     }
 
     pub fn help_open(&self) -> bool {
@@ -677,7 +697,11 @@ impl App {
             return;
         }
         let overview_action = match &mut self.mode {
-            AppMode::Overview(session) => Some(handle_overview_key(session, key)),
+            AppMode::Overview(session) => Some(handle_overview_key_with_keymap(
+                session,
+                key,
+                &self.resolved_keymap,
+            )),
             _ => None,
         };
         if let Some(action) = overview_action {
