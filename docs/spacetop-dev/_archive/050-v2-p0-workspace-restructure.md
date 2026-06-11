@@ -11,6 +11,7 @@ worktree:
 issue:
 pr: "#49"
 mod-block:
+archived: 2026-06-11T06:11:30Z
 ---
 
 Phase P0 of the SpaceTop v2 internals rebuild: convert the single `spacetop`
