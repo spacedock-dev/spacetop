@@ -1,3 +1,4 @@
+mod activity;
 pub(crate) mod color;
 mod definition;
 mod diff;
@@ -8,9 +9,13 @@ mod help;
 mod layout;
 mod list;
 mod markdown;
+mod metrics;
 mod picker;
 mod preview;
+mod relations;
+mod search;
 mod tabs;
+mod timeline;
 
 use crossterm::event::Event;
 #[cfg(test)]
@@ -64,12 +69,29 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             let definition = underlying.active_state().definition();
             definition::render_in(frame, frame.area(), definition, *scroll);
         }
-        AppMode::Search { underlying, .. }
-        | AppMode::Timeline { underlying, .. }
-        | AppMode::Metrics { underlying, .. }
-        | AppMode::Activity { underlying, .. }
-        | AppMode::Relations { underlying, .. } => {
+        AppMode::Search { underlying, state } => {
             render_overview(frame, frame.area(), underlying);
+            search::render_overlay(frame, frame.area(), underlying, state);
+        }
+        AppMode::Timeline {
+            underlying,
+            entity_id,
+            scroll,
+        } => {
+            timeline::render_in(frame, frame.area(), underlying, entity_id, *scroll);
+        }
+        AppMode::Metrics { underlying, scroll } => {
+            metrics::render_in(frame, frame.area(), underlying, *scroll);
+        }
+        AppMode::Activity { underlying, scroll } => {
+            activity::render_in(frame, frame.area(), underlying, *scroll);
+        }
+        AppMode::Relations {
+            underlying,
+            entity_id,
+            scroll,
+        } => {
+            relations::render_in(frame, frame.area(), underlying, entity_id, *scroll);
         }
     }
 
