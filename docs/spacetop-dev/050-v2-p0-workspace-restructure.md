@@ -10,6 +10,7 @@ score:
 worktree: .worktrees/spacedock-ensign-050-v2-p0-workspace-restructure
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Phase P0 of the SpaceTop v2 internals rebuild: convert the single `spacetop`
