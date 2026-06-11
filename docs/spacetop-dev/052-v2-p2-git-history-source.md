@@ -1,7 +1,7 @@
 ---
 id: "052"
 title: "v2 P2: git history source"
-status: plan
+status: implement
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: high
@@ -11,7 +11,7 @@ started: 2026-06-11
 completed:
 verdict:
 score: 0.96
-worktree:
+worktree: .worktrees/spacedock-ensign-052-v2-p2-git-history-source
 issue:
 pr:
 ---
