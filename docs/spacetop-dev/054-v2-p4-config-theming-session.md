@@ -1,17 +1,17 @@
 ---
 id: "054"
 title: "v2 P4: config, theming, and session persistence"
-status: verify
+status: done
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: medium
 milestone: v2-p4
 proof: "cargo test --workspace; make lint; cargo test -p spacetop-core --test no_write_git_calls"
 started: 2026-06-11
-completed:
-verdict:
+completed: 2026-06-11T13:21:11Z
+verdict: PASSED
 score: 0.84
-worktree: .worktrees/spacedock-ensign-054-v2-p4-config-theming-session
+worktree:
 issue:
 pr: "#54"
 mod-block:
