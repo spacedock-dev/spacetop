@@ -335,7 +335,7 @@ mod tests {
     }
 
     /// AC-3: load the real workflow README and verify the `plan` stage
-    /// body contains the substring "Approved design notes" (which is
+    /// body contains the substring "Approved shape notes" (which is
     /// inside the Inputs bullet of the `plan` stage).
     #[test]
     fn prose_extracts_real_readme_plan_stage() {
@@ -344,11 +344,11 @@ mod tests {
         let out = parse_stage_prose(&contents);
         let plan = out.get("plan").expect("plan stage prose must be extracted");
         assert!(
-            plan.contains("Approved design notes"),
-            "plan prose missing 'Approved design notes'; got: {plan}"
+            plan.contains("Approved shape notes"),
+            "plan prose missing 'Approved shape notes'; got: {plan}"
         );
         // The other stages also have prose.
-        for stage in ["design", "implement", "review", "done"] {
+        for stage in ["shape", "implement", "verify", "done"] {
             assert!(
                 out.contains_key(stage),
                 "missing prose for stage {stage}; map has: {:?}",
@@ -544,6 +544,6 @@ mod tests {
             );
         }
         let plan = wf.stage_prose.get("plan").expect("plan prose");
-        assert!(plan.contains("Approved design notes"));
+        assert!(plan.contains("Approved shape notes"));
     }
 }
