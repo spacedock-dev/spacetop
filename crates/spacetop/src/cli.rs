@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Clone, Parser)]
 #[command(
@@ -14,11 +14,40 @@ pub struct Cli {
     /// discovers workflows under the current git root.
     #[arg(short = 'w', long, value_name = "PATH")]
     pub workflow_dir: Option<PathBuf>,
+
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum Command {
+    List(ListArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct ListArgs {
+    #[arg(short = 'w', long, value_name = "PATH")]
+    pub workflow_dir: Option<PathBuf>,
+    #[arg(long)]
+    pub status: Option<String>,
+    #[arg(long)]
+    pub text: Option<String>,
+    #[arg(long)]
+    pub scope: Option<ListScopeArg>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ListScopeArg {
+    Active,
+    Archived,
+    All,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Cli;
+    use super::{Cli, Command};
     use clap::{CommandFactory, Parser};
     use std::path::PathBuf;
 
@@ -42,6 +71,39 @@ mod tests {
     fn parses_workflow_dir() {
         let cli = Cli::parse_from(["spacetop", "--workflow-dir", "docs/spacetop-dev"]);
 
+        assert_eq!(cli.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
+    }
+
+    #[test]
+    fn parses_list_subcommand_with_filters() {
+        let cli = Cli::parse_from([
+            "spacetop",
+            "list",
+            "--workflow-dir",
+            "docs/spacetop-dev",
+            "--status",
+            "verify",
+            "--text",
+            "sync",
+            "--json",
+        ]);
+
+        match cli.command {
+            Some(Command::List(args)) => {
+                assert_eq!(args.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
+                assert_eq!(args.status.as_deref(), Some("verify"));
+                assert_eq!(args.text.as_deref(), Some("sync"));
+                assert!(args.json);
+            }
+            other => panic!("expected list command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_subcommand_still_launches_tui_shape() {
+        let cli = Cli::parse_from(["spacetop", "--workflow-dir", "docs/spacetop-dev"]);
+
+        assert!(cli.command.is_none());
         assert_eq!(cli.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
     }
 
