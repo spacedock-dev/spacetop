@@ -1,7 +1,7 @@
 ---
 id: "056"
 title: "Implement versioning and GitHub Release deployment policy"
-status: verify
+status: implement
 source: "captain - approved versioning/deployment policy design and plan"
 kind: feature
 risk: medium
@@ -87,3 +87,7 @@ Implemented the versioning and deployment policy with Cargo-backed `spacetop --v
 ### Summary
 
 Verification rejects this gate due to an AC-4 documentation defect: the README install example will fail for users following the GitHub Release archive path. The implementation otherwise satisfies the version surface, CI, and GitHub Release workflow requirements; fix the README example to install from the extracted `spacetop-vX.Y.Z-<target>/spacetop` path or to `cd` into that directory before installing.
+
+### Feedback Cycles
+
+- Cycle 1 (verify -> implement): rejected on AC-4. Fix `README.md:98-99` so the release install example matches the archive layout, either by installing from `spacetop-vX.Y.Z-<target>/spacetop` after extraction or by changing into that extracted directory before running `install`.
