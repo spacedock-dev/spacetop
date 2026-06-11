@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#51"
 mod-block:
+archived: 2026-06-11T08:40:06Z
 ---
 
 Implement phase P1 of the SpaceTop v2 internals rebuild: introduce
