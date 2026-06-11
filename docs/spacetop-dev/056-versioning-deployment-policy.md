@@ -104,3 +104,16 @@ Verification rejects this gate due to an AC-4 documentation defect: the README i
 ### Summary
 
 Fixed the AC-4 README defect by making the release install example use the binary path inside the extracted archive directory. Verified the documented archive shape with a smoke test rather than rerunning the full Rust gate, since no Rust code, workflow YAML, or release packaging changed in this feedback cycle.
+
+## Stage Report: verify (cycle 1)
+
+- DONE: Independently verify all four acceptance criteria against the implementation diff, not just the implement report.
+  Evidence: AC-1 through AC-4 pass by diff inspection; the prior README archive-layout defect is fixed at `README.md:98-99` and an archive install smoke using that path passed.
+- DONE: Re-run or inspect evidence for the required proof path: `cargo fmt --check`, `cargo test`, `make lint`, release build, and `target/release/spacetop --version`.
+  Evidence: `cargo fmt --check`, `cargo test` (370 passed, 3 watcher tests ignored), `make lint`, `SENTRY_DSN= cargo build --release -p spacetop`, and `target/release/spacetop --version` all passed; version output was `spacetop 0.1.0`.
+- DONE: Return a clear verification verdict with any defects or missing evidence; approve only if the PR merge flow can safely proceed.
+  Evidence: VERDICT: approved. Workflow YAML parsed, Cargo metadata reports `spacetop` and `spacetop-core` at `0.1.0`, CI has read-only permissions with fmt/test/lint parity, and release publishing remains draft-only after both target archives build.
+
+### Summary
+
+Fresh verification approves the gate after the feedback-cycle README fix. The version surface, CI workflow, GitHub Release workflow, release documentation, changelog, and corrected user install guidance all satisfy the acceptance criteria, with no blocking defects or missing required evidence found.
