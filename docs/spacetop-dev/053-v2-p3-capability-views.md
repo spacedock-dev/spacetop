@@ -87,3 +87,20 @@ Verification rejects the implementation as incomplete on AC-4. Search, command r
 ### Feedback Cycles
 
 - Cycle 1: Verify rejected AC-4 coverage because full-pane P3 modes do not handle `?`, `Left`, `Right`, or `P`; add behavior and tests proving help, workflow switching, and picker access still work while timeline, metrics, activity, and details views are open.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Full-pane P3 modes (timeline, metrics, activity, entity details/relations) must preserve existing app plumbing while open.
+  Commit f90c8bd routes full-pane P3 modes through session-backed help, switching, picker, and materialization paths.
+- DONE: Specifically, handle `?` for help, `Left`/`Right` for workflow switching in multi-session mode, and `P` for picker access while these full-pane views are open.
+  `p3_full_pane_modes_open_help_and_esc_still_restores_overview`, `p3_full_pane_modes_switch_workflows_left_and_right`, and `p3_full_pane_modes_can_open_picker_overlay` passed.
+- DONE: Add regression tests proving those keys work from full-pane P3 views, not only from overview/search/command modes.
+  Added focused app/input coverage for all four full-pane modes: `T`, `M`, `A`, and `R`.
+- DONE: Preserve existing Esc behavior back to overview and do not regress archive/sort/preview/sync behavior.
+  Esc behavior is asserted in the new help test; `cargo test --workspace` passed the existing archive, sort, preview, and sync suites.
+- DONE: Commit the fix and append a new implement/fix stage report or update the existing task record with concise evidence and commands run.
+  Fix commit: f90c8bd. Commands run: `cargo test -p spacetop p3_full_pane_modes`, `cargo test --workspace`, and `make lint`.
+
+### Summary
+
+Fixed the AC-4 rejection by letting full-pane P3 views handle help, multi-workflow switching, picker access, and lazy active-workflow materialization through the same app plumbing used by overview. The focused P3 full-pane regression tests, full workspace test suite, and lint gate all pass.
