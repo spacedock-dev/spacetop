@@ -131,3 +131,16 @@ Commands run: `spacedock dispatch show-stage-def --workflow-dir /Users/kent/Dev/
 ### Summary
 
 Fixed the verify rejection by making the task list render synthetic broken rows for whichever scope is active, matching `OverviewState::parse_errors()` and `row_count()`. The new Ratatui regression covers an archive view with no valid archived items and one archived parse error, asserting that the broken row is visible, the empty archived message is absent, and the selected broken row still drives the preview pane.
+
+## Stage Report: verify (cycle 1)
+
+- DONE: Verify the cycle-1 fix: archived parse errors render as visible archive-scope broken rows, selection/preview remain coherent, and the new Ratatui regression covers the path.
+  `ui/list.rs` now renders `state.parse_errors()` for the current scope; `selected_row()` maps archived broken rows to `SelectedRow::Broken`; focused Ratatui tests for archive broken-row rendering and broken preview both passed.
+- DONE: Re-verify AC-1 and AC-2: terminal-free core query/index/source API, owned query results, and no visible TUI behavior drift through query-backed accessors.
+  `WorkflowIndex`, `EntityQuery`, `ArchiveSnapshot`, and `WorkflowSources` remain in `spacetop-core`; queries return owned `Vec<Entity>`/`Option<Entity>`; `cargo test --workspace` and `cargo test -p spacetop-core --test no_terminal_deps` passed.
+- DONE: Re-verify AC-3 and AC-4 plus proof evidence: lazy archive loading, full index rebuild reloads, docs/code-map updates, and required commands still pass.
+  Archive parse errors surface only after archive scope load, reload swaps a fresh `WorkflowIndex`, AGENTS/policy code maps mention `index.rs`, `query.rs`, and `sources.rs`; `make lint` passed.
+
+### Summary
+
+Verification passes cycle 1. The rejected archived-parse-error path is now rendered, selectable, and previewable in archive scope, and the new Ratatui regression covers the empty-archive-with-broken-row case. Required proof commands passed: `cargo test -p spacetop ui::tests::task_list::archived_task_list_renders_broken_entity_row_when_archive_has_parse_errors`, `cargo test -p spacetop ui::tests::task_list::preview_pane_renders_broken_entity_error_with_hint`, `cargo test --workspace`, `make lint`, and `cargo test -p spacetop-core --test no_terminal_deps`.
