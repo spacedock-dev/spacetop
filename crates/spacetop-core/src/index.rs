@@ -78,6 +78,18 @@ impl WorkflowIndex {
         index
     }
 
+    pub fn load(workflow_dir: &Path, repo_root: &Path) -> Result<Self, crate::parser::ParseError> {
+        WorkflowSources::load_active(workflow_dir, repo_root).map(Self::from_sources)
+    }
+
+    pub fn with_archive(mut self, archive: ArchiveSnapshot) -> Self {
+        self.archive_parse_errors = archive.parse_errors;
+        self.archive_error = archive.error;
+        self.archived = archive.entities;
+        self.rebuild_lookup_maps();
+        self
+    }
+
     pub fn definition(&self) -> &WorkflowDefinition {
         &self.definition
     }
@@ -244,8 +256,10 @@ fn slug_of(path: &Path) -> Option<String> {
 mod tests {
     use super::*;
     use crate::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
-    use crate::query::{EntityQuery, EntitySort, QueryScope};
+    use crate::query::{EntityQuery, EntitySort, FieldFilter, HistoryUnavailable, QueryScope};
     use crate::sources::{ArchiveSnapshot, WorkflowSources};
+    use std::fs;
+    use std::path::Path;
     use std::path::PathBuf;
 
     fn entity(id: &str, title: &str, status: &str) -> Entity {
@@ -371,5 +385,235 @@ mod tests {
         assert!(index.timeline("010").is_err());
         assert!(index.metrics().is_err());
         assert!(index.activity(None).is_err());
+    }
+
+    #[test]
+    fn load_from_paths_uses_existing_workflow_parser() {
+        let workflow = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/slug-workflow");
+        let repo_root = workflow.parent().expect("fixtures parent");
+        let index = WorkflowIndex::load(&workflow, repo_root).expect("load index");
+        let result = index.query(EntityQuery::default());
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "roadmap-v5");
+    }
+
+    #[test]
+    fn fixture_active_query_sorts_by_numeric_id() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workflow = temp.path().join("docs/wf");
+        write_workflow_readme(&workflow);
+        write_entity(&workflow.join("010-query.md"), "010", "Query", "plan", "body");
+        write_entity(&workflow.join("002-render.md"), "002", "Render", "review", "body");
+
+        let index = WorkflowIndex::load(&workflow, temp.path()).expect("load index");
+        let ids: Vec<String> = index
+            .query(EntityQuery::default())
+            .into_iter()
+            .map(|entity| entity.id)
+            .collect();
+
+        assert_eq!(ids, ["002", "010"]);
+    }
+
+    #[test]
+    fn fixture_archived_query_preserves_parser_archive_order() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workflow = temp.path().join("docs/wf");
+        write_workflow_readme(&workflow);
+        let archive = workflow.join("_archive");
+        write_entity_with_extra(
+            &archive.join("early.md"),
+            "001",
+            "Early",
+            "done",
+            "completed: 2026-04-24T14:49:53Z\n",
+            "body",
+        );
+        write_entity_with_extra(
+            &archive.join("late.md"),
+            "002",
+            "Late",
+            "done",
+            "completed: 2026-04-24T15:00:00Z\n",
+            "body",
+        );
+        write_entity(&archive.join("unknown.md"), "003", "Unknown", "done", "body");
+
+        let index = WorkflowIndex::load(&workflow, temp.path()).expect("load index");
+        let archive = WorkflowSources::load_archive(&workflow, index.definition());
+        let index = index.with_archive(archive);
+        let titles: Vec<String> = index
+            .query(EntityQuery {
+                scope: QueryScope::Archived,
+                sort: EntitySort::ArchiveDefault,
+                ..EntityQuery::default()
+            })
+            .into_iter()
+            .map(|entity| entity.title)
+            .collect();
+
+        assert_eq!(titles, ["Late", "Early", "Unknown"]);
+    }
+
+    #[test]
+    fn fixture_text_query_matches_id_title_and_body() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workflow = temp.path().join("docs/wf");
+        write_workflow_readme(&workflow);
+        write_entity(
+            &workflow.join("010-query.md"),
+            "010",
+            "Query API",
+            "plan",
+            "body",
+        );
+        write_entity(
+            &workflow.join("020-render.md"),
+            "020",
+            "Renderer",
+            "review",
+            "mentions special needle",
+        );
+
+        let index = WorkflowIndex::load(&workflow, temp.path()).expect("load index");
+        let query_ids = |text: &str| -> Vec<String> {
+            index
+                .query(EntityQuery {
+                    text: Some(text.to_string()),
+                    ..EntityQuery::default()
+                })
+                .into_iter()
+                .map(|entity| entity.id)
+                .collect()
+        };
+
+        assert_eq!(query_ids("010"), ["010"]);
+        assert_eq!(query_ids("renderer"), ["020"]);
+        assert_eq!(query_ids("needle"), ["020"]);
+    }
+
+    #[test]
+    fn fixture_field_filters_cover_metadata_and_worktree_provenance() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workflow = temp.path().join("docs/wf");
+        write_workflow_readme(&workflow);
+        write_entity_with_extra(
+            &workflow.join("001-issue.md"),
+            "001",
+            "Issue",
+            "plan",
+            "issue: https://example.test/issues/1\nscore: 0.7\n",
+            "body",
+        );
+        write_entity_with_extra(
+            &workflow.join("002-pr.md"),
+            "002",
+            "PR",
+            "review",
+            "pr: https://example.test/pulls/2\nverdict: pass\nscore: 0.95\n",
+            "body",
+        );
+        let worktree_workflow = temp.path().join(".worktrees/wt/docs/wf");
+        write_workflow_readme(&worktree_workflow);
+        write_entity(
+            &worktree_workflow.join("003-worktree.md"),
+            "003",
+            "Worktree",
+            "plan",
+            "body",
+        );
+
+        let index = WorkflowIndex::load(&workflow, temp.path()).expect("load index");
+        let filtered_ids = |filter: FieldFilter| -> Vec<String> {
+            index
+                .query(EntityQuery {
+                    field_filters: vec![filter],
+                    ..EntityQuery::default()
+                })
+                .into_iter()
+                .map(|entity| entity.id)
+                .collect()
+        };
+
+        assert_eq!(filtered_ids(FieldFilter::HasIssue), ["001"]);
+        assert_eq!(filtered_ids(FieldFilter::HasPr), ["002"]);
+        assert_eq!(filtered_ids(FieldFilter::HasWorktreeSource), ["003"]);
+        assert_eq!(filtered_ids(FieldFilter::Verdict("pass".to_string())), ["002"]);
+        assert_eq!(filtered_ids(FieldFilter::MinScore(0.9)), ["002"]);
+    }
+
+    #[test]
+    fn fixture_archive_snapshot_surfaces_parse_errors() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workflow = temp.path().join("docs/wf");
+        write_workflow_readme(&workflow);
+        let archive = workflow.join("_archive");
+        write_entity(&archive.join("001-good.md"), "001", "Good", "done", "body");
+        write_markdown(
+            &archive.join("002-broken.md"),
+            "---\nid: [\n---\n\nbroken body\n",
+        );
+
+        let index = WorkflowIndex::load(&workflow, temp.path()).expect("load index");
+        let archive = WorkflowSources::load_archive(&workflow, index.definition());
+
+        assert_eq!(archive.entities.len(), 1);
+        assert_eq!(archive.parse_errors.len(), 1);
+        assert!(archive.parse_errors[0].message.contains("malformed YAML"));
+    }
+
+    #[test]
+    fn fixture_history_methods_return_not_implemented_in_p1() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workflow = temp.path().join("docs/wf");
+        write_workflow_readme(&workflow);
+        write_entity(&workflow.join("001-query.md"), "001", "Query", "plan", "body");
+
+        let index = WorkflowIndex::load(&workflow, temp.path()).expect("load index");
+
+        assert_eq!(
+            index.timeline("001"),
+            Err(HistoryUnavailable::NotImplemented)
+        );
+        assert_eq!(index.metrics(), Err(HistoryUnavailable::NotImplemented));
+        assert_eq!(
+            index.activity(None),
+            Err(HistoryUnavailable::NotImplemented)
+        );
+    }
+
+    fn write_workflow_readme(workflow: &Path) {
+        write_markdown(
+            &workflow.join("README.md"),
+            "---\ncommissioned-by: spacedock@0.20.0\nstages:\n  states:\n    - name: plan\n      initial: true\n    - name: review\n      gate: true\n    - name: done\n      terminal: true\n---\n\n# Workflow\n",
+        );
+    }
+
+    fn write_entity(path: &Path, id: &str, title: &str, status: &str, body: &str) {
+        write_entity_with_extra(path, id, title, status, "", body);
+    }
+
+    fn write_entity_with_extra(
+        path: &Path,
+        id: &str,
+        title: &str,
+        status: &str,
+        extra_frontmatter: &str,
+        body: &str,
+    ) {
+        write_markdown(
+            path,
+            &format!(
+                "---\nid: \"{id}\"\ntitle: {title}\nstatus: {status}\n{extra_frontmatter}---\n\n{body}\n"
+            ),
+        );
+    }
+
+    fn write_markdown(path: &Path, contents: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create parent");
+        }
+        fs::write(path, contents).expect("write markdown");
     }
 }
