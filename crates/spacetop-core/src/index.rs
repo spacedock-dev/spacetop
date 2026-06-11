@@ -8,6 +8,7 @@ pub use crate::metrics::Metrics;
 use crate::query::{
     EntityQuery, EntitySort, FieldFilter, HistoryResult, HistoryUnavailable, QueryScope,
 };
+use crate::relations::{EntityDetails, RelationView};
 use crate::sources::{ArchiveSnapshot, WorkflowSources};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -274,6 +275,41 @@ impl WorkflowIndex {
             .collect())
     }
 
+    pub fn related(&self, entity_id: &str) -> Vec<RelationView> {
+        let Some(entity) = self.entity_by_id(entity_id) else {
+            return Vec::new();
+        };
+        let mut relations = Vec::new();
+        if let Some(issue) = entity.issue.filter(|value| !value.trim().is_empty()) {
+            relations.push(RelationView::Issue { value: issue });
+        }
+        if let Some(pr) = entity.pr.filter(|value| !value.trim().is_empty()) {
+            relations.push(RelationView::PullRequest { value: pr });
+        }
+        for stage in &self.definition.stages {
+            if let Some(target) = &stage.feedback_to {
+                if stage.name == entity.status || target == &entity.status {
+                    relations.push(RelationView::FeedbackStage {
+                        from: stage.name.clone(),
+                        to: target.clone(),
+                    });
+                }
+            }
+        }
+        relations
+    }
+
+    pub fn entity_details(&self, entity_id: &str) -> Option<EntityDetails> {
+        let entity = self.entity_by_id(entity_id)?;
+        Some(EntityDetails {
+            id: entity.id.clone(),
+            title: entity.title.clone(),
+            status: entity.status.clone(),
+            worktree: entity.worktree.clone(),
+            relations: self.related(entity_id),
+        })
+    }
+
     fn history_unavailable(&self) -> Option<HistoryUnavailable> {
         self.history_unavailable.clone()
     }
@@ -516,6 +552,75 @@ mod tests {
         assert_eq!(metrics.throughput_completed, 0);
         assert_eq!(metrics.completed_entities, 0);
         assert_eq!(index.activity(None), Ok(Vec::new()));
+    }
+
+    #[test]
+    fn related_returns_issue_pr_and_feedback_relations() {
+        let mut index = index();
+        index.active[0].issue = Some("https://example.test/issues/10".to_string());
+        index.active[0].pr = Some("https://example.test/pulls/10".to_string());
+        index.rebuild_lookup_maps();
+
+        let relations = index.related("010");
+
+        assert_eq!(
+            relations,
+            [
+                crate::relations::RelationView::Issue {
+                    value: "https://example.test/issues/10".to_string()
+                },
+                crate::relations::RelationView::PullRequest {
+                    value: "https://example.test/pulls/10".to_string()
+                },
+                crate::relations::RelationView::FeedbackStage {
+                    from: "verify".to_string(),
+                    to: "plan".to_string()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn related_returns_feedback_for_entities_on_either_side_of_arc() {
+        let index = index();
+
+        assert_eq!(
+            index.related("010"),
+            [crate::relations::RelationView::FeedbackStage {
+                from: "verify".to_string(),
+                to: "plan".to_string()
+            }]
+        );
+        assert_eq!(
+            index.related("002"),
+            [crate::relations::RelationView::FeedbackStage {
+                from: "verify".to_string(),
+                to: "plan".to_string()
+            }]
+        );
+    }
+
+    #[test]
+    fn entity_details_returns_core_facts_and_empty_relations_when_none_exist() {
+        let mut index = index();
+        index.definition.stages[1].feedback_to = None;
+        index.rebuild_lookup_maps();
+
+        let details = index.entity_details("010").expect("entity details");
+
+        assert_eq!(details.id, "010");
+        assert_eq!(details.title, "Write query api");
+        assert_eq!(details.status, "plan");
+        assert_eq!(details.relations, Vec::new());
+        assert_eq!(index.related("010"), Vec::new());
+    }
+
+    #[test]
+    fn unknown_entity_has_no_relations_or_details() {
+        let index = index();
+
+        assert_eq!(index.related("missing"), Vec::new());
+        assert_eq!(index.entity_details("missing"), None);
     }
 
     #[test]
