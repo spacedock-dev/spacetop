@@ -148,3 +148,21 @@ REJECTED. The required proof commands pass, and AC-1/AC-2/AC-4 are supported by 
 ### Verdict
 
 PASSED. The cycle-1 AC-3 defect is fixed: final keymap validation now repairs fallback-created duplicate bindings with warnings, and the required regression tests prove the formerly unreachable command binding remains reachable. AC-1, AC-2, and AC-4 are supported by code inspection and passing targeted/workspace tests.
+
+## PR Review Fix: implement
+
+- DONE: Addressed PR #54 color parsing feedback. `color_from_hex` now parses hex bytes instead of slicing string byte ranges, so non-ASCII invalid values return `None` instead of panicking.
+- DONE: Addressed PR #54 session-key feedback. `WorkflowSessionKey::from_workflow_dir` now canonicalizes first, so existing relative workflow paths launched with `--workflow-dir` can restore/save session state under the canonical absolute key. Missing paths still fail to canonicalize.
+- DONE: Addressed PR #54 startup config feedback. Startup config IO/read errors now fall back to default config plus a user-visible warning, preserving read-only workflow inspection.
+- DONE: Updated the session-key regression that previously enforced relative workflow path rejection; existing relative paths now canonicalize. This supersedes older verify wording that workflow keys require absolute input paths.
+
+### PR Review Proof Commands
+
+- `cargo test -p spacetop ui::color::tests::non_ascii_hex_color_returns_none` -> red before fix with UTF-8 boundary panic; green after fix.
+- `cargo test -p spacetop-core workflow_session_key` -> red before fix for existing relative path; green after fix, 3 passed.
+- `cargo test -p spacetop startup_config_io_errors_fall_back_to_default_warning` -> green after adding startup fallback, 1 passed.
+- `cargo test -p spacetop ui::color::tests` -> passed, 3 passed.
+- `cargo test -p spacetop-core session_state::tests` -> passed, 10 passed.
+- `cargo test --workspace` -> passed: spacetop lib 315 passed; main 4 passed; integration tests 10/4/5 passed; spacetop-core lib 145 passed; core integration tests 7/1/2 passed; watcher real-backend tests 3 ignored; doctests 0.
+- `make lint` -> passed, `cargo clippy --all-targets --all-features -- -D warnings`.
+- `cargo test -p spacetop-core --test no_write_git_calls` -> passed, 2 passed.

@@ -32,9 +32,6 @@ pub struct WorkflowSessionKey(String);
 
 impl WorkflowSessionKey {
     pub fn from_workflow_dir(path: &Path) -> Result<Self, SessionError> {
-        if !path.is_absolute() {
-            return Err(SessionError::UnsafePath(path.to_path_buf()));
-        }
         let canonical = std::fs::canonicalize(path).map_err(SessionError::Io)?;
         Ok(Self(canonical.to_string_lossy().into_owned()))
     }
@@ -231,9 +228,30 @@ mod tests {
     }
 
     #[test]
-    fn workflow_session_key_rejects_relative_path() {
-        let err = WorkflowSessionKey::from_workflow_dir(Path::new("docs/workflow"))
-            .expect_err("relative paths are unsafe");
-        assert!(err.to_string().contains("absolute"));
+    fn workflow_session_key_canonicalizes_existing_relative_path() {
+        let cwd = std::env::current_dir().expect("cwd");
+        let target_dir = cwd.join("target");
+        std::fs::create_dir_all(&target_dir).expect("create target dir");
+        let dir = tempfile::Builder::new()
+            .prefix("spacetop-session-relative-")
+            .tempdir_in(&target_dir)
+            .expect("tempdir in target");
+        let workflow_dir = dir.path().join("workflow");
+        std::fs::create_dir_all(&workflow_dir).expect("create workflow dir");
+        let relative = workflow_dir
+            .strip_prefix(&cwd)
+            .expect("target tempdir is under cwd");
+
+        let key = WorkflowSessionKey::from_workflow_dir(relative).expect("session key");
+        let expected = std::fs::canonicalize(&workflow_dir).expect("canonical workflow dir");
+
+        assert_eq!(key.as_str(), expected.as_path().to_str().expect("utf8"));
+    }
+
+    #[test]
+    fn workflow_session_key_rejects_paths_that_cannot_canonicalize() {
+        let err = WorkflowSessionKey::from_workflow_dir(Path::new("missing/workflow"))
+            .expect_err("missing paths cannot canonicalize");
+        assert!(err.to_string().contains("failed to read or write"));
     }
 }

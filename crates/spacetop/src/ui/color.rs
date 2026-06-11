@@ -12,13 +12,27 @@ pub(crate) fn to_color(rgb: Rgb) -> Color {
 
 pub(crate) fn color_from_hex(value: &str) -> Option<Color> {
     let hex = value.strip_prefix('#')?;
-    if hex.len() != 6 {
+    let bytes = hex.as_bytes();
+    if bytes.len() != 6 {
         return None;
     }
-    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    let r = parse_hex_pair(&bytes[0..2])?;
+    let g = parse_hex_pair(&bytes[2..4])?;
+    let b = parse_hex_pair(&bytes[4..6])?;
     Some(Color::Rgb(r, g, b))
+}
+
+fn parse_hex_pair(bytes: &[u8]) -> Option<u8> {
+    Some(hex_value(bytes[0])? << 4 | hex_value(bytes[1])?)
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 pub(crate) fn selection_bg(config: &SpacetopConfig) -> Color {
@@ -43,5 +57,10 @@ mod tests {
         assert_eq!(color_from_hex("blue"), None);
         assert_eq!(color_from_hex("#12"), None);
         assert_eq!(color_from_hex("#gggggg"), None);
+    }
+
+    #[test]
+    fn non_ascii_hex_color_returns_none() {
+        assert_eq!(color_from_hex("#€€"), None);
     }
 }

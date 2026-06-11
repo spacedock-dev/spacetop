@@ -16,7 +16,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use spacetop_core::config::{self, ConfigWarning, SpacetopConfig};
+use spacetop_core::config::{self, ConfigLoad, ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery;
 use spacetop_core::editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
 use spacetop_core::git_sync::{self, GitRunner, StdGitRunner, SyncOutcome};
@@ -125,7 +125,7 @@ fn load_overview_state(root: &Path) -> anyhow::Result<app::OverviewState> {
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {
     let cwd = std::env::current_dir().context("failed to resolve current directory")?;
-    let config_load = config::load_config_with_warnings(&config::StdEnv)?;
+    let config_load = load_startup_config(&config::StdEnv);
     match decide_app_with_config(&cli, &cwd, config_load.config, config_load.warnings)? {
         DecideOutcome::Overview(app) | DecideOutcome::Picker(app) => run_terminal(app),
         DecideOutcome::ZeroWorkflows { scan_root } => {
@@ -135,6 +135,18 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
             );
             Err(anyhow!("no workflows discovered"))
         }
+    }
+}
+
+fn load_startup_config(env: &impl config::ConfigEnv) -> ConfigLoad {
+    match config::load_config_with_warnings(env) {
+        Ok(load) => load,
+        Err(err) => ConfigLoad {
+            config: SpacetopConfig::default(),
+            warnings: vec![ConfigWarning {
+                message: format!("failed to load config: {err}"),
+            }],
+        },
     }
 }
 
@@ -550,6 +562,37 @@ mod tests {
             format!("---\nid: {slug}\ntitle: T{slug}\nstatus: plan\n---\n\nbody\n"),
         )
         .unwrap();
+    }
+
+    struct TestConfigEnv {
+        vars: std::collections::HashMap<String, String>,
+    }
+
+    impl config::ConfigEnv for TestConfigEnv {
+        fn var(&self, key: &str) -> Option<String> {
+            self.vars.get(key).cloned()
+        }
+    }
+
+    #[test]
+    fn startup_config_io_errors_fall_back_to_default_warning() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("spacetop").join("config.yaml"))
+            .expect("create config path as directory");
+        let env = TestConfigEnv {
+            vars: std::collections::HashMap::from([(
+                "XDG_CONFIG_HOME".to_string(),
+                dir.path().to_string_lossy().into_owned(),
+            )]),
+        };
+
+        let load = load_startup_config(&env);
+
+        assert_eq!(load.config, SpacetopConfig::default());
+        assert!(load
+            .warnings
+            .iter()
+            .any(|warning| warning.message.contains("failed to load config")));
     }
 
     #[test]
