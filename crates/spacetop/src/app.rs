@@ -275,11 +275,10 @@ impl App {
     }
 
     pub fn from_session_with_config_warnings(
-        mut session: OverviewSession,
+        session: OverviewSession,
         config: SpacetopConfig,
         config_warnings: Vec<ConfigWarning>,
     ) -> Self {
-        session.apply_config_defaults(&config);
         Self::from_mode_with_config(AppMode::Overview(session), config, config_warnings)
     }
 

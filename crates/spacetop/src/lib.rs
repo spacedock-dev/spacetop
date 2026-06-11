@@ -89,7 +89,8 @@ fn overview_from_discovered_workflows(
 ) -> anyhow::Result<DecideOutcome> {
     if workflows.len() == 1 {
         let only = workflows.into_iter().next().expect("one workflow");
-        let state = load_overview_state(&only.root)?;
+        let mut state = load_overview_state(&only.root)?;
+        state.apply_config_defaults(config);
         // Discovery path with exactly one workflow: not `-w` pinned, but
         // is_multi() is false because len() == 1, so cycle/P keys stay
         // inert per the design.
@@ -108,7 +109,8 @@ fn overview_from_discovered_workflows(
         .expect("non-empty workflow list")
         .root
         .clone();
-    let state = load_overview_state(&first)?;
+    let mut state = load_overview_state(&first)?;
+    state.apply_config_defaults(config);
     let session = app::OverviewSession::from_discovery(scan_root, workflows, 0, state);
     Ok(DecideOutcome::Overview(
         App::from_session_with_config_warnings(session, config.clone(), config_warnings.to_vec()),

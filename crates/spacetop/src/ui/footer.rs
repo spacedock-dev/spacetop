@@ -4,10 +4,9 @@ use ratatui::{
     style::Color,
     widgets::Paragraph,
 };
+use spacetop_core::config::SpacetopConfig;
 
 use crate::app::{OverviewSession, SyncStatus};
-
-const PILL_BG: Color = Color::Rgb(59, 66, 82);
 
 /// Marker glyph prefixed to the sync-failed pill label, mirroring the
 /// `SUCCESS_MARKER` on success so failure and success read symmetrically.
@@ -22,15 +21,21 @@ const SUCCESS_MARKER: char = '\u{2713}';
 /// carry their own foreground color (`status_footer_hints`), so the sync
 /// pill reflects its outcome while the neutral key hints stay white. The
 /// exact key list adapts to single vs multi sessions.
-pub(super) fn render_status_footer(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
+pub(super) fn render_status_footer(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    config: &SpacetopConfig,
+    session: &OverviewSession,
+) {
     let hints = status_footer_hints(session);
+    let pill_bg = crate::ui::color::footer_bg(config);
     let sep_style = Style::default();
     let mut spans: Vec<Span<'_>> = Vec::new();
     for (i, (label, color)) in hints.iter().enumerate() {
         if i > 0 {
             spans.push(Span::styled("  ", sep_style));
         }
-        let style = Style::default().fg(*color).bg(PILL_BG);
+        let style = Style::default().fg(*color).bg(pill_bg);
         spans.push(Span::styled(label.clone(), style));
     }
 

@@ -25,6 +25,7 @@ use ratatui::{
     prelude::Frame,
     widgets::{Clear, Paragraph},
 };
+use spacetop_core::config::SpacetopConfig;
 
 use crate::app::{App, AppMode, OverviewSession};
 use graph::render_stage_graph;
@@ -53,12 +54,12 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             picker::render_in(frame, inner, state);
         }
         AppMode::Overview(session) => {
-            render_overview(frame, frame.area(), session);
+            render_overview(frame, frame.area(), app.config(), session);
         }
         AppMode::PickerOverlay { underlying, picker } => {
             // Draw the underlying overview at full width, then overlay a
             // centered picker dialog atop a `Clear` widget.
-            render_overview(frame, frame.area(), underlying);
+            render_overview(frame, frame.area(), app.config(), underlying);
             let inner = picker_centered(frame.area(), picker);
             frame.render_widget(Clear, inner);
             picker::render_in(frame, inner, picker);
@@ -70,7 +71,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             definition::render_in(frame, frame.area(), definition, *scroll);
         }
         AppMode::Search { underlying, state } => {
-            render_overview(frame, frame.area(), underlying);
+            render_overview(frame, frame.area(), app.config(), underlying);
             search::render_overlay(frame, frame.area(), underlying, state);
         }
         AppMode::Timeline {
@@ -119,7 +120,12 @@ pub(crate) fn assign_stage_colors(
         .collect()
 }
 
-fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession) {
+fn render_overview(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    config: &SpacetopConfig,
+    session: &OverviewSession,
+) {
     let state = session.active_state();
     let show_tabs = session.is_multi();
     let dashboard_area = if show_tabs {
@@ -155,7 +161,7 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession)
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                     .areas(content_area);
-                list::render_task_list(frame, list_area, state);
+                list::render_task_list(frame, list_area, config, state);
                 preview::render_preview(frame, preview_area, state, PreviewPlacement::Left);
             }
             PreviewPlacement::Bottom => {
@@ -163,15 +169,15 @@ fn render_overview(frame: &mut Frame<'_>, area: Rect, session: &OverviewSession)
                     .direction(Direction::Vertical)
                     .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
                     .areas(content_area);
-                list::render_task_list(frame, list_area, state);
+                list::render_task_list(frame, list_area, config, state);
                 preview::render_preview(frame, preview_area, state, PreviewPlacement::Bottom);
             }
         }
     } else {
-        list::render_task_list(frame, content_area, state);
+        list::render_task_list(frame, content_area, config, state);
     }
 
-    footer::render_status_footer(frame, footer_area, session);
+    footer::render_status_footer(frame, footer_area, config, session);
 }
 
 #[cfg(test)]
