@@ -1,7 +1,7 @@
 ---
 id: "056"
 title: "Implement versioning and GitHub Release deployment policy"
-status: implement
+status: verify
 source: "captain - approved versioning/deployment policy design and plan"
 kind: feature
 risk: medium
@@ -59,3 +59,74 @@ Verified by: README, `docs/release-policy.md`, and `CHANGELOG.md`.
 - Required commands: `cargo fmt --check`; `cargo test`; `make lint`; `SENTRY_DSN= cargo build --release -p spacetop`; `target/release/spacetop --version`.
 - Manual check, if any: no live tag release required in the implementation stage.
 - Docs/policy update needed: README install guidance, `docs/release-policy.md`, and `CHANGELOG.md`.
+
+## Stage Report: implement
+
+- DONE: `spacetop --version` is wired to the Cargo package version and covered by a focused test plus release-binary proof.
+  Evidence: commit `6f03cb4` adds the Clap version surface and focused CLI test; fresh `cargo test` passed; `target/release/spacetop --version` printed `spacetop 0.1.0`.
+- DONE: CI and release workflows enforce the approved policy: fmt/tests/lint, tag-version agreement, macOS arm64 and Linux x64 archives, SHA256SUMS, and draft release publication.
+  Evidence: commits `0e73467`, `134fcfc`, and `94a5f6c` add CI plus release jobs; Ruby YAML parse, `rg` coverage, and Cargo metadata version static checks passed.
+- DONE: README, release policy, and changelog document the supported install/release path and the stage report cites evidence for all four acceptance criteria.
+  Evidence: commits `4015db6` and `506e871` add `CHANGELOG.md`, `docs/release-policy.md`, and release-first README install guidance; this report maps AC-1 through AC-4.
+- DONE: Required implementation verification commands.
+  Evidence: fresh `cargo fmt --check`, `cargo test`, `make lint`, `SENTRY_DSN= cargo build --release -p spacetop`, and `target/release/spacetop --version` all passed on current HEAD.
+
+### Summary
+
+Implemented the versioning and deployment policy with Cargo-backed `spacetop --version`, read-only CI, and a draft-first GitHub Release workflow for `aarch64-apple-darwin` and `x86_64-unknown-linux-gnu`. Added release docs and changelog, updated README install guidance, and aligned stale real-workflow test assertions with the current `shape/plan/implement/verify/done` workflow so the full verification gate passes.
+
+## Stage Report: verify
+
+- DONE: Independently verify all four acceptance criteria against the implementation diff, not just the implement report.
+  Evidence: AC-1, AC-2, and AC-3 passed by diff inspection and command evidence; AC-4 is rejected because the README release-install example does not match the archive layout.
+- DONE: Re-run or inspect evidence for the required proof path: `cargo fmt --check`, `cargo test`, `make lint`, release build, and `target/release/spacetop --version`.
+  Evidence: `cargo fmt --check`, `cargo test` (370 executed tests passed; 3 watcher tests ignored), `make lint`, `SENTRY_DSN= cargo build --release -p spacetop`, and `target/release/spacetop --version` all passed; version output was `spacetop 0.1.0`.
+- DONE: Return a clear verification verdict with any defects or missing evidence; approve only if the PR merge flow can safely proceed.
+  Evidence: VERDICT: rejected. `README.md:98-99` runs `install -m 755 spacetop ...` after extracting an archive that contains `spacetop-vX.Y.Z-<target>/spacetop`; exercising that shape failed with `install: spacetop: No such file or directory`.
+
+### Summary
+
+Verification rejects this gate due to an AC-4 documentation defect: the README install example will fail for users following the GitHub Release archive path. The implementation otherwise satisfies the version surface, CI, and GitHub Release workflow requirements; fix the README example to install from the extracted `spacetop-vX.Y.Z-<target>/spacetop` path or to `cd` into that directory before installing.
+
+### Feedback Cycles
+
+- Cycle 1 (verify -> implement): rejected on AC-4. Fix `README.md:98-99` so the release install example matches the archive layout, either by installing from `spacetop-vX.Y.Z-<target>/spacetop` after extraction or by changing into that extracted directory before running `install`.
+
+## Stage Report: implement (cycle 1)
+
+- DONE: Fix the README release-install example so it matches the archive layout, either installing from `spacetop-vX.Y.Z-<target>/spacetop` or changing into the extracted directory before `install`.
+  Evidence: commit `9d0ac3c` changes the example to install from `spacetop-vX.Y.Z-aarch64-apple-darwin/spacetop`, matching the release workflow archive directory.
+- DONE: Run the lowest practical verification for the docs fix, plus any required commands that are still needed or explain why a full rerun is unnecessary.
+  Evidence: `git diff --check -- README.md` passed; an archive-layout smoke extracted a mock release archive and installed from `spacetop-vX.Y.Z-aarch64-apple-darwin/spacetop`; full Rust rerun skipped because this cycle changed only README prose.
+- DONE: Append an implement follow-up stage report covering this feedback cycle with DONE/SKIPPED/FAILED items and AC-4 evidence.
+  Evidence: this cycle 1 report records the AC-4 README fix, targeted verification, and full-rerun rationale.
+
+### Summary
+
+Fixed the AC-4 README defect by making the release install example use the binary path inside the extracted archive directory. Verified the documented archive shape with a smoke test rather than rerunning the full Rust gate, since no Rust code, workflow YAML, or release packaging changed in this feedback cycle.
+
+## Stage Report: verify (cycle 1)
+
+- DONE: Independently verify all four acceptance criteria against the implementation diff, not just the implement report.
+  Evidence: AC-1 through AC-4 pass by diff inspection; the prior README archive-layout defect is fixed at `README.md:98-99` and an archive install smoke using that path passed.
+- DONE: Re-run or inspect evidence for the required proof path: `cargo fmt --check`, `cargo test`, `make lint`, release build, and `target/release/spacetop --version`.
+  Evidence: `cargo fmt --check`, `cargo test` (370 passed, 3 watcher tests ignored), `make lint`, `SENTRY_DSN= cargo build --release -p spacetop`, and `target/release/spacetop --version` all passed; version output was `spacetop 0.1.0`.
+- DONE: Return a clear verification verdict with any defects or missing evidence; approve only if the PR merge flow can safely proceed.
+  Evidence: VERDICT: approved. Workflow YAML parsed, Cargo metadata reports `spacetop` and `spacetop-core` at `0.1.0`, CI has read-only permissions with fmt/test/lint parity, and release publishing remains draft-only after both target archives build.
+
+### Summary
+
+Fresh verification approves the gate after the feedback-cycle README fix. The version surface, CI workflow, GitHub Release workflow, release documentation, changelog, and corrected user install guidance all satisfy the acceptance criteria, with no blocking defects or missing required evidence found.
+
+## Stage Report: PR review follow-up
+
+- DONE: Limit release workflow write permission to the publish job.
+  Evidence: `.github/workflows/release.yml` now sets workflow-level `contents: read` and `publish.permissions.contents: write`.
+- DONE: Install release-validation Rust tooling explicitly.
+  Evidence: the release `validate` job installs `rustfmt` and `clippy` through `dtolnay/rust-toolchain@stable`.
+- DONE: Use Ubuntu-native checksum tooling.
+  Evidence: the release checksum step now runs `sha256sum *.tar.gz > SHA256SUMS`.
+
+### Summary
+
+Addressed all four active GitHub review threads on PR #50 and kept the release workflow's write token scoped to the draft-release publication job.

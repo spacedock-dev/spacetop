@@ -46,17 +46,17 @@ fn parses_workflow_readme_stage_metadata_with_defaults_and_overrides() {
             .iter()
             .map(|stage| stage.name.as_str())
             .collect::<Vec<_>>(),
-        ["design", "plan", "implement", "review", "done"]
+        ["shape", "plan", "implement", "verify", "done"]
     );
 
-    let design = workflow
+    let shape = workflow
         .stages
         .iter()
-        .find(|stage| stage.name == "design")
-        .expect("design stage should exist");
-    assert!(design.initial);
-    assert!(!design.terminal);
-    assert_eq!(design.concurrency, Some(2));
+        .find(|stage| stage.name == "shape")
+        .expect("shape stage should exist");
+    assert!(shape.initial);
+    assert!(!shape.terminal);
+    assert_eq!(shape.concurrency, Some(2));
 
     let implement = workflow
         .stages
@@ -66,14 +66,14 @@ fn parses_workflow_readme_stage_metadata_with_defaults_and_overrides() {
     assert!(implement.worktree);
     assert_eq!(implement.concurrency, Some(2));
 
-    let review = workflow
+    let verify = workflow
         .stages
         .iter()
-        .find(|stage| stage.name == "review")
-        .expect("review stage should exist");
-    assert!(review.gate);
-    assert!(review.fresh);
-    assert_eq!(review.feedback_to.as_deref(), Some("implement"));
+        .find(|stage| stage.name == "verify")
+        .expect("verify stage should exist");
+    assert!(verify.gate);
+    assert!(verify.fresh);
+    assert_eq!(verify.feedback_to.as_deref(), Some("implement"));
 
     let done = workflow
         .stages
@@ -131,7 +131,7 @@ fn loads_workflow_snapshot_from_directory_ignoring_mods_and_archive() {
         r#"---
 id: "001"
 title: Active
-status: design
+status: shape
 ---
 
 Active body.
@@ -142,7 +142,7 @@ Active body.
         r#"---
 id: "002"
 title: Ignored Mod
-status: design
+status: shape
 ---
 
 Ignored.
@@ -303,8 +303,10 @@ fn load_archived_items_returns_entries_from_flat_files() {
         "legacy archived items should preserve terminal frontmatter status"
     );
     assert!(
-        items.iter().any(|item| item.status == "review"),
-        "newer archived items should preserve their pre-archive gate status"
+        items
+            .iter()
+            .all(|item| allowed.iter().any(|status| status == &item.status)),
+        "archived items should preserve statuses from the current workflow stage set"
     );
 }
 

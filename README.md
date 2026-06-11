@@ -70,6 +70,8 @@ Workspace layout:
   loop, and release-only Sentry setup.
 - `tests/fixtures/` contains shared integration-test fixtures.
 
+Release and versioning policy lives in `docs/release-policy.md`.
+
 ### Setup
 
 On a fresh clone, install the required Rust components once:
@@ -80,9 +82,27 @@ This adds the `clippy` component to the active toolchain. `make lint` and
 `make build` will refuse to run until clippy is available and will point you
 back at this command.
 
+### Install Released Binary
+
+Download the archive for your platform from the GitHub Releases page:
+
+- macOS Apple Silicon: `spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz`
+- Linux x64: `spacetop-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`
+
+Verify the archive against `SHA256SUMS`, then unpack it and move `spacetop` into
+a directory on your `PATH`.
+
+Example:
+
+```bash
+tar -xzf spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz
+install -m 755 spacetop-vX.Y.Z-aarch64-apple-darwin/spacetop ~/.cargo/bin/spacetop
+spacetop --version
+```
+
 ### Install Local Build
 
-Use the provided Makefile targets to build and install a local release binary:
+Contributors can still build and install from the current checkout:
 
 ```bash
 make build
