@@ -95,3 +95,23 @@ Verified by: recorded build/size evidence and docs update.
 ### Summary
 
 Implemented the P5 headless CLI surface in the existing `spacetop` binary while keeping `spacetop-core` terminal-free and preserving the current TUI launch shape. The implementation adds tested one-workflow resolution, query-backed list output, history-backed timeline/metrics/activity commands with stable unavailable responses, JSON export with archived entities, README examples, and a measured no-split decision.
+
+## Stage Report: verify
+
+- DONE: AC-1 existing TUI launch behavior is unchanged. Evidence: `crates/spacetop/src/lib.rs` dispatches to headless mode only when `cli.command` is `Some`; no-subcommand invocations still flow through `decide_app_with_config` and terminal launch. `cargo test -p spacetop cli::tests` passed 12 tests, including `no_subcommand_still_launches_tui_shape`, `parses_workflow_dir`, and subcommand parse coverage. `cargo test --workspace` also passed the existing `decide_app` discovery and explicit `--workflow-dir` integration tests.
+- DONE: AC-2 headless commands resolve exactly one workflow and reject zero or multiple discoveries with stable errors. Evidence: `headless::resolve_workflow_arg` canonicalizes the requested path or cwd, runs `discover_workflows`, and bails unless exactly one workflow is found. `cargo test -p spacetop headless::tests` passed resolver tests for direct workflow path, explicit scan root, zero workflows, and multiple workflows. Real CLI checks for an empty temp root and a two-workflow temp root both exited 1 with `Error: headless command requires exactly one workflow; pass --workflow-dir <path>`.
+- DONE: AC-3 headless output uses core query/history APIs and P4 config defaults, with no placeholder command paths. Evidence: `list` loads `WorkflowIndex`, queries via `EntityQuery`, attaches archives for archived/all scopes, and applies config default scope/sort unless CLI scope overrides. `timeline`, `metrics`, and `activity` load history through `WorkflowIndex::load_with_history` and use stable `HistoryUnavailable::user_message()` output. `cargo test -p spacetop headless::tests` passed list config-default tests and injected git-runner unavailable tests for shallow clone, non-git, and generic git errors. Parser-based CLI smokes showed `list_count=1; first_id=055`, and `timeline`, `metrics`, and `activity` each returned JSON with the stable `unavailable` key in this checkout.
+- DONE: AC-4 export JSON includes definition, active entities, and archived entities with archive data attached explicitly. Evidence: `run_export` requires `--json`, loads the active index, attaches `WorkflowSources::load_archive`, and serializes `definition`, `entities`, and `archived_entities`. `cargo test -p spacetop headless::tests` passed `export_json_contains_definition_active_and_archived_entities`; the required export smoke exited 0, and a JSON parser confirmed the top-level keys `archived_entities,definition,entities`.
+- DONE: AC-5 third-crate split decision is evidence-backed with measurements and documented Decision Tabs. Evidence: `docs/development-policy.md` records the P5 measured build timings and release binary size, then documents Option A/B/C Decision Tabs with the recommendation to keep the two-crate workspace for P5. `README.md` documents the headless CLI surface and preserves the no-subcommand TUI examples.
+- DONE: Proof commands.
+  Evidence:
+  - `cargo test -p spacetop headless::tests` -> passed, 12 passed, 0 failed.
+  - `cargo test -p spacetop cli::tests` -> passed, 12 passed, 0 failed.
+  - `cargo test --workspace` -> passed: spacetop lib 333 passed; spacetop main 4 passed; spacetop integration tests 10/4/5 passed; spacetop-core lib 145 passed; core integration tests 7/1/2 passed; watcher real-backend tests 3 ignored; doctests 0.
+  - `make lint` -> passed: `cargo clippy --all-targets --all-features -- -D warnings`.
+  - `cargo run -p spacetop -- list --workflow-dir docs/spacetop-dev --json` -> passed, exited 0, emitted JSON array with task `055`; parser smoke confirmed `list_count=1; first_id=055`.
+  - `cargo run -p spacetop -- export --workflow-dir docs/spacetop-dev --json` -> passed, exited 0, emitted JSON with `definition`, `entities`, and `archived_entities`; parser smoke confirmed top-level keys `archived_entities,definition,entities`.
+
+### Verdict
+
+PASSED. The implementation preserves the TUI launch path, adds fully dispatched headless commands over the core query/history APIs, rejects ambiguous workflow resolution with stable errors, exports active and archived workflow data explicitly, and documents the measured two-crate decision. No blocking defects or missing required evidence found.
