@@ -22,6 +22,9 @@ pub struct Cli {
 #[derive(Debug, Clone, Subcommand)]
 pub enum Command {
     List(ListArgs),
+    Timeline(TimelineArgs),
+    Metrics(WorkflowOutputArgs),
+    Activity(WorkflowOutputArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -43,6 +46,23 @@ pub enum ListScopeArg {
     Active,
     Archived,
     All,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct WorkflowOutputArgs {
+    #[arg(short = 'w', long, value_name = "PATH")]
+    pub workflow_dir: Option<PathBuf>,
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct TimelineArgs {
+    pub entity_id: String,
+    #[arg(short = 'w', long, value_name = "PATH")]
+    pub workflow_dir: Option<PathBuf>,
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[cfg(test)]
@@ -105,6 +125,65 @@ mod tests {
 
         assert!(cli.command.is_none());
         assert_eq!(cli.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
+    }
+
+    #[test]
+    fn parses_timeline_subcommand() {
+        let cli = Cli::parse_from([
+            "spacetop",
+            "timeline",
+            "050",
+            "--workflow-dir",
+            "docs/spacetop-dev",
+            "--json",
+        ]);
+
+        match cli.command {
+            Some(Command::Timeline(args)) => {
+                assert_eq!(args.entity_id, "050");
+                assert_eq!(args.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
+                assert!(args.json);
+            }
+            other => panic!("expected timeline command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_metrics_subcommand() {
+        let cli = Cli::parse_from([
+            "spacetop",
+            "metrics",
+            "--workflow-dir",
+            "docs/spacetop-dev",
+            "--json",
+        ]);
+
+        match cli.command {
+            Some(Command::Metrics(args)) => {
+                assert_eq!(args.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
+                assert!(args.json);
+            }
+            other => panic!("expected metrics command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_activity_subcommand() {
+        let cli = Cli::parse_from([
+            "spacetop",
+            "activity",
+            "--workflow-dir",
+            "docs/spacetop-dev",
+            "--json",
+        ]);
+
+        match cli.command {
+            Some(Command::Activity(args)) => {
+                assert_eq!(args.workflow_dir, Some(PathBuf::from("docs/spacetop-dev")));
+                assert!(args.json);
+            }
+            other => panic!("expected activity command, got {other:?}"),
+        }
     }
 
     #[test]
