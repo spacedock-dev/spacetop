@@ -1,17 +1,17 @@
 ---
 id: "053"
 title: "v2 P3: capability views"
-status: verify
+status: done
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: medium
 milestone: v2-p3
 proof: "cargo test --workspace; make lint; cargo test -p spacetop-core --test no_terminal_deps"
 started: 2026-06-11
-completed:
-verdict:
+completed: 2026-06-11T12:02:55Z
+verdict: PASSED
 score: 0.9
-worktree: .worktrees/spacedock-ensign-053-v2-p3-capability-views
+worktree:
 issue:
 pr: "#53"
 mod-block:
