@@ -5,8 +5,9 @@ use clap::Parser;
 #[derive(Debug, Clone, Parser)]
 #[command(
     name = "spacetop",
+    version,
     about = "Inspect Spacedock workflow state from the terminal.",
-    long_about = "SpaceTop is a read-only terminal UI for browsing Spacedock workflow state files."
+    long_about = "Spacetop is a read-only terminal UI for browsing Spacedock workflow state files."
 )]
 pub struct Cli {
     /// Path to a Spacedock workflow directory. When omitted, SpaceTop
@@ -24,6 +25,17 @@ mod tests {
     #[test]
     fn clap_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn version_output_uses_workspace_package_version() {
+        let version = Cli::command().render_version().to_string();
+
+        assert!(
+            version.contains(env!("CARGO_PKG_VERSION")),
+            "version output `{version}` did not contain Cargo package version `{}`",
+            env!("CARGO_PKG_VERSION")
+        );
     }
 
     #[test]
