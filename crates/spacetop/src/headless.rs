@@ -532,6 +532,69 @@ mod tests {
         assert!(out.is_empty());
     }
 
+    #[test]
+    fn list_uses_archived_config_default_scope() {
+        let fixture = fixture_repo_with_one_workflow();
+        write_entity_with_status(
+            &fixture.path().join("docs/workflow/001.md"),
+            "001",
+            "Active",
+            "plan",
+        );
+        write_archived_entity(&fixture.path().join("docs/workflow/_archive/002.md"));
+        let mut config = spacetop_core::config::SpacetopConfig::default();
+        config.defaults.scope = spacetop_core::config::DefaultScope::Archived;
+
+        let ids = run_list_json_ids(fixture.path().join("docs/workflow"), None, &config);
+
+        assert_eq!(ids, ["002"]);
+    }
+
+    #[test]
+    fn list_scope_arg_overrides_archived_config_default() {
+        let fixture = fixture_repo_with_one_workflow();
+        write_entity_with_status(
+            &fixture.path().join("docs/workflow/001.md"),
+            "001",
+            "Active",
+            "plan",
+        );
+        write_archived_entity(&fixture.path().join("docs/workflow/_archive/002.md"));
+        let mut config = spacetop_core::config::SpacetopConfig::default();
+        config.defaults.scope = spacetop_core::config::DefaultScope::Archived;
+
+        let ids = run_list_json_ids(
+            fixture.path().join("docs/workflow"),
+            Some(crate::cli::ListScopeArg::Active),
+            &config,
+        );
+
+        assert_eq!(ids, ["001"]);
+    }
+
+    #[test]
+    fn list_uses_config_default_sort_when_no_cli_sort_exists() {
+        let fixture = fixture_repo_with_one_workflow();
+        write_entity_with_status(
+            &fixture.path().join("docs/workflow/001-done.md"),
+            "001",
+            "Done first by id",
+            "done",
+        );
+        write_entity_with_status(
+            &fixture.path().join("docs/workflow/010-plan.md"),
+            "010",
+            "Plan second by id",
+            "plan",
+        );
+        let mut config = spacetop_core::config::SpacetopConfig::default();
+        config.defaults.sort = spacetop_core::config::DefaultSort::Status;
+
+        let ids = run_list_json_ids(fixture.path().join("docs/workflow"), None, &config);
+
+        assert_eq!(ids, ["010", "001"]);
+    }
+
     fn assert_history_unavailable(response: spacetop_core::git::GitCmdResult, message: &str) {
         assert_history_unavailable_json(response.clone(), message);
         assert_history_unavailable_text(response, message);
@@ -635,6 +698,34 @@ mod tests {
         String::from_utf8(out).expect("utf8")
     }
 
+    fn run_list_json_ids(
+        workflow_dir: PathBuf,
+        scope: Option<crate::cli::ListScopeArg>,
+        config: &spacetop_core::config::SpacetopConfig,
+    ) -> Vec<String> {
+        let mut out = Vec::new();
+        run_list(
+            crate::cli::ListArgs {
+                workflow_dir: Some(workflow_dir),
+                status: None,
+                text: None,
+                scope,
+                json: true,
+            },
+            config,
+            &mut out,
+        )
+        .expect("list");
+        let value: serde_json::Value =
+            serde_json::from_slice(&out).expect("list output must be JSON");
+        value
+            .as_array()
+            .expect("list output array")
+            .iter()
+            .map(|entity| entity["id"].as_str().expect("id").to_string())
+            .collect()
+    }
+
     fn fixture_repo_with_one_workflow() -> tempfile::TempDir {
         let repo = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(repo.path().join(".git")).expect("git dir");
@@ -660,9 +751,13 @@ mod tests {
     }
 
     fn write_entity(path: &Path) {
+        write_entity_with_status(path, "001", "First", "plan");
+    }
+
+    fn write_entity_with_status(path: &Path, id: &str, title: &str, status: &str) {
         std::fs::write(
             path,
-            "---\nid: \"001\"\ntitle: First\nstatus: plan\n---\n\nbody\n",
+            format!("---\nid: \"{id}\"\ntitle: {title}\nstatus: {status}\n---\n\nbody\n"),
         )
         .expect("write entity");
     }
