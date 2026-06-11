@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
 const STAGE_LIGHTNESS: f32 = 0.78;
 const STAGE_CHROMA: f32 = 0.12;
 
 /// A plain RGB color owned by the core (no terminal-crate dependency).
 /// The UI layer converts this to its terminal color type at render time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Rgb {
     pub r: u8,
     pub g: u8,
@@ -89,7 +91,7 @@ fn stable_stage_hue(stage_name: &str) -> f32 {
     (hash % 360) as f32
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkflowDefinition {
     pub root: PathBuf,
     pub stages: Vec<StageDefinition>,
@@ -152,14 +154,14 @@ impl WorkflowDefinition {
 /// under `stages.states`. The renderer treats unmatched names as no-ops.
 /// `label` is the optional `label:` on the transition row — typically a verb
 /// describing the trigger (e.g. `reject`, `promote`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StageTransition {
     pub from: String,
     pub to: String,
     pub label: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StageDefinition {
     pub name: String,
     pub initial: bool,
@@ -171,7 +173,7 @@ pub struct StageDefinition {
     pub concurrency: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entity {
     pub path: PathBuf,
     pub id: String,
@@ -195,7 +197,7 @@ pub struct Entity {
     pub main_body: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkflowSnapshot {
     pub definition: WorkflowDefinition,
     pub items: Vec<Entity>,
@@ -209,7 +211,7 @@ pub struct WorkflowSnapshot {
 /// A per-entity parse failure recorded by `load_workflow_dir` when an entity's
 /// frontmatter cannot be parsed. Used by the UI to render a synthetic "broken"
 /// row and an error preview in place of a normal work item.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntityParseError {
     /// File whose parse failed.
     pub path: PathBuf,
@@ -292,6 +294,38 @@ mod tests {
             stage_prose: HashMap::new(),
             transitions,
         }
+    }
+
+    #[test]
+    fn entity_serializes_for_headless_export() {
+        let entity = Entity {
+            path: PathBuf::from("001-test.md"),
+            id: "001".to_string(),
+            title: "Test".to_string(),
+            status: "plan".to_string(),
+            source: Some("captain".to_string()),
+            started: None,
+            completed: None,
+            verdict: None,
+            score: Some(1.0),
+            worktree: None,
+            issue: Some("https://example.test/issues/1".to_string()),
+            pr: None,
+            body: "body".to_string(),
+            worktree_source: None,
+            main_body: None,
+        };
+        let yaml = serde_yaml::to_string(&entity).expect("serialize entity");
+        assert!(yaml.contains("id: '001'") || yaml.contains("id: 001"));
+        assert!(yaml.contains("issue:"));
+    }
+
+    #[test]
+    fn workflow_definition_serializes_for_headless_export() {
+        let definition = mk_definition(vec![mk_stage("plan")], Vec::new());
+        let yaml = serde_yaml::to_string(&definition).expect("serialize definition");
+        assert!(yaml.contains("stages:"));
+        assert!(yaml.contains("plan"));
     }
 
     #[test]
