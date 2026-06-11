@@ -1,7 +1,7 @@
 ---
 id: "055"
 title: "v2 P5: headless CLI and export"
-status: plan
+status: implement
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-06-11
 completed:
 verdict:
 score: 0.8
-worktree:
+worktree: .worktrees/spacedock-ensign-055-v2-p5-headless-cli-export
 issue:
 pr:
 ---
