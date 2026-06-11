@@ -14,6 +14,7 @@ score: 0.8
 worktree: .worktrees/spacedock-ensign-055-v2-p5-headless-cli-export
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Implement phase P5 of the SpaceTop v2 internals rebuild: add headless CLI
