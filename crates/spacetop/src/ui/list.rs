@@ -147,9 +147,8 @@ fn build_task_list_items(state: &OverviewState) -> Vec<ListItem<'_>> {
             let phase = phase_col(&item.status, pcw);
 
             let id_style = Style::default().add_modifier(Modifier::DIM);
-            let stage_color = crate::ui::color::to_color(
-                state.snapshot().definition.stage_color_for(&item.status),
-            );
+            let stage_color =
+                crate::ui::color::to_color(state.definition().stage_color_for(&item.status));
             let stage_style = Style::default().fg(stage_color);
             let title_style = if scope == ViewScope::Archived {
                 Style::default().add_modifier(Modifier::DIM)

@@ -300,7 +300,7 @@ impl App {
         self.overview().workflow_dir()
     }
 
-    pub fn snapshot(&self) -> &WorkflowSnapshot {
+    pub fn snapshot(&self) -> WorkflowSnapshot {
         self.overview().snapshot()
     }
 
@@ -308,7 +308,7 @@ impl App {
         self.overview().selected_index()
     }
 
-    pub fn selected_item(&self) -> Option<&Entity> {
+    pub fn selected_item(&self) -> Option<Entity> {
         self.overview().selected_item()
     }
 
@@ -320,11 +320,11 @@ impl App {
         self.overview().view_scope()
     }
 
-    pub fn visible_items(&self) -> &[Entity] {
+    pub fn visible_items(&self) -> Vec<Entity> {
         self.overview().visible_items()
     }
 
-    pub fn archived_items(&self) -> &[Entity] {
+    pub fn archived_items(&self) -> Vec<Entity> {
         self.overview().archived_items()
     }
 

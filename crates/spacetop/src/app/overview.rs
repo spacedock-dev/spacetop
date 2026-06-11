@@ -4,14 +4,18 @@ use std::path::{Path, PathBuf};
 
 use spacetop_core::discovery::resolve_scan_root;
 use spacetop_core::domain::{Entity, EntityParseError, WorkflowSnapshot};
-use spacetop_core::parser::{load_archived_items, load_workflow_dir, ParseError};
+pub use spacetop_core::index::StageCount;
+use spacetop_core::index::WorkflowIndex;
+use spacetop_core::parser::ParseError;
+use spacetop_core::query::{EntityQuery, EntitySort, QueryScope};
+use spacetop_core::sources::{ArchiveSnapshot, WorkflowSources};
 
 /// Selection target in the task list — either a real work item or a synthetic
 /// "broken" row representing an entity whose frontmatter failed to parse.
-#[derive(Debug, Clone, Copy)]
-pub enum SelectedRow<'a> {
-    Item(&'a Entity),
-    Broken(&'a EntityParseError),
+#[derive(Debug, Clone)]
+pub enum SelectedRow {
+    Item(Entity),
+    Broken(EntityParseError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -35,26 +39,6 @@ impl SortMode {
             SortMode::Status => "status",
         }
     }
-}
-
-/// Compare two work-item ids: parse the entire id as `u64` and order
-/// numerically when both sides parse, otherwise fall back to lexical
-/// order. Workflow ids are pure numeric (e.g., "037"), so whole-string
-/// parsing is sufficient; equal numeric values are tiebroken lexically
-/// on the full id for stability.
-fn compare_ids(a: &str, b: &str) -> std::cmp::Ordering {
-    let an = a.parse::<u64>().ok();
-    let bn = b.parse::<u64>().ok();
-    match (an, bn) {
-        (Some(x), Some(y)) => x.cmp(&y).then_with(|| a.cmp(b)),
-        _ => a.cmp(b),
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StageCount {
-    pub name: String,
-    pub items: usize,
 }
 
 /// User-visible status of the most recent sync attempt against the
@@ -81,10 +65,9 @@ pub enum SyncStatus {
 pub struct OverviewState {
     pub workflow_dir: PathBuf,
     pub repo_root: PathBuf,
-    pub snapshot: WorkflowSnapshot,
+    pub index: WorkflowIndex,
     pub selected_index: usize,
     pub view_scope: ViewScope,
-    pub archived_items: Vec<Entity>,
     pub archived_done_count: Option<usize>,
     pub archive_loaded: bool,
     pub archive_error: Option<String>,
@@ -104,7 +87,6 @@ pub struct OverviewState {
     pub preview_wrap: bool,
     pub task_page_size: Cell<usize>,
     pub sort_mode: SortMode,
-    pub sorted_active: Vec<Entity>,
     pub sync_status: Option<SyncStatus>,
 }
 
@@ -142,13 +124,16 @@ impl OverviewState {
             items: Vec::new(),
             parse_errors: Vec::new(),
         };
+        let index = WorkflowIndex::from_sources(WorkflowSources {
+            active: snapshot,
+            archive: ArchiveSnapshot::empty(),
+        });
         Self {
             workflow_dir,
             repo_root,
-            snapshot,
+            index,
             selected_index: 0,
             view_scope: ViewScope::Active,
-            archived_items: Vec::new(),
             archived_done_count: None,
             archive_loaded: false,
             archive_error: None,
@@ -163,17 +148,14 @@ impl OverviewState {
             preview_wrap: true,
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
-            sorted_active: Vec::new(),
             sync_status: None,
         }
     }
 
     pub fn load(workflow_dir: PathBuf) -> Result<Self, ParseError> {
         let repo_root = resolve_scan_root(&workflow_dir);
-        let snapshot = load_workflow_dir(&workflow_dir, &repo_root)?;
-        let mut state = Self::from_snapshot_with_root(workflow_dir, repo_root, snapshot);
-        state.refresh_archived_done_count();
-        Ok(state)
+        let index = WorkflowIndex::load(&workflow_dir, &repo_root)?;
+        Ok(Self::from_index_with_root(workflow_dir, repo_root, index))
     }
 
     pub fn from_snapshot(workflow_dir: PathBuf, snapshot: WorkflowSnapshot) -> Self {
@@ -186,13 +168,24 @@ impl OverviewState {
         repo_root: PathBuf,
         snapshot: WorkflowSnapshot,
     ) -> Self {
-        let mut state = Self {
+        let index = WorkflowIndex::from_sources(WorkflowSources {
+            active: snapshot,
+            archive: ArchiveSnapshot::empty(),
+        });
+        Self::from_index_with_root(workflow_dir, repo_root, index)
+    }
+
+    fn from_index_with_root(
+        workflow_dir: PathBuf,
+        repo_root: PathBuf,
+        index: WorkflowIndex,
+    ) -> Self {
+        Self {
             workflow_dir,
             repo_root,
-            snapshot,
+            index,
             selected_index: 0,
             view_scope: ViewScope::Active,
-            archived_items: Vec::new(),
             archived_done_count: None,
             archive_loaded: false,
             archive_error: None,
@@ -207,11 +200,8 @@ impl OverviewState {
             preview_wrap: true,
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
-            sorted_active: Vec::new(),
             sync_status: None,
-        };
-        state.rebuild_sorted_active();
-        state
+        }
     }
 
     /// Deterministic reload seam: swap the active snapshot in-place while
@@ -220,44 +210,45 @@ impl OverviewState {
     /// watcher-driven refresh only re-parses active items; archived items are
     /// invalidated so the next scope toggle reloads them.
     pub fn reload_from_snapshot(&mut self, snapshot: WorkflowSnapshot) {
-        let prior_slug = self
-            .sorted_active
-            .get(self.selected_index)
-            .and_then(|item| slug_of(&item.path));
+        let index = WorkflowIndex::from_sources(WorkflowSources {
+            active: snapshot,
+            archive: ArchiveSnapshot::empty(),
+        });
+        self.reload_from_index(index);
+    }
 
-        self.snapshot = snapshot;
-        self.rebuild_sorted_active();
+    pub fn reload_from_index(&mut self, index: WorkflowIndex) {
+        let prior_slug = self
+            .selected_item()
+            .and_then(|entity| slug_of(&entity.path));
+
+        self.index = index;
         // Invalidate archive view — a watcher-driven reload may have touched
         // `_archive/` too. Dropping the cached list forces a rescan the next
         // time the user toggles to archived scope.
-        self.archived_items.clear();
         self.archived_done_count = None;
         self.archive_loaded = false;
         self.archive_error = None;
-        self.refresh_archived_done_count();
 
-        let len = self.sorted_active.len();
-        if len == 0 {
-            self.selected_index = 0;
-        } else if let Some(slug) = prior_slug {
-            if let Some(pos) = self
-                .sorted_active
-                .iter()
-                .position(|item| slug_of(&item.path).as_deref() == Some(slug.as_str()))
-            {
-                self.selected_index = pos;
-            } else if self.selected_index >= len {
-                self.selected_index = len - 1;
-            }
-        } else if self.selected_index >= len {
-            self.selected_index = len - 1;
+        if self.view_scope == ViewScope::Archived {
+            self.ensure_archive_loaded();
         }
 
-        // Clamp archived selection too (archived list is now empty).
-        if self.view_scope == ViewScope::Archived {
-            self.selected_index_archived = 0;
-            self.ensure_archive_loaded();
-            self.clamp_selection();
+        let len = self.row_count();
+        if len == 0 {
+            self.set_scope_index(0);
+        } else if let Some(slug) = prior_slug {
+            let visible = self.visible_items();
+            if let Some(pos) = visible
+                .iter()
+                .position(|entity| slug_of(&entity.path).as_deref() == Some(slug.as_str()))
+            {
+                self.set_scope_index(pos);
+            } else if self.selected_index >= len {
+                self.set_scope_index(len - 1);
+            }
+        } else if self.selected_index >= len {
+            self.set_scope_index(len - 1);
         }
 
         self.reset_preview_scroll();
@@ -268,9 +259,9 @@ impl OverviewState {
     /// `reload_from_snapshot`. On parse error, retains the prior snapshot
     /// and records the error in `last_refresh_error`.
     pub fn reload(&mut self) -> Result<(), ParseError> {
-        match load_workflow_dir(&self.workflow_dir, &self.repo_root) {
-            Ok(snapshot) => {
-                self.reload_from_snapshot(snapshot);
+        match WorkflowIndex::load(&self.workflow_dir, &self.repo_root) {
+            Ok(index) => {
+                self.reload_from_index(index);
                 Ok(())
             }
             Err(err) => {
@@ -301,8 +292,26 @@ impl OverviewState {
         &self.workflow_dir
     }
 
-    pub fn snapshot(&self) -> &WorkflowSnapshot {
-        &self.snapshot
+    pub fn definition(&self) -> &spacetop_core::domain::WorkflowDefinition {
+        self.index.definition()
+    }
+
+    pub fn index(&self) -> &WorkflowIndex {
+        &self.index
+    }
+
+    pub fn snapshot(&self) -> WorkflowSnapshot {
+        WorkflowSnapshot {
+            definition: self.index.definition().clone(),
+            items: self.index.query(EntityQuery {
+                scope: QueryScope::Active,
+                status: None,
+                text: None,
+                field_filters: Vec::new(),
+                sort: EntitySort::Id,
+            }),
+            parse_errors: self.index.active_parse_errors().to_vec(),
+        }
     }
 
     pub fn selected_index(&self) -> usize {
@@ -312,8 +321,8 @@ impl OverviewState {
         }
     }
 
-    pub fn selected_item(&self) -> Option<&Entity> {
-        self.visible_items().get(self.selected_index())
+    pub fn selected_item(&self) -> Option<Entity> {
+        self.visible_items().get(self.selected_index()).cloned()
     }
 
     /// Per-entity parse errors captured during the most recent active-scope
@@ -321,9 +330,8 @@ impl OverviewState {
     /// rows appended after the regular work items.
     pub fn parse_errors(&self) -> &[EntityParseError] {
         match self.view_scope {
-            ViewScope::Active => &self.snapshot.parse_errors,
-            // Archived scope does not (yet) carry per-entity errors; the
-            // archive loader still silently skips malformed entries.
+            ViewScope::Active => self.index.active_parse_errors(),
+            ViewScope::Archived if self.archive_loaded => self.index.archive_parse_errors(),
             ViewScope::Archived => &[],
         }
     }
@@ -332,14 +340,17 @@ impl OverviewState {
     /// `visible_items().len()` index into the synthetic broken rows that the
     /// UI appends after the work items. Returns `None` when no row exists at
     /// the current index (e.g., empty workflow with no parse errors).
-    pub fn selected_row(&self) -> Option<SelectedRow<'_>> {
+    pub fn selected_row(&self) -> Option<SelectedRow> {
         let items = self.visible_items();
         let idx = self.selected_index();
         if let Some(item) = items.get(idx) {
-            return Some(SelectedRow::Item(item));
+            return Some(SelectedRow::Item(item.clone()));
         }
         let broken_idx = idx.checked_sub(items.len())?;
-        self.parse_errors().get(broken_idx).map(SelectedRow::Broken)
+        self.parse_errors()
+            .get(broken_idx)
+            .cloned()
+            .map(SelectedRow::Broken)
     }
 
     /// Total number of selectable rows: work items + synthetic broken rows
@@ -352,11 +363,23 @@ impl OverviewState {
         self.view_scope
     }
 
-    pub fn visible_items(&self) -> &[Entity] {
-        match self.view_scope {
-            ViewScope::Active => &self.sorted_active,
-            ViewScope::Archived => &self.archived_items,
-        }
+    pub fn visible_items(&self) -> Vec<Entity> {
+        self.index.query(EntityQuery {
+            scope: match self.view_scope {
+                ViewScope::Active => QueryScope::Active,
+                ViewScope::Archived => QueryScope::Archived,
+            },
+            status: None,
+            text: None,
+            field_filters: Vec::new(),
+            sort: match self.view_scope {
+                ViewScope::Archived => EntitySort::ArchiveDefault,
+                ViewScope::Active => match self.sort_mode {
+                    SortMode::Id => EntitySort::Id,
+                    SortMode::Status => EntitySort::Status,
+                },
+            },
+        })
     }
 
     pub fn sort_mode(&self) -> SortMode {
@@ -367,13 +390,14 @@ impl OverviewState {
     /// current selection by slug across the re-sort, mirroring the
     /// reload_from_snapshot pattern. No-op if there are no active items.
     pub fn cycle_sort_mode(&mut self) {
-        if self.sorted_active.is_empty() {
+        let active_items = self.active_items();
+        if active_items.is_empty() {
             self.selected_index = 0;
             return;
         }
 
         let prior_slug = self
-            .sorted_active
+            .active_items()
             .get(self.selected_index)
             .and_then(|item| slug_of(&item.path));
 
@@ -381,16 +405,15 @@ impl OverviewState {
             SortMode::Id => SortMode::Status,
             SortMode::Status => SortMode::Id,
         };
-        self.rebuild_sorted_active();
 
-        let len = self.sorted_active.len();
+        let items = self.active_items();
+        let len = items.len();
         if len == 0 {
             self.selected_index = 0;
             return;
         }
         if let Some(slug) = prior_slug {
-            if let Some(pos) = self
-                .sorted_active
+            if let Some(pos) = items
                 .iter()
                 .position(|item| slug_of(&item.path).as_deref() == Some(slug.as_str()))
             {
@@ -403,39 +426,35 @@ impl OverviewState {
         }
     }
 
-    fn rebuild_sorted_active(&mut self) {
-        let mut items: Vec<Entity> = self.snapshot.items.clone();
-        match self.sort_mode {
-            SortMode::Id => {
-                items.sort_by(|a, b| compare_ids(&a.id, &b.id));
-            }
-            SortMode::Status => {
-                let stage_count = self.snapshot.definition.stages.len();
-                let stage_index = |status: &str| -> usize {
-                    self.snapshot
-                        .definition
-                        .stages
-                        .iter()
-                        .position(|s| s.name == status)
-                        .unwrap_or(stage_count)
-                };
-                items.sort_by(|a, b| {
-                    let ai = stage_index(&a.status);
-                    let bi = stage_index(&b.status);
-                    ai.cmp(&bi).then_with(|| compare_ids(&a.id, &b.id))
-                });
-            }
-        }
-        self.sorted_active = items;
+    fn active_items(&self) -> Vec<Entity> {
+        self.index.query(EntityQuery {
+            scope: QueryScope::Active,
+            status: None,
+            text: None,
+            field_filters: Vec::new(),
+            sort: match self.sort_mode {
+                SortMode::Id => EntitySort::Id,
+                SortMode::Status => EntitySort::Status,
+            },
+        })
     }
 
-    pub fn archived_items(&self) -> &[Entity] {
-        &self.archived_items
+    pub fn archived_items(&self) -> Vec<Entity> {
+        if !self.archive_loaded {
+            return Vec::new();
+        }
+        self.index.query(EntityQuery {
+            scope: QueryScope::Archived,
+            status: None,
+            text: None,
+            field_filters: Vec::new(),
+            sort: EntitySort::ArchiveDefault,
+        })
     }
 
     pub fn archived_count(&self) -> Option<usize> {
         if self.archive_loaded {
-            Some(self.archived_items.len())
+            Some(self.archived_items().len())
         } else {
             None
         }
@@ -449,18 +468,10 @@ impl OverviewState {
         if self.archive_loaded {
             return;
         }
-        match self.load_archive_items() {
-            Ok(items) => {
-                self.archived_done_count = Some(count_archived_terminal_items(&items));
-                self.archived_items = items;
-                self.archive_error = None;
-            }
-            Err(err) => {
-                self.archived_done_count = Some(0);
-                self.archived_items = Vec::new();
-                self.archive_error = Some(err.to_string());
-            }
-        }
+        let archive = WorkflowSources::load_archive(&self.workflow_dir, self.index.definition());
+        self.archive_error = archive.error.clone();
+        self.archived_done_count = Some(count_archived_terminal_items(&archive.entities));
+        self.index = self.index.clone().with_archive(archive);
         self.archive_loaded = true;
     }
 
@@ -487,7 +498,7 @@ impl OverviewState {
                 }
             }
             ViewScope::Archived => {
-                let len = self.archived_items.len();
+                let len = self.archived_items().len();
                 if len == 0 {
                     self.selected_index_archived = 0;
                 } else if self.selected_index_archived >= len {
@@ -498,28 +509,7 @@ impl OverviewState {
     }
 
     pub fn stage_counts(&self) -> Vec<StageCount> {
-        self.snapshot
-            .definition
-            .stages
-            .iter()
-            .map(|stage| StageCount {
-                name: stage.name.clone(),
-                items: self
-                    .snapshot
-                    .items
-                    .iter()
-                    .filter(|item| item.status == stage.name)
-                    .count(),
-            })
-            .map(|mut count| {
-                if count.name == "done" {
-                    if let Some(archived_done_count) = self.archived_done_count {
-                        count.items += archived_done_count;
-                    }
-                }
-                count
-            })
-            .collect()
+        self.index.stage_counts(self.archived_done_count)
     }
 
     pub(crate) fn select_next(&mut self) {
@@ -678,33 +668,6 @@ impl OverviewState {
     }
 }
 
-impl OverviewState {
-    fn load_archive_items(&self) -> Result<Vec<Entity>, ParseError> {
-        let allowed_statuses = self
-            .snapshot
-            .definition
-            .stages
-            .iter()
-            .map(|stage| stage.name.clone())
-            .collect::<Vec<_>>();
-        let id_style = self.snapshot.definition.id_style.as_deref();
-        load_archived_items(&self.workflow_dir, &allowed_statuses, id_style)
-    }
-
-    fn refresh_archived_done_count(&mut self) {
-        match self.load_archive_items() {
-            Ok(items) => {
-                self.archived_done_count = Some(count_archived_terminal_items(&items));
-                self.archive_error = None;
-            }
-            Err(err) => {
-                self.archived_done_count = Some(0);
-                self.archive_error = Some(err.to_string());
-            }
-        }
-    }
-}
-
 fn count_archived_terminal_items(items: &[Entity]) -> usize {
     // Archive placement is the terminal signal. Older archived items may carry
     // `status: done`, while newer accepted items can preserve their pre-archive
@@ -835,11 +798,7 @@ mod tests {
             vec![stage("design"), stage("plan"), stage("implement")],
         );
         let state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
-        let ids: Vec<&str> = state
-            .visible_items()
-            .iter()
-            .map(|i| i.id.as_str())
-            .collect();
+        let ids: Vec<String> = state.visible_items().into_iter().map(|i| i.id).collect();
         assert_eq!(ids, vec!["002", "010", "037"]);
         assert_eq!(state.sort_mode(), SortMode::Id);
     }
@@ -865,11 +824,7 @@ mod tests {
         let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
         state.cycle_sort_mode();
         assert_eq!(state.sort_mode(), SortMode::Status);
-        let ids: Vec<&str> = state
-            .visible_items()
-            .iter()
-            .map(|i| i.id.as_str())
-            .collect();
+        let ids: Vec<String> = state.visible_items().into_iter().map(|i| i.id).collect();
         // design (002, 005), plan (003), implement (001), done (004); IDs ascending within stage.
         assert_eq!(ids, vec!["002", "005", "003", "001", "004"]);
     }
@@ -884,11 +839,7 @@ mod tests {
         let snap = snapshot_with(items, vec![stage("design"), stage("plan")]);
         let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
         state.cycle_sort_mode();
-        let ids: Vec<&str> = state
-            .visible_items()
-            .iter()
-            .map(|i| i.id.as_str())
-            .collect();
+        let ids: Vec<String> = state.visible_items().into_iter().map(|i| i.id).collect();
         assert_eq!(ids, vec!["001", "003", "002"]);
     }
 
@@ -906,9 +857,9 @@ mod tests {
         let mut state = OverviewState::from_snapshot(PathBuf::from("/tmp/ow-test"), snap);
         // Sorted by Id: ["002", "010", "037"]; select "010" at index 1.
         state.selected_index = 1;
-        assert_eq!(state.selected_item().map(|i| i.id.as_str()), Some("010"));
+        assert_eq!(state.selected_item().map(|i| i.id), Some("010".to_string()));
         state.cycle_sort_mode();
-        assert_eq!(state.selected_item().map(|i| i.id.as_str()), Some("010"));
+        assert_eq!(state.selected_item().map(|i| i.id), Some("010".to_string()));
     }
 
     #[test]
@@ -940,11 +891,7 @@ mod tests {
         let reload_snap = snapshot_with(reload_items, vec![stage("design"), stage("implement")]);
         state.reload_from_snapshot(reload_snap);
         assert_eq!(state.sort_mode(), SortMode::Status);
-        let ids: Vec<&str> = state
-            .visible_items()
-            .iter()
-            .map(|i| i.id.as_str())
-            .collect();
+        let ids: Vec<String> = state.visible_items().into_iter().map(|i| i.id).collect();
         assert_eq!(ids, vec!["005", "020"]);
     }
 

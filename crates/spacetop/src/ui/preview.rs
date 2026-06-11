@@ -117,7 +117,7 @@ pub(super) fn render_preview(
     let item = match state.selected_row() {
         Some(SelectedRow::Item(item)) => item,
         Some(SelectedRow::Broken(err)) => {
-            render_broken_entity_preview(frame, inner, err);
+            render_broken_entity_preview(frame, inner, &err);
             return;
         }
         None => {
@@ -132,7 +132,7 @@ pub(super) fn render_preview(
         }
     };
 
-    let mut header_lines = build_preview_header_lines(item, state, inner.width, placement);
+    let mut header_lines = build_preview_header_lines(&item, state, inner.width, placement);
     let divider_line = header_lines.pop().unwrap_or_else(|| Line::from(""));
     let divider_height = wrapped_lines_height(std::slice::from_ref(&divider_line), inner.width);
     let metadata_height = wrapped_lines_height(&header_lines, inner.width)
@@ -318,8 +318,7 @@ fn build_preview_header_lines<'a>(
         ),
     ]));
 
-    let status_color =
-        crate::ui::color::to_color(state.snapshot().definition.stage_color_for(&item.status));
+    let status_color = crate::ui::color::to_color(state.definition().stage_color_for(&item.status));
     let status_spans = vec![
         Span::styled("status: ", dim),
         Span::styled("\u{25CF}", Style::default().fg(status_color)),

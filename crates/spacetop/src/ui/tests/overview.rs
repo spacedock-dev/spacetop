@@ -20,7 +20,7 @@ fn renders_real_workflow_summary_task_list_and_preview() {
     let rendered = buffer_text(terminal.backend().buffer());
     // The graph block carries the Workflow title and each stage name.
     assert!(rendered.contains("Workflow"));
-    for stage in &app.snapshot().definition.stages {
+    for stage in &app.as_overview().expect("overview").definition().stages {
         assert!(
             rendered.contains(stage.name.as_str()),
             "missing stage name {}",

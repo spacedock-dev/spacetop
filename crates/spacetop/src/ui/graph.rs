@@ -67,7 +67,7 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
         .unwrap_or(false);
     let glyphs = glyphs_for(ascii);
 
-    let stages = &state.snapshot().definition.stages;
+    let stages = &state.definition().stages;
     let counts = state.stage_counts();
     let counts: Vec<usize> = counts.into_iter().map(|c| c.items).collect();
 
@@ -109,7 +109,7 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
     let usable_width = usable_inner_width(inner_width);
     let tier = pick_width_tier(usable_width, inner_height, stages, &counts, &glyphs);
 
-    let definition = &state.snapshot().definition;
+    let definition = state.definition();
     let lines = match tier {
         WidthTier::Wide => render_dag(
             stages,

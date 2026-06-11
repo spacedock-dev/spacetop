@@ -130,7 +130,7 @@ fn layout_columns_single_glyph_per_stage_initial_takes_priority() {
 #[test]
 fn pick_width_tier_returns_expected_tier_for_sample_widths() {
     let app = real_workflow();
-    let stages = &app.snapshot().definition.stages;
+    let stages = &app.as_overview().expect("overview").definition().stages;
     let counts: Vec<usize> = app.stage_counts().into_iter().map(|c| c.items).collect();
     let g = glyphs_for(false);
     // Inner-height matches the production graph pane (7 - 2 borders = 5).

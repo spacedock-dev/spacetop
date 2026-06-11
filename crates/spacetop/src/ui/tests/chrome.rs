@@ -158,7 +158,7 @@ fn graph_ribbon_node_row_is_horizontally_centered_in_pane() {
         .expect("render should succeed");
     let buffer = terminal.backend().buffer();
     // Find the row containing the first stage name (e.g. "design").
-    let first_stage = &app.snapshot().definition.stages[0].name;
+    let first_stage = &app.as_overview().expect("overview").definition().stages[0].name;
     let first_char = first_stage.chars().next().unwrap().to_string();
     let cols = width as usize;
     let mut found_row: Option<usize> = None;
