@@ -83,3 +83,7 @@ Implemented P3 capability views as read-only TUI surfaces backed by core query, 
 ### Summary
 
 Verification rejects the implementation as incomplete on AC-4. Search, command routing, core-backed timeline/metrics/activity/details, docs, lint, and no-terminal-dependency proof all pass, but help and workflow-switch behavior is not available or evidenced while the full-pane P3 views are open.
+
+### Feedback Cycles
+
+- Cycle 1: Verify rejected AC-4 coverage because full-pane P3 modes do not handle `?`, `Left`, `Right`, or `P`; add behavior and tests proving help, workflow switching, and picker access still work while timeline, metrics, activity, and details views are open.
