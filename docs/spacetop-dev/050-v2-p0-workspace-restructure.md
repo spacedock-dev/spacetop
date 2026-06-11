@@ -100,3 +100,33 @@ Verdict: REJECTED
 ### Summary
 
 The current checkout does not contain the P0 implementation. It is still a single `spacetop` package with terminal dependencies in the root manifest, no `crates/spacetop-core`, and many `WorkItem` source tokens. Docs are also stale for this AC set: `AGENTS.md`, `docs/development-policy.md`, and `CLAUDE.md` still document `src/...` single-crate ownership, and `CLAUDE.md` still names `WorkItem`.
+
+## Stage Report: implement (cycle 1 fix)
+
+- DONE: Complete the two-crate workspace split: `spacetop-core` owns pure logic with no terminal UI dependencies, and `spacetop` owns CLI/TUI/app/main.
+  Commits `f294625`, `d1bd7bf`, and `4d15624`; `cargo build --workspace` passed, and `make build` produced `target/release/spacetop`.
+- DONE: Complete the `WorkItem` to `Entity` rename and update read-only/git-write guardrails so tests scan the new crate layout and preserve the `git pull --ff-only` boundary.
+  Commit `b2500b4`; `rg -n '\bWorkItem\b' crates/*/src` returned no matches; `cargo test -p spacetop-core --test no_write_git_calls --test no_terminal_deps` passed 3/3.
+- DONE: Update required docs and record current proof: `cargo test --workspace`, `make lint`, dependency/grep checks, smoke evidence, and any known failures with scope rationale.
+  Commit `4d15624`; `cargo test --workspace --no-fail-fast` reported 361 passed, 8 known fixture/readme failures, 3 ignored; `make lint`, `make build`, dependency checks, and smoke run passed.
+
+### Summary
+
+P0 is implemented as a two-crate workspace with `spacetop-core` holding domain/parser/discovery/watcher/git sync/editor logic and `spacetop` holding CLI/TUI/app/main. The domain model is now `Entity`, `spacetop-core` has a cargo-tree terminal-dependency guard, and the git-write guard scans both crate source trees while preserving the single `git pull --ff-only` path.
+
+One plan detail was adjusted during implementation: `git_sync_e2e.rs` remains a `spacetop` integration test because it exercises `App` and `apply_pending_sync`; moving it into `spacetop-core` would create the wrong dependency direction. The remaining 8 full-suite failures are unchanged workflow-fixture drift from the rejected verify baseline: tests still expect `design/review` and older README prose while `docs/spacetop-dev` now uses `shape/verify`, plus one archived fixture status expectation.
+
+## Stage Report: verify (cycle 1)
+
+Verdict: PASSED
+
+- DONE: Verify AC-1 and AC-2 against the worktree: two-crate layout, workspace build, and `spacetop-core` has no terminal UI dependencies.
+  `Cargo.toml` declares `crates/spacetop-core` and `crates/spacetop`; `find crates/.../src` confirmed the split; `cargo build --workspace`, `cargo tree -p spacetop-core --edges normal --prefix none`, and core guardrail tests passed.
+- DONE: Verify AC-3 and AC-4 against the worktree: `Entity` rename is complete in live source and read-only/git-write guardrails scan the new crate layout with exactly one `git pull --ff-only` path.
+  `rg -n '\bWorkItem\b' crates/*/src` returned no matches; `cargo test -p spacetop-core --test no_terminal_deps --test no_write_git_calls` passed 3/3, including the two-crate source scan and exactly-one `--ff-only` assertion.
+- DONE: Verify AC-5 and AC-6 against the worktree: behavior evidence, required lint/test/smoke commands, known failures classification, and docs/policy updates are current and consistent.
+  `make lint` passed; PTY smoke `cargo run -p spacetop -- --workflow-dir docs/spacetop-dev` rendered and quit with `q`; stale-doc scans over `AGENTS.md`, `docs/development-policy.md`, `CLAUDE.md`, and `README.md` found no root-`src/...` or `WorkItem` drift; `cargo test --workspace --no-fail-fast` remains 361 passed, 8 failed, 3 ignored from unchanged README/archive fixture drift.
+
+### Summary
+
+The implementation satisfies all six ACs for this P0 restructure: the two-crate workspace is present, `spacetop-core` remains terminal-free, live source uses `Entity`, and the read-only git boundary is still guarded across both crate source trees. The only non-green evidence is the pre-existing workflow-fixture drift already recorded in the rejected verify baseline; the P0 diff does not touch `docs/spacetop-dev/README.md` or `_archive`, and the failing tests were moved without behavioral changes.

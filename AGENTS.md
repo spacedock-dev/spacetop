@@ -78,27 +78,38 @@ shape while making the internals easier to reason about and test.
 
 Keep module boundaries clear and testable:
 
-- `src/cli.rs` owns the `clap` CLI definition.
-- `src/lib.rs` owns launch decisions, discovery flow, terminal setup, event loop wiring, watcher lifecycle, and top-level `run`.
-- `src/app.rs` and `src/app/*` own app state, overview sessions, picker state,
+- `crates/spacetop/src/cli.rs` owns the `clap` CLI definition.
+- `crates/spacetop/src/lib.rs` owns launch decisions, discovery flow, terminal
+  setup, event loop wiring, watcher lifecycle, and top-level `run`.
+- `crates/spacetop/src/app.rs` and `crates/spacetop/src/app/*` own app state,
+  overview sessions, picker state,
   selection, key handling, reload semantics, archived scope state, and pending
   workflow switches.
-- `src/domain/mod.rs` owns typed workflow data and stage color helpers.
-- `src/parser.rs` and `src/parser/*` own README/work item parsing, archive
-  loading, frontmatter splitting, status validation, `.worktrees` scanning, and
-  worktree merge behavior.
-- `src/discovery.rs` owns workflow discovery and git-root scan-root resolution.
-- `src/watcher.rs` owns filesystem watching, event filtering, debounce, fallback backend selection, and refresh signaling.
-- `src/git_sync.rs` owns the explicit read-refresh sync path and must remain
-  limited to audited fast-forward pulls.
-- `src/editor.rs` owns opening selected files in an external editor/viewer path;
-  it must not become a workflow-state writer without explicit policy change.
-- `src/ui/mod.rs` and `src/ui/*` own Ratatui rendering, layout, task list,
-  preview pane, markdown rendering, help popup, footer, workflow tabs, chrome,
-  and definition/diff views.
-- `src/ui/graph.rs` owns stage graph rendering. It supports `SPACETOP_ASCII=1` for ASCII graph glyphs.
-- `src/ui/picker.rs` owns picker dialog rendering.
-- `tests/` contains integration tests for launch/discovery behavior and the ignored real-backend watcher smoke test.
+- `crates/spacetop-core/src/domain/mod.rs` owns typed workflow data, including
+  the `Entity` model, and core-owned stage color helpers.
+- `crates/spacetop-core/src/parser.rs` and `crates/spacetop-core/src/parser/*`
+  own README/entity parsing, archive loading, frontmatter splitting, status
+  validation, `.worktrees` scanning, and worktree merge behavior.
+- `crates/spacetop-core/src/discovery.rs` owns workflow discovery and git-root
+  scan-root resolution.
+- `crates/spacetop-core/src/watcher.rs` owns filesystem watching, event
+  filtering, debounce, fallback backend selection, and refresh signaling.
+- `crates/spacetop-core/src/git_sync.rs` owns the explicit read-refresh sync
+  path and must remain limited to audited fast-forward pulls.
+- `crates/spacetop-core/src/editor.rs` owns opening selected files in an
+  external editor/viewer path; it must not become a workflow-state writer
+  without explicit policy change.
+- `crates/spacetop/src/ui/mod.rs` and `crates/spacetop/src/ui/*` own Ratatui
+  rendering, layout, task list, preview pane, markdown rendering, help popup,
+  footer, workflow tabs, chrome, and definition/diff views.
+- `crates/spacetop/src/ui/graph.rs` owns stage graph rendering. It supports
+  `SPACETOP_ASCII=1` for ASCII graph glyphs.
+- `crates/spacetop/src/ui/picker.rs` owns picker dialog rendering.
+- `crates/spacetop-core/tests/no_terminal_deps.rs` enforces that
+  `spacetop-core` does not depend on terminal crates.
+- `crates/spacetop/tests/` contains bin-facing integration tests; 
+  `crates/spacetop-core/tests/` contains core guardrails and watcher smoke
+  tests; `tests/fixtures/` remains at the workspace root.
 
 Parser, app-state, discovery, watcher, and UI rendering logic all have tests. Keep new behavior covered at the lowest practical layer before relying on terminal behavior.
 
@@ -155,7 +166,7 @@ Useful commands:
 cargo fmt
 cargo test
 make lint
-cargo run -- --workflow-dir docs/spacetop-dev
+cargo run -p spacetop -- --workflow-dir docs/spacetop-dev
 cargo test -- --ignored
 ```
 
@@ -169,4 +180,7 @@ All warnings are errors. Fix every clippy diagnostic before marking a code task 
 
 ## Release/Telemetry Notes
 
-`build.rs` provides `SENTRY_DSN` at compile time. `src/main.rs` initializes Sentry only for release builds when the DSN is non-empty, and captures top-level run errors. Debug and test builds should not send events.
+`crates/spacetop/build.rs` provides `SENTRY_DSN` at compile time.
+`crates/spacetop/src/main.rs` initializes Sentry only for release builds when
+the DSN is non-empty, and captures top-level run errors. Debug and test builds
+should not send events.

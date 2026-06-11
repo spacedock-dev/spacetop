@@ -4,7 +4,7 @@ Spacetop is a Rust terminal UI for browsing [Spacedock](https://github.com/clkao
 
 ![Spacetop screenshot](assets/images/SpaceTop-screenshot.png)
 
-Spacedock stores workflow progress as markdown files in git. A workflow directory typically contains a `README.md` that defines stages and gates, plus work item files with YAML frontmatter such as `id`, `title`, and `status`. Spacetop is intended to make those state files easier to inspect from the terminal.
+Spacedock stores workflow progress as markdown files in git. A workflow directory typically contains a `README.md` that defines stages and gates, plus entity files with YAML frontmatter such as `id`, `title`, and `status`. Spacetop is intended to make those state files easier to inspect from the terminal.
 
 ## Goals
 
@@ -27,6 +27,8 @@ the source of truth, and state-changing features must be explicit and auditable.
 ## Expected Stack
 
 - Rust
+- Cargo workspace with `spacetop-core` for pure workflow logic and `spacetop`
+  for the CLI/TUI binary
 - `ratatui` for terminal UI rendering
 - `crossterm` for terminal backend and input events
 - `serde` and `serde_yaml` for structured metadata parsing
@@ -57,8 +59,16 @@ Common local commands:
 cargo fmt
 cargo test
 make lint
-cargo run -- --workflow-dir docs/spacetop-dev
+cargo run -p spacetop -- --workflow-dir docs/spacetop-dev
 ```
+
+Workspace layout:
+
+- `crates/spacetop-core/` contains domain, parser, discovery, watcher, git sync,
+  and editor helpers. It has no terminal UI dependencies.
+- `crates/spacetop/` contains the CLI, TUI app state, rendering, terminal event
+  loop, and release-only Sentry setup.
+- `tests/fixtures/` contains shared integration-test fixtures.
 
 ### Setup
 

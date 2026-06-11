@@ -11,7 +11,7 @@ Clean Code, test, or lint rules in the repo policy.
 
 Spacetop must NOT mutate Spacedock workflow files. Treat the markdown tree as the source of truth. If a future feature needs writes, make them explicit and auditable in git.
 
-The Sync action (`Y`) is the single sanctioned exception: it runs `git -C {repo_root} pull --ff-only` against the workflow root. No `git push`, `git commit`, or `git checkout` is ever invoked — the only on-disk write is the fast-forward update from the upstream remote, which is auditable in `git log`. The `tests/no_write_git_calls.rs` guardrail enforces this in CI.
+The Sync action (`Y`) is the single sanctioned exception: it runs `git -C {repo_root} pull --ff-only` against the workflow root. No `git push`, `git commit`, or `git checkout` is ever invoked — the only on-disk write is the fast-forward update from the upstream remote, which is auditable in `git log`. The `crates/spacetop-core/tests/no_write_git_calls.rs` guardrail enforces this in CI.
 
 ## Lint Gate
 
@@ -29,21 +29,22 @@ All clippy warnings are treated as errors (`-D warnings`). Fix every diagnostic 
 | `make lint` | `cargo clippy --all-targets --all-features -- -D warnings` |
 | `make install` | Build and install to `~/.cargo/bin` (override with `PREFIX=`) |
 | `cargo test` | Run unit + integration tests |
-| `cargo run -- -w <path>` | Open a specific workflow directory |
-| `cargo run` | Discover workflows under the current git root |
+| `cargo run -p spacetop -- -w <path>` | Open a specific workflow directory |
+| `cargo run -p spacetop` | Discover workflows under the current git root |
 
 ## Module Layout
 
-- `src/main.rs` — entry point; initializes Sentry in release builds only.
-- `src/lib.rs` — `decide_app` (CLI → launch decision; testable without TUI) and `run_terminal` event loop.
-- `src/cli.rs` — clap definition: `-w/--workflow-dir`.
-- `src/discovery.rs` — scan a root for workflow directories.
-- `src/parser.rs` — markdown + YAML frontmatter parsing for workflow README and work items.
-- `src/domain/` — `WorkflowDefinition`, `StageDefinition`, `WorkItem`, oklch-based stage color assignment.
-- `src/app.rs` — `App`, `AppMode`, `OverviewState`, `OverviewSession`; all UI-agnostic state transitions live here.
-- `src/ui/` — ratatui rendering (`mod.rs` overview, `graph.rs` stage graph, `picker.rs` workflow picker).
-- `src/watcher.rs` — `notify`-based filesystem watcher with polling fallback.
-- `tests/` — integration tests that drive `decide_app` and the watcher without a terminal.
+- `crates/spacetop/src/main.rs` — entry point; initializes Sentry in release builds only.
+- `crates/spacetop/src/lib.rs` — `decide_app` (CLI → launch decision; testable without TUI) and `run_terminal` event loop.
+- `crates/spacetop/src/cli.rs` — clap definition: `-w/--workflow-dir`.
+- `crates/spacetop/src/app.rs` — `App`, `AppMode`, `OverviewState`, `OverviewSession`; TUI app-state transitions live here.
+- `crates/spacetop/src/ui/` — ratatui rendering (`mod.rs` overview, `graph.rs` stage graph, `picker.rs` workflow picker).
+- `crates/spacetop-core/src/discovery.rs` — scan a root for workflow directories.
+- `crates/spacetop-core/src/parser.rs` — markdown + YAML frontmatter parsing for workflow README and entity files.
+- `crates/spacetop-core/src/domain/` — `WorkflowDefinition`, `StageDefinition`, `Entity`, oklch-based stage color assignment.
+- `crates/spacetop-core/src/watcher.rs` — `notify`-based filesystem watcher with polling fallback.
+- `crates/spacetop/tests/` — bin-facing integration tests for launch, sync, and reload behavior.
+- `crates/spacetop-core/tests/` — core guardrails and watcher integration smoke tests.
 
 Keep parser, domain, and app-state logic testable without a terminal backend.
 
@@ -52,7 +53,7 @@ Keep parser, domain, and app-state logic testable without a terminal backend.
 - Prefer established crates (`ratatui`, `crossterm`, `serde_yaml`, `pulldown-cmark`, `notify`, `walkdir`) over ad hoc string slicing.
 - New behavior should land with tests in the same module (`#[cfg(test)] mod tests`) or `tests/` for integration.
 - Stable user-facing strings (e.g. the zero-workflows stderr message) are pinned by tests — update both together.
-- Sentry: only initialized in release builds with a non-empty `SENTRY_DSN` baked in by `build.rs`. Debug builds never send events.
+- Sentry: only initialized in release builds with a non-empty `SENTRY_DSN` baked in by `crates/spacetop/build.rs`. Debug builds never send events.
 
 ## Environment
 

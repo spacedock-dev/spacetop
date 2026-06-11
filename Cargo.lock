@@ -2591,16 +2591,25 @@ dependencies = [
  "anyhow",
  "clap",
  "crossterm 0.28.1",
- "notify",
  "ratatui",
  "ratskin",
  "sentry",
+ "similar",
+ "spacetop-core",
+ "tempfile",
+ "termimad",
+]
+
+[[package]]
+name = "spacetop-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "notify",
  "serde",
  "serde_yaml",
  "sha1",
- "similar",
  "tempfile",
- "termimad",
  "thiserror 2.0.18",
  "walkdir",
 ]
