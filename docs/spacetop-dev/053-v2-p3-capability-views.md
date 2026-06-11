@@ -57,3 +57,16 @@ Verified by: app mode regression tests.
 - Required commands: `cargo test --workspace`; `make lint`; `cargo test -p spacetop-core --test no_terminal_deps`.
 - Manual check, if any: optional TUI smoke for key ergonomics.
 - Docs/policy update needed: README/help/footer keybinding documentation.
+
+## Stage Report: implement
+
+- DONE: Add read-only capability views and input flows for search, command palette, timeline, metrics, activity, and entity details, preserving existing archive/sort/preview/sync/workflow-switch behavior.
+  Implemented in commits 7345d07 and 74b0a73; covered by app mode tests, app key tests, and Ratatui render tests.
+- DONE: Keep workflow facts typed before rendering: add core relation/detail DTOs and have timeline, metrics, activity, and details views consume WorkflowIndex/core APIs without schema inference in UI code.
+  Core DTOs and index methods are in 6d339a2; renderers call WorkflowIndex query, timeline, metrics, activity, and entity_details APIs.
+- DONE: Cover the new modes at the lowest practical layer with core, app/input, and Ratatui rendering tests, then run cargo test --workspace, make lint, and cargo test -p spacetop-core --test no_terminal_deps.
+  Passed `cargo test --workspace`, `make lint`, and `cargo test -p spacetop-core --test no_terminal_deps` on this worktree.
+
+### Summary
+
+Implemented P3 capability views as read-only TUI surfaces backed by core query, history, metrics, activity, and relation/detail APIs. Updated footer, help, and README documentation for the new keybindings, with focused core, app, and Ratatui coverage plus the required full verification commands passing.
