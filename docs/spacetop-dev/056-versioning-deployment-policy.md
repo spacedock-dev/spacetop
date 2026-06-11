@@ -1,7 +1,7 @@
 ---
 id: "056"
 title: "Implement versioning and GitHub Release deployment policy"
-status: plan
+status: implement
 source: "captain - approved versioning/deployment policy design and plan"
 kind: feature
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-06-11
 completed:
 verdict:
 score: 0.99
-worktree:
+worktree: .worktrees/spacedock-ensign-056-versioning-deployment-policy
 issue:
 pr:
 ---
