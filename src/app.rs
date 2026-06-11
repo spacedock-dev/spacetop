@@ -213,7 +213,8 @@ impl App {
 
     /// Current sync status for the active overview tab, if any.
     pub fn sync_status(&self) -> Option<&SyncStatus> {
-        self.as_session().and_then(|s| s.active_state().sync_status())
+        self.as_session()
+            .and_then(|s| s.active_state().sync_status())
     }
 
     /// Set the sync status pill on the active overview tab. Used by the

@@ -1,5 +1,22 @@
 # Spacetop Development - Agent Guidelines
 
+## Policy Authority
+
+This file is the mandatory entrypoint for all agents working in this repository.
+For non-trivial code, documentation, workflow, or architecture changes, also read
+`docs/development-policy.md` before editing. Keep the two files consistent; if
+they conflict, stop and fix the policy drift before continuing.
+
+Authority order:
+
+1. The user's current request.
+2. This `AGENTS.md` repo contract.
+3. `docs/development-policy.md`.
+4. Existing code, tests, and workflow state.
+
+Tool-specific files such as `CLAUDE.md` may add setup requirements for that tool,
+but they must not weaken the read-only, test, lint, or Clean Code rules here.
+
 ## Project Context
 
 Spacetop is a Rust terminal UI for inspecting Spacedock workflow state stored as markdown in git.
@@ -28,6 +45,34 @@ The app is no longer just a scaffold. It currently provides a read-first TUI tha
 - Toggle between active and archived scopes with `a`.
 - Preview selected markdown bodies with `Enter`, scroll preview content, and toggle preview wrapping with `w`.
 - Auto-refresh a workflow after relevant filesystem changes using `notify`, with a polling fallback.
+- Sync from the workflow's git remote with the explicit `Y` action, limited to
+  `git pull --ff-only` and guarded by tests.
+
+## CTO Development Policy
+
+Spacetop is a read-first developer tool. Development should protect that product
+shape while making the internals easier to reason about and test.
+
+- **Read-only by default:** never mutate Spacedock workflow markdown unless a
+  future task explicitly adds audited write support. The existing `Y` sync action
+  is the only sanctioned write path and must stay `git pull --ff-only`.
+- **Clean Code is required, not aspirational:** small functions, clear names,
+  typed boundaries, limited side effects, no hidden parsing in UI code, and no
+  speculative abstractions.
+- **Domain before UI:** parse workflow facts into typed domain/app state first;
+  render from that state. UI code should not infer schema rules from strings.
+- **Lowest practical test layer:** parser behavior belongs in parser tests,
+  app/input behavior in app tests, and rendering behavior in Ratatui
+  `TestBackend` tests before relying on manual terminal checks.
+- **No stale project facts:** when behavior, commands, or architecture changes,
+  update the nearby docs in the same change. The README must describe the current
+  product, not the initial scaffold.
+- **Conservative dependency policy:** prefer existing crates and standard Rust
+  APIs. Add a dependency only when it removes real complexity or provides a
+  proven domain capability.
+- **Decision protocol:** if an agent needs product or architecture input, present
+  two or three concrete options using the "Decision Tabs" format in
+  `docs/development-policy.md`; lead with a recommendation and list pros/cons.
 
 ## Code Map
 
@@ -35,12 +80,22 @@ Keep module boundaries clear and testable:
 
 - `src/cli.rs` owns the `clap` CLI definition.
 - `src/lib.rs` owns launch decisions, discovery flow, terminal setup, event loop wiring, watcher lifecycle, and top-level `run`.
-- `src/app.rs` owns app state, overview sessions, picker state, selection, key handling, reload semantics, archived scope state, and pending workflow switches.
+- `src/app.rs` and `src/app/*` own app state, overview sessions, picker state,
+  selection, key handling, reload semantics, archived scope state, and pending
+  workflow switches.
 - `src/domain/mod.rs` owns typed workflow data and stage color helpers.
-- `src/parser.rs` owns README/work item parsing, archive loading, frontmatter splitting, status validation, `.worktrees` scanning, and worktree merge behavior.
+- `src/parser.rs` and `src/parser/*` own README/work item parsing, archive
+  loading, frontmatter splitting, status validation, `.worktrees` scanning, and
+  worktree merge behavior.
 - `src/discovery.rs` owns workflow discovery and git-root scan-root resolution.
 - `src/watcher.rs` owns filesystem watching, event filtering, debounce, fallback backend selection, and refresh signaling.
-- `src/ui/mod.rs` owns the main Ratatui layout, task list, preview pane, markdown rendering, help popup, footer, and workflow tabs.
+- `src/git_sync.rs` owns the explicit read-refresh sync path and must remain
+  limited to audited fast-forward pulls.
+- `src/editor.rs` owns opening selected files in an external editor/viewer path;
+  it must not become a workflow-state writer without explicit policy change.
+- `src/ui/mod.rs` and `src/ui/*` own Ratatui rendering, layout, task list,
+  preview pane, markdown rendering, help popup, footer, workflow tabs, chrome,
+  and definition/diff views.
 - `src/ui/graph.rs` owns stage graph rendering. It supports `SPACETOP_ASCII=1` for ASCII graph glyphs.
 - `src/ui/picker.rs` owns picker dialog rendering.
 - `tests/` contains integration tests for launch/discovery behavior and the ignored real-backend watcher smoke test.

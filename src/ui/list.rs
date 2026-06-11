@@ -220,9 +220,7 @@ pub(crate) fn broken_list_item(err: &EntityParseError, is_selected: bool) -> Lis
         .unwrap_or("<unknown>")
         .to_string();
     let label = format!("\u{26A0} broken: {file_name}");
-    let label_style = Style::default()
-        .fg(Color::Red)
-        .add_modifier(Modifier::DIM);
+    let label_style = Style::default().fg(Color::Red).add_modifier(Modifier::DIM);
     ListItem::new(Line::from(vec![
         Span::styled(gutter_text, gutter_style),
         Span::styled(label, label_style),

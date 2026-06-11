@@ -46,7 +46,6 @@ impl ParseError {
         }
         (None, None)
     }
-
 }
 
 #[derive(Debug, Error)]

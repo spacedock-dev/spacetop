@@ -451,7 +451,7 @@ impl OverviewState {
         }
         match self.load_archive_items() {
             Ok(items) => {
-                self.archived_done_count = Some(count_done_items(&items));
+                self.archived_done_count = Some(count_archived_terminal_items(&items));
                 self.archived_items = items;
                 self.archive_error = None;
             }
@@ -694,7 +694,7 @@ impl OverviewState {
     fn refresh_archived_done_count(&mut self) {
         match self.load_archive_items() {
             Ok(items) => {
-                self.archived_done_count = Some(count_done_items(&items));
+                self.archived_done_count = Some(count_archived_terminal_items(&items));
                 self.archive_error = None;
             }
             Err(err) => {
@@ -705,8 +705,11 @@ impl OverviewState {
     }
 }
 
-fn count_done_items(items: &[WorkItem]) -> usize {
-    items.iter().filter(|item| item.status == "done").count()
+fn count_archived_terminal_items(items: &[WorkItem]) -> usize {
+    // Archive placement is the terminal signal. Older archived items may carry
+    // `status: done`, while newer accepted items can preserve their pre-archive
+    // gate status such as `review`.
+    items.len()
 }
 
 #[cfg(test)]

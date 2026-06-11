@@ -28,9 +28,13 @@ thread_local! {
 /// (path, content, wrap, width) tuple is unchanged since the last frame.
 fn cached_markdown(path: &Path, body: &str, wrap: bool, width: u16) -> Vec<Line<'static>> {
     MARKDOWN_CACHE.with(|cache| {
-        cache
-            .borrow_mut()
-            .get_or_render(path, body, wrap, width, markdown::render_markdown_termimad)
+        cache.borrow_mut().get_or_render(
+            path,
+            body,
+            wrap,
+            width,
+            markdown::render_markdown_termimad,
+        )
     })
 }
 
@@ -541,7 +545,11 @@ mod cache_tests {
             calls.set(calls.get() + 1);
             dummy(b, w)
         });
-        assert_eq!(calls.get(), 2, "edited body must re-render, not serve stale");
+        assert_eq!(
+            calls.get(),
+            2,
+            "edited body must re-render, not serve stale"
+        );
     }
 
     #[test]
@@ -573,7 +581,11 @@ mod cache_tests {
                 dummy(b, ww)
             });
         }
-        assert_eq!(calls.get(), 2, "both pass widths cached; width 40 must re-hit");
+        assert_eq!(
+            calls.get(),
+            2,
+            "both pass widths cached; width 40 must re-hit"
+        );
     }
 
     #[test]

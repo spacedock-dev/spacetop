@@ -2,6 +2,11 @@
 
 Read-only Rust TUI (ratatui + crossterm) for browsing [Spacedock](https://github.com/clkao/spacedock) workflow state — markdown files in git with YAML frontmatter (`id`, `title`, `status`).
 
+For repo-wide development policy, read `AGENTS.md` and
+`docs/development-policy.md` before non-trivial changes. This file may add
+Claude-specific setup requirements, but it does not weaken the read-only,
+Clean Code, test, or lint rules in the repo policy.
+
 ## Safety: read-only by default
 
 Spacetop must NOT mutate Spacedock workflow files. Treat the markdown tree as the source of truth. If a future feature needs writes, make them explicit and auditable in git.

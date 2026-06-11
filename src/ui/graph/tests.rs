@@ -607,8 +607,8 @@ fn stage(
 fn research_12_stage_workflow() -> App {
     let root = PathBuf::from("/tmp/spacetop-research-12");
     let names = [
-        "pending", "scoping", "ideate", "review", "smoke", "run", "analyze",
-        "promote", "expanded", "ideated", "done", "rejected",
+        "pending", "scoping", "ideate", "review", "smoke", "run", "analyze", "promote", "expanded",
+        "ideated", "done", "rejected",
     ];
     let stages: Vec<StageDefinition> = names
         .iter()
@@ -638,8 +638,8 @@ fn research_12_stage_workflow() -> App {
 }
 
 const RESEARCH_STAGES: &[&str] = &[
-    "pending", "scoping", "ideate", "review", "smoke", "run", "analyze",
-    "promote", "expanded", "ideated", "done", "rejected",
+    "pending", "scoping", "ideate", "review", "smoke", "run", "analyze", "promote", "expanded",
+    "ideated", "done", "rejected",
 ];
 
 /// AC-1: every stage name must appear (or be named in an explicit overflow
@@ -721,10 +721,7 @@ fn fits_all_twelve_research_stages_in_very_narrow_tier() {
     // → 6 + 5*3 = 21 stage-grid lines, plus pane borders).
     let rendered = render_to_string(&app, 40, 26);
     for name in RESEARCH_STAGES {
-        assert!(
-            rendered.contains(name),
-            "very narrow tier must show {name}"
-        );
+        assert!(rendered.contains(name), "very narrow tier must show {name}");
     }
 }
 
@@ -797,8 +794,7 @@ fn narrow_tier_colors_each_stage_name_per_stage() {
                         && span.style.add_modifier.contains(Modifier::BOLD)
                     {
                         found_colored += 1;
-                        if *name == "review"
-                            && span.style.add_modifier.contains(Modifier::REVERSED)
+                        if *name == "review" && span.style.add_modifier.contains(Modifier::REVERSED)
                         {
                             active_seen_reversed = true;
                         }
@@ -965,11 +961,7 @@ fn narrow_tier_uses_full_pane_width() {
         );
         // Every stage row must begin with a blank left-margin span so the
         // graph isn't flush against the pane edge.
-        let first_span_text: &str = line
-            .spans
-            .first()
-            .map(|s| s.content.as_ref())
-            .unwrap_or("");
+        let first_span_text: &str = line.spans.first().map(|s| s.content.as_ref()).unwrap_or("");
         assert!(
             first_span_text.chars().all(|c| c == ' ')
                 && first_span_text.chars().count() == left_margin,
@@ -977,11 +969,7 @@ fn narrow_tier_uses_full_pane_width() {
              got first span={first_span_text:?}"
         );
         // And it must end with a blank right-margin span of equal-ish width.
-        let last_span_text: &str = line
-            .spans
-            .last()
-            .map(|s| s.content.as_ref())
-            .unwrap_or("");
+        let last_span_text: &str = line.spans.last().map(|s| s.content.as_ref()).unwrap_or("");
         assert!(
             last_span_text.chars().all(|c| c == ' ')
                 && last_span_text.chars().count() >= right_margin,
@@ -1066,11 +1054,7 @@ fn very_narrow_tier_uses_full_pane_width() {
             "very-narrow row {i} total visible_width={total_width} does not span inner_width={inner_width}"
         );
         // Every stage row must start with a blank left-margin span.
-        let first_span_text: &str = line
-            .spans
-            .first()
-            .map(|s| s.content.as_ref())
-            .unwrap_or("");
+        let first_span_text: &str = line.spans.first().map(|s| s.content.as_ref()).unwrap_or("");
         assert!(
             first_span_text.chars().all(|c| c == ' ')
                 && first_span_text.chars().count() == left_margin,
@@ -1079,11 +1063,7 @@ fn very_narrow_tier_uses_full_pane_width() {
         );
         // And end with a blank right-margin span of at least right_margin
         // spaces (cell padding may add more on the last cell).
-        let last_span_text: &str = line
-            .spans
-            .last()
-            .map(|s| s.content.as_ref())
-            .unwrap_or("");
+        let last_span_text: &str = line.spans.last().map(|s| s.content.as_ref()).unwrap_or("");
         assert!(
             last_span_text.chars().all(|c| c == ' ')
                 && last_span_text.chars().count() >= right_margin,
@@ -1105,8 +1085,18 @@ fn very_narrow_tier_renders_feedback_rollback_annotation() {
     // `feedback-to: implement` (matches the real research workflow).
     let root = PathBuf::from("/tmp/spacetop-research-rb");
     let names = [
-        "pending", "scoping", "ideate", "implement", "review", "smoke",
-        "run", "analyze", "promote", "expanded", "ideated", "done",
+        "pending",
+        "scoping",
+        "ideate",
+        "implement",
+        "review",
+        "smoke",
+        "run",
+        "analyze",
+        "promote",
+        "expanded",
+        "ideated",
+        "done",
     ];
     let stages: Vec<StageDefinition> = names
         .iter()
@@ -1948,8 +1938,18 @@ fn dag_falls_back_to_009_wrapped_text_when_height_starved() {
     // in.
     let root = PathBuf::from("/tmp/spacetop-deep-fallback");
     let names = [
-        "pending", "scoping", "ideate", "implement", "review", "smoke",
-        "run", "analyze", "promote", "expanded", "ideated", "done",
+        "pending",
+        "scoping",
+        "ideate",
+        "implement",
+        "review",
+        "smoke",
+        "run",
+        "analyze",
+        "promote",
+        "expanded",
+        "ideated",
+        "done",
     ];
     let stages: Vec<StageDefinition> = names
         .iter()
@@ -1957,7 +1957,11 @@ fn dag_falls_back_to_009_wrapped_text_when_height_starved() {
         .map(|(i, n)| {
             let initial = i == 0;
             let terminal = *n == "done";
-            let fb = if *n == "review" { Some("implement") } else { None };
+            let fb = if *n == "review" {
+                Some("implement")
+            } else {
+                None
+            };
             stage(n, initial, terminal, false, false, fb)
         })
         .collect();
@@ -2011,15 +2015,12 @@ fn dag_drawn_feedback_arc_is_fully_connected_on_spacetop_dev() {
     // the buffer contains multi-byte BMP glyphs like `→`/`│`/`╰`).
     let line_w = 109usize;
     let chars: Vec<char> = rendered.chars().collect();
-    let row_strings: Vec<String> = chars
-        .chunks(line_w)
-        .map(|c| c.iter().collect())
-        .collect();
+    let row_strings: Vec<String> = chars.chunks(line_w).map(|c| c.iter().collect()).collect();
 
     // Find the arrow row (contains both `↑` and `│` and "reject").
-    let arrow_row_idx = row_strings.iter().position(|r| {
-        r.contains('\u{2191}') && r.contains('\u{2502}') && r.contains("reject")
-    });
+    let arrow_row_idx = row_strings
+        .iter()
+        .position(|r| r.contains('\u{2191}') && r.contains('\u{2502}') && r.contains("reject"));
     assert!(
         arrow_row_idx.is_some(),
         "missing arrow row carrying ↑ + │ + 'reject' label; rendered=\n{rendered}"
@@ -2128,10 +2129,7 @@ fn dag_chain_is_horizontally_centered_on_spacetop_dev() {
     let rendered = render_to_string(&app, line_w as u16, 10);
 
     let chars: Vec<char> = rendered.chars().collect();
-    let row_strings: Vec<String> = chars
-        .chunks(line_w)
-        .map(|c| c.iter().collect())
-        .collect();
+    let row_strings: Vec<String> = chars.chunks(line_w).map(|c| c.iter().collect()).collect();
 
     // Find the chain row: the line containing the wide `►` forward arrow.
     let chain_row_idx = row_strings
@@ -2184,9 +2182,7 @@ fn dag_chain_is_horizontally_centered_on_spacetop_dev() {
     // (`implement`).
     let arrow_row_idx = row_strings
         .iter()
-        .position(|r| {
-            r.contains('\u{2191}') && r.contains('\u{2502}') && r.contains("reject")
-        })
+        .position(|r| r.contains('\u{2191}') && r.contains('\u{2502}') && r.contains("reject"))
         .expect("arrow row should be present in DAG");
     let arrow_row = &row_strings[arrow_row_idx];
     let up_col = arrow_row
@@ -2223,10 +2219,10 @@ fn dag_chain_is_horizontally_centered_on_spacetop_dev() {
         Some((char_start, char_end))
     }
 
-    let (impl_start, impl_end) = stage_span_bounds(chain_row, "implement")
-        .expect("implement span on chain row");
-    let (rev_start, rev_end) = stage_span_bounds(chain_row, "review")
-        .expect("review span on chain row");
+    let (impl_start, impl_end) =
+        stage_span_bounds(chain_row, "implement").expect("implement span on chain row");
+    let (rev_start, rev_end) =
+        stage_span_bounds(chain_row, "review").expect("review span on chain row");
 
     assert!(
         target_col >= impl_start && target_col < impl_end,
@@ -2258,10 +2254,7 @@ fn dag_multi_row_chain_is_horizontally_centered_on_research_fixture() {
     let rendered = render_to_string(&app, line_w as u16, 10);
 
     let chars: Vec<char> = rendered.chars().collect();
-    let row_strings: Vec<String> = chars
-        .chunks(line_w)
-        .map(|c| c.iter().collect())
-        .collect();
+    let row_strings: Vec<String> = chars.chunks(line_w).map(|c| c.iter().collect()).collect();
 
     fn non_space_bounds(row: &str) -> Option<(usize, usize)> {
         let cols: Vec<char> = row.chars().collect();
@@ -2373,7 +2366,6 @@ fn make_item(id: &str, status: &str, title: &str) -> WorkItem {
     }
 }
 
-
 // --- Unit 3: declared transitions render as inbound edges ---
 
 use crate::domain::StageTransition;
@@ -2383,8 +2375,8 @@ use crate::domain::StageTransition;
 /// AC-3 tests so the bug case is exercised by a single source of truth.
 fn research_workflow_definition() -> WorkflowDefinition {
     let names = [
-        "pending", "scoping", "ideate", "review", "smoke", "run", "analyze",
-        "promote", "expanded", "ideated", "done", "rejected",
+        "pending", "scoping", "ideate", "review", "smoke", "run", "analyze", "promote", "expanded",
+        "ideated", "done", "rejected",
     ];
     let stages: Vec<StageDefinition> = names
         .iter()
@@ -2397,19 +2389,71 @@ fn research_workflow_definition() -> WorkflowDefinition {
         })
         .collect();
     let transitions = vec![
-        StageTransition { from: "pending".into(), to: "scoping".into(), label: None },
-        StageTransition { from: "scoping".into(), to: "ideate".into(), label: None },
-        StageTransition { from: "scoping".into(), to: "expanded".into(), label: None },
-        StageTransition { from: "ideate".into(), to: "review".into(), label: None },
-        StageTransition { from: "ideate".into(), to: "ideated".into(), label: None },
-        StageTransition { from: "review".into(), to: "smoke".into(), label: None },
-        StageTransition { from: "review".into(), to: "rejected".into(), label: Some("reject".into()) },
-        StageTransition { from: "smoke".into(), to: "run".into(), label: None },
-        StageTransition { from: "smoke".into(), to: "rejected".into(), label: Some("reject".into()) },
-        StageTransition { from: "run".into(), to: "analyze".into(), label: None },
-        StageTransition { from: "analyze".into(), to: "promote".into(), label: None },
-        StageTransition { from: "analyze".into(), to: "rejected".into(), label: Some("reject".into()) },
-        StageTransition { from: "promote".into(), to: "done".into(), label: None },
+        StageTransition {
+            from: "pending".into(),
+            to: "scoping".into(),
+            label: None,
+        },
+        StageTransition {
+            from: "scoping".into(),
+            to: "ideate".into(),
+            label: None,
+        },
+        StageTransition {
+            from: "scoping".into(),
+            to: "expanded".into(),
+            label: None,
+        },
+        StageTransition {
+            from: "ideate".into(),
+            to: "review".into(),
+            label: None,
+        },
+        StageTransition {
+            from: "ideate".into(),
+            to: "ideated".into(),
+            label: None,
+        },
+        StageTransition {
+            from: "review".into(),
+            to: "smoke".into(),
+            label: None,
+        },
+        StageTransition {
+            from: "review".into(),
+            to: "rejected".into(),
+            label: Some("reject".into()),
+        },
+        StageTransition {
+            from: "smoke".into(),
+            to: "run".into(),
+            label: None,
+        },
+        StageTransition {
+            from: "smoke".into(),
+            to: "rejected".into(),
+            label: Some("reject".into()),
+        },
+        StageTransition {
+            from: "run".into(),
+            to: "analyze".into(),
+            label: None,
+        },
+        StageTransition {
+            from: "analyze".into(),
+            to: "promote".into(),
+            label: None,
+        },
+        StageTransition {
+            from: "analyze".into(),
+            to: "rejected".into(),
+            label: Some("reject".into()),
+        },
+        StageTransition {
+            from: "promote".into(),
+            to: "done".into(),
+            label: None,
+        },
     ];
     WorkflowDefinition {
         root: PathBuf::from("/tmp/spacetop-research-transitions"),
@@ -2476,7 +2520,7 @@ fn dag_renders_three_inbound_edges_for_rejected() {
     let app = research_workflow_app();
     let rendered = render_to_string(&app, 200, 40);
     let arrow = "\u{2192}"; // →
-    // Count distinct inbound substrings — once per declared source.
+                            // Count distinct inbound substrings — once per declared source.
     for src in ["review", "smoke", "analyze"] {
         let needle = format!("{src} {arrow} rejected");
         assert!(

@@ -57,7 +57,10 @@ fn build_playground() -> Option<(tempfile::TempDir, PathBuf, PathBuf)> {
     run_git(&bare, &["init", "--bare", "--initial-branch=main"]);
 
     // upstream: clone, configure identity, seed workflow.
-    run_git(holder.path(), &["clone", bare.to_str().unwrap(), "upstream"]);
+    run_git(
+        holder.path(),
+        &["clone", bare.to_str().unwrap(), "upstream"],
+    );
     run_git(&upstream, &["config", "user.email", "spacetop@test"]);
     run_git(&upstream, &["config", "user.name", "Spacetop Test"]);
     let workflow_dir = upstream.join("docs/wf");
@@ -73,7 +76,10 @@ fn build_playground() -> Option<(tempfile::TempDir, PathBuf, PathBuf)> {
     )
     .unwrap();
     run_git(&upstream, &["add", "."]);
-    run_git(&upstream, &["-c", "commit.gpgsign=false", "commit", "-m", "initial"]);
+    run_git(
+        &upstream,
+        &["-c", "commit.gpgsign=false", "commit", "-m", "initial"],
+    );
     run_git(&upstream, &["push", "origin", "main"]);
 
     // working: clone of bare. Configure identity for symmetry (not used
@@ -124,7 +130,10 @@ fn sync_pulls_new_commits_and_reflects_them() {
 
     match app.sync_status() {
         Some(SyncStatus::Succeeded { new_commits }) => {
-            assert!(*new_commits >= 1, "expected ≥1 new commit, got {new_commits}");
+            assert!(
+                *new_commits >= 1,
+                "expected ≥1 new commit, got {new_commits}"
+            );
         }
         other => panic!("expected Succeeded, got {other:?}"),
     }
@@ -133,7 +142,11 @@ fn sync_pulls_new_commits_and_reflects_them() {
     assert!(
         app.snapshot().items.iter().any(|i| i.id == "002"),
         "expected entity 002 in snapshot after sync, got: {:?}",
-        app.snapshot().items.iter().map(|i| i.id.clone()).collect::<Vec<_>>()
+        app.snapshot()
+            .items
+            .iter()
+            .map(|i| i.id.clone())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -175,7 +188,12 @@ fn sync_failed_pull_keeps_app_intact() {
     let working_root = working_wf.parent().unwrap().parent().unwrap();
     run_git(
         working_root,
-        &["remote", "set-url", "origin", "file:///definitely/does/not/exist.git"],
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "file:///definitely/does/not/exist.git",
+        ],
     );
 
     let mut app = App::load(working_wf).expect("load workflow");

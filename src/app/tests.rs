@@ -417,7 +417,11 @@ fn space_and_b_page_scroll_the_preview() {
 
     app.handle_key(key(KeyCode::Char(' ')));
     assert_eq!(app.as_overview().unwrap().preview_scroll(), 6);
-    assert_eq!(app.selected_index(), 0, "Space must not move task selection");
+    assert_eq!(
+        app.selected_index(),
+        0,
+        "Space must not move task selection"
+    );
 
     app.handle_key(key(KeyCode::Char('b')));
     assert_eq!(app.as_overview().unwrap().preview_scroll(), 0);
@@ -446,9 +450,17 @@ fn jk_and_arrows_still_move_selection_with_preview_open() {
     assert!(app.as_overview().unwrap().preview_open());
 
     app.handle_key(key(KeyCode::Char('j')));
-    assert_eq!(app.selected_index(), 1, "j moves selection with preview open");
+    assert_eq!(
+        app.selected_index(),
+        1,
+        "j moves selection with preview open"
+    );
     app.handle_key(key(KeyCode::Down));
-    assert_eq!(app.selected_index(), 2, "Down moves selection with preview open");
+    assert_eq!(
+        app.selected_index(),
+        2,
+        "Down moves selection with preview open"
+    );
     app.handle_key(key(KeyCode::Char('k')));
     assert_eq!(app.selected_index(), 1, "k moves selection back");
     app.handle_key(key(KeyCode::Up));
@@ -515,9 +527,18 @@ fn toggle_scope_key_a_flips_to_archived_and_loads_lazily() {
     assert_eq!(app.view_scope(), ViewScope::Archived);
     assert!(app.archived_count().is_some());
     assert!(!app.archived_items().is_empty());
-    // Selected item should be an archived entry.
+    // Selected item should be an archived entry. The row preserves the
+    // frontmatter status that existed before archival, so it is not necessarily
+    // `done`.
     let selected = app.selected_item().expect("selected archived item");
-    assert_eq!(selected.status, "done");
+    assert!(
+        selected
+            .path
+            .components()
+            .any(|part| part.as_os_str() == "_archive"),
+        "selected archived item path should live under _archive, got {:?}",
+        selected.path
+    );
 
     app.handle_key(key(KeyCode::Char('a')));
     assert_eq!(app.view_scope(), ViewScope::Active);
@@ -982,7 +1003,11 @@ fn reload_records_per_entity_parse_error_without_dropping_other_items() {
         app.snapshot().items.len(),
         1,
         "valid task should still appear; got {:?}",
-        app.snapshot().items.iter().map(|i| i.id.clone()).collect::<Vec<_>>()
+        app.snapshot()
+            .items
+            .iter()
+            .map(|i| i.id.clone())
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         app.snapshot().parse_errors.len(),
@@ -1504,7 +1529,10 @@ fn y_keypress_records_pending_sync_when_preview_closed() {
     assert!(!app.take_pending_sync(), "pending_sync starts false");
     app.handle_key(key(KeyCode::Char('Y')));
     assert!(app.take_pending_sync(), "Y must set pending_sync");
-    assert!(!app.take_pending_sync(), "take_pending_sync drains the flag");
+    assert!(
+        !app.take_pending_sync(),
+        "take_pending_sync drains the flag"
+    );
 }
 
 #[test]
@@ -1534,7 +1562,10 @@ fn set_sync_status_routes_to_active_overview_and_survives_reload_from_snapshot()
     }
     // Reload preserves the sync status — it's an out-of-band UI signal,
     // not part of the parsed snapshot.
-    app.reload_from_snapshot(snapshot_with_paths(&["workflow/alpha.md", "workflow/beta.md"]));
+    app.reload_from_snapshot(snapshot_with_paths(&[
+        "workflow/alpha.md",
+        "workflow/beta.md",
+    ]));
     assert!(
         matches!(
             app.sync_status(),
@@ -1562,7 +1593,10 @@ fn overview_state_exposes_parse_errors_from_snapshot() {
     });
     let state = OverviewState::from_snapshot(root, snapshot);
     assert_eq!(state.parse_errors().len(), 1);
-    assert_eq!(state.parse_errors()[0].path, PathBuf::from("workflow/bad.md"));
+    assert_eq!(
+        state.parse_errors()[0].path,
+        PathBuf::from("workflow/bad.md")
+    );
 
     // Selection at index 0 is the work item; index 1 is the broken row.
     assert!(matches!(state.selected_row(), Some(SelectedRow::Item(_))));
@@ -1608,12 +1642,8 @@ fn reload_with_rediscovery_handles_removed_active_workflow() {
     assert_eq!(workflows.len(), 2);
     let first_root = workflows[0].root.clone();
     let initial = super::OverviewState::load(first_root.clone()).expect("load initial");
-    let session = super::OverviewSession::from_discovery(
-        scan_root.to_path_buf(),
-        workflows,
-        0,
-        initial,
-    );
+    let session =
+        super::OverviewSession::from_discovery(scan_root.to_path_buf(), workflows, 0, initial);
     let mut app = super::App::from_session(session);
 
     // Remove the active workflow's directory.
@@ -1621,7 +1651,8 @@ fn reload_with_rediscovery_handles_removed_active_workflow() {
 
     // Reload: rediscovery prunes the gone workflow, surviving sibling becomes
     // active and is loaded.
-    app.reload_with_rediscovery().expect("reload should not error");
+    app.reload_with_rediscovery()
+        .expect("reload should not error");
 
     let session = app.as_session().expect("session");
     assert_eq!(

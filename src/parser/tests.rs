@@ -298,7 +298,14 @@ fn load_archived_items_returns_entries_from_flat_files() {
     assert!(titles.contains(&"Scaffold Rust CLI Project"));
     assert!(titles.contains(&"Parse Spacedock Workflow Files"));
     assert!(titles.contains(&"Build Initial TUI Overview"));
-    assert!(items.iter().all(|item| item.status == "done"));
+    assert!(
+        items.iter().any(|item| item.status == "done"),
+        "legacy archived items should preserve terminal frontmatter status"
+    );
+    assert!(
+        items.iter().any(|item| item.status == "review"),
+        "newer archived items should preserve their pre-archive gate status"
+    );
 }
 
 #[test]
@@ -457,9 +464,8 @@ fn load_archived_items_returns_io_errors_instead_of_silently_skipping_them() {
     std::os::unix::fs::symlink(archive.join("missing-target.md"), archive.join("broken.md"))
         .expect("symlink");
 
-    let err =
-        load_archived_items(&dir, &["done".to_string()], None)
-            .expect_err("archive load should fail");
+    let err = load_archived_items(&dir, &["done".to_string()], None)
+        .expect_err("archive load should fail");
     assert!(
         matches!(err, ParseError::ReadFile { .. }),
         "expected ReadFile error, got {err:?}"
@@ -995,7 +1001,11 @@ fn load_workflow_dir_skips_malformed_entity_and_records_error() {
         snapshot.items.len(),
         3,
         "all valid items must still load; got: {:?}",
-        snapshot.items.iter().map(|i| i.id.clone()).collect::<Vec<_>>()
+        snapshot
+            .items
+            .iter()
+            .map(|i| i.id.clone())
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         snapshot
@@ -1021,8 +1031,12 @@ fn load_workflow_dir_skips_malformed_entity_and_records_error() {
         "parse_error message should describe the YAML failure: {}",
         err.message
     );
-    let line = err.line.expect("YAML line should be derivable for MalformedYaml");
-    let column = err.column.expect("YAML column should be derivable for MalformedYaml");
+    let line = err
+        .line
+        .expect("YAML line should be derivable for MalformedYaml");
+    let column = err
+        .column
+        .expect("YAML column should be derivable for MalformedYaml");
     assert!(line > 0, "line should be > 0; got {line}");
     assert!(column > 0, "column should be > 0; got {column}");
 }
@@ -1117,7 +1131,8 @@ fn loads_slug_workflow_uses_filename_as_id() {
 #[test]
 fn slug_workflow_blank_id_does_not_error() {
     let root = slug_fixture_root();
-    let snapshot = load_workflow_dir(&root, &root).expect("slug workflow must not error on blank id");
+    let snapshot =
+        load_workflow_dir(&root, &root).expect("slug workflow must not error on blank id");
     assert!(
         snapshot.parse_errors.is_empty(),
         "expected no parse errors, got {:?}",
@@ -1181,7 +1196,10 @@ fn sequential_workflow_id_behavior_unaffected() {
     let err_seq = parse_work_item(&blank, &["design".to_string()], Some("sequential"))
         .expect_err("blank id with id-style: sequential must error");
     assert!(
-        matches!(err_seq, ParseError::MissingRequiredField { field: "id", .. }),
+        matches!(
+            err_seq,
+            ParseError::MissingRequiredField { field: "id", .. }
+        ),
         "expected MissingRequiredField for id under sequential, got {err_seq:?}"
     );
 }

@@ -414,7 +414,11 @@ mod tests {
         // All four entries must share byte-identical bodies.
         let body = out.get("expanded").cloned().expect("expanded body");
         for name in ["ideated", "done", "rejected"] {
-            assert_eq!(out.get(name), Some(&body), "{name} body should equal expanded body");
+            assert_eq!(
+                out.get(name),
+                Some(&body),
+                "{name} body should equal expanded body"
+            );
         }
     }
 

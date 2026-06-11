@@ -39,8 +39,7 @@ fn build_session(scan_root: &Path) -> App {
     );
     let first = workflows[0].root.clone();
     let initial = OverviewState::load(first).expect("load initial");
-    let session =
-        OverviewSession::from_discovery(scan_root.to_path_buf(), workflows, 0, initial);
+    let session = OverviewSession::from_discovery(scan_root.to_path_buf(), workflows, 0, initial);
     App::from_session(session)
 }
 
@@ -69,13 +68,13 @@ fn readme_edit_reparses_definition_live() {
         .iter()
         .map(|s| s.name.clone())
         .collect();
-    assert_eq!(initial_stages, vec!["design".to_string(), "done".to_string()]);
+    assert_eq!(
+        initial_stages,
+        vec!["design".to_string(), "done".to_string()]
+    );
 
     // Overwrite the README with a three-stage definition.
-    write_workflow_readme(
-        &scan_root.join("docs/alpha"),
-        &["design", "plan", "done"],
-    );
+    write_workflow_readme(&scan_root.join("docs/alpha"), &["design", "plan", "done"]);
 
     app.reload_with_rediscovery()
         .expect("reload should succeed after a valid README rewrite");
@@ -197,10 +196,7 @@ fn removing_only_workflow_yields_empty_overview_with_error() {
 fn malformed_readme_preserves_prior_definition() {
     let tmp = tempdir().unwrap();
     let scan_root = tmp.path();
-    write_workflow_readme(
-        &scan_root.join("docs/alpha"),
-        &["design", "plan", "done"],
-    );
+    write_workflow_readme(&scan_root.join("docs/alpha"), &["design", "plan", "done"]);
 
     let mut app = build_session(scan_root);
     let prior_stages: Vec<String> = app
@@ -243,9 +239,7 @@ fn malformed_readme_preserves_prior_definition() {
         stages_after, prior_stages,
         "prior good definition must be preserved on parse failure"
     );
-    let err_msg = app
-        .last_refresh_error()
-        .expect("an error must be recorded");
+    let err_msg = app.last_refresh_error().expect("an error must be recorded");
     assert!(
         err_msg.contains("stages") || err_msg.contains("README"),
         "error should mention the failing field or file, got: {err_msg}"

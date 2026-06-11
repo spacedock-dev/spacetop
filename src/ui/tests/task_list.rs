@@ -494,7 +494,10 @@ fn id_col_width_floors_numeric_ids_at_4() {
         .max()
         .unwrap_or(4)
         .max(4);
-    assert_eq!(icw, 4, "id_col_width for 3-char numeric IDs must floor at 4");
+    assert_eq!(
+        icw, 4,
+        "id_col_width for 3-char numeric IDs must floor at 4"
+    );
     // The render path uses format!("{:>width$}", id, width = icw); at icw=4
     // that is identical to the old format!("{:>4}", id).
     assert_eq!(
@@ -548,7 +551,10 @@ fn task_row_title_aligns_with_slug_ids() {
     let slug_in_list = find_text(buffer, "adversarial-review")
         .into_iter()
         .any(|(x, _)| x < list_pane);
-    assert!(slug_in_list, "long slug ID must render in full in the list pane");
+    assert!(
+        slug_in_list,
+        "long slug ID must render in full in the list pane"
+    );
 }
 
 // ---- Task 042: broken-entity row + preview + footer pill ----

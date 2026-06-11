@@ -59,7 +59,10 @@ pub(crate) fn status_footer_hints(session: &OverviewSession) -> Vec<(String, Col
     }
     hints.push(("?: help".to_string(), Color::White));
     if !preview_open && session.is_multi() {
-        hints.push(("\u{2190}/\u{2192}: switch workflow".to_string(), Color::White));
+        hints.push((
+            "\u{2190}/\u{2192}: switch workflow".to_string(),
+            Color::White,
+        ));
     }
     if session.is_multi() {
         hints.push(("P: pick workflow".to_string(), Color::White));
@@ -96,7 +99,9 @@ pub(crate) fn sync_pill_label(status: Option<&SyncStatus>) -> Option<String> {
         SyncStatus::Succeeded { new_commits: 0 } => {
             format!("{SUCCESS_MARKER} Synced (already up to date)")
         }
-        SyncStatus::Succeeded { new_commits: 1 } => format!("{SUCCESS_MARKER} Synced (1 new commit)"),
+        SyncStatus::Succeeded { new_commits: 1 } => {
+            format!("{SUCCESS_MARKER} Synced (1 new commit)")
+        }
         SyncStatus::Succeeded { new_commits } => {
             format!("{SUCCESS_MARKER} Synced ({new_commits} new commits)")
         }

@@ -21,8 +21,7 @@ fn rust_files(root: &Path) -> Vec<PathBuf> {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.file_type().is_file()
-                && e.path().extension().and_then(|s| s.to_str()) == Some("rs")
+            e.file_type().is_file() && e.path().extension().and_then(|s| s.to_str()) == Some("rs")
         })
         .map(|e| e.into_path())
         .collect()
@@ -72,7 +71,10 @@ fn static_assert_disallowed(needles: &[&str]) {
 #[test]
 fn src_tree_does_not_reference_disallowed_git_write_subcommands() {
     let files = rust_files(&src_root());
-    assert!(!files.is_empty(), "expected to find some .rs files under src/");
+    assert!(
+        !files.is_empty(),
+        "expected to find some .rs files under src/"
+    );
     let mut offenders: Vec<(PathBuf, &'static str)> = Vec::new();
     for path in &files {
         let body = std::fs::read_to_string(path).expect("read source file");

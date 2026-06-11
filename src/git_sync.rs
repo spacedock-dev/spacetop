@@ -301,12 +301,7 @@ mod tests {
         assert_eq!(calls[0].args, vec!["rev-parse", "--is-inside-work-tree"]);
         assert_eq!(
             calls[1].args,
-            vec![
-                "rev-parse",
-                "--abbrev-ref",
-                "--symbolic-full-name",
-                "@{u}"
-            ]
+            vec!["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
         );
         assert_eq!(calls[2].args, vec!["remote", "get-url", "origin"]);
     }
@@ -355,7 +350,10 @@ mod tests {
     fn unavailable_hint_strings_are_stable() {
         // Pinned user-facing strings; update tests and the UI together.
         assert_eq!(UnavailableReason::NotGitRepo.hint(), "not a git repository");
-        assert_eq!(UnavailableReason::NoUpstream.hint(), "no upstream for branch");
+        assert_eq!(
+            UnavailableReason::NoUpstream.hint(),
+            "no upstream for branch"
+        );
         assert_eq!(UnavailableReason::NoOriginRemote.hint(), "no origin remote");
     }
 
@@ -403,7 +401,10 @@ mod tests {
             ok("origin/main\n"),
             ok("git@github.com:foo/bar.git\n"),
             ok("abc123\n"),
-            err(1, "fatal: unable to access 'https://example.invalid/': could not resolve host\n"),
+            err(
+                1,
+                "fatal: unable to access 'https://example.invalid/': could not resolve host\n",
+            ),
         ]);
         let outcome = sync(&runner, &root());
         match outcome {
@@ -419,8 +420,10 @@ mod tests {
 
     #[test]
     fn sync_unavailable_short_circuits_without_invoking_pull() {
-        let runner =
-            RecordingGitRunner::new(vec![err(128, "fatal: not a git repository (or any parent)")]);
+        let runner = RecordingGitRunner::new(vec![err(
+            128,
+            "fatal: not a git repository (or any parent)",
+        )]);
         let outcome = sync(&runner, &root());
         assert_eq!(
             outcome,

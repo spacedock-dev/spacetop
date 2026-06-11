@@ -16,7 +16,13 @@ Spacedock stores workflow progress as markdown files in git. A workflow director
 
 ## Status
 
-This repository is being initialized. The first implementation target is a read-only TUI that treats Spacedock markdown files as the source of truth and does not mutate workflow state.
+Spacetop is an active read-first TUI. It can discover workflows, open an explicit
+workflow directory, parse active and archived work items, preview markdown,
+render workflow graphs, show selected worktree state, auto-refresh filesystem
+changes, and explicitly sync with `git pull --ff-only`.
+
+The product contract remains read-only by default: Spacedock markdown files are
+the source of truth, and state-changing features must be explicit and auditable.
 
 ## Expected Stack
 
@@ -24,6 +30,9 @@ This repository is being initialized. The first implementation target is a read-
 - `ratatui` for terminal UI rendering
 - `crossterm` for terminal backend and input events
 - `serde` and `serde_yaml` for structured metadata parsing
+- `notify` for filesystem watching
+- `walkdir` for workflow discovery
+- `thiserror` and `anyhow` for structured errors at the right boundary
 
 ## Prerequisites
 
@@ -42,12 +51,13 @@ cargo --version
 
 ## Development
 
-The Rust crate has not been scaffolded yet. Once it exists, the expected local workflow will be:
+Common local commands:
 
 ```bash
 cargo fmt
 cargo test
-cargo run -- --workflow-dir /path/to/workflow
+make lint
+cargo run -- --workflow-dir docs/spacetop-dev
 ```
 
 ### Setup

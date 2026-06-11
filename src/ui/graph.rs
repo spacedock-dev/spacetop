@@ -107,13 +107,7 @@ pub fn render_stage_graph(frame: &mut Frame<'_>, area: Rect, state: &OverviewSta
     // the remaining 10% used as left+right margin. Thread the same budget
     // through `pick_width_tier` so the tier decision and the renderer agree.
     let usable_width = usable_inner_width(inner_width);
-    let tier = pick_width_tier(
-        usable_width,
-        inner_height,
-        stages,
-        &counts,
-        &glyphs,
-    );
+    let tier = pick_width_tier(usable_width, inner_height, stages, &counts, &glyphs);
 
     let definition = &state.snapshot().definition;
     let lines = match tier {
@@ -779,14 +773,8 @@ fn collect_cross_row_feedback_arcs(
     for (i, stage) in stages.iter().enumerate() {
         if let Some(target) = &stage.feedback_to {
             if let Some(t) = stages.iter().position(|s| &s.name == target) {
-                let src_row = plan
-                    .rows
-                    .iter()
-                    .position(|r| r.col_indices.contains(&i));
-                let tgt_row = plan
-                    .rows
-                    .iter()
-                    .position(|r| r.col_indices.contains(&t));
+                let src_row = plan.rows.iter().position(|r| r.col_indices.contains(&i));
+                let tgt_row = plan.rows.iter().position(|r| r.col_indices.contains(&t));
                 if src_row != tgt_row {
                     if out.len() >= MAX_FEEDBACK_ROWS {
                         break;
@@ -831,9 +819,7 @@ fn collect_extra_transitions(
     definition: &WorkflowDefinition,
 ) -> Vec<ExtraTransition> {
     let mut out: Vec<ExtraTransition> = Vec::new();
-    let stage_idx = |name: &str| -> Option<usize> {
-        stages.iter().position(|s| s.name == name)
-    };
+    let stage_idx = |name: &str| -> Option<usize> { stages.iter().position(|s| s.name == name) };
     let row_of = |col_i: usize| -> Option<(usize, usize)> {
         for (r_idx, row) in plan.rows.iter().enumerate() {
             if let Some(pos) = row.col_indices.iter().position(|&c| c == col_i) {

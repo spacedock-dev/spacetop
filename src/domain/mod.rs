@@ -254,7 +254,10 @@ mod tests {
         }
     }
 
-    fn mk_definition(stages: Vec<StageDefinition>, transitions: Vec<StageTransition>) -> WorkflowDefinition {
+    fn mk_definition(
+        stages: Vec<StageDefinition>,
+        transitions: Vec<StageTransition>,
+    ) -> WorkflowDefinition {
         WorkflowDefinition {
             root: PathBuf::new(),
             stages,
@@ -300,10 +303,26 @@ mod tests {
         let wf = mk_definition(stages, Vec::new());
         let out = wf.effective_transitions();
         let expected = vec![
-            StageTransition { from: "a".into(), to: "b".into(), label: None },
-            StageTransition { from: "b".into(), to: "c".into(), label: None },
-            StageTransition { from: "c".into(), to: "d".into(), label: None },
-            StageTransition { from: "d".into(), to: "e".into(), label: None },
+            StageTransition {
+                from: "a".into(),
+                to: "b".into(),
+                label: None,
+            },
+            StageTransition {
+                from: "b".into(),
+                to: "c".into(),
+                label: None,
+            },
+            StageTransition {
+                from: "c".into(),
+                to: "d".into(),
+                label: None,
+            },
+            StageTransition {
+                from: "d".into(),
+                to: "e".into(),
+                label: None,
+            },
         ];
         assert_eq!(out, expected);
     }

@@ -306,10 +306,7 @@ fn preview_page_down_scrolls_visible_markdown_content() {
     let mut app = app_with_items(vec![item("001", "Scrollable Preview", &body)]);
     // Page step is viewport-relative; pin a 7-row body so a PageDown advances
     // 6 rows (≈3 spaced markdown lines) regardless of the test terminal size.
-    app.as_overview()
-        .unwrap()
-        .preview_viewport_height
-        .set(7);
+    app.as_overview().unwrap().preview_viewport_height.set(7);
     app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
 
     let mut terminal = Terminal::new(TestBackend::new(120, 18)).expect("terminal");
