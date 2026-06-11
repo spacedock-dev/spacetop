@@ -96,7 +96,7 @@ Example:
 
 ```bash
 tar -xzf spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz
-install -m 755 spacetop ~/.cargo/bin/spacetop
+install -m 755 spacetop-vX.Y.Z-aarch64-apple-darwin/spacetop ~/.cargo/bin/spacetop
 spacetop --version
 ```
 
