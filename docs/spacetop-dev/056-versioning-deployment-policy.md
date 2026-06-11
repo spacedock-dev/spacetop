@@ -14,7 +14,7 @@ score: 0.99
 worktree: .worktrees/spacedock-ensign-056-versioning-deployment-policy
 issue:
 pr: "#50"
-mod-block: merge:pr-merge
+mod-block:
 ---
 
 Implement the approved versioning and deployment policy for Spacetop. The work
