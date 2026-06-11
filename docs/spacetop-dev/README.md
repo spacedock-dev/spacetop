@@ -1,5 +1,5 @@
 ---
-commissioned-by: spacedock@0.10.1
+commissioned-by: spacedock@0.20.0
 entity-type: development_task
 entity-label: task
 entity-label-plural: tasks
@@ -9,12 +9,12 @@ stages:
     worktree: false
     concurrency: 2
   states:
-    - name: design
+    - name: shape
       initial: true
     - name: plan
     - name: implement
       worktree: true
-    - name: review
+    - name: verify
       fresh: true
       feedback-to: implement
       gate: true
@@ -22,15 +22,17 @@ stages:
       terminal: true
 ---
 
-# SpaceTop Dev
+# Spacetop Dev
 
-This workflow manages development of SpaceTop, a Rust-based terminal UI for inspecting Spacedock workflow state and helping users understand workflow structure. Each task moves from product and technical design through implementation and review, with the workflow state stored as markdown so progress remains auditable in git.
+This workflow manages development of Spacetop, a Rust terminal UI for inspecting Spacedock workflow state. Each task moves from outcome shaping through implementation and independent verification, with workflow state stored as markdown so progress remains auditable in git.
+
+The workflow is optimized for a read-first developer tool: preserve the read-only product contract, keep parser and app facts typed before rendering, and prove behavior at the lowest practical test layer.
 
 ## File Naming
 
 Each task lives as either:
 
-- a flat markdown file `{slug}.md` (default -- use this unless the entity produces many artifacts), or
+- a flat markdown file `{slug}.md` (default -- use this unless the task produces many artifacts), or
 - a folder `{slug}/` containing `index.md` as the canonical entity file, when the task produces per-stage artifacts (draft versions, transcripts, outputs) that belong alongside the tracker.
 
 Slugs are lowercase, hyphens, no spaces. Example: `my-feature-idea.md` or `my-feature-idea/index.md`. The status scanner recognizes both forms; `--set` and `--archive` resolve the slug either way, and folder entities archive as a whole folder into `_archive/{slug}/`.
@@ -45,89 +47,106 @@ Every task file has YAML frontmatter. Fields are documented below; see **Task Te
 |-------|------|-------------|
 | `id` | string | Unique identifier, format determined by id-style in README frontmatter |
 | `title` | string | Human-readable task name |
-| `status` | enum | One of: design, plan, implement, review, done |
+| `status` | enum | One of: shape, plan, implement, verify, done |
 | `source` | string | Where this task came from |
+| `kind` | enum | feature, bugfix, refactor, docs, workflow, or policy |
+| `risk` | enum | low, medium, or high |
+| `milestone` | string | Planning bucket such as `v1-maintenance`, `v2-p0`, `v2-p1`, `v2-p2`, or `v2-later` |
+| `proof` | string | Short pointer to the expected verification path |
 | `started` | ISO 8601 | When active work began |
 | `completed` | ISO 8601 | When the task reached terminal status |
 | `verdict` | enum | PASSED or REJECTED -- set at final stage |
 | `score` | number | Priority score, 0.0-1.0 (optional). Workflows can upgrade to a multi-dimension rubric in their README. |
 | `worktree` | string | Worktree path while a dispatched agent is active, empty otherwise |
 | `issue` | string | GitHub issue reference (e.g., `#42` or `owner/repo#42`). Optional cross-reference, set manually. |
-| `pr` | string | GitHub PR reference (e.g., `#57` or `owner/repo#57`). Set when a PR is created for this entity's worktree branch. |
+| `pr` | string | GitHub PR reference (e.g., `#57` or `owner/repo#57`). Set when a PR is created for this task's worktree branch. |
 
 ## Stages
 
-### `design`
+### `shape`
 
-The first officer or assigned worker sets this status while clarifying what the task should accomplish for SpaceTop users and maintainers.
+The first officer or assigned worker sets this status while deciding what the task should accomplish and whether the requested change is worth doing.
 
-- **Inputs:** The task description, repository docs, current SpaceTop code, relevant Spacedock workflow examples, and user-facing requirements.
-- **Outputs:** Clear problem statement, target user flow, acceptance criteria, and parser/TUI constraints that will guide implementation.
-- **Good:** Explains how the task improves inspection of Spacedock workflows and names the expected terminal behavior or data model outcome.
-- **Bad:** Starts coding decisions before confirming what workflow state or user interaction the feature must support.
+- **Inputs:** The task description, repository docs, current Spacetop code, relevant Spacedock workflow examples, user-facing requirements, and the development policy.
+- **Outputs:** Problem statement, target user or maintainer outcome, scope boundaries, acceptance criteria, risk level, milestone, and the product contract touched by the task.
+- **Good:** Names how the task improves inspection of Spacedock workflows and explicitly calls out parser, TUI, git, watcher, docs, workflow, or policy impact.
+- **Bad:** Starts implementation planning before the user value, non-goals, and safety boundary are clear.
 
 ### `plan`
 
-The first officer or assigned worker sets this status after design is accepted and the task needs an implementation path.
+The first officer or assigned worker sets this status after shaping is accepted and the task needs an implementation path.
 
-- **Inputs:** Approved design notes, existing Rust module boundaries, current crate dependencies, and expected verification commands.
-- **Outputs:** Step-by-step implementation plan, focused test strategy, and any module or file ownership notes needed for worktree execution.
-- **Good:** Separates parser/state work from terminal rendering work so logic remains testable without a TUI session.
-- **Bad:** Lists vague tasks without commands, expected files, or evidence needed to prove the work is complete.
+- **Inputs:** Approved shape notes, existing Rust module boundaries, current crate dependencies, expected verification commands, and any v2 migration constraints.
+- **Outputs:** Step-by-step implementation plan, owned files/modules, lowest practical test layer, proof strategy, and any spike or fixture needed before risky work.
+- **Good:** Separates parser/state work from terminal rendering work, names exact verification commands, and identifies docs or policy updates needed in the same change.
+- **Bad:** Lists vague tasks without commands, expected files, evidence, or a plan to prove read-only and Clean Code boundaries.
 
 ### `implement`
 
 A worker sets this status while making code or documentation changes for the task, usually in an isolated worktree.
 
-- **Inputs:** Approved plan, SpaceTop source tree, Rust tooling, representative Spacedock workflow fixtures, and any stage reports already recorded in the task body.
+- **Inputs:** Approved plan, Spacetop source tree, Rust tooling, representative Spacedock workflow fixtures, and any stage reports already recorded in the task body.
 - **Outputs:** Working implementation, focused tests or fixtures, updated docs where behavior changes, and a concise stage report with commands run.
-- **Good:** Uses established Rust crates and keeps parsing, app state, and TUI rendering behind understandable boundaries.
-- **Bad:** Mutates Spacedock workflow state by default, hides untested parsing assumptions in UI code, or changes unrelated project files.
+- **Good:** Uses established Rust crates, keeps parsing/app facts typed before UI rendering, commits the worktree branch, and records reproducible evidence.
+- **Bad:** Mutates Spacedock workflow markdown by default, hides untested parsing assumptions in UI code, broadens git writes, or changes unrelated project files.
 
-### `review`
+### `verify`
 
-The first officer sets this status when implementation is ready for independent review and captain approval.
+The first officer sets this status when implementation is ready for independent verification and captain approval.
 
-- **Inputs:** Implementation diff, test output, task acceptance criteria, and any screenshots or terminal output relevant to TUI behavior.
-- **Outputs:** Review verdict, defects or missing evidence if rejected, and approval notes if the task can move to done.
-- **Good:** Challenges whether the feature actually helps users inspect Spacedock state and whether parser failures are handled clearly.
-- **Bad:** Rubber-stamps code without checking workflow examples, terminal edge cases, or test evidence.
+- **Inputs:** Implementation diff, test output, task acceptance criteria, proof plan, and any screenshots or terminal output relevant to TUI behavior.
+- **Outputs:** Verification verdict, defects or missing evidence if rejected, and approval notes if the task can move to done.
+- **Good:** Challenges whether the change helps users inspect Spacedock state, checks parser failures and terminal edge cases, and confirms every acceptance criterion has evidence.
+- **Bad:** Rubber-stamps code, treats prose as proof when a test or guardrail could enforce the behavior, or ignores required `make lint` evidence for code changes.
 
 ### `done`
 
-The first officer sets this terminal status when the captain accepts the reviewed task.
+The first officer sets this terminal status when the captain accepts the verified task and the merge path has completed.
 
-- **Inputs:** Approved review result, final implementation evidence, and any linked issue or PR reference.
+- **Inputs:** Approved verification result, final implementation evidence, and any linked issue or PR reference.
 - **Outputs:** Completed task record with final verdict, completion timestamp, and relevant artifact links.
-- **Good:** Leaves enough context for future sessions to understand what shipped and how it was verified.
-- **Bad:** Marks work done while review feedback, missing tests, or unresolved workflow-state questions remain open.
+- **Good:** Leaves enough context for future sessions to understand what shipped, how it was verified, and why it matched the read-first product contract.
+- **Bad:** Marks work done while review feedback, missing tests, unresolved workflow-state questions, or PR/local merge steps remain open.
+
+## Proof Standard
+
+Every task should prove the most important property at the lowest practical layer:
+
+- Parser/schema behavior belongs in parser tests and fixtures.
+- App state and input behavior belongs in app tests.
+- Discovery/root behavior belongs in discovery or integration tests.
+- Watcher behavior belongs in watcher tests, with the ignored real-backend smoke only when backend behavior changes.
+- Git sync and write-safety behavior belongs in git-sync tests and no-write guardrails.
+- Rendering behavior should use Ratatui `TestBackend` assertions before relying on manual terminal checks.
+
+For code changes, `make lint` is the completion gate. A task may skip a command only when the stage report explains why it was not applicable or could not run.
 
 ## Workflow State
 
 View the workflow overview:
 
 ```bash
-/Users/kent/Dev/InfuseAI/GitHub/spacedock/skills/commission/bin/status --workflow-dir docs/spacetop-dev
+spacedock status --workflow-dir docs/spacetop-dev
 ```
 
-Output columns: ID, SLUG, STATUS, TITLE, SCORE, SOURCE.
+Output columns include ID, SLUG, STATUS, TITLE, SCORE, and SOURCE.
 
 Include archived tasks with `--archived`:
 
 ```bash
-/Users/kent/Dev/InfuseAI/GitHub/spacedock/skills/commission/bin/status --workflow-dir docs/spacetop-dev --archived
+spacedock status --workflow-dir docs/spacetop-dev --archived
 ```
 
 Find dispatchable tasks ready for their next stage:
 
 ```bash
-/Users/kent/Dev/InfuseAI/GitHub/spacedock/skills/commission/bin/status --workflow-dir docs/spacetop-dev --next
+spacedock status --workflow-dir docs/spacetop-dev --next
 ```
 
 Find tasks in a specific stage:
 
 ```bash
-grep -l "status: design" docs/spacetop-dev/*.md
+spacedock status --workflow-dir docs/spacetop-dev --where 'status = shape'
 ```
 
 ## Task Template
@@ -136,8 +155,12 @@ grep -l "status: design" docs/spacetop-dev/*.md
 ---
 id:
 title: Task name here
-status: design
+status: shape
 source:
+kind:
+risk:
+milestone:
+proof:
 started:
 completed:
 verdict:
@@ -146,18 +169,37 @@ worktree:
 issue:
 pr:
 ---
+```
 
-Brief description of this task and what it aims to achieve.
+Brief description of this task and the outcome it should create.
+
+## Scope
+
+- Kind:
+- Risk:
+- Milestone:
+- Touches: parser / app-state / UI / git / watcher / docs / workflow / policy
+- Non-goals:
 
 ## Acceptance criteria
 
-Each AC names a property of the finished entity (not a stage action) and how it is verified.
+Each AC names a property of the finished task, not a stage action.
 
 **AC-1 -- End-state property.**
-Verified by: grep / test name / file path / command a future reader can reproduce.
-```
+Verified by:
+
+**AC-2 -- Safety or boundary property.**
+Verified by:
+
+## Proof plan
+
+- Lowest test layer:
+- Required command:
+- Manual check, if any:
+- Docs/policy update needed:
 
 ## Commit Discipline
 
-- Commit status changes at dispatch and merge boundaries
-- Commit task body updates when substantive
+- Commit status changes at dispatch and merge boundaries.
+- Commit task body updates when substantive.
+- Commit implementation work on the task worktree branch before signaling completion.

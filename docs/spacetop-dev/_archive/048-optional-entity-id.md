@@ -1,7 +1,7 @@
 ---
 id: "048"
 title: "Support optional entity ID (id-style: slug)"
-status: review
+status: done
 source: captain
 started: 2026-06-09T01:20:12Z
 completed: 2026-06-09T02:54:49Z
