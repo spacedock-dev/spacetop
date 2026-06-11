@@ -58,3 +58,13 @@ Verified by: app tests for pending and completed history worker results.
 - Required commands: `cargo test --workspace`; `make lint`; `cargo test -p spacetop-core --test no_write_git_calls`.
 - Manual check, if any: optional TUI smoke for loading/unavailable messages.
 - Docs/policy update needed: document read-only history commands if behavior changes.
+
+## Stage Report: implement
+
+- DONE: Implemented trustworthy read-only git history in `spacetop-core`: shared `GitRunner` seam, first-parent frontmatter-only `StageEvent`s, explicit unavailable reasons, archive rename `done` synthesis, and stable timelines across renames.
+- DONE: Wired history results into `WorkflowIndex` timeline, metrics, and activity APIs, plus TUI non-blocking history ingestion so active workflow state loads immediately while exact history availability is preserved.
+- DONE: Proved the behavior with focused mocked-runner, real git fixture, metrics, index, app, and read-only guardrail tests. Verification passed: `cargo test --workspace`; `make lint`; `cargo test -p spacetop-core --test no_write_git_calls`.
+
+### Summary
+
+Implemented P2 git history source on branch `spacedock-ensign/052-v2-p2-git-history-source`. The core now derives per-entity stage timelines from read-only first-parent git history, refuses shallow/non-git history with explicit reasons, computes metrics only from stored events, and keeps TUI loading non-blocking through a background worker and guarded result application.
