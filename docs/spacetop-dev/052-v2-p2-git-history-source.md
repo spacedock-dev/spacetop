@@ -1,17 +1,17 @@
 ---
 id: "052"
 title: "v2 P2: git history source"
-status: verify
+status: done
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: high
 milestone: v2-p2
 proof: "cargo test --workspace; make lint; cargo test -p spacetop-core --test no_write_git_calls"
 started: 2026-06-11
-completed:
-verdict:
+completed: 2026-06-11T10:49:41Z
+verdict: PASSED
 score: 0.96
-worktree: .worktrees/spacedock-ensign-052-v2-p2-git-history-source
+worktree:
 issue:
 pr: "#52"
 mod-block:
