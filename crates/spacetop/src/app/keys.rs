@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -53,7 +54,7 @@ impl ResolvedKeymap {
             .iter()
             .map(|spec| parse_binding(spec.configured))
             .collect::<Vec<_>>();
-        let mut counts = std::collections::HashMap::<char, usize>::new();
+        let mut counts = HashMap::<char, usize>::new();
         for key in parsed.iter().flatten() {
             *counts.entry(*key).or_default() += 1;
         }
@@ -61,28 +62,33 @@ impl ResolvedKeymap {
         let mut warnings = Vec::new();
         let mut resolved = Vec::with_capacity(specs.len());
         for (spec, parsed_key) in specs.iter().zip(parsed) {
-            let key = match parsed_key {
+            let binding = match parsed_key {
                 None => {
                     warnings.push(format!(
                         "invalid keybinding for {}: expected a single printable character",
                         spec.name
                     ));
-                    spec.default
+                    ResolvedBinding::fallback(spec, spec.default)
                 }
                 Some(key) if is_reserved_key(key) && key != spec.default => {
                     warnings.push(format!("reserved keybinding for {}: {key}", spec.name));
-                    spec.default
+                    ResolvedBinding::fallback(spec, spec.default)
                 }
                 Some(key)
                     if counts.get(&key).copied().unwrap_or_default() > 1 && key != spec.default =>
                 {
                     warnings.push(format!("duplicate keybinding for {}: {key}", spec.name));
-                    spec.default
+                    ResolvedBinding::fallback(spec, spec.default)
                 }
-                Some(key) => key,
+                Some(key) => ResolvedBinding::configured(spec, key),
             };
-            resolved.push(ResolvedKey::new(key));
+            resolved.push(binding);
         }
+        resolve_final_duplicates(&mut resolved, &mut warnings);
+        let resolved = resolved
+            .into_iter()
+            .map(|binding| ResolvedKey::new(binding.key))
+            .collect::<Vec<_>>();
 
         Self {
             search: resolved[0].clone(),
@@ -104,6 +110,40 @@ struct BindingSpec<'a> {
     name: &'static str,
     configured: &'a str,
     default: char,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindingOrigin {
+    Configured,
+    Fallback,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedBinding {
+    name: &'static str,
+    default: char,
+    key: char,
+    origin: BindingOrigin,
+}
+
+impl ResolvedBinding {
+    fn configured(spec: &BindingSpec<'_>, key: char) -> Self {
+        Self {
+            name: spec.name,
+            default: spec.default,
+            key,
+            origin: BindingOrigin::Configured,
+        }
+    }
+
+    fn fallback(spec: &BindingSpec<'_>, key: char) -> Self {
+        Self {
+            name: spec.name,
+            default: spec.default,
+            key,
+            origin: BindingOrigin::Fallback,
+        }
+    }
 }
 
 fn binding_specs(config: &KeybindingConfig) -> [BindingSpec<'_>; 6] {
@@ -155,6 +195,71 @@ fn is_reserved_key(key: char) -> bool {
         key,
         'a' | 's' | 'D' | 'Y' | '?' | 'q' | 'j' | 'k' | 'w' | 'o' | 'b' | 'g' | 'G' | 'P' | ' '
     )
+}
+
+fn resolve_final_duplicates(resolved: &mut [ResolvedBinding], warnings: &mut Vec<String>) {
+    let duplicate_groups = duplicate_binding_groups(resolved);
+    if duplicate_groups.is_empty() {
+        return;
+    }
+
+    let mut keep = HashSet::new();
+    for group in duplicate_groups {
+        let winner = group
+            .iter()
+            .copied()
+            .find(|index| resolved[*index].origin == BindingOrigin::Configured)
+            .unwrap_or(group[0]);
+        keep.insert(winner);
+    }
+
+    let mut reassign = duplicate_binding_groups(resolved)
+        .into_iter()
+        .flatten()
+        .filter(|index| !keep.contains(index))
+        .collect::<Vec<_>>();
+    reassign.sort_unstable();
+    reassign.dedup();
+
+    let mut used = resolved
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !reassign.contains(index))
+        .map(|(_, binding)| binding.key)
+        .collect::<HashSet<_>>();
+
+    for index in reassign {
+        let old_key = resolved[index].key;
+        let replacement = fallback_key_for(resolved[index].default, &used);
+        warnings.push(format!(
+            "final duplicate keybinding for {}: {old_key}; using {replacement}",
+            resolved[index].name
+        ));
+        resolved[index].key = replacement;
+        resolved[index].origin = BindingOrigin::Fallback;
+        used.insert(replacement);
+    }
+}
+
+fn duplicate_binding_groups(resolved: &[ResolvedBinding]) -> Vec<Vec<usize>> {
+    let mut groups = HashMap::<char, Vec<usize>>::new();
+    for (index, binding) in resolved.iter().enumerate() {
+        groups.entry(binding.key).or_default().push(index);
+    }
+    groups
+        .into_values()
+        .filter(|group| group.len() > 1)
+        .collect()
+}
+
+fn fallback_key_for(default: char, used: &HashSet<char>) -> char {
+    if !used.contains(&default) {
+        return default;
+    }
+    ['/', ':', 'T', 'M', 'A', 'R']
+        .into_iter()
+        .find(|key| !used.contains(key))
+        .unwrap_or(default)
 }
 
 pub(crate) enum OverviewKeyAction {
@@ -593,6 +698,72 @@ mod tests {
             .warnings()
             .iter()
             .any(|warning| warning.contains("invalid")));
+    }
+
+    #[test]
+    fn invalid_search_fallback_does_not_collide_with_configured_command_slash() {
+        let config = spacetop_core::config::SpacetopConfig {
+            keybindings: spacetop_core::config::KeybindingConfig {
+                search: String::new(),
+                command: "/".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let resolved = ResolvedKeymap::from_config(&config);
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item(path);
+
+        assert_ne!(resolved.search.label(), resolved.command.label());
+        assert_eq!(resolved.command.label(), "/");
+        assert!(resolved
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains("final duplicate")));
+        assert!(matches!(
+            handle_overview_key_with_keymap(
+                &mut session,
+                key(KeyCode::Char(resolved.command.key)),
+                &resolved
+            ),
+            OverviewKeyAction::OpenCommandPalette
+        ));
+    }
+
+    #[test]
+    fn reserved_search_fallback_does_not_collide_with_configured_command_slash() {
+        let config = spacetop_core::config::SpacetopConfig {
+            keybindings: spacetop_core::config::KeybindingConfig {
+                search: "a".to_string(),
+                command: "/".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let resolved = ResolvedKeymap::from_config(&config);
+        let path = PathBuf::from("/tmp/spacetop-keys-test/task-001.md");
+        let mut session = single_session_with_item(path);
+
+        assert_ne!(resolved.search.label(), resolved.command.label());
+        assert_eq!(resolved.command.label(), "/");
+        assert!(resolved
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains("reserved")));
+        assert!(resolved
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains("final duplicate")));
+        assert!(matches!(
+            handle_overview_key_with_keymap(
+                &mut session,
+                key(KeyCode::Char(resolved.command.key)),
+                &resolved
+            ),
+            OverviewKeyAction::OpenCommandPalette
+        ));
     }
 
     #[test]

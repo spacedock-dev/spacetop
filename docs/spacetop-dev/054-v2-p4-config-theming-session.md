@@ -116,3 +116,18 @@ REJECTED. The required proof commands pass, and AC-1/AC-2/AC-4 are supported by 
 ### Feedback Cycles
 
 - Cycle 1: Verify rejected AC-3 because `ResolvedKeymap::from_config` checks duplicates before invalid/reserved bindings fall back to defaults. Configs such as `search: ""` plus `command: "/"`, or `search: "a"` plus `command: "/"`, can resolve both actions to `/`, making command unreachable with no final duplicate warning. Fix final keymap validation so fallback-created duplicates cannot survive, and add targeted tests for these cases.
+
+## Cycle 1 Fix: implement
+
+- DONE: Added final resolved-keymap duplicate validation after invalid, reserved, and pre-fallback duplicate decisions.
+- DONE: Preserved accepted custom bindings when a fallback-created duplicate appears; fallback entries are reassigned to an unused canonical default.
+- DONE: Surfaced `final duplicate keybinding` warnings when final collision repair is needed.
+- DONE: Added regressions for `search: ""` plus `command: "/"` and `search: "a"` plus `command: "/"`; both assert distinct final bindings, preserved command `/`, final duplicate warnings, and reachable command action.
+
+### Cycle 1 Proof Commands
+
+- `cargo test -p spacetop fallback_does_not_collide` -> passed, 2 passed.
+- `cargo test -p spacetop app::keys::tests` -> passed, 17 passed.
+- `cargo test --workspace` -> passed: spacetop lib 313 passed; main 4 passed; integration tests 10/4/5 passed; spacetop-core lib 144 passed; core integration tests 7/1/2 passed; watcher real-backend tests 3 ignored; doctests 0.
+- `make lint` -> passed, `cargo clippy --all-targets --all-features -- -D warnings`.
+- `cargo test -p spacetop-core --test no_write_git_calls` -> passed, 2 passed.
