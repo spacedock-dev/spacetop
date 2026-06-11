@@ -1,17 +1,17 @@
 ---
 id: "051"
 title: "v2 P1: index and query API"
-status: verify
+status: done
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: refactor
 risk: high
 milestone: v2-p1
 proof: "cargo test --workspace; make lint; cargo test -p spacetop-core --test no_terminal_deps"
 started: 2026-06-11
-completed:
-verdict:
+completed: 2026-06-11T08:39:50Z
+verdict: PASSED
 score: 0.98
-worktree: .worktrees/spacedock-ensign-051-v2-p1-index-query-api
+worktree:
 issue:
 pr: "#51"
 mod-block:
