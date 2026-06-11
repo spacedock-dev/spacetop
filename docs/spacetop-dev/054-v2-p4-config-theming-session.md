@@ -14,7 +14,7 @@ score: 0.84
 worktree: .worktrees/spacedock-ensign-054-v2-p4-config-theming-session
 issue:
 pr: "#54"
-mod-block: merge:pr-merge
+mod-block:
 ---
 
 Implement phase P4 of the SpaceTop v2 internals rebuild: add YAML config,
