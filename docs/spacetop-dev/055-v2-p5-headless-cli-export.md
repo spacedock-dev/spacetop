@@ -1,7 +1,7 @@
 ---
 id: "055"
 title: "v2 P5: headless CLI and export"
-status: implement
+status: verify
 source: "captain - reviewed SpaceTop v2 roadmap plan"
 kind: feature
 risk: medium
