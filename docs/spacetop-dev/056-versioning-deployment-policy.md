@@ -91,3 +91,16 @@ Verification rejects this gate due to an AC-4 documentation defect: the README i
 ### Feedback Cycles
 
 - Cycle 1 (verify -> implement): rejected on AC-4. Fix `README.md:98-99` so the release install example matches the archive layout, either by installing from `spacetop-vX.Y.Z-<target>/spacetop` after extraction or by changing into that extracted directory before running `install`.
+
+## Stage Report: implement (cycle 1)
+
+- DONE: Fix the README release-install example so it matches the archive layout, either installing from `spacetop-vX.Y.Z-<target>/spacetop` or changing into the extracted directory before `install`.
+  Evidence: commit `9d0ac3c` changes the example to install from `spacetop-vX.Y.Z-aarch64-apple-darwin/spacetop`, matching the release workflow archive directory.
+- DONE: Run the lowest practical verification for the docs fix, plus any required commands that are still needed or explain why a full rerun is unnecessary.
+  Evidence: `git diff --check -- README.md` passed; an archive-layout smoke extracted a mock release archive and installed from `spacetop-vX.Y.Z-aarch64-apple-darwin/spacetop`; full Rust rerun skipped because this cycle changed only README prose.
+- DONE: Append an implement follow-up stage report covering this feedback cycle with DONE/SKIPPED/FAILED items and AC-4 evidence.
+  Evidence: this cycle 1 report records the AC-4 README fix, targeted verification, and full-rerun rationale.
+
+### Summary
+
+Fixed the AC-4 README defect by making the release install example use the binary path inside the extracted archive directory. Verified the documented archive shape with a smoke test rather than rerunning the full Rust gate, since no Rust code, workflow YAML, or release packaging changed in this feedback cycle.
