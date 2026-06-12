@@ -173,8 +173,8 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
     let _restore = TerminalRestore;
 
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
-        .context("failed to enter alternate screen")?;
+    execute!(stdout, EnterAlternateScreen).context("failed to enter alternate screen")?;
+    execute!(stdout, EnableMouseCapture).context("failed to enable mouse capture")?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("failed to initialize terminal")?;
 
