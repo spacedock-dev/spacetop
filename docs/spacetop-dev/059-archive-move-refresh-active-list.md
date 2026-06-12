@@ -13,7 +13,7 @@ verdict:
 score: 0.88
 worktree: .worktrees/spacedock-ensign-059-archive-move-refresh-active-list
 issue:
-pr:
+pr: "#60"
 mod-block: merge:pr-merge
 ---
 
