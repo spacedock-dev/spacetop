@@ -1,7 +1,7 @@
 ---
 id: "060"
 title: Workflow Definition page supports mouse scroll wheel
-status: implement
+status: verify
 source: captain request 2026-06-12
 kind: feature
 risk: low
