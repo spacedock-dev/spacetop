@@ -440,7 +440,11 @@ mod tests {
         );
 
         // Release ends the drag; later drags are inert without a new grab.
-        app.handle_mouse(mouse_at(MouseEventKind::Up(MouseButton::Left), content.x, grab_y));
+        app.handle_mouse(mouse_at(
+            MouseEventKind::Up(MouseButton::Left),
+            content.x,
+            grab_y,
+        ));
         let state = app.as_overview().expect("overview");
         assert!(!state.divider_drag);
         app.handle_mouse(mouse_at(

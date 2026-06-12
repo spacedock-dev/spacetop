@@ -105,16 +105,48 @@ mod tests {
     fn default_left_split_reproduces_historical_50_50() {
         let area = content(100, 20);
         let (list, preview) = split_content(area, PreviewPlacement::Left, 50);
-        assert_eq!(list, Rect { x: 2, y: 9, width: 50, height: 20 });
-        assert_eq!(preview, Rect { x: 52, y: 9, width: 50, height: 20 });
+        assert_eq!(
+            list,
+            Rect {
+                x: 2,
+                y: 9,
+                width: 50,
+                height: 20
+            }
+        );
+        assert_eq!(
+            preview,
+            Rect {
+                x: 52,
+                y: 9,
+                width: 50,
+                height: 20
+            }
+        );
     }
 
     #[test]
     fn default_bottom_split_reproduces_historical_30_70() {
         let area = content(60, 30);
         let (list, preview) = split_content(area, PreviewPlacement::Bottom, 30);
-        assert_eq!(list, Rect { x: 2, y: 9, width: 60, height: 9 });
-        assert_eq!(preview, Rect { x: 2, y: 18, width: 60, height: 21 });
+        assert_eq!(
+            list,
+            Rect {
+                x: 2,
+                y: 9,
+                width: 60,
+                height: 9
+            }
+        );
+        assert_eq!(
+            preview,
+            Rect {
+                x: 2,
+                y: 18,
+                width: 60,
+                height: 21
+            }
+        );
     }
 
     #[test]
@@ -137,14 +169,20 @@ mod tests {
         assert_eq!(list.width, MIN_SPLIT_COLS, "list keeps min cols at 0%");
         assert_eq!(preview.width, 90);
         let (list, preview) = split_content(area, PreviewPlacement::Left, 100);
-        assert_eq!(preview.width, MIN_SPLIT_COLS, "preview keeps min cols at 100%");
+        assert_eq!(
+            preview.width, MIN_SPLIT_COLS,
+            "preview keeps min cols at 100%"
+        );
         assert_eq!(list.width, 90);
 
         let area = content(60, 30);
         let (list, _) = split_content(area, PreviewPlacement::Bottom, 0);
         assert_eq!(list.height, MIN_SPLIT_ROWS, "list keeps min rows at 0%");
         let (_, preview) = split_content(area, PreviewPlacement::Bottom, 100);
-        assert_eq!(preview.height, MIN_SPLIT_ROWS, "preview keeps min rows at 100%");
+        assert_eq!(
+            preview.height, MIN_SPLIT_ROWS,
+            "preview keeps min rows at 100%"
+        );
     }
 
     #[test]

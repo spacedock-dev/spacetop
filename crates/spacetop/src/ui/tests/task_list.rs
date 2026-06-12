@@ -1047,6 +1047,9 @@ fn list_rows_rect_and_offset_facts_match_drawn_rows() {
     // this fixture) and sits to the right of the list in Left placement.
     let preview = state.preview_rect.get();
     let content = state.content_rect.get();
-    assert!(preview.width > 0, "preview rect must be recorded while open");
+    assert!(
+        preview.width > 0,
+        "preview rect must be recorded while open"
+    );
     assert_eq!(preview.x, content.x + (content.width - preview.width));
 }
