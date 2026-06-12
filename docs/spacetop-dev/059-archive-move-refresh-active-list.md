@@ -1,7 +1,7 @@
 ---
 id: "059"
 title: Archived task remains in active list until restart
-status: implement
+status: verify
 source: captain bug report 2026-06-12
 kind: bugfix
 risk: medium
