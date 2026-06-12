@@ -1,7 +1,7 @@
 ---
 id: "058"
 title: Add curl-based release installer
-status: plan
+status: implement
 source: captain request 2026-06-12
 kind: feature
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-06-12T09:55:09Z
 completed:
 verdict:
 score: 0.82
-worktree:
+worktree: .worktrees/codex-058-curl-install-script
 issue:
 pr:
 ---
