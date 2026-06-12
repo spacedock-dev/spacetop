@@ -346,14 +346,14 @@ fn build_preview_header_lines<'a>(
                 spans.push(Span::styled("score: ", dim));
                 spans.push(Span::raw(score.clone()));
                 spans.push(Span::raw("  \u{00B7}  "));
-                spans.push(Span::styled("source: ", dim));
-                spans.push(Span::raw(source.to_string()));
-                spans.push(Span::raw("  \u{00B7}  "));
-                spans.extend(worktree_segment.clone());
-                spans.push(Span::raw("  \u{00B7}  "));
                 spans.push(Span::styled("verdict: ", dim));
                 spans.push(Span::styled(verdict.to_string(), verdict_style));
                 lines.push(Line::from(spans));
+                lines.push(Line::from(vec![
+                    Span::styled("source: ", dim),
+                    Span::raw(source.to_string()),
+                ]));
+                lines.push(Line::from(worktree_segment.clone()));
             }
             PreviewPlacement::Left => {
                 lines.push(Line::from(status_spans));
@@ -380,12 +380,12 @@ fn build_preview_header_lines<'a>(
                 spans.push(Span::raw("  \u{00B7}  "));
                 spans.push(Span::styled("score: ", dim));
                 spans.push(Span::raw(score.clone()));
-                spans.push(Span::raw("  \u{00B7}  "));
-                spans.push(Span::styled("source: ", dim));
-                spans.push(Span::raw(source.to_string()));
-                spans.push(Span::raw("  \u{00B7}  "));
-                spans.extend(worktree_segment.clone());
                 lines.push(Line::from(spans));
+                lines.push(Line::from(vec![
+                    Span::styled("source: ", dim),
+                    Span::raw(source.to_string()),
+                ]));
+                lines.push(Line::from(worktree_segment.clone()));
             }
             PreviewPlacement::Left => {
                 lines.push(Line::from(status_spans));

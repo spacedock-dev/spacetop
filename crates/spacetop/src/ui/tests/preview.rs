@@ -369,6 +369,54 @@ fn preview_keeps_body_divider_visible_when_header_wraps() {
         "wrapped preview headers should still leave room for the body divider"
     );
 }
+
+#[test]
+fn preview_header_long_source_and_worktree_do_not_overlap_body() {
+    let mut work_item = item(
+        "001",
+        "Long Metadata Header",
+        "Primary preview body stays visible after metadata.",
+    );
+    work_item.source = Some(
+        "captain request with a deliberately long source value that wraps across the preview header"
+            .to_string(),
+    );
+    work_item.worktree = Some(
+        ".worktrees/spacedock-ensign-061-preview-header-source-worktree-lines-with-extra-long-suffix"
+            .to_string(),
+    );
+    let app = app_with_items(vec![work_item]);
+    let mut terminal = Terminal::new(TestBackend::new(80, 80)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+
+    let buffer = terminal.backend().buffer();
+    let status_y = find_text(buffer, "status:")[0].1;
+    let source_y = find_text(buffer, "source:")[0].1;
+    let worktree_y = find_text(buffer, "worktree:")[0].1;
+    let path_y = find_text(buffer, "path:")[0].1;
+    let divider_y = find_text(buffer, "── body")[0].1;
+    let body_y = find_text(buffer, "Primary preview body")[0].1;
+
+    assert!(
+        source_y > status_y,
+        "source metadata must render below the status row"
+    );
+    assert!(
+        worktree_y > source_y,
+        "worktree metadata must render below the source row"
+    );
+    assert!(
+        path_y > worktree_y,
+        "path metadata must render below source/worktree rows"
+    );
+    assert!(
+        divider_y > path_y,
+        "body divider must render below all metadata"
+    );
+    assert!(body_y > divider_y, "body text must render below divider");
+}
 #[test]
 fn preview_scrollbar_thumb_reaches_bottom_at_max_scroll() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
