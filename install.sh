@@ -2,7 +2,6 @@
 set -eu
 
 repo="${SPACETOP_REPO:-spacedock-dev/spacetop}"
-release_base="https://github.com/${repo}/releases/latest/download"
 temp_dir=""
 
 die() {
@@ -55,6 +54,34 @@ resolve_target() {
       ;;
     *)
       die "unsupported platform: ${os} ${arch}"
+      ;;
+  esac
+}
+
+resolve_latest_tag() {
+  latest_url="https://github.com/${repo}/releases/latest"
+
+  if ! effective_url="$(curl -fsSIL -o /dev/null -w '%{url_effective}' "${latest_url}")"; then
+    die "could not resolve latest release tag from ${latest_url}"
+  fi
+
+  case "${effective_url}" in
+    */releases/tag/*)
+      tag="${effective_url##*/releases/tag/}"
+      tag="${tag%%\?*}"
+      tag="${tag%%#*}"
+      ;;
+    *)
+      die "could not resolve latest release tag from ${latest_url}"
+      ;;
+  esac
+
+  case "${tag}" in
+    v[0-9]*.[0-9]*.[0-9]*)
+      printf '%s\n' "${tag}"
+      ;;
+    *)
+      die "could not resolve latest release tag from ${latest_url}"
       ;;
   esac
 }
@@ -141,6 +168,8 @@ need_command mktemp
 install_dir="$(resolve_install_dir)"
 target="$(resolve_target)"
 checksum_tool="$(resolve_checksum_tool)"
+tag="$(resolve_latest_tag)"
+release_base="https://github.com/${repo}/releases/download/${tag}"
 
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/spacetop-install.XXXXXX")"
 checksums="${temp_dir}/SHA256SUMS"

@@ -25,12 +25,22 @@ fn darwin_arm64_selects_macos_archive_and_installs_to_temp_dir() {
     assert_log_contains(
         &harness,
         "curl.log",
-        "https://github.com/spacedock-dev/spacetop/releases/latest/download/SHA256SUMS\n",
+        "https://github.com/spacedock-dev/spacetop/releases/latest\n",
     );
     assert_log_contains(
         &harness,
         "curl.log",
-        "https://github.com/spacedock-dev/spacetop/releases/latest/download/spacetop-v0.1.0-aarch64-apple-darwin.tar.gz\n",
+        "https://github.com/spacedock-dev/spacetop/releases/download/v0.1.0/SHA256SUMS\n",
+    );
+    assert_log_contains(
+        &harness,
+        "curl.log",
+        "https://github.com/spacedock-dev/spacetop/releases/download/v0.1.0/spacetop-v0.1.0-aarch64-apple-darwin.tar.gz\n",
+    );
+    assert_log_absent_contains(
+        &harness,
+        "curl.log",
+        "https://github.com/spacedock-dev/spacetop/releases/latest/download/",
     );
     assert!(
         harness.install_dir.join("spacetop").is_file(),
@@ -55,8 +65,31 @@ fn linux_x86_64_selects_linux_archive() {
     assert_log_contains(
         &harness,
         "curl.log",
-        "https://github.com/spacedock-dev/spacetop/releases/latest/download/spacetop-v0.1.0-x86_64-unknown-linux-gnu.tar.gz\n",
+        "https://github.com/spacedock-dev/spacetop/releases/download/v0.1.0/spacetop-v0.1.0-x86_64-unknown-linux-gnu.tar.gz\n",
     );
+}
+
+#[test]
+fn latest_tag_resolution_failure_exits_before_asset_downloads() {
+    let harness = InstallerHarness::new();
+    harness.fake_uname("Linux", "x86_64");
+    harness.fake_curl_latest_failure();
+    harness.fake_sha256sum_success();
+    harness.fake_tar();
+    harness.fake_install();
+
+    let output = harness.run();
+
+    assert_failure(&output);
+    assert_stderr_contains(&output, "could not resolve latest release tag");
+    assert_log_contains(
+        &harness,
+        "curl.log",
+        "https://github.com/spacedock-dev/spacetop/releases/latest\n",
+    );
+    assert_log_absent_contains(&harness, "curl.log", "/releases/download/");
+    assert_log_absent(&harness, "tar.log");
+    assert_log_absent(&harness, "install.log");
 }
 
 #[test]
@@ -226,16 +259,25 @@ esac
             r#"#!/bin/sh
 url=
 out=
+write_effective=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
+    -w) write_effective=1; shift 2 ;;
     -*) shift ;;
     *) url="$1"; shift ;;
   esac
 done
 printf '%s\n' "$url" >> "$FAKE_LOGS_DIR/curl.log"
 case "$url" in
-  */SHA256SUMS)
+  */releases/latest)
+    if [ "$write_effective" = 1 ]; then
+      printf '%s' 'https://github.com/spacedock-dev/spacetop/releases/tag/v0.1.0'
+    else
+      printf '%s\n' 'https://github.com/spacedock-dev/spacetop/releases/tag/v0.1.0' > "$out"
+    fi
+    ;;
+  */releases/download/v0.1.0/SHA256SUMS)
     {
       printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  spacetop-v0.1.0-aarch64-apple-darwin.tar.gz\n'
       printf 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  spacetop-v0.1.0-x86_64-unknown-linux-gnu.tar.gz\n'
@@ -247,6 +289,28 @@ case "$url" in
   *)
     exit 22
     ;;
+esac
+"#,
+        );
+    }
+
+    fn fake_curl_latest_failure(&self) {
+        self.write_executable(
+            "curl",
+            r#"#!/bin/sh
+url=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) shift 2 ;;
+    -w) shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+printf '%s\n' "$url" >> "$FAKE_LOGS_DIR/curl.log"
+case "$url" in
+  */releases/latest) exit 22 ;;
+  *) exit 1 ;;
 esac
 "#,
         );
@@ -409,6 +473,18 @@ fn assert_log_contains(harness: &InstallerHarness, name: &str, expected: &str) {
 fn assert_log_absent(harness: &InstallerHarness, name: &str) {
     let path = harness.log_path(name);
     assert!(!path.exists(), "log should not exist: {}", path.display());
+}
+
+fn assert_log_absent_contains(harness: &InstallerHarness, name: &str, unexpected: &str) {
+    let path = harness.log_path(name);
+    let log = fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!("failed to read log {}: {error}", path.display());
+    });
+    assert!(
+        !log.contains(unexpected),
+        "log {} should not contain {unexpected:?}, got:\n{log}",
+        path.display()
+    );
 }
 
 fn assert_temp_cleaned(harness: &InstallerHarness) {

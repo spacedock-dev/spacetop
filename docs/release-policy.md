@@ -49,7 +49,8 @@ Linux.
 
 The README curl installer is the documented user install path for released
 binaries. It depends on those two archive assets and `SHA256SUMS` retaining the
-filenames above.
+filenames above. The installer resolves the latest release tag first, then
+downloads assets from the canonical `/releases/download/<tag>/` URLs.
 
 ## Human Release Flow
 

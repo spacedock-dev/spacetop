@@ -285,3 +285,23 @@ Verified commit `4a90126` for the curl-based release installer. The installer,
 README, release policy, release workflow contract, and mocked shell integration
 tests satisfy AC-1 through AC-4, and the focused test, full test, format check,
 and lint gates all pass in the assigned worktree.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Replace the invalid `/releases/latest/download` release asset base.
+  `install.sh` now resolves the latest release tag through `curl` and downloads
+  `SHA256SUMS` plus archives from `/releases/download/${tag}/`.
+- DONE: Pin canonical tag-scoped download behavior in deterministic installer tests.
+  `cargo test -p spacetop --test install_script` passed with 9/9 tests,
+  including latest-tag resolution, canonical asset URLs, and failure before
+  asset downloads when the tag cannot be resolved.
+- DONE: Update release/install documentation where needed and verify the branch.
+  `docs/release-policy.md` now records the tag-first URL contract; `cargo fmt`,
+  `cargo test`, and `make lint` all exited 0.
+
+### Summary
+
+Patched the post-publication feedback by removing the broken
+`/releases/latest/download` dependency from the installer path. The installer
+keeps the same supported asset names and checksum behavior, but it now resolves
+the latest tag first and uses canonical GitHub release download URLs.
