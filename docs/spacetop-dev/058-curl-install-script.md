@@ -13,7 +13,7 @@ verdict:
 score: 0.82
 worktree: .worktrees/codex-058-curl-install-script
 issue:
-pr:
+pr: "#59"
 mod-block: merge:pr-merge
 ---
 
