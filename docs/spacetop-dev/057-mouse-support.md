@@ -14,6 +14,7 @@ score: 0.7
 worktree: .worktrees/spacedock-ensign-057-mouse-support
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Add mouse interaction to the Spacetop TUI so the captain can inspect Spacedock
