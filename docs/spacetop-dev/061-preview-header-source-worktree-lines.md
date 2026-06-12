@@ -1,7 +1,7 @@
 ---
 id: "061"
 title: Preview header gives source and worktree separate lines
-status: implement
+status: verify
 source: captain request 2026-06-12
 kind: bugfix
 risk: low
