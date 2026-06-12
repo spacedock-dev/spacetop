@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#59"
 mod-block:
+archived: 2026-06-12T10:58:20Z
 ---
 
 New users should be able to copy one install command from the GitHub repository
