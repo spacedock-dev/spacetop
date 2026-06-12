@@ -2,6 +2,8 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use ratatui::layout::Rect;
+
 use spacetop_core::config::{DefaultScope, DefaultSort, SpacetopConfig};
 use spacetop_core::discovery::resolve_scan_root;
 use spacetop_core::domain::{Entity, EntityParseError, WorkflowSnapshot};
@@ -28,6 +30,23 @@ pub enum ViewScope {
     Active,
     Archived,
 }
+
+/// Where the preview pane sits relative to the entity list. Owned by the
+/// app layer (not ui) so mouse hit-testing and the per-placement split
+/// ratio can reason about it without a terminal backend; `ui::layout`
+/// decides which placement applies from the area's aspect ratio.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewPlacement {
+    Left,
+    Bottom,
+}
+
+/// Bounds for the user-draggable list/preview split ratio (percent of the
+/// content area given to the list pane). Keeps both panes usable; the
+/// geometric minimums in `ui::layout::split_content` clamp further on
+/// small terminals.
+pub(crate) const SPLIT_PERCENT_MIN: u16 = 10;
+pub(crate) const SPLIT_PERCENT_MAX: u16 = 90;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SortMode {
@@ -92,6 +111,32 @@ pub struct OverviewState {
     pub task_page_size: Cell<usize>,
     pub sort_mode: SortMode,
     pub sync_status: Option<SyncStatus>,
+    /// Percent of the content area given to the list pane in Left
+    /// placement (preview to the right). One ratio per placement so the
+    /// session-held drag result survives aspect-ratio flips; defaults
+    /// preserve the historical fixed 50/50 split.
+    pub split_percent_left: u16,
+    /// List-pane percent in Bottom placement (preview below). Default
+    /// preserves the historical fixed 30/70 split.
+    pub split_percent_bottom: u16,
+    /// True while a left-button divider drag is in progress (mouse down on
+    /// the divider band, before the matching button-up).
+    pub divider_drag: bool,
+    /// Render-fact: the content area (list + preview) drawn last frame.
+    /// Written by the render pass (interior mutability, like
+    /// `max_preview_scroll`); read by mouse hit-testing. The event loop
+    /// draws before it polls input, so these are populated before any
+    /// mouse event is read.
+    pub content_rect: Cell<Rect>,
+    /// Render-fact: the list rows area (after the 1-row section header).
+    pub list_rows_rect: Cell<Rect>,
+    /// Render-fact: first visible list index, from `ListState::offset()`
+    /// after the stateful render.
+    pub list_offset: Cell<usize>,
+    /// Render-fact: the preview pane area (including its divider border).
+    /// Reset to `Rect::default()` when the preview is closed so wheel
+    /// events never hit a stale rect.
+    pub preview_rect: Cell<Rect>,
 }
 
 /// Derive a stable slug from a work-item path. Prefer the file stem; when the
@@ -153,6 +198,13 @@ impl OverviewState {
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
             sync_status: None,
+            split_percent_left: 50,
+            split_percent_bottom: 30,
+            divider_drag: false,
+            content_rect: Cell::new(Rect::default()),
+            list_rows_rect: Cell::new(Rect::default()),
+            list_offset: Cell::new(0),
+            preview_rect: Cell::new(Rect::default()),
         }
     }
 
@@ -206,6 +258,13 @@ impl OverviewState {
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
             sync_status: None,
+            split_percent_left: 50,
+            split_percent_bottom: 30,
+            divider_drag: false,
+            content_rect: Cell::new(Rect::default()),
+            list_rows_rect: Cell::new(Rect::default()),
+            list_offset: Cell::new(0),
+            preview_rect: Cell::new(Rect::default()),
         }
     }
 
@@ -622,6 +681,51 @@ impl OverviewState {
 
     pub fn preview_open(&self) -> bool {
         self.preview_open
+    }
+
+    /// List-pane percent of the content area for the given placement.
+    pub fn split_percent(&self, placement: PreviewPlacement) -> u16 {
+        match placement {
+            PreviewPlacement::Left => self.split_percent_left,
+            PreviewPlacement::Bottom => self.split_percent_bottom,
+        }
+    }
+
+    /// Set the list-pane percent for the given placement, clamped to
+    /// [`SPLIT_PERCENT_MIN`]..=[`SPLIT_PERCENT_MAX`]. The ratio holds for
+    /// the rest of the session (per tab; no persistence).
+    pub(crate) fn set_split_percent(&mut self, placement: PreviewPlacement, percent: u16) {
+        let clamped = percent.clamp(SPLIT_PERCENT_MIN, SPLIT_PERCENT_MAX);
+        match placement {
+            PreviewPlacement::Left => self.split_percent_left = clamped,
+            PreviewPlacement::Bottom => self.split_percent_bottom = clamped,
+        }
+    }
+
+    /// Open the preview if it is closed (idempotent, unlike
+    /// [`Self::toggle_preview`]). Mouse-click convention: select + open in
+    /// one action, without closing a preview that is already open.
+    pub(crate) fn open_preview(&mut self) {
+        if !self.preview_open {
+            self.preview_open = true;
+            self.reset_preview_scroll();
+        }
+    }
+
+    /// Select the row at `index` (mouse click). Reuses the
+    /// `set_scope_index` reset semantics, so moving to a different row
+    /// resets the preview scroll exactly like keyboard navigation.
+    pub(crate) fn select_row(&mut self, index: usize) {
+        if index < self.row_count() {
+            self.set_scope_index(index);
+        }
+    }
+
+    /// Clamped wheel scroll of the preview body, `delta` rows (positive
+    /// scrolls down). Thin wrapper keeping `scroll_preview_vertical` the
+    /// single home for the clamp invariant.
+    pub(crate) fn wheel_scroll_preview(&mut self, delta: isize) {
+        self.scroll_preview_vertical(delta);
     }
 
     pub fn toggle_preview(&mut self) {

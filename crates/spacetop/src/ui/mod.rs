@@ -29,7 +29,7 @@ use spacetop_core::config::SpacetopConfig;
 
 use crate::app::{App, AppMode, OverviewSession, ResolvedKeymap};
 use graph::render_stage_graph;
-use layout::{picker_centered, preview_placement, PreviewPlacement};
+use layout::{picker_centered, preview_placement, split_content};
 
 #[cfg(test)]
 pub(crate) use list::phase_col;
@@ -178,26 +178,20 @@ fn render_overview(
     header::render_header_bar(frame, header_area, state);
     render_stage_graph(frame, graph_area, state);
 
+    // Record the geometry the widgets are drawn with as render-facts on
+    // app state (Cell interior mutability, same precedent as
+    // `max_preview_scroll`). Mouse hit-testing reads only these, so click
+    // coordinates cannot drift from drawn rows by construction.
+    state.content_rect.set(content_area);
     if state.preview_open() {
-        match preview_placement(dashboard_area) {
-            PreviewPlacement::Left => {
-                let [list_area, preview_area] = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                    .areas(content_area);
-                list::render_task_list(frame, list_area, config, state);
-                preview::render_preview(frame, preview_area, state, PreviewPlacement::Left);
-            }
-            PreviewPlacement::Bottom => {
-                let [list_area, preview_area] = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-                    .areas(content_area);
-                list::render_task_list(frame, list_area, config, state);
-                preview::render_preview(frame, preview_area, state, PreviewPlacement::Bottom);
-            }
-        }
+        let placement = preview_placement(dashboard_area);
+        let (list_area, preview_area) =
+            split_content(content_area, placement, state.split_percent(placement));
+        state.preview_rect.set(preview_area);
+        list::render_task_list(frame, list_area, config, state);
+        preview::render_preview(frame, preview_area, state, placement);
     } else {
+        state.preview_rect.set(Rect::default());
         list::render_task_list(frame, content_area, config, state);
     }
 

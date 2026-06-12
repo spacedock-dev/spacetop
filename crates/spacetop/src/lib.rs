@@ -12,7 +12,7 @@ use anyhow::{anyhow, Context};
 use app::{App, AppMode, HistoryWorkerResult, SyncStatus};
 use cli::Cli;
 use crossterm::{
-    event::{self, Event},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -174,6 +174,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
 
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen).context("failed to enter alternate screen")?;
+    execute!(stdout, EnableMouseCapture).context("failed to enable mouse capture")?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).context("failed to initialize terminal")?;
 
@@ -220,8 +221,10 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
         // 2. Short crossterm poll.
         let prior_mode_was_picker = matches!(app.mode(), AppMode::Picker(_));
         if event::poll(Duration::from_millis(100)).context("failed to poll terminal events")? {
-            if let Event::Key(key) = event::read().context("failed to read terminal event")? {
-                app.handle_key(key);
+            match event::read().context("failed to read terminal event")? {
+                Event::Key(key) => app.handle_key(key),
+                Event::Mouse(mouse) => app.handle_mouse(mouse),
+                _ => {}
             }
         }
 
@@ -431,19 +434,22 @@ struct TerminalRestore;
 
 impl Drop for TerminalRestore {
     fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let mut stdout = io::stdout();
+        restore_terminal(&mut CrosstermTerminalControl(&mut stdout));
     }
 }
 
-/// Seam for the terminal lifecycle operations used by suspend/resume. The
-/// production impl ([`CrosstermTerminalControl`]) shells out to crossterm;
-/// tests record an in-memory call sequence to assert ordering (AC-2).
+/// Seam for the terminal lifecycle operations used by suspend/resume and the
+/// exit-path restore. The production impl ([`CrosstermTerminalControl`])
+/// shells out to crossterm; tests record an in-memory call sequence to
+/// assert ordering (AC-2 of task 044, AC-6 of task 057).
 trait TerminalControl {
     fn disable_raw_mode(&mut self) -> io::Result<()>;
     fn leave_alt(&mut self) -> io::Result<()>;
     fn enter_alt(&mut self) -> io::Result<()>;
     fn enable_raw_mode(&mut self) -> io::Result<()>;
+    fn enable_mouse_capture(&mut self) -> io::Result<()>;
+    fn disable_mouse_capture(&mut self) -> io::Result<()>;
 }
 
 struct CrosstermTerminalControl<'a>(&'a mut io::Stdout);
@@ -461,22 +467,43 @@ impl TerminalControl for CrosstermTerminalControl<'_> {
     fn enable_raw_mode(&mut self) -> io::Result<()> {
         enable_raw_mode()
     }
+    fn enable_mouse_capture(&mut self) -> io::Result<()> {
+        execute!(self.0, EnableMouseCapture)
+    }
+    fn disable_mouse_capture(&mut self) -> io::Result<()> {
+        execute!(self.0, DisableMouseCapture)
+    }
+}
+
+/// Best-effort terminal restore on every exit path (normal return, panic
+/// unwind, early `?`-return) via the [`TerminalRestore`] drop guard: disable
+/// raw mode, leave the alternate screen, and release mouse capture so no
+/// exit path leaves the user's terminal swallowing mouse input (AC-6).
+/// Each step is attempted even if an earlier one fails.
+fn restore_terminal<T: TerminalControl + ?Sized>(t: &mut T) {
+    let _ = t.disable_raw_mode();
+    let _ = t.leave_alt();
+    let _ = t.disable_mouse_capture();
 }
 
 /// Suspend the TUI by leaving raw mode and the alt screen, in that order, so
-/// the external editor inherits a normal cooked-mode primary screen.
+/// the external editor inherits a normal cooked-mode primary screen. Mouse
+/// capture is released last so the editor's terminal does not eat clicks.
 fn suspend_terminal<T: TerminalControl + ?Sized>(t: &mut T) -> io::Result<()> {
     t.disable_raw_mode()?;
     t.leave_alt()?;
+    t.disable_mouse_capture()?;
     Ok(())
 }
 
 /// Resume the TUI by re-entering the alt screen and re-enabling raw mode, in
-/// that order. The caller is expected to follow up with `terminal.clear()`
-/// so the next draw repaints the full buffer.
+/// that order, then re-enabling mouse capture. The caller is expected to
+/// follow up with `terminal.clear()` so the next draw repaints the full
+/// buffer.
 fn resume_terminal<T: TerminalControl + ?Sized>(t: &mut T) -> io::Result<()> {
     t.enter_alt()?;
     t.enable_raw_mode()?;
+    t.enable_mouse_capture()?;
     Ok(())
 }
 
@@ -776,11 +803,21 @@ mod tests {
             self.log.push("enable_raw_mode");
             Ok(())
         }
+        fn enable_mouse_capture(&mut self) -> io::Result<()> {
+            self.log.push("enable_mouse_capture");
+            Ok(())
+        }
+        fn disable_mouse_capture(&mut self) -> io::Result<()> {
+            self.log.push("disable_mouse_capture");
+            Ok(())
+        }
     }
 
-    /// AC-2: suspend leaves raw mode + alt screen (in that order), and
-    /// resume re-enters the alt screen + raw mode (in that order). Asserts
-    /// the call sequence on the [`TerminalControl`] seam.
+    /// AC-2 (task 044) + AC-6 (task 057): suspend leaves raw mode + alt
+    /// screen then releases mouse capture (so the external editor's
+    /// terminal does not eat clicks), and resume re-enters the alt screen,
+    /// re-enables raw mode, then re-enables mouse capture. Asserts the call
+    /// sequence on the [`TerminalControl`] seam.
     #[test]
     fn suspend_resume_call_sequence() {
         let mut term = MockTerminalControl::new();
@@ -791,9 +828,25 @@ mod tests {
             vec![
                 "disable_raw_mode",
                 "leave_alt",
+                "disable_mouse_capture",
                 "enter_alt",
                 "enable_raw_mode",
+                "enable_mouse_capture",
             ]
+        );
+    }
+
+    /// AC-6: the exit-path restore (run by the [`TerminalRestore`] drop
+    /// guard on normal exit, panic unwind, and early `?`-return) disables
+    /// raw mode, leaves the alt screen, and releases mouse capture, in that
+    /// order, so no exit path leaves the terminal swallowing mouse input.
+    #[test]
+    fn terminal_restore_sequence() {
+        let mut term = MockTerminalControl::new();
+        restore_terminal(&mut term);
+        assert_eq!(
+            term.log,
+            vec!["disable_raw_mode", "leave_alt", "disable_mouse_capture"]
         );
     }
 

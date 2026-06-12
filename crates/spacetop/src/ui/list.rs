@@ -72,6 +72,10 @@ pub(super) fn render_task_list(
             height: inner.height - 1,
         }
     } else {
+        // No rows drawn this frame: reset the hit-test facts so mouse
+        // events cannot target rows from a previous, larger layout.
+        state.list_rows_rect.set(Rect::default());
+        state.list_offset.set(0);
         return;
     };
 
@@ -89,6 +93,12 @@ pub(super) fn render_task_list(
         .highlight_symbol("")
         .highlight_style(Style::default().bg(crate::ui::color::selection_bg(config)));
     frame.render_stateful_widget(list, list_area, &mut list_state);
+
+    // Render-facts for mouse hit-testing: the rows area actually drawn and
+    // the scroll offset the List widget settled on (only observable after
+    // the stateful render). Same Cell pattern as `task_page_size` above.
+    state.list_rows_rect.set(list_area);
+    state.list_offset.set(list_state.offset());
 }
 
 fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListItem<'static>> {

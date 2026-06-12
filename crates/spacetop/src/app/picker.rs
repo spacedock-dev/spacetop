@@ -1,6 +1,8 @@
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
+use ratatui::layout::Rect;
+
 use spacetop_core::discovery::DiscoveredWorkflow;
 
 #[derive(Debug, Clone)]
@@ -15,6 +17,10 @@ pub struct PickerState {
     /// First visible index in the workflow list. Updated by the renderer to
     /// keep `selected_index` within `[scroll_offset, scroll_offset + viewport_height)`.
     pub scroll_offset: Cell<usize>,
+    /// Render-fact: the workflow list area drawn last frame (same Cell
+    /// pattern as `viewport_height`). Mouse hit-testing maps a click row
+    /// to `scroll_offset + (row - list_rect.y)`.
+    pub list_rect: Cell<Rect>,
 }
 
 impl PartialEq for PickerState {
@@ -37,6 +43,7 @@ impl PickerState {
             error: None,
             viewport_height: Cell::new(10),
             scroll_offset: Cell::new(0),
+            list_rect: Cell::new(Rect::default()),
         }
     }
 
