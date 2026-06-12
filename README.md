@@ -166,20 +166,18 @@ back at this command.
 
 ### Install Released Binary
 
-Download the archive for your platform from the GitHub Releases page:
-
-- macOS Apple Silicon: `spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz`
-- Linux x64: `spacetop-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`
-
-Verify the archive against `SHA256SUMS`, then unpack it and move `spacetop` into
-a directory on your `PATH`.
-
-Example:
+Install the latest released binary with one command:
 
 ```bash
-tar -xzf spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz
-install -m 755 spacetop-vX.Y.Z-aarch64-apple-darwin/spacetop ~/.cargo/bin/spacetop
-spacetop --version
+curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | sh
+```
+
+The installer supports macOS Apple Silicon and Linux x64, verifies the selected
+archive against the release `SHA256SUMS` file, and installs `spacetop` to
+`~/.cargo/bin` by default. Override the install directory with an absolute path:
+
+```bash
+curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | SPACETOP_INSTALL_DIR=/usr/local/bin sh
 ```
 
 ### Install Local Build

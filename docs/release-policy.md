@@ -43,9 +43,17 @@ The first supported binary assets are:
 - `spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz`
 - `spacetop-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`
 - `SHA256SUMS`
+- `install.sh`
 
 The macOS archive targets Apple Silicon. The Linux archive targets x64 GNU
 Linux.
+
+The README curl installer is the documented user install path for released
+binaries. The README downloads `install.sh` from the latest GitHub Release, not
+from a moving source branch. The installer depends on those two archive assets
+and `SHA256SUMS` retaining the filenames above. The installer resolves the
+latest release tag first, then downloads assets from the canonical
+`/releases/download/<tag>/` URLs.
 
 ## Human Release Flow
 

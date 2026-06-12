@@ -1,7 +1,7 @@
 ---
 id: "058"
 title: Add curl-based release installer
-status: implement
+status: verify
 source: captain request 2026-06-12
 kind: feature
 risk: medium
@@ -220,3 +220,115 @@ Added a concrete plan for a repo-root POSIX shell installer, README install
 surface, release-policy note, and deterministic shell-script test coverage. The
 plan keeps the current release asset contract intact and defers any workflow
 change unless implementation proves another asset invariant is required.
+
+## Stage Report: implement
+
+- DONE: Delivers a top-level installer and README copy-paste install command matching the current GitHub Release asset contract.
+  Commit `4a90126` adds executable `install.sh`, maps current macOS/Linux assets, and updates the README curl install command.
+- DONE: Adds deterministic tests for OS/arch selection, checksum verification, temp-dir cleanup, and temp install behavior without real network or system writes.
+  `cargo test -p spacetop --test install_script` passed with 8/8 tests using mocked shell commands and temporary install paths.
+- DONE: Updates release/install documentation as needed and records verification commands, including `make lint` for code/test changes.
+  Ran `cargo fmt`, `cargo test -p spacetop --test install_script`, `cargo test`, and `make lint`; all exited 0.
+
+### Summary
+
+Implemented the curl-based release installer without changing release asset
+names or release workflow packaging. The README now gives a one-command install
+path, release policy records the installer dependency on the existing archives
+and `SHA256SUMS`, and deterministic tests cover supported platforms, checksum
+paths, cleanup, and temporary install behavior.
+
+## Stage Report: verify
+
+- DONE: Independently verify all four acceptance criteria against the worktree
+  diff, release asset contract, implementation report, and fresh test output.
+  Evidence: AC-1 passes through `README.md` documenting the raw GitHub
+  `install.sh` pipe command, default `~/.cargo/bin`, and
+  `SPACETOP_INSTALL_DIR` override, with assertions in
+  `crates/spacetop/tests/install_script.rs`. AC-2 passes because `install.sh`
+  maps `Darwin:arm64|aarch64` to `aarch64-apple-darwin`, maps
+  `Linux:x86_64|amd64` to `x86_64-unknown-linux-gnu`, and rejects unsupported
+  pairs before network or install work; the focused tests cover both supported
+  targets and `Darwin x86_64` rejection. AC-3 passes because the script
+  downloads `SHA256SUMS`, derives the selected archive from that file, verifies
+  with `sha256sum -c` or `shasum -a 256 -c`, and exits before extraction or
+  install on checksum failure or missing checksum tooling; focused tests cover
+  success, mismatch, fallback, and missing-tool cases. AC-4 passes because the
+  script requires an absolute install dir, defaults through `HOME` to
+  `~/.cargo/bin`, writes only the script-owned temp dir plus the target binary
+  path, traps cleanup, and runs the installed `spacetop --version`; focused
+  tests assert temp cleanup, temp install placement, and version invocation.
+- DONE: Check README and release policy alignment with the existing release
+  workflow asset contract.
+  Evidence: `.github/workflows/release.yml` packages
+  `dist/spacetop-v${version}-${target}.tar.gz` for the target matrix and
+  generates `SHA256SUMS`; `docs/release-policy.md` keeps the supported assets
+  as `spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz`,
+  `spacetop-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`, and `SHA256SUMS`; the
+  installer consumes exactly that contract through
+  `https://github.com/${SPACETOP_REPO:-spacedock-dev/spacetop}/releases/latest/download`.
+- DONE: Run the required verification gates in the assigned worktree.
+  Evidence: `cargo fmt --check` exited 0; `cargo test -p spacetop --test
+  install_script` exited 0 with 8 passed; `cargo test` exited 0 across the
+  workspace suites, including the installer suite and existing read-only/git
+  guardrails, with only the 3 expected watcher real-backend tests ignored;
+  `make lint` exited 0 under `cargo clippy --all-targets --all-features -- -D
+  warnings`.
+- DONE: Return a clear verification verdict and route feedback only if defects
+  remain.
+  Evidence: VERDICT: PASSED. No blocking defects or missing evidence found, so
+  no feedback is routed back to `implement`.
+
+### Summary
+
+Verified commit `4a90126` for the curl-based release installer. The installer,
+README, release policy, release workflow contract, and mocked shell integration
+tests satisfy AC-1 through AC-4, and the focused test, full test, format check,
+and lint gates all pass in the assigned worktree.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Replace the invalid `/releases/latest/download` release asset base.
+  `install.sh` now resolves the latest release tag through `curl` and downloads
+  `SHA256SUMS` plus archives from `/releases/download/${tag}/`.
+- DONE: Pin canonical tag-scoped download behavior in deterministic installer tests.
+  `cargo test -p spacetop --test install_script` passed with 9/9 tests,
+  including latest-tag resolution, canonical asset URLs, and failure before
+  asset downloads when the tag cannot be resolved.
+- DONE: Update release/install documentation where needed and verify the branch.
+  `docs/release-policy.md` now records the tag-first URL contract; `cargo fmt`,
+  `cargo test`, and `make lint` all exited 0.
+
+### Summary
+
+Patched the post-publication feedback by removing the broken
+`/releases/latest/download` dependency from the installer path. The installer
+keeps the same supported asset names and checksum behavior, but it now resolves
+the latest tag first and uses canonical GitHub release download URLs.
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Verifies the installer no longer uses `/releases/latest/download` and instead resolves a tag before downloading from `/releases/download/${tag}`.
+  Evidence: commit `ea7da47` resolves `/releases/latest` to a tag with `curl -fsSIL -w '%{url_effective}'`, builds `https://github.com/${repo}/releases/download/${tag}`, and `install.sh` contains no `/releases/latest/download` asset base.
+- DONE: Confirms deterministic tests cover tag resolution success, tag resolution failure, canonical asset URLs, and the existing checksum/install safety behavior.
+  Evidence: `cargo test -p spacetop --test install_script` passed 9/9, including latest-tag success, failure before asset downloads, canonical `v0.1.0` asset URLs, checksum mismatch, checksum-tool fallback, missing checksum tool, supported targets, unsupported target, temp cleanup, and version verification.
+- DONE: Runs or confirms the required gates after commit `ea7da47`, then returns PASSED or REJECTED with concrete feedback.
+  Evidence: VERDICT: PASSED. `cargo fmt --check`, `cargo test -p spacetop --test install_script`, `cargo test`, `make lint`, and `git diff --check` all exited 0 after `ea7da47`.
+
+### Summary
+
+Fresh verification passed for the post-publication release URL fix. No blocking
+defects or missing test evidence remain, so no feedback is routed back to
+implementation.
+
+## PR Review Follow-Up
+
+- DONE: Addressed Copilot's README installer provenance comment by publishing
+  `install.sh` as a GitHub Release asset and changing README install commands to
+  fetch the release-hosted installer instead of the moving `main` branch.
+- DONE: Addressed Copilot's `SHA256SUMS` filename robustness comment by
+  rejecting selected archive filenames that contain path separators or `..`
+  before constructing archive paths or downloading the archive.
+- Evidence: `cargo fmt`, `cargo test -p spacetop --test install_script`,
+  `cargo test -p spacetop --test release_workflow`, `cargo test`, and
+  `make lint` all exited 0 after the review fixes.

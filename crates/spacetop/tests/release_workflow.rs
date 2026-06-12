@@ -62,6 +62,20 @@ fn release_workflow_is_driven_by_published_github_release() {
     );
 
     let upload_job = field(field(&workflow, "jobs"), "upload");
+    let upload_checkout = step_named(upload_job, "Checkout");
+    assert_eq!(
+        string_field(field(upload_checkout, "with"), "ref"),
+        "${{ needs.validate.outputs.tag }}",
+        "upload job must checkout the validated release tag before publishing install.sh"
+    );
+
+    let stage_installer_step = step_named(upload_job, "Stage installer asset");
+    let stage_installer_script = string_field(stage_installer_step, "run");
+    assert!(
+        stage_installer_script.contains("cp install.sh dist/install.sh"),
+        "release workflow must stage install.sh as a GitHub Release asset"
+    );
+
     let upload_step = step_named(upload_job, "Upload assets to existing release");
     let upload_script = string_field(upload_step, "run");
     assert!(
@@ -79,6 +93,10 @@ fn release_workflow_is_driven_by_published_github_release() {
     assert!(
         upload_script.contains("gh release upload \"${tag}\" --repo \"${repo}\""),
         "release workflow must upload assets to the existing GitHub Release"
+    );
+    assert!(
+        upload_script.contains("dist/install.sh"),
+        "release workflow must upload install.sh as a release asset"
     );
     assert!(
         !upload_script.contains("gh release create"),
