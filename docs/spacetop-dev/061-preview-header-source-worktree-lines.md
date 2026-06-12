@@ -14,7 +14,7 @@ score: 0.66
 worktree: .worktrees/spacedock-ensign-061-preview-header-source-worktree-lines
 issue:
 pr: "#62"
-mod-block: merge:pr-merge
+mod-block:
 ---
 
 The preview page header currently renders fields such as `source: ...` and
