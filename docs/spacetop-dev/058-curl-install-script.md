@@ -1,7 +1,7 @@
 ---
 id: "058"
 title: Add curl-based release installer
-status: implement
+status: verify
 source: captain request 2026-06-12
 kind: feature
 risk: medium
