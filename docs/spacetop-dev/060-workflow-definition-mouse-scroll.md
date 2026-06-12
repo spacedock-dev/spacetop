@@ -14,7 +14,7 @@ score: 0.62
 worktree: .worktrees/spacedock-ensign-060-workflow-definition-mouse-scroll
 issue:
 pr: "#61"
-mod-block: merge:pr-merge
+mod-block:
 ---
 
 The Workflow Definition page should support mouse scroll wheel input, matching
