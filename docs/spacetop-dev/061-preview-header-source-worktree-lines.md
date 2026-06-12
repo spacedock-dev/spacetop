@@ -1,17 +1,17 @@
 ---
 id: "061"
 title: Preview header gives source and worktree separate lines
-status: verify
+status: done
 source: captain request 2026-06-12
 kind: bugfix
 risk: low
 milestone: v1-maintenance
 proof: Ratatui preview rendering regression plus make lint
 started: 2026-06-12T12:53:54Z
-completed:
-verdict:
+completed: 2026-06-12T14:25:39Z
+verdict: PASSED
 score: 0.66
-worktree: .worktrees/spacedock-ensign-061-preview-header-source-worktree-lines
+worktree:
 issue:
 pr: "#62"
 mod-block:
