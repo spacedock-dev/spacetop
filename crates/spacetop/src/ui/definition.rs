@@ -453,6 +453,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn definition_scroll_offset_moves_prose_body() {
+        let mut prose = HashMap::new();
+        let lines = (0..=30)
+            .map(|index| format!("line-{index:02}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        prose.insert("plan".to_string(), lines);
+        let definition = five_stage_fixture(PathBuf::from("/workflow-fixture"), prose);
+
+        let mut top_terminal = Terminal::new(TestBackend::new(120, 18)).expect("terminal");
+        top_terminal
+            .draw(|frame| render_in(frame, frame.area(), &definition, 0))
+            .expect("render");
+        let top_rendered = buffer_text(top_terminal.backend().buffer());
+        assert!(
+            top_rendered.contains("line-00"),
+            "top render should show early prose; rendered=\n{top_rendered}"
+        );
+
+        let mut scrolled_terminal = Terminal::new(TestBackend::new(120, 18)).expect("terminal");
+        scrolled_terminal
+            .draw(|frame| render_in(frame, frame.area(), &definition, 8))
+            .expect("render");
+        let scrolled_rendered = buffer_text(scrolled_terminal.backend().buffer());
+        assert!(
+            !scrolled_rendered.contains("line-00"),
+            "scrolled render should move early prose out of view; rendered=\n{scrolled_rendered}"
+        );
+        assert!(
+            scrolled_rendered.contains("line-10"),
+            "scrolled render should show later prose; rendered=\n{scrolled_rendered}"
+        );
+    }
+
     /// AC-3: a stage with no prose entry renders the dim
     /// "(no description in README)" placeholder.
     #[test]

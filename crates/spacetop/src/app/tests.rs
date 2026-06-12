@@ -1,5 +1,5 @@
 use super::{App, AppMode, HistoryWorkerResult, ViewScope};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -1780,6 +1780,15 @@ fn pressing_s_does_not_cycle_sort_when_preview_open() {
 
 // --- Definition view tests (task 041) ---
 
+fn mouse(kind: MouseEventKind) -> MouseEvent {
+    MouseEvent {
+        kind,
+        column: 0,
+        row: 0,
+        modifiers: KeyModifiers::NONE,
+    }
+}
+
 /// AC-1: `D` from Overview transitions to `AppMode::Definition` with
 /// the underlying session preserved verbatim.
 #[test]
@@ -1869,6 +1878,65 @@ fn scroll_keys_advance_definition_scroll() {
     assert_eq!(app.definition_scroll(), Some(0));
     app.handle_key(key(KeyCode::End));
     assert_eq!(app.definition_scroll(), Some(usize::MAX));
+}
+
+#[test]
+fn definition_mouse_wheel_scrolls_definition_view() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+
+    app.handle_key(key(KeyCode::Char('D')));
+    assert_eq!(app.definition_scroll(), Some(0));
+
+    app.handle_mouse(mouse(MouseEventKind::ScrollDown));
+    assert_eq!(app.definition_scroll(), Some(3));
+
+    app.handle_mouse(mouse(MouseEventKind::ScrollUp));
+    assert_eq!(app.definition_scroll(), Some(0));
+}
+
+#[test]
+fn definition_mouse_wheel_is_ignored_while_help_open() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+
+    app.handle_key(key(KeyCode::Char('D')));
+    app.handle_key(key(KeyCode::Char('?')));
+
+    app.handle_mouse(mouse(MouseEventKind::ScrollDown));
+
+    assert!(app.help_open());
+    assert_eq!(app.definition_scroll(), Some(0));
+}
+
+#[test]
+fn definition_mouse_wheel_does_not_touch_underlying_overview_state() {
+    use super::SortMode;
+
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(3));
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Char('s')));
+
+    let probe_index = app.selected_index();
+    let probe_scope = app.view_scope();
+    let probe_sort = app.as_overview().unwrap().sort_mode();
+    let probe_preview_scroll = app.as_overview().unwrap().preview_scroll();
+    assert_eq!(probe_index, 1);
+    assert_eq!(probe_sort, SortMode::Status);
+
+    app.handle_key(key(KeyCode::Char('D')));
+    app.handle_mouse(mouse(MouseEventKind::ScrollDown));
+    app.handle_mouse(mouse(MouseEventKind::ScrollDown));
+    assert_eq!(app.definition_scroll(), Some(6));
+
+    app.handle_key(key(KeyCode::Esc));
+
+    assert!(matches!(app.mode(), AppMode::Overview(_)));
+    assert_eq!(app.selected_index(), probe_index);
+    assert_eq!(app.view_scope(), probe_scope);
+    assert_eq!(app.as_overview().unwrap().sort_mode(), probe_sort);
+    assert_eq!(
+        app.as_overview().unwrap().preview_scroll(),
+        probe_preview_scroll
+    );
 }
 
 /// AC-5: in a multi-workflow session, opening Definition on the

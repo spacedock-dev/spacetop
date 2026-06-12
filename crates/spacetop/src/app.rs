@@ -908,15 +908,27 @@ impl App {
     }
 
     /// Mouse-event peer to [`App::handle_key`]. Inert while the help popup
-    /// is open; non-overview, non-picker modes (Definition, Search,
-    /// Timeline, Metrics, Activity, Relations) are deliberately inert per
-    /// the captain-selected scope of task 057.
+    /// is open. Overview and picker modes keep their own hit-testing paths;
+    /// the full-pane Definition view handles only wheel scrolling, while
+    /// Search, Timeline, Metrics, Activity, and Relations remain inert.
     pub fn handle_mouse(&mut self, mouse: MouseEvent) {
         if self.help_open {
             return;
         }
         let action = match &mut self.mode {
             AppMode::Overview(session) => mouse::handle_overview_mouse(session, mouse),
+            AppMode::Definition { scroll, .. } => {
+                match mouse.kind {
+                    crossterm::event::MouseEventKind::ScrollDown => {
+                        *scroll = scroll.saturating_add(mouse::WHEEL_SCROLL_ROWS as usize);
+                    }
+                    crossterm::event::MouseEventKind::ScrollUp => {
+                        *scroll = scroll.saturating_sub(mouse::WHEEL_SCROLL_ROWS as usize);
+                    }
+                    _ => {}
+                }
+                return;
+            }
             AppMode::Picker(_) | AppMode::PickerOverlay { .. } => {
                 self.handle_picker_mouse(mouse);
                 return;
