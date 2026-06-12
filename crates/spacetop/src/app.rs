@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 
 use spacetop_core::config::{ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery::DiscoveredWorkflow;
@@ -885,6 +885,12 @@ impl App {
             },
         }
     }
+
+    /// Mouse-event peer to [`App::handle_key`]. Inert while the help popup
+    /// is open; non-overview, non-picker modes (Definition, Search,
+    /// Timeline, Metrics, Activity, Relations) are deliberately inert per
+    /// the captain-selected scope of task 057.
+    pub fn handle_mouse(&mut self, _mouse: MouseEvent) {}
 
     fn consume_help_key(&mut self, key: KeyEvent) -> bool {
         if !self.help_open {
