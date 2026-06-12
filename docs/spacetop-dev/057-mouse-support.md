@@ -1,7 +1,7 @@
 ---
 id: "057"
 title: Mouse support for Spacetop panels
-status: implement
+status: verify
 source: captain request 2026-06-12
 kind: feature
 risk: medium
