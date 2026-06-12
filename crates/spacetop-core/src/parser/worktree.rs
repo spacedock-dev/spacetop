@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -103,7 +104,7 @@ fn collect_worktree_item_paths(workflow_dir: &Path) -> Vec<std::path::PathBuf> {
 /// Derive the slug for a workflow entity path.
 /// For folder-form entities (`{slug}/index.md`), uses the parent directory name.
 /// For flat entities (`{slug}.md`), uses the file stem.
-fn slug_of_path(path: &Path) -> Option<std::ffi::OsString> {
+pub(crate) fn slug_of_path(path: &Path) -> Option<OsString> {
     let stem = path.file_stem()?;
     if stem == "index" {
         path.parent()
@@ -120,6 +121,7 @@ fn slug_of_path(path: &Path) -> Option<std::ffi::OsString> {
 pub(crate) fn merge_worktree_items(
     main_items: Vec<Entity>,
     worktree_items: Vec<Entity>,
+    archived_slugs: &HashSet<OsString>,
 ) -> Vec<Entity> {
     if worktree_items.is_empty() {
         return main_items;
@@ -137,6 +139,9 @@ pub(crate) fn merge_worktree_items(
             continue;
         };
         let Some(main_item) = index.get(&slug) else {
+            if archived_slugs.contains(&slug) {
+                continue;
+            }
             // Worktree-only item: tag the row so the UI can mark it.
             let wt_path = wt_item.path.clone();
             let mut tagged = wt_item;
