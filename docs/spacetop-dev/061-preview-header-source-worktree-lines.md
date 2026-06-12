@@ -185,3 +185,16 @@ and preserves the docs/read-only boundaries for the later implementation stage.
 ### Summary
 
 Implemented the preview header bugfix for bottom placement while preserving the existing left-placement layout and worktree basename behavior. The change is scoped to preview rendering and Ratatui UI regressions, with no workflow markdown write behavior or product documentation changes.
+
+## Stage Report: verify
+
+- DONE: Independently verify AC-1 and AC-2: preview `source:` and `worktree:` render on dedicated header lines, including empty/default worktree display.
+  APPROVED: commit `691460b` moves active and archived bottom-preview `source:` and `worktree:` spans to separate header lines; `cargo test -p spacetop bottom_preview_renders_source_and_worktree_on_dedicated_lines`, `preview_renders_em_dash_for_empty_worktree`, and `archived_preview_includes_worktree_segment` passed.
+- DONE: Independently verify AC-3 and AC-4: long metadata does not overlap primary preview content and non-preview screens/layouts are not unintentionally changed.
+  APPROVED: `cargo test -p spacetop preview_header_long_source_and_worktree_do_not_overlap_body` passed, and the implementation diff is scoped to `crates/spacetop/src/ui/preview.rs` plus UI tests; full `cargo test -p spacetop` covered surrounding UI surfaces.
+- DONE: Rerun targeted UI tests, broader applicable tests, and `make lint`; return an explicit APPROVED or REJECTED gate verdict with cited evidence and docs-impact judgment.
+  APPROVED: targeted preview tests passed, `cargo test -p spacetop` passed with 357 lib tests plus package integration/doc tests, and `make lint` passed; no docs update is needed because labels, keybindings, commands, and workflow semantics did not change.
+
+### Summary
+
+APPROVED. The preview header fix satisfies AC-1 through AC-4 with Ratatui rendering coverage and the required lint gate, while preserving the read-only and non-preview scope boundaries.
