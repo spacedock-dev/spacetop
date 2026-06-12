@@ -192,3 +192,16 @@ right implementation vehicle for the reported stale archived worktree copies.
 The closure plan avoids duplicate production work, preserves read-only behavior,
 and names the only non-current edge case: suppressing by parsed archived ID when
 the archive filename slug no longer matches the stale worktree file.
+
+## Stage Report: implement
+
+- DONE: Confirm task 059's merged main behavior satisfies AC-1 through AC-6 for slug-preserving archived entities, and avoid duplicate production code unless current main no longer satisfies the task.
+  Confirmed PR #60 is merged at `1fc9261`, and current parser/app behavior covers the slug-preserving archive move; no production code was changed for 063.
+- DONE: Add or cite focused lowest-layer proof for the exact 063 shape: root active task with a worktree body overlay plus stale archived-task copies that must not reappear active.
+  Added parser regression `active_worktree_overlay_ignores_stale_archived_siblings`, covering root active `0x0c`, root archived `0x0a`/`0x0b`, and stale worktree copies of all three.
+- DONE: Run focused parser/app tests plus `make lint`, and record the read-only and docs-impact decision in the implement stage report.
+  Ran `cargo test -p spacetop-core active_worktree_overlay_ignores_stale_archived_siblings`, `cargo test -p spacetop-core worktree`, `cargo test -p spacetop archive_move_reload_removes_stale_worktree_copy_from_active_scope`, `cargo test`, and `make lint`; all passed.
+
+### Summary
+
+Closed 063 as a proof-focused follow-up to 059 with one test-only parser regression for the exact reported shape. Read-only safety is preserved: no stale worktree files are deleted, no workflow markdown write path was added, and the full `cargo test` run included `no_write_git_calls`; no README or policy update was needed because worktree-only semantics are unchanged.

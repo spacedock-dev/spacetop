@@ -878,6 +878,115 @@ fn archived_main_slug_suppresses_stale_worktree_copy() {
 }
 
 #[test]
+fn active_worktree_overlay_ignores_stale_archived_siblings() {
+    let root = unique_temp_dir("archived-siblings-stale-wt");
+    let wf = root.join("docs/wf");
+    write_minimal_workflow(&wf, None, None);
+    write_markdown(
+        &wf.join("0x0c.md"),
+        r#"---
+id: "0x0c"
+title: Root Active
+status: design
+source: captain bug report
+worktree: .worktrees/0x0c-xxxx
+issue: "123"
+pr: "456"
+---
+
+root active body
+"#,
+    );
+    write_markdown(
+        &wf.join("_archive").join("0x0a.md"),
+        r#"---
+id: "0x0a"
+title: Archived A
+status: done
+---
+
+root archived A body
+"#,
+    );
+    write_markdown(
+        &wf.join("_archive").join("0x0b.md"),
+        r#"---
+id: "0x0b"
+title: Archived B
+status: done
+---
+
+root archived B body
+"#,
+    );
+    let wt = root.join(".worktrees/0x0c-xxxx/docs/wf");
+    write_minimal_workflow(&wt, None, None);
+    write_markdown(
+        &wt.join("0x0a.md"),
+        &entity_md_with_status("0x0a", "Stale A", "design", "stale A body"),
+    );
+    write_markdown(
+        &wt.join("0x0b.md"),
+        &entity_md_with_status("0x0b", "Stale B", "design", "stale B body"),
+    );
+    write_markdown(
+        &wt.join("0x0c.md"),
+        &entity_md_with_status("0x0c", "Worktree Active", "done", "worktree active body"),
+    );
+
+    let snapshot = load_workflow_dir(&wf, &root).expect("load active snapshot");
+
+    assert_eq!(
+        snapshot
+            .items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["0x0c"],
+        "stale archived siblings must not reappear in active scope"
+    );
+    let active = &snapshot.items[0];
+    assert_eq!(active.title, "Root Active");
+    assert_eq!(active.status, "design");
+    assert_eq!(active.source.as_deref(), Some("captain bug report"));
+    assert_eq!(active.worktree.as_deref(), Some(".worktrees/0x0c-xxxx"));
+    assert_eq!(active.issue.as_deref(), Some("123"));
+    assert_eq!(active.pr.as_deref(), Some("456"));
+    assert!(
+        active.body.contains("worktree active body"),
+        "active body should come from worktree copy: {:?}",
+        active.body
+    );
+    assert!(
+        active
+            .main_body
+            .as_deref()
+            .is_some_and(|body| body.contains("root active body")),
+        "main_body should preserve root body for diffing: {:?}",
+        active.main_body
+    );
+    assert!(
+        active
+            .worktree_source
+            .as_ref()
+            .is_some_and(|path| path.starts_with(&wt)),
+        "active worktree overlay should record source path: {:?}",
+        active.worktree_source
+    );
+
+    let allowed = stage_names(&wf);
+    let archived = load_archived_items(&wf, &allowed, None).expect("load archive");
+    assert_eq!(
+        archived
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["0x0a", "0x0b"],
+        "archived scope should stay anchored to root archive files"
+    );
+}
+
+#[test]
 fn malformed_archived_slug_still_suppresses_stale_worktree_copy() {
     let root = unique_temp_dir("malformed-archived-stale-wt");
     let wf = root.join("docs/wf");
