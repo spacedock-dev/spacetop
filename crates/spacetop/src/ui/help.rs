@@ -70,6 +70,20 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
     if is_multi {
         lines.push(key_line("P", "pick workflow"));
     }
+    // Mouse block (task 057). The Shift+drag line is load-bearing: the app
+    // holds mouse capture for its lifetime and relies on the standard
+    // terminal convention (iTerm2 / Terminal.app / kitty / WezTerm) that
+    // Shift+left-drag bypasses capture for native selection/copy. The
+    // string is pinned by a chrome test — update both together.
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Mouse",
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+    lines.push(key_line("Click", "select row + open preview"));
+    lines.push(key_line("Wheel", "scroll panel under cursor"));
+    lines.push(key_line("Drag divider", "resize list/preview split"));
+    lines.push(key_line("Shift+drag", "native terminal text selection"));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "press ? or Esc to close",

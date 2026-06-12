@@ -103,6 +103,24 @@ When omitted, scope and sort follow the user config defaults. `export` requires
 `--json` and emits the workflow definition, active entities, and archived
 entities.
 
+## Mouse
+
+The TUI captures mouse input for its lifetime and releases it on every exit
+path (normal quit, panic, and while a file is open in `$EDITOR`), so the
+terminal never keeps swallowing clicks.
+
+- **Click** an entity row to select it and open the preview in one action.
+  In the workflow picker, clicking a row opens that workflow.
+- **Scroll wheel** scrolls the panel under the cursor: the preview body
+  when hovering the preview, the list selection when hovering the list.
+- **Drag the divider** between the list and the preview to resize the
+  split. Each placement (side-by-side or stacked) holds its own ratio for
+  the session.
+- **Shift+drag** selects text natively. While capture is on, terminals
+  follow the standard convention that Shift+left-drag bypasses mouse
+  capture (iTerm2, Terminal.app, kitty, WezTerm), so native selection and
+  copy keep working.
+
 ## Configuration
 
 Spacetop reads YAML config from `$XDG_CONFIG_HOME/spacetop/config.yaml`, falling

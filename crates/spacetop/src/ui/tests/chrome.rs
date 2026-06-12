@@ -29,7 +29,9 @@ fn help_popup_renders_keymap_in_overview_mode() {
     let mut app = App::load(root).expect("workflow should load");
     app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
 
-    let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+    // Tall enough for the full content-sized popup (incl. the task-057
+    // mouse block) so the trailing close hint is not clipped.
+    let mut terminal = Terminal::new(TestBackend::new(160, 40)).expect("terminal");
     terminal
         .draw(|frame| render(frame, &app))
         .expect("render should succeed");
@@ -94,6 +96,32 @@ fn help_popup_lists_p3_capability_view_keybinds() {
     assert!(rendered.contains("M              metrics view (preview closed)"));
     assert!(rendered.contains("A              activity feed (preview closed)"));
     assert!(rendered.contains("R              entity relations (preview closed)"));
+}
+
+/// AC-4 (task 057): the help popup documents the mouse vocabulary, and in
+/// particular pins the Shift+drag native-selection convention line — the
+/// app holds mouse capture for its lifetime, so this documented escape
+/// hatch is a stable user-facing string (update string and test together).
+#[test]
+fn help_popup_documents_mouse_and_shift_drag_convention() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
+    let mut app = App::load(root).expect("workflow should load");
+    app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+
+    let mut terminal = Terminal::new(TestBackend::new(160, 40)).expect("terminal");
+    terminal
+        .draw(|frame| render(frame, &app))
+        .expect("render should succeed");
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(rendered.contains("Mouse"), "help popup needs a Mouse block");
+    assert!(rendered.contains("Click          select row + open preview"));
+    assert!(rendered.contains("Wheel          scroll panel under cursor"));
+    assert!(rendered.contains("Drag divider   resize list/preview split"));
+    assert!(
+        rendered.contains("Shift+drag     native terminal text selection"),
+        "help popup must pin the Shift+drag convention line; rendered=\n{rendered}"
+    );
 }
 
 #[test]
