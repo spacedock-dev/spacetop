@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,6 +7,7 @@ use sha1::{Digest, Sha1};
 
 use crate::domain::{Entity, EntityParseError};
 
+use super::archive::archive_dir;
 use super::snapshot::entity_parse_error_from;
 use super::{is_markdown_path, is_readme_path, parse_work_item, ParseError};
 
@@ -121,7 +122,7 @@ pub(crate) fn slug_of_path(path: &Path) -> Option<OsString> {
 pub(crate) fn merge_worktree_items(
     main_items: Vec<Entity>,
     worktree_items: Vec<Entity>,
-    archived_slugs: &HashSet<OsString>,
+    workflow_dir: &Path,
 ) -> Vec<Entity> {
     if worktree_items.is_empty() {
         return main_items;
@@ -139,7 +140,7 @@ pub(crate) fn merge_worktree_items(
             continue;
         };
         let Some(main_item) = index.get(&slug) else {
-            if archived_slugs.contains(&slug) {
+            if archived_slug_exists(workflow_dir, &slug) {
                 continue;
             }
             // Worktree-only item: tag the row so the UI can mark it.
@@ -162,6 +163,17 @@ pub(crate) fn merge_worktree_items(
         a_slug.cmp(&b_slug).then_with(|| a.path.cmp(&b.path))
     });
     result
+}
+
+fn archived_slug_exists(workflow_dir: &Path, slug: &OsString) -> bool {
+    let archive_root = archive_dir(workflow_dir);
+    let mut flat_name = slug.clone();
+    flat_name.push(".md");
+    archive_root.join(Path::new(&flat_name)).is_file()
+        || archive_root
+            .join(Path::new(slug))
+            .join("index.md")
+            .is_file()
 }
 
 fn merged_worktree_item(main_item: &Entity, wt_item: Entity) -> Option<Entity> {
