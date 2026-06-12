@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#62"
 mod-block:
+archived: 2026-06-12T14:25:39Z
 ---
 
 The preview page header currently renders fields such as `source: ...` and
