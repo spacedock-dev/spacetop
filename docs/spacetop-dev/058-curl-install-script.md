@@ -305,3 +305,18 @@ Patched the post-publication feedback by removing the broken
 `/releases/latest/download` dependency from the installer path. The installer
 keeps the same supported asset names and checksum behavior, but it now resolves
 the latest tag first and uses canonical GitHub release download URLs.
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Verifies the installer no longer uses `/releases/latest/download` and instead resolves a tag before downloading from `/releases/download/${tag}`.
+  Evidence: commit `ea7da47` resolves `/releases/latest` to a tag with `curl -fsSIL -w '%{url_effective}'`, builds `https://github.com/${repo}/releases/download/${tag}`, and `install.sh` contains no `/releases/latest/download` asset base.
+- DONE: Confirms deterministic tests cover tag resolution success, tag resolution failure, canonical asset URLs, and the existing checksum/install safety behavior.
+  Evidence: `cargo test -p spacetop --test install_script` passed 9/9, including latest-tag success, failure before asset downloads, canonical `v0.1.0` asset URLs, checksum mismatch, checksum-tool fallback, missing checksum tool, supported targets, unsupported target, temp cleanup, and version verification.
+- DONE: Runs or confirms the required gates after commit `ea7da47`, then returns PASSED or REJECTED with concrete feedback.
+  Evidence: VERDICT: PASSED. `cargo fmt --check`, `cargo test -p spacetop --test install_script`, `cargo test`, `make lint`, and `git diff --check` all exited 0 after `ea7da47`.
+
+### Summary
+
+Fresh verification passed for the post-publication release URL fix. No blocking
+defects or missing test evidence remain, so no feedback is routed back to
+implementation.
