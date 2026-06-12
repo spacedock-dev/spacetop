@@ -784,6 +784,47 @@ fn archive_reload_clamps_archived_selection_with_scope_aware_index() {
 }
 
 #[test]
+fn archive_move_reload_removes_stale_worktree_copy_from_active_scope() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = dir.path().join("repo");
+    let workflow = repo.join("docs/wf");
+    std::fs::create_dir_all(repo.join(".git")).expect("git marker");
+    std::fs::create_dir_all(&workflow).expect("workflow dir");
+    write_workflow(&workflow, "059");
+    let worktree_workflow = repo.join(".worktrees/wt-1/docs/wf");
+    std::fs::create_dir_all(&worktree_workflow).expect("worktree workflow dir");
+    write_workflow(&worktree_workflow, "059");
+
+    let mut app = App::load(workflow.clone()).expect("workflow should load");
+    assert!(
+        app.visible_items().iter().any(|item| item.id == "059"),
+        "task should start in active scope"
+    );
+
+    std::fs::create_dir_all(workflow.join("_archive")).expect("archive dir");
+    std::fs::rename(
+        workflow.join("task-059.md"),
+        workflow.join("_archive").join("task-059.md"),
+    )
+    .expect("archive move");
+    app.reload().expect("reload should succeed");
+
+    assert_eq!(app.view_scope(), ViewScope::Active);
+    assert!(
+        app.visible_items().iter().all(|item| item.id != "059"),
+        "archived task must leave active scope after reload"
+    );
+
+    app.handle_key(key(KeyCode::Char('a')));
+
+    assert_eq!(app.view_scope(), ViewScope::Archived);
+    assert!(
+        app.visible_items().iter().any(|item| item.id == "059"),
+        "moved task should be visible in archived scope after the same reload"
+    );
+}
+
+#[test]
 fn archived_view_selection_is_independent_of_active_selection() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
     let mut app = App::load(root).expect("workflow should load");

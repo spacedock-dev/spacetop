@@ -165,3 +165,29 @@ Created a concrete implementation handoff for the archive-move refresh bug. The
 plan isolates the likely stale active row to parser worktree merge semantics,
 keeps archive visibility in app-state scope loading, and names focused tests plus
 `make lint` as the completion gate for the later implementation stage.
+
+## Stage Report: implement
+
+- DONE: Implement the archive-move refresh fix at the typed parser/app-state layer so an archived main-branch slug cannot remain active through a stale worktree copy.
+  Commit `ff0cc6b`: parser snapshot loading now collects `_archive` slugs by path and suppresses matching worktree-only active rows.
+- DONE: Add focused regression coverage proving the moved task disappears from active scope and appears in archived scope after the same reload path.
+  Commit `ff0cc6b`: parser tests cover valid and malformed archived slugs; app test covers `App::reload()` followed by archived-scope toggle.
+- DONE: Run the focused tests, broader applicable tests, and `make lint`, or record exact blockers with read-only/write-safety evidence.
+  Focused parser/app tests passed; `cargo test` passed; `make lint` passed; ignored notify tests were not run because watcher code was unchanged.
+
+### Summary
+
+Implemented the fix in the typed parser/app-state path without adding any Spacetop workflow-write command. Worktree-only rows still appear normally, but a slug present under the main workflow `_archive/` now prevents a stale worktree copy from remaining active while archive loading remains owned by `WorkflowSources::load_archive`.
+
+## Stage Report: verify
+
+- DONE: Independently verify AC-1 and AC-2 with focused parser/app reload coverage proving archived slugs do not remain active and do appear in archived scope.
+  `cargo test -p spacetop-core parser::tests::archived_main_slug_suppresses_stale_worktree_copy -- --exact`, `cargo test -p spacetop-core parser::tests::malformed_archived_slug_still_suppresses_stale_worktree_copy -- --exact`, and `cargo test -p spacetop app::tests::archive_move_reload_removes_stale_worktree_copy_from_active_scope -- --exact` all passed.
+- DONE: Independently verify AC-3 and the read-only boundary by reviewing the diff for workflow writes/git-write broadening and running the no-write guardrail if applicable.
+  Production diff is limited to parser snapshot/worktree merge reads; no git sync/editor/write path changed, diff write operations are test-only archive moves, and `cargo test -p spacetop-core --test no_write_git_calls` passed.
+- DONE: Rerun required evidence including focused tests, broader applicable tests, and `make lint`; return an explicit APPROVED or REJECTED gate verdict with cited evidence.
+  `cargo test` passed across the workspace and `make lint` passed (`cargo clippy --all-targets --all-features -- -D warnings`); ignored real notify backend tests were not run because watcher production code was unchanged.
+
+### Summary
+
+APPROVED. The implementation satisfies AC-1 and AC-2 through parser and app reload regressions that exercise the stale worktree-copy archive move, and AC-3 remains intact because the production change only reads archive slugs before merging worktree items.

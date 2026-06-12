@@ -826,6 +826,97 @@ fn worktree_only_item_has_worktree_source_tag() {
 }
 
 #[test]
+fn archived_main_slug_suppresses_stale_worktree_copy() {
+    let root = unique_temp_dir("archived-stale-wt");
+    let wf = root.join("docs/wf");
+    write_two_state_workflow(
+        &wf,
+        Some("task-059.md"),
+        Some(&entity_md_with_status(
+            "059",
+            "Archive Move",
+            "design",
+            "main body",
+        )),
+    );
+    let wt = root.join(".worktrees/wt-1/docs/wf");
+    write_two_state_workflow(
+        &wt,
+        Some("task-059.md"),
+        Some(&entity_md_with_status(
+            "059",
+            "Archive Move",
+            "design",
+            "stale worktree body",
+        )),
+    );
+    fs::create_dir_all(wf.join("_archive")).expect("archive dir");
+    fs::rename(
+        wf.join("task-059.md"),
+        wf.join("_archive").join("task-059.md"),
+    )
+    .expect("archive move");
+
+    let snapshot = load_workflow_dir(&wf, &root).expect("load active snapshot");
+
+    assert!(
+        snapshot.items.iter().all(|item| item.id != "059"),
+        "archived slug must not be resurrected from worktree copy: {:?}",
+        snapshot
+            .items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>()
+    );
+
+    let allowed = stage_names(&wf);
+    let archived = load_archived_items(&wf, &allowed, None).expect("load archive");
+    assert!(
+        archived.iter().any(|item| item.id == "059"),
+        "moved task should be available from archived scope"
+    );
+}
+
+#[test]
+fn malformed_archived_slug_still_suppresses_stale_worktree_copy() {
+    let root = unique_temp_dir("malformed-archived-stale-wt");
+    let wf = root.join("docs/wf");
+    write_two_state_workflow(&wf, None, None);
+    let wt = root.join(".worktrees/wt-1/docs/wf");
+    write_two_state_workflow(
+        &wt,
+        Some("task-060.md"),
+        Some(&entity_md_with_status(
+            "060",
+            "Malformed Archive Move",
+            "design",
+            "stale worktree body",
+        )),
+    );
+    write_markdown(
+        &wf.join("_archive").join("task-060.md"),
+        "---\nid: [\n---\n\nmalformed archive body\n",
+    );
+
+    let snapshot = load_workflow_dir(&wf, &root).expect("load active snapshot");
+
+    assert!(
+        snapshot.items.iter().all(|item| item.id != "060"),
+        "malformed archived slug must still suppress stale worktree copy: {:?}",
+        snapshot
+            .items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>()
+    );
+
+    let allowed = stage_names(&wf);
+    let (_archived, errors) =
+        load_archived_items_with_errors(&wf, &allowed, None).expect("load archive with errors");
+    assert_eq!(errors.len(), 1, "archive parse error remains archive-owned");
+}
+
+#[test]
 fn worktree_divergent_keeps_main_frontmatter_and_records_main_body() {
     // AC-2: when main and worktree differ, frontmatter (status, title) comes
     // from main, body comes from worktree, and main_body retains the root

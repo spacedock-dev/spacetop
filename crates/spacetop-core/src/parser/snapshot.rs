@@ -35,7 +35,7 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
         Err(_) => (Vec::new(), Vec::new()),
     };
     parse_errors.extend(worktree_parse_errors);
-    let items = merge_worktree_items(items, worktree_items);
+    let items = merge_worktree_items(items, worktree_items, path);
 
     Ok(WorkflowSnapshot {
         definition,
