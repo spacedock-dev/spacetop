@@ -113,6 +113,11 @@ select_archive_from_checksums() {
     filename="${filename#\*}"
     case "${filename}" in
       spacetop-v*-"${target}".tar.gz)
+        case "${filename}" in
+          */* | *\\* | *..*)
+            die "SHA256SUMS has unsafe archive filename: ${filename}"
+            ;;
+        esac
         archive_name="${filename}"
         selected_line="${checksum}  ${filename}"
         break

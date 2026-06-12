@@ -168,11 +168,22 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
       - name: Download release archives
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Stage installer asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp install.sh dist/install.sh
 
       - name: Generate checksums
         shell: bash
@@ -187,7 +198,7 @@ jobs:
           set -euo pipefail
           tag="${{ needs.validate.outputs.tag }}"
           repo="${GITHUB_REPOSITORY}"
-          assets=(dist/*.tar.gz dist/SHA256SUMS)
+          assets=(dist/*.tar.gz dist/SHA256SUMS dist/install.sh)
 
           for asset in "${assets[@]}"; do
             if [[ ! -f "${asset}" ]]; then

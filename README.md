@@ -169,7 +169,7 @@ back at this command.
 Install the latest released binary with one command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/spacedock-dev/spacetop/main/install.sh | sh
+curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | sh
 ```
 
 The installer supports macOS Apple Silicon and Linux x64, verifies the selected
@@ -177,7 +177,7 @@ archive against the release `SHA256SUMS` file, and installs `spacetop` to
 `~/.cargo/bin` by default. Override the install directory with an absolute path:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/spacedock-dev/spacetop/main/install.sh | SPACETOP_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | SPACETOP_INSTALL_DIR=/usr/local/bin sh
 ```
 
 ### Install Local Build

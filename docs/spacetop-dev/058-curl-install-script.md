@@ -320,3 +320,15 @@ the latest tag first and uses canonical GitHub release download URLs.
 Fresh verification passed for the post-publication release URL fix. No blocking
 defects or missing test evidence remain, so no feedback is routed back to
 implementation.
+
+## PR Review Follow-Up
+
+- DONE: Addressed Copilot's README installer provenance comment by publishing
+  `install.sh` as a GitHub Release asset and changing README install commands to
+  fetch the release-hosted installer instead of the moving `main` branch.
+- DONE: Addressed Copilot's `SHA256SUMS` filename robustness comment by
+  rejecting selected archive filenames that contain path separators or `..`
+  before constructing archive paths or downloading the archive.
+- Evidence: `cargo fmt`, `cargo test -p spacetop --test install_script`,
+  `cargo test -p spacetop --test release_workflow`, `cargo test`, and
+  `make lint` all exited 0 after the review fixes.

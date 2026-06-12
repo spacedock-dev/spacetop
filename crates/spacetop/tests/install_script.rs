@@ -159,14 +159,32 @@ fn missing_checksum_tool_exits_before_extracting() {
 }
 
 #[test]
+fn unsafe_checksum_archive_name_exits_before_archive_download() {
+    let harness = InstallerHarness::new();
+    harness.fake_uname("Linux", "x86_64");
+    harness.fake_curl_unsafe_checksum_filename();
+    harness.fake_sha256sum_success();
+    harness.fake_tar();
+    harness.fake_install();
+
+    let output = harness.run();
+
+    assert_failure(&output);
+    assert_stderr_contains(&output, "unsafe archive filename");
+    assert_log_absent_contains(&harness, "curl.log", ".tar.gz\n");
+    assert_log_absent(&harness, "tar.log");
+    assert_log_absent(&harness, "install.log");
+}
+
+#[test]
 fn readme_documents_one_command_installer_and_install_dir_override() {
     let readme = read_text(README);
 
     assert!(
         readme.contains(
-            "curl -fsSL https://raw.githubusercontent.com/spacedock-dev/spacetop/main/install.sh | sh"
+            "curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | sh"
         ),
-        "README should provide one copy-paste curl install command"
+        "README should provide one copy-paste release-hosted curl install command"
     );
     assert!(
         readme.contains("SPACETOP_INSTALL_DIR"),
@@ -189,7 +207,8 @@ fn release_policy_documents_installer_asset_contract() {
     assert!(
         policy.contains("spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz")
             && policy.contains("spacetop-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz")
-            && policy.contains("SHA256SUMS"),
+            && policy.contains("SHA256SUMS")
+            && policy.contains("install.sh"),
         "release policy should keep the installer asset contract explicit"
     );
 }
@@ -311,6 +330,44 @@ printf '%s\n' "$url" >> "$FAKE_LOGS_DIR/curl.log"
 case "$url" in
   */releases/latest) exit 22 ;;
   *) exit 1 ;;
+esac
+"#,
+        );
+    }
+
+    fn fake_curl_unsafe_checksum_filename(&self) {
+        self.write_executable(
+            "curl",
+            r#"#!/bin/sh
+url=
+out=
+write_effective=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w) write_effective=1; shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+printf '%s\n' "$url" >> "$FAKE_LOGS_DIR/curl.log"
+case "$url" in
+  */releases/latest)
+    if [ "$write_effective" = 1 ]; then
+      printf '%s' 'https://github.com/spacedock-dev/spacetop/releases/tag/v0.1.0'
+    else
+      printf '%s\n' 'https://github.com/spacedock-dev/spacetop/releases/tag/v0.1.0' > "$out"
+    fi
+    ;;
+  */releases/download/v0.1.0/SHA256SUMS)
+    printf 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  spacetop-v0.1.0/..-x86_64-unknown-linux-gnu.tar.gz\n' > "$out"
+    ;;
+  *.tar.gz)
+    printf 'archive\n' > "$out"
+    ;;
+  *)
+    exit 22
+    ;;
 esac
 "#,
         );
