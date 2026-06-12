@@ -1,7 +1,7 @@
 ---
 id: "057"
 title: Mouse support for Spacetop panels
-status: plan
+status: implement
 source: captain request 2026-06-12
 kind: feature
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-06-12T06:36:10Z
 completed:
 verdict:
 score: 0.7
-worktree:
+worktree: .worktrees/spacedock-ensign-057-mouse-support
 issue:
 pr:
 ---
