@@ -1,17 +1,17 @@
 ---
 id: "063"
 title: Worktree copies of archived entities reappear as active tasks
-status: verify
+status: done
 source: captain bug report 2026-06-12
 kind: bugfix
 risk: medium
 milestone: v1-maintenance
 proof: parser/app-state regression plus make lint
 started: 2026-06-12T13:43:03Z
-completed:
-verdict:
+completed: 2026-06-12T17:25:09Z
+verdict: PASSED
 score: 0.9
-worktree: .worktrees/spacedock-ensign-063-worktree-stale-archived-entities
+worktree:
 issue:
 pr: "#66"
 mod-block:
