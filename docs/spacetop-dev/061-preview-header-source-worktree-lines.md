@@ -13,7 +13,7 @@ verdict:
 score: 0.66
 worktree: .worktrees/spacedock-ensign-061-preview-header-source-worktree-lines
 issue:
-pr:
+pr: "#62"
 mod-block: merge:pr-merge
 ---
 
