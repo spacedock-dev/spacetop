@@ -4,15 +4,16 @@
 
 This file is the mandatory entrypoint for all agents working in this repository.
 For non-trivial code, documentation, workflow, or architecture changes, also read
-`docs/development-policy.md` before editing. Keep the two files consistent; if
-they conflict, stop and fix the policy drift before continuing.
+`docs/development-policy.md` before editing. This file is the canonical source of
+repo policy; `docs/development-policy.md` is supporting detail and must stay
+subordinate to this file. If they conflict, follow `AGENTS.md` and fix the policy
+drift before continuing.
 
 Authority order:
 
 1. The user's current request.
 2. This `AGENTS.md` repo contract.
-3. `docs/development-policy.md`.
-4. Existing code, tests, and workflow state.
+3. Existing code, tests, and workflow state.
 
 Tool-specific files such as `CLAUDE.md` may add setup requirements for that tool,
 but they must not weaken the read-only, test, lint, or Clean Code rules here.
@@ -158,6 +159,9 @@ Keep the TUI read-oriented, dense, and predictable:
 
 - Preserve keyboard behavior documented in the help popup and footer.
 - Keep preview/list behavior responsive for narrow and wide terminals.
+- Treat stable user-facing strings as test-pinned behavior. Update the relevant
+  tests together with intentional message changes, including zero-workflow
+  stderr and documented footer/help text.
 - Avoid terminal-only logic in parser or app-state tests.
 - For visual changes, prefer Ratatui `TestBackend` assertions when practical.
 - Keep Unicode graph/list glyphs usable, and preserve ASCII fallbacks where `SPACETOP_ASCII=1` applies.
@@ -165,6 +169,10 @@ Keep the TUI read-oriented, dense, and predictable:
 ## Safety
 
 - Do not mutate Spacedock workflow markdown by default.
+- Do not broaden git writes. The static guardrail test
+  `crates/spacetop-core/tests/no_write_git_calls.rs` must continue to prove
+  workflow-adjacent git writes are limited to the audited `git pull --ff-only`
+  sync path.
 - Do not read or write config/session files in workflow directories. User config
   and session persistence may use only absolute XDG/HOME-derived paths.
 - Preserve user changes and workflow state files.
@@ -180,6 +188,8 @@ Useful commands:
 cargo fmt
 cargo test
 make lint
+make build
+make install
 cargo run -p spacetop -- --workflow-dir docs/spacetop-dev
 cargo test -- --ignored
 ```

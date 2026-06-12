@@ -4,6 +4,11 @@
 **Applies to:** all code, documentation, workflow, and architecture changes  
 **Last reviewed:** 2026-06-11
 
+Canonical authority lives in `AGENTS.md`. This document expands the rationale,
+boundaries, and examples behind that repo contract; it must not define stronger
+or weaker rules than `AGENTS.md`. If the two files conflict, follow `AGENTS.md`
+and fix this document.
+
 ## Current Status Snapshot
 
 Spacetop is an active Rust TUI, not a scaffold. The current product can discover

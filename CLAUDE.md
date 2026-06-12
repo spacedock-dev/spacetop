@@ -1,84 +1,34 @@
-# Spacetop
+# Spacetop - Claude Code
 
-Read-only Rust TUI (ratatui + crossterm) for browsing [Spacedock](https://github.com/clkao/spacedock) workflow state — markdown files in git with YAML frontmatter (`id`, `title`, `status`).
+@AGENTS.md
 
-For repo-wide development policy, read `AGENTS.md` and
-`docs/development-policy.md` before non-trivial changes. This file may add
-Claude-specific setup requirements, but it does not weaken the read-only,
-Clean Code, test, or lint rules in the repo policy.
+## Claude Code
 
-## Safety: read-only by default
+This file is a Claude Code adapter. `AGENTS.md` is the canonical source of repo
+policy for Spacetop; keep shared safety, architecture, test, lint, and workflow
+rules there.
 
-Spacetop must NOT mutate Spacedock workflow files. Treat the markdown tree as the source of truth. If a future feature needs writes, make them explicit and auditable in git.
+Claude-specific notes may live below this section, but they must not override or
+duplicate repo policy from `AGENTS.md`.
 
-The Sync action (`Y`) is the single sanctioned exception: it runs `git -C {repo_root} pull --ff-only` against the workflow root. No `git push`, `git commit`, or `git checkout` is ever invoked — the only on-disk write is the fast-forward update from the upstream remote, which is auditable in `git log`. The `crates/spacetop-core/tests/no_write_git_calls.rs` guardrail enforces this in CI.
+## Claude-Specific Tools
 
-## Lint Gate
+Claude Code skills or local helper tools may be useful, but they are not repo
+policy. Use them only when they support the current request and do not conflict
+with `AGENTS.md`.
 
-Before marking any task complete, run:
-
-    make lint
-
-All clippy warnings are treated as errors (`-D warnings`). Fix every diagnostic before committing — do not bypass with `#[allow(...)]` unless justified.
-
-## Commands
-
-| Command | Purpose |
-|---------|---------|
-| `make build` | Release build (runs lint first; forwards `SENTRY_DSN`) |
-| `make lint` | `cargo clippy --all-targets --all-features -- -D warnings` |
-| `make install` | Build and install to `~/.cargo/bin` (override with `PREFIX=`) |
-| `cargo test` | Run unit + integration tests |
-| `cargo run -p spacetop -- -w <path>` | Open a specific workflow directory |
-| `cargo run -p spacetop` | Discover workflows under the current git root |
-
-## Module Layout
-
-- `crates/spacetop/src/main.rs` — entry point; initializes Sentry in release builds only.
-- `crates/spacetop/src/lib.rs` — `decide_app` (CLI → launch decision; testable without TUI) and `run_terminal` event loop.
-- `crates/spacetop/src/cli.rs` — clap definition: `-w/--workflow-dir`.
-- `crates/spacetop/src/app.rs` — `App`, `AppMode`, `OverviewState`, `OverviewSession`; TUI app-state transitions live here.
-- `crates/spacetop/src/ui/` — ratatui rendering (`mod.rs` overview, `graph.rs` stage graph, `picker.rs` workflow picker).
-- `crates/spacetop-core/src/discovery.rs` — scan a root for workflow directories.
-- `crates/spacetop-core/src/parser.rs` — markdown + YAML frontmatter parsing for workflow README and entity files.
-- `crates/spacetop-core/src/domain/` — `WorkflowDefinition`, `StageDefinition`, `Entity`, oklch-based stage color assignment.
-- `crates/spacetop-core/src/watcher.rs` — `notify`-based filesystem watcher with polling fallback.
-- `crates/spacetop/tests/` — bin-facing integration tests for launch, sync, and reload behavior.
-- `crates/spacetop-core/tests/` — core guardrails and watcher integration smoke tests.
-
-Keep parser, domain, and app-state logic testable without a terminal backend.
-
-## Conventions
-
-- Prefer established crates (`ratatui`, `crossterm`, `serde_yaml`, `pulldown-cmark`, `notify`, `walkdir`) over ad hoc string slicing.
-- New behavior should land with tests in the same module (`#[cfg(test)] mod tests`) or `tests/` for integration.
-- Stable user-facing strings (e.g. the zero-workflows stderr message) are pinned by tests — update both together.
-- Sentry: only initialized in release builds with a non-empty `SENTRY_DSN` baked in by `crates/spacetop/build.rs`. Debug builds never send events.
-
-## Environment
-
-Copy `.env.example` to `.env` and source it before `make build` to embed the Sentry DSN. The DSN is a public write-only key.
-
-## gstack (REQUIRED — global install)
-
-**Before doing ANY work, verify gstack is installed:**
+If a user explicitly requests a gstack workflow, verify it before use:
 
 ```bash
 test -d ~/.claude/skills/gstack/bin && echo "GSTACK_OK" || echo "GSTACK_MISSING"
 ```
 
-If GSTACK_MISSING: STOP. Do not proceed. Tell the user:
+If gstack is missing for a requested gstack workflow, stop and ask the user to
+install it:
 
-> gstack is required for all AI-assisted work in this repo.
-> Install it:
-> ```bash
-> git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
-> cd ~/.claude/skills/gstack && ./setup --team
-> ```
-> Then restart your AI coding tool.
+```bash
+git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
+cd ~/.claude/skills/gstack && ./setup --team
+```
 
-Do not skip skills, ignore gstack errors, or work around missing gstack.
-
-Using gstack skills: After install, skills like /qa, /ship, /review, /investigate,
-and /browse are available. Use /browse for all web browsing.
-Use ~/.claude/skills/gstack/... for gstack file paths (the global path).
+Do not use gstack availability as a general blocker for ordinary Spacetop work.
