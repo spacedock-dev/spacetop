@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#63"
 mod-block:
+archived: 2026-06-12T14:25:40Z
 ---
 
 Metrics, activity, and timeline keep showing:
