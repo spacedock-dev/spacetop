@@ -47,6 +47,10 @@ The first supported binary assets are:
 The macOS archive targets Apple Silicon. The Linux archive targets x64 GNU
 Linux.
 
+The README curl installer is the documented user install path for released
+binaries. It depends on those two archive assets and `SHA256SUMS` retaining the
+filenames above.
+
 ## Human Release Flow
 
 1. Merge feature PRs to `main`.
