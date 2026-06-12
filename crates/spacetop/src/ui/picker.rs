@@ -56,6 +56,8 @@ fn title(state: &PickerState) -> Paragraph<'_> {
 }
 
 fn render_list(frame: &mut Frame<'_>, area: Rect, state: &PickerState) {
+    // Render-fact for mouse hit-testing: the list area actually drawn.
+    state.list_rect.set(area);
     if state.workflows().is_empty() {
         state.viewport_height.set(area.height as usize);
         state.scroll_offset.set(0);

@@ -745,6 +745,14 @@ impl App {
             return;
         }
 
+        // Overlay confirm needs `&mut self` (it rebuilds the mode), so it
+        // is intercepted ahead of the per-mode match below and shared with
+        // the mouse click path (AC-5).
+        if matches!(self.mode, AppMode::PickerOverlay { .. }) && key.code == KeyCode::Enter {
+            self.confirm_picker_overlay();
+            return;
+        }
+
         match &mut self.mode {
             AppMode::Overview(_) => {}
             AppMode::Picker(state) => match key.code {
@@ -856,37 +864,47 @@ impl App {
                 KeyCode::PageUp => picker.page_selection_up(),
                 KeyCode::Home => picker.select_first(),
                 KeyCode::End => picker.select_last(),
-                KeyCode::Enter => {
-                    let Some(selected) = picker.selected().cloned() else {
-                        return;
-                    };
-                    picker.clear_error();
-                    // Pull session and picker out of mode so we can rebuild.
-                    let placeholder = AppMode::Picker(PickerState::new(PathBuf::new(), Vec::new()));
-                    let prior_mode = std::mem::replace(&mut self.mode, placeholder);
-                    let (mut session, picker_state) = match prior_mode {
-                        AppMode::PickerOverlay { underlying, picker } => (underlying, picker),
-                        other => {
-                            self.mode = other;
-                            return;
-                        }
-                    };
-                    // Apply discovery list from the picker into the session,
-                    // then select the chosen workflow.
-                    let new_workflows = picker_state.workflows().to_vec();
-                    session.replace_discovery(new_workflows);
-                    let target_idx = session
-                        .discovery()
-                        .iter()
-                        .position(|d| d.root == selected.root)
-                        .unwrap_or(0);
-                    let switch = session.select(target_idx);
-                    self.pending_switch = Some(switch);
-                    self.mode = AppMode::Overview(session);
-                }
                 _ => {}
             },
         }
+    }
+
+    /// Confirm the currently selected workflow in the picker overlay:
+    /// apply the (possibly re-discovered) workflow list into the
+    /// underlying session, queue the switch, and return to Overview.
+    /// Shared by the Enter key and the mouse click (AC-5) so both confirm
+    /// paths stay one transition. No-op when not in overlay mode or when
+    /// nothing is selected.
+    fn confirm_picker_overlay(&mut self) {
+        let AppMode::PickerOverlay { picker, .. } = &mut self.mode else {
+            return;
+        };
+        let Some(selected) = picker.selected().cloned() else {
+            return;
+        };
+        picker.clear_error();
+        // Pull session and picker out of mode so we can rebuild.
+        let placeholder = AppMode::Picker(PickerState::new(PathBuf::new(), Vec::new()));
+        let prior_mode = std::mem::replace(&mut self.mode, placeholder);
+        let (mut session, picker_state) = match prior_mode {
+            AppMode::PickerOverlay { underlying, picker } => (underlying, picker),
+            other => {
+                self.mode = other;
+                return;
+            }
+        };
+        // Apply discovery list from the picker into the session, then
+        // select the chosen workflow.
+        let new_workflows = picker_state.workflows().to_vec();
+        session.replace_discovery(new_workflows);
+        let target_idx = session
+            .discovery()
+            .iter()
+            .position(|d| d.root == selected.root)
+            .unwrap_or(0);
+        let switch = session.select(target_idx);
+        self.pending_switch = Some(switch);
+        self.mode = AppMode::Overview(session);
     }
 
     /// Mouse-event peer to [`App::handle_key`]. Inert while the help popup
@@ -899,9 +917,45 @@ impl App {
         }
         let action = match &mut self.mode {
             AppMode::Overview(session) => mouse::handle_overview_mouse(session, mouse),
+            AppMode::Picker(_) | AppMode::PickerOverlay { .. } => {
+                self.handle_picker_mouse(mouse);
+                return;
+            }
             _ => return,
         };
         self.apply_overview_key_action(action);
+    }
+
+    /// AC-5: a single left-click on a picker workflow row selects and
+    /// confirms it — the same one-action convention as the overview list.
+    /// Clicks elsewhere in the dialog (title, footer, blank space) change
+    /// nothing.
+    fn handle_picker_mouse(&mut self, mouse: MouseEvent) {
+        if !matches!(
+            mouse.kind,
+            crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
+        ) {
+            return;
+        }
+        let Some(index) = self
+            .as_picker()
+            .and_then(|picker| mouse::picker_row_at(picker, mouse.column, mouse.row))
+        else {
+            return;
+        };
+        match &mut self.mode {
+            AppMode::Picker(state) => {
+                state.selected_index = index;
+                if let Some(next_mode) = picker_enter_transition(state) {
+                    self.mode = next_mode;
+                }
+            }
+            AppMode::PickerOverlay { picker, .. } => {
+                picker.selected_index = index;
+                self.confirm_picker_overlay();
+            }
+            _ => {}
+        }
     }
 
     fn consume_help_key(&mut self, key: KeyEvent) -> bool {

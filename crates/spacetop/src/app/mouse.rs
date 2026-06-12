@@ -11,7 +11,7 @@ use ratatui::layout::{Position, Rect};
 
 use super::keys::OverviewKeyAction;
 use super::overview::{OverviewState, PreviewPlacement};
-use super::OverviewSession;
+use super::{OverviewSession, PickerState};
 
 /// Rows moved per wheel notch over the preview body.
 const WHEEL_SCROLL_ROWS: isize = 3;
@@ -90,6 +90,18 @@ pub(crate) fn handle_overview_mouse(
         _ => {}
     }
     OverviewKeyAction::None
+}
+
+/// Workflow index under a (column, row) cell in the picker list, mapping
+/// through the renderer's `list_rect`/`scroll_offset` facts (AC-5). `None`
+/// for clicks outside the list rows (title, footer, blank space).
+pub(crate) fn picker_row_at(state: &PickerState, column: u16, row: u16) -> Option<usize> {
+    let rect = state.list_rect.get();
+    if !rect.contains(Position::new(column, row)) {
+        return None;
+    }
+    let index = state.scroll_offset.get() + usize::from(row - rect.y);
+    (index < state.workflows().len()).then_some(index)
 }
 
 /// Placement of the open preview, derived from the recorded rects: a
@@ -522,6 +534,124 @@ mod tests {
         let state = app.as_overview().expect("overview");
         assert_eq!(state.selected_index(), offset);
         assert!(state.preview_open());
+    }
+
+    fn write_minimal_workflow(dir: &std::path::Path, slug: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(
+            dir.join("README.md"),
+            "---\nstages:\n  states:\n    - name: plan\n      initial: true\n---\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join(format!("task-{slug}.md")),
+            format!("---\nid: {slug}\ntitle: T{slug}\nstatus: plan\n---\n\nbody\n"),
+        )
+        .unwrap();
+    }
+
+    fn two_discovered(
+        holder: &std::path::Path,
+    ) -> (
+        Vec<spacetop_core::discovery::DiscoveredWorkflow>,
+        PathBuf,
+        PathBuf,
+    ) {
+        let w0 = holder.join("w0");
+        let w1 = holder.join("w1");
+        write_minimal_workflow(&w0, "000");
+        write_minimal_workflow(&w1, "001");
+        let discovered = vec![
+            spacetop_core::discovery::DiscoveredWorkflow {
+                root: w0.clone(),
+                title: None,
+            },
+            spacetop_core::discovery::DiscoveredWorkflow {
+                root: w1.clone(),
+                title: None,
+            },
+        ];
+        (discovered, w0, w1)
+    }
+
+    // AC-5: a single left-click on a standalone-picker row selects and
+    // confirms that workflow in one action.
+    #[test]
+    fn picker_click_selects_and_confirms_workflow() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let (discovered, _w0, w1) = two_discovered(holder.path());
+        let mut app = App::from_picker(holder.path().to_path_buf(), discovered);
+        draw(&app, 100, 24);
+        let rect = app.as_picker().expect("picker").list_rect.get();
+        assert!(rect.height >= 2, "both workflow rows are drawn");
+
+        // Click the second workflow row.
+        app.handle_mouse(mouse_at(
+            MouseEventKind::Down(MouseButton::Left),
+            rect.x + 2,
+            rect.y + 1,
+        ));
+
+        assert!(
+            matches!(app.mode(), crate::app::AppMode::Overview(_)),
+            "click confirms into Overview"
+        );
+        assert_eq!(app.workflow_dir(), w1.as_path());
+    }
+
+    // AC-5: clicks on picker chrome (title rows, footer) change nothing.
+    #[test]
+    fn picker_click_on_chrome_changes_nothing() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let (discovered, _w0, _w1) = two_discovered(holder.path());
+        let mut app = App::from_picker(holder.path().to_path_buf(), discovered);
+        draw(&app, 100, 24);
+        let rect = app.as_picker().expect("picker").list_rect.get();
+
+        // Title block above the rows; footer below them.
+        app.handle_mouse(mouse_at(
+            MouseEventKind::Down(MouseButton::Left),
+            rect.x + 2,
+            rect.y - 1,
+        ));
+        app.handle_mouse(mouse_at(
+            MouseEventKind::Down(MouseButton::Left),
+            rect.x + 2,
+            rect.y + rect.height,
+        ));
+
+        let picker = app.as_picker().expect("still in picker");
+        assert_eq!(picker.selected_index(), 0, "selection unchanged");
+    }
+
+    // AC-5 (overlay): a click on an overlay row applies the discovery list
+    // and queues the workflow switch, mirroring the Enter transition.
+    #[test]
+    fn overlay_click_confirms_and_queues_switch() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let (discovered, w0, _w1) = two_discovered(holder.path());
+        let initial = crate::app::OverviewState::load(w0).expect("load w0");
+        let session = crate::app::OverviewSession::from_discovery(
+            holder.path().to_path_buf(),
+            discovered.clone(),
+            0,
+            initial,
+        );
+        let mut app = App::from_session(session);
+        app.open_picker_overlay_with(Ok(discovered));
+        draw(&app, 100, 24);
+        let rect = app.as_picker().expect("overlay picker").list_rect.get();
+
+        app.handle_mouse(mouse_at(
+            MouseEventKind::Down(MouseButton::Left),
+            rect.x + 2,
+            rect.y + 1,
+        ));
+
+        assert!(matches!(app.mode(), crate::app::AppMode::Overview(_)));
+        let switch = app.take_pending_switch().expect("click queues a switch");
+        assert_eq!(switch.target_index, 1);
+        assert!(switch.needs_first_load);
     }
 
     // Mouse input is inert while the help popup is open, mirroring the
