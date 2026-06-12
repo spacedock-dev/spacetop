@@ -444,3 +444,10 @@ Implemented mouse support in five per-step commits on spacedock-ensign/057-mouse
 ### Summary
 
 Independently re-ran the full gate (workspace tests exit 0, lint clean) and confirmed every AC has named passing tests at its planned lowest layer, including the anti-drift proof tying hit-test facts to painted pixels. Adversarial diff review found no product-contract regressions: read-only contract untouched (guardrail green, zero new writes/spawns/git calls), restore ordering correct on all exit paths and around $EDITOR, defaults reproduce the historical 50/30 splits with mouse riding existing keyboard transitions. Verdict recommendation is PASSED, contingent on the captain's three-minute real-terminal smoke: Shift+drag native selection, capture release after q/Ctrl+C and the $EDITOR round-trip, and divider-drag feel at the 100ms tick.
+
+### CI-Fix Addendum (verify, PR #56)
+
+- What failed: GitHub Actions job "Format, test, and lint" on PR #56 failed at the "Check formatting" step — `cargo fmt --check` reported diffs (long `assert_eq!` lines needing wrapping) in `crates/spacetop/src/ui/layout.rs` and `crates/spacetop/src/ui/tests/task_list.rs`, plus one multi-arg call in `crates/spacetop/src/app/mouse.rs`. Formatting drift only; tests and clippy were already green.
+- Fix: ran `cargo fmt` across the workspace in the worktree; touched only the three test-code sites above (53 insertions, 8 deletions, zero behavior change). `cargo fmt --check` now exits 0.
+- Re-run evidence: `cargo test --workspace` exit 0 (spacetop lib 356 passed, core 145 passed, all integration suites green, 3 pre-existing ignored watcher tests); `make lint` clean under `-D warnings`.
+- Commit `1bb9748` (style: apply cargo fmt to mouse-support test code) pushed to `spacedock-ensign/057-mouse-support` so PR #56's CI re-runs.
