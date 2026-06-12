@@ -233,3 +233,16 @@ UI regression proving the existing Definition renderer responds to scroll
 offsets. The plan keeps parsing and workflow writes out of scope, leaves overview
 task-list mouse behavior intact, and makes `make lint` the required completion
 gate for the implement stage.
+
+## Stage Report: implement
+
+- DONE: Implement mouse-wheel scrolling for `AppMode::Definition` at the app/input layer while preserving help, picker, overview, and keyboard behavior.
+  Commit `b1b4fe3` routes only Definition `ScrollDown`/`ScrollUp` to the shared 3-row wheel step; help still returns first and picker/overview paths remain separate.
+- DONE: Add focused app/input and Ratatui Definition rendering regressions that prove scroll offset changes and remains scoped to the Definition page.
+  Added `definition_mouse_wheel_*` app tests and `definition_scroll_offset_moves_prose_body`; the targeted Definition suite passed.
+- DONE: Run targeted definition/mouse tests, `cargo fmt --check`, `make lint`, and any broader applicable tests, or record exact blockers and docs-impact reasoning.
+  Passed `cargo test -p spacetop definition_mouse_wheel`, `cargo test -p spacetop definition`, `cargo test -p spacetop app::mouse::tests::wheel_targets_panel_under_cursor`, `cargo fmt --check`, `make lint`, and `cargo test -p spacetop`; no docs copy changed because existing help text remains accurate.
+
+### Summary
+
+Implemented mouse-wheel scrolling for the full-pane Workflow Definition view without changing workflow parsing or markdown write behavior. The new tests cover Definition scroll input, help-overlay scoping, overview-state preservation, and visible Ratatui scroll movement.
