@@ -186,6 +186,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="${{ needs.validate.outputs.tag }}"
+          repo="${GITHUB_REPOSITORY}"
           assets=(dist/*.tar.gz dist/SHA256SUMS)
 
           for asset in "${assets[@]}"; do
@@ -195,17 +196,15 @@ jobs:
             fi
           done
 
-          mapfile -t existing_assets < <(gh release view "${tag}" --json assets --jq '.assets[].name')
+          existing_assets="$(gh release view "${tag}" --repo "${repo}" --json assets --jq '.assets[].name')"
           for asset in "${assets[@]}"; do
             asset_name="$(basename "${asset}")"
-            for existing_asset in "${existing_assets[@]}"; do
-              if [[ "${existing_asset}" == "${asset_name}" ]]; then
-                echo "GitHub Release ${tag} already has asset ${asset_name}" >&2
-                exit 1
-              fi
-            done
+            if grep -Fxq "${asset_name}" <<< "${existing_assets}"; then
+              echo "GitHub Release ${tag} already has asset ${asset_name}" >&2
+              exit 1
+            fi
           done
 
-          gh release upload "${tag}" "${assets[@]}"
+          gh release upload "${tag}" --repo "${repo}" "${assets[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
