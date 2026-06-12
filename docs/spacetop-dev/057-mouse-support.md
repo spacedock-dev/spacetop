@@ -451,3 +451,10 @@ Independently re-ran the full gate (workspace tests exit 0, lint clean) and conf
 - Fix: ran `cargo fmt` across the workspace in the worktree; touched only the three test-code sites above (53 insertions, 8 deletions, zero behavior change). `cargo fmt --check` now exits 0.
 - Re-run evidence: `cargo test --workspace` exit 0 (spacetop lib 356 passed, core 145 passed, all integration suites green, 3 pre-existing ignored watcher tests); `make lint` clean under `-D warnings`.
 - Commit `1bb9748` (style: apply cargo fmt to mouse-support test code) pushed to `spacedock-ensign/057-mouse-support` so PR #56's CI re-runs.
+
+### Review-Fix Addendum (verify, PR #56, Copilot comment 3401676736)
+
+- Comment: in `crates/spacetop/src/lib.rs` (~line 177), the combined `execute!(stdout, EnterAlternateScreen, EnableMouseCapture)` was wrapped in a single `.context("failed to enter alternate screen")`, which is misleading when `EnableMouseCapture` is what fails.
+- Change: split into two `execute!` calls, each with an accurate context — `"failed to enter alternate screen"` for `EnterAlternateScreen` and `"failed to enable mouse capture"` for `EnableMouseCapture`. Ordering preserved: the `TerminalRestore` guard is still armed before both calls, and `EnterAlternateScreen` still precedes `EnableMouseCapture`. No behavior change beyond the error message; 2 insertions, 2 deletions, no other files touched.
+- Re-run evidence: `cargo test --workspace` exit 0 (spacetop lib 356 passed, core 145 passed, all integration suites green, 3 pre-existing ignored watcher tests; AC-6 `tests::{terminal_restore_sequence, suspend_resume_call_sequence}` re-run by name, 2/2 passed); `make lint` clean under `-D warnings`; `cargo fmt --check` exit 0.
+- Commit `3fa0cbe` (fix(tui): give EnterAlternateScreen and EnableMouseCapture distinct error contexts) on `spacedock-ensign/057-mouse-support`.
