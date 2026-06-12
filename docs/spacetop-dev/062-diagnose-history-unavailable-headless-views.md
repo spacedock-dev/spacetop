@@ -13,7 +13,7 @@ verdict:
 score: 0.86
 worktree: .worktrees/spacedock-ensign-062-diagnose-history-unavailable-headless-views
 issue:
-pr:
+pr: "#63"
 mod-block: merge:pr-merge
 ---
 
