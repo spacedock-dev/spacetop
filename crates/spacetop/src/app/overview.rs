@@ -41,6 +41,13 @@ pub enum PreviewPlacement {
     Bottom,
 }
 
+/// Bounds for the user-draggable list/preview split ratio (percent of the
+/// content area given to the list pane). Keeps both panes usable; the
+/// geometric minimums in `ui::layout::split_content` clamp further on
+/// small terminals.
+pub(crate) const SPLIT_PERCENT_MIN: u16 = 10;
+pub(crate) const SPLIT_PERCENT_MAX: u16 = 90;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SortMode {
     #[default]
@@ -682,6 +689,43 @@ impl OverviewState {
             PreviewPlacement::Left => self.split_percent_left,
             PreviewPlacement::Bottom => self.split_percent_bottom,
         }
+    }
+
+    /// Set the list-pane percent for the given placement, clamped to
+    /// [`SPLIT_PERCENT_MIN`]..=[`SPLIT_PERCENT_MAX`]. The ratio holds for
+    /// the rest of the session (per tab; no persistence).
+    pub(crate) fn set_split_percent(&mut self, placement: PreviewPlacement, percent: u16) {
+        let clamped = percent.clamp(SPLIT_PERCENT_MIN, SPLIT_PERCENT_MAX);
+        match placement {
+            PreviewPlacement::Left => self.split_percent_left = clamped,
+            PreviewPlacement::Bottom => self.split_percent_bottom = clamped,
+        }
+    }
+
+    /// Open the preview if it is closed (idempotent, unlike
+    /// [`Self::toggle_preview`]). Mouse-click convention: select + open in
+    /// one action, without closing a preview that is already open.
+    pub(crate) fn open_preview(&mut self) {
+        if !self.preview_open {
+            self.preview_open = true;
+            self.reset_preview_scroll();
+        }
+    }
+
+    /// Select the row at `index` (mouse click). Reuses the
+    /// `set_scope_index` reset semantics, so moving to a different row
+    /// resets the preview scroll exactly like keyboard navigation.
+    pub(crate) fn select_row(&mut self, index: usize) {
+        if index < self.row_count() {
+            self.set_scope_index(index);
+        }
+    }
+
+    /// Clamped wheel scroll of the preview body, `delta` rows (positive
+    /// scrolls down). Thin wrapper keeping `scroll_preview_vertical` the
+    /// single home for the clamp invariant.
+    pub(crate) fn wheel_scroll_preview(&mut self, delta: isize) {
+        self.scroll_preview_vertical(delta);
     }
 
     pub fn toggle_preview(&mut self) {

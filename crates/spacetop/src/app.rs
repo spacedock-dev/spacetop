@@ -11,6 +11,7 @@ use spacetop_core::session_state::{SessionState, WorkflowSessionKey};
 
 mod history_worker;
 mod keys;
+mod mouse;
 mod overview;
 mod picker;
 mod search;
@@ -892,7 +893,16 @@ impl App {
     /// is open; non-overview, non-picker modes (Definition, Search,
     /// Timeline, Metrics, Activity, Relations) are deliberately inert per
     /// the captain-selected scope of task 057.
-    pub fn handle_mouse(&mut self, _mouse: MouseEvent) {}
+    pub fn handle_mouse(&mut self, mouse: MouseEvent) {
+        if self.help_open {
+            return;
+        }
+        let action = match &mut self.mode {
+            AppMode::Overview(session) => mouse::handle_overview_mouse(session, mouse),
+            _ => return,
+        };
+        self.apply_overview_key_action(action);
+    }
 
     fn consume_help_key(&mut self, key: KeyEvent) -> bool {
         if !self.help_open {
