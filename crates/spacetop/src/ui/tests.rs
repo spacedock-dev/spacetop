@@ -241,6 +241,16 @@ fn timeline_view_renders_unavailable_loading_empty_and_events() {
     assert!(text.contains("Timeline"));
     assert!(text.contains("history unavailable: shallow clone"));
 
+    let reason = HistoryUnavailable::MetadataError {
+        path: "docs/workflow/001.md".to_string(),
+        message: "missing status".to_string(),
+    };
+    let message = reason.user_message();
+    let mut app = app_with_history(Err(reason));
+    app.handle_key(key(KeyCode::Char('T')));
+    let text = render_text(&app, 220, 32);
+    assert!(text.contains(&message));
+
     let mut app = app_with_history(Err(HistoryUnavailable::Loading));
     app.handle_key(key(KeyCode::Char('T')));
     let text = render_text(&app, 100, 32);
@@ -270,6 +280,16 @@ fn metrics_view_renders_unavailable_and_populated_metrics() {
     assert!(text.contains("Metrics"));
     assert!(text.contains("history unavailable: shallow clone"));
 
+    let reason = HistoryUnavailable::MetadataError {
+        path: "docs/workflow/001.md".to_string(),
+        message: "missing status".to_string(),
+    };
+    let message = reason.user_message();
+    let mut app = app_with_history(Err(reason));
+    app.handle_key(key(KeyCode::Char('M')));
+    let text = render_text(&app, 220, 32);
+    assert!(text.contains(&message));
+
     let mut app = app_with_history(Ok(vec![
         stage_event("050", None, "plan", 100),
         stage_event("050", Some("plan"), "verify", 160),
@@ -293,6 +313,16 @@ fn activity_view_renders_unavailable_and_newest_events_first() {
     let text = render_text(&app, 100, 32);
     assert!(text.contains("Activity"));
     assert!(text.contains("history unavailable: shallow clone"));
+
+    let reason = HistoryUnavailable::MetadataError {
+        path: "docs/workflow/001.md".to_string(),
+        message: "missing status".to_string(),
+    };
+    let message = reason.user_message();
+    let mut app = app_with_history(Err(reason));
+    app.handle_key(key(KeyCode::Char('A')));
+    let text = render_text(&app, 220, 32);
+    assert!(text.contains(&message));
 
     let mut app = app_with_history(Ok(vec![
         stage_event("050", None, "plan", 100),

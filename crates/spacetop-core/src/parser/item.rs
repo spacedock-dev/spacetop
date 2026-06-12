@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use crate::domain::Entity;
 
-use super::frontmatter::extract_frontmatter;
+use super::frontmatter::{extract_frontmatter, top_level_scalar_entries};
 use super::{display_path, optional_text, required, ParseError};
 
 pub fn parse_work_item(
@@ -129,35 +129,15 @@ fn parse_flat_work_item_frontmatter(frontmatter: &str) -> Option<RawWorkItemFron
         pr: None,
     };
 
-    for line in frontmatter.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        if line.starts_with(' ') || line.starts_with('\t') {
-            return None;
-        }
-        let (key, value) = trimmed.split_once(':')?;
-        let key = key.trim();
-        if key.is_empty() {
-            return None;
-        }
-        let value = value.trim_start();
-        if matches!(
-            value.chars().next(),
-            Some('[' | '{' | '|' | '>' | '&' | '*')
-        ) {
-            return None;
-        }
-        let value = unquote_scalar(value);
+    for (key, value) in top_level_scalar_entries(frontmatter)? {
         match key {
-            "id" => raw.id = optional_text(Some(value.to_string())),
-            "title" => raw.title = optional_text(Some(value.to_string())),
-            "status" => raw.status = optional_text(Some(value.to_string())),
-            "source" => raw.source = optional_text(Some(value.to_string())),
-            "started" => raw.started = optional_text(Some(value.to_string())),
-            "completed" => raw.completed = optional_text(Some(value.to_string())),
-            "verdict" => raw.verdict = optional_text(Some(value.to_string())),
+            "id" => raw.id = optional_text(Some(value)),
+            "title" => raw.title = optional_text(Some(value)),
+            "status" => raw.status = optional_text(Some(value)),
+            "source" => raw.source = optional_text(Some(value)),
+            "started" => raw.started = optional_text(Some(value)),
+            "completed" => raw.completed = optional_text(Some(value)),
+            "verdict" => raw.verdict = optional_text(Some(value)),
             "score" => {
                 raw.score = if value.trim().is_empty() {
                     None
@@ -165,26 +145,14 @@ fn parse_flat_work_item_frontmatter(frontmatter: &str) -> Option<RawWorkItemFron
                     Some(value.parse().ok()?)
                 }
             }
-            "worktree" => raw.worktree = optional_text(Some(value.to_string())),
-            "issue" => raw.issue = optional_text(Some(value.to_string())),
-            "pr" => raw.pr = optional_text(Some(value.to_string())),
+            "worktree" => raw.worktree = optional_text(Some(value)),
+            "issue" => raw.issue = optional_text(Some(value)),
+            "pr" => raw.pr = optional_text(Some(value)),
             _ => {}
         }
     }
 
     Some(raw)
-}
-
-fn unquote_scalar(value: &str) -> &str {
-    if value.len() >= 2 {
-        let bytes = value.as_bytes();
-        if (bytes[0] == b'"' && bytes[value.len() - 1] == b'"')
-            || (bytes[0] == b'\'' && bytes[value.len() - 1] == b'\'')
-        {
-            return &value[1..value.len() - 1];
-        }
-    }
-    value
 }
 
 #[derive(Debug, Deserialize)]

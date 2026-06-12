@@ -19,7 +19,7 @@ pub(super) fn render_in(
         Style::default().add_modifier(Modifier::BOLD),
     ))];
     match session.active_state().index().timeline(entity_id) {
-        Err(reason) => lines.push(Line::from(reason.user_message().to_string())),
+        Err(reason) => lines.push(Line::from(reason.user_message())),
         Ok(events) if events.is_empty() => lines.push(Line::from("No timeline events")),
         Ok(events) => {
             lines.push(Line::from("stage       from        commit"));

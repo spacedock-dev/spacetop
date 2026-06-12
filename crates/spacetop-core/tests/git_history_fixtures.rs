@@ -46,6 +46,14 @@ impl RepoFixture {
         .expect("entity write");
     }
 
+    fn write_raw_entity(&self, rel: &str, frontmatter: &str, body: &str) {
+        let path = self.workflow.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("entity parent");
+        }
+        fs::write(path, format!("---\n{frontmatter}---\n{body}\n")).expect("entity write");
+    }
+
     fn commit(&self, message: &str) {
         run_git(&self.root, &["add", "."]);
         run_git(&self.root, &["commit", "-m", message]);
@@ -176,6 +184,26 @@ fn multi_rename_keeps_one_entity_timeline() {
     assert_eq!(events[1].entity_id, "test");
     assert_eq!(events[1].from.as_deref(), Some("plan"));
     assert_eq!(events[1].to, "verify");
+}
+
+#[test]
+fn legacy_numeric_id_with_unquoted_title_colon_loads_history() {
+    if !git_available() {
+        return;
+    }
+    let repo = RepoFixture::new();
+    repo.write_raw_entity(
+        "048.md",
+        "id: 048\ntitle: Support optional entity ID (id-style: slug)\nstatus: plan\n",
+        "body",
+    );
+    repo.commit("plan");
+
+    let events = load_history(&repo);
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].entity_id, "048");
+    assert_eq!(events[0].to, "plan");
 }
 
 #[test]

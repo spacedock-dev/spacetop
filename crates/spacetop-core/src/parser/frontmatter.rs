@@ -51,3 +51,50 @@ pub(crate) fn split_frontmatter(contents: &str) -> Option<SplitFrontmatter<'_>> 
         body,
     })
 }
+
+pub(crate) fn top_level_scalar(frontmatter: &str, field: &str) -> Option<String> {
+    top_level_scalar_entries(frontmatter)?
+        .into_iter()
+        .find_map(|(key, value)| (key == field).then_some(value))
+}
+
+pub(crate) fn top_level_scalar_entries(frontmatter: &str) -> Option<Vec<(&str, String)>> {
+    let mut entries = Vec::new();
+
+    for line in frontmatter.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if line.starts_with(' ') || line.starts_with('\t') {
+            return None;
+        }
+        let (key, value) = trimmed.split_once(':')?;
+        let key = key.trim();
+        if key.is_empty() {
+            return None;
+        }
+        let value = value.trim_start();
+        if matches!(
+            value.chars().next(),
+            Some('[' | '{' | '|' | '>' | '&' | '*')
+        ) {
+            return None;
+        }
+        entries.push((key, unquote_scalar(value).to_string()));
+    }
+
+    Some(entries)
+}
+
+fn unquote_scalar(value: &str) -> &str {
+    if value.len() >= 2 {
+        let bytes = value.as_bytes();
+        if (bytes[0] == b'"' && bytes[value.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[value.len() - 1] == b'\'')
+        {
+            return &value[1..value.len() - 1];
+        }
+    }
+    value
+}

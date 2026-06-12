@@ -19,7 +19,7 @@ pub(super) fn render_in(
     ))];
 
     match session.active_state().index().metrics() {
-        Err(reason) => lines.push(Line::from(reason.user_message().to_string())),
+        Err(reason) => lines.push(Line::from(reason.user_message())),
         Ok(metrics) => {
             lines.push(Line::from(format!(
                 "completed: {}",

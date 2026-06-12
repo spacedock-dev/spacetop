@@ -255,7 +255,7 @@ fn write_unavailable(
         write_json(
             out,
             &UnavailableOutput {
-                unavailable: message,
+                unavailable: message.as_str(),
             },
         )
     } else {
@@ -417,6 +417,7 @@ fn path_to_git_rel(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
     use std::path::Path;
 
     #[test]
@@ -494,7 +495,7 @@ mod tests {
     #[test]
     fn history_commands_emit_shallow_clone_unavailable() {
         assert_history_unavailable(
-            git_ok("true\n"),
+            vec![git_ok("true\n")],
             spacetop_core::query::HistoryUnavailable::ShallowClone.user_message(),
         );
     }
@@ -502,18 +503,45 @@ mod tests {
     #[test]
     fn history_commands_emit_not_git_unavailable() {
         assert_history_unavailable(
-            git_err(128, "fatal: not a git repository\n"),
+            vec![git_err(128, "fatal: not a git repository\n")],
             spacetop_core::query::HistoryUnavailable::NotGitRepository.user_message(),
         );
     }
 
     #[test]
-    fn history_commands_emit_git_error_unavailable() {
+    fn history_commands_emit_git_log_error_unavailable() {
         assert_history_unavailable(
-            git_err(128, "fatal: bad object\n"),
-            spacetop_core::query::HistoryUnavailable::GitError("fatal: bad object\n".to_string())
-                .user_message(),
+            vec![git_ok("false\n"), git_err(128, "fatal: bad object\n")],
+            spacetop_core::query::HistoryUnavailable::GitLogError(
+                "fatal: bad object\n".to_string(),
+            )
+            .user_message(),
         );
+    }
+
+    #[test]
+    fn history_commands_emit_downstream_metadata_unavailable() {
+        let message = spacetop_core::query::HistoryUnavailable::MetadataError {
+            path: "docs/workflow/001.md".to_string(),
+            message: "missing status".to_string(),
+        }
+        .user_message();
+        assert_history_unavailable(metadata_failure_responses(), message);
+    }
+
+    #[test]
+    fn history_commands_emit_events_for_legacy_numeric_id() {
+        let timeline = run_timeline_body(history_success_responses(), false);
+        assert!(timeline.contains("\t001\t(new)->done\tabc123\n"));
+        assert!(!timeline.contains("history unavailable"));
+
+        let activity = run_activity_body(history_success_responses(), false);
+        assert!(activity.contains("\t001\t(new)->done\tabc123\n"));
+        assert!(!activity.contains("history unavailable"));
+
+        let metrics = run_metrics_body(history_success_responses(), false);
+        assert!(metrics.contains("completed_entities\t1\n"));
+        assert!(!metrics.contains("history unavailable"));
     }
 
     #[test]
@@ -716,55 +744,64 @@ mod tests {
         assert!(err.is_empty());
     }
 
-    fn assert_history_unavailable(response: spacetop_core::git::GitCmdResult, message: &str) {
-        assert_history_unavailable_json(response.clone(), message);
-        assert_history_unavailable_text(response, message);
+    fn assert_history_unavailable(
+        responses: Vec<spacetop_core::git::GitCmdResult>,
+        message: String,
+    ) {
+        assert_history_unavailable_json(responses.clone(), &message);
+        assert_history_unavailable_text(responses, &message);
     }
 
-    fn assert_history_unavailable_json(response: spacetop_core::git::GitCmdResult, message: &str) {
+    fn assert_history_unavailable_json(
+        responses: Vec<spacetop_core::git::GitCmdResult>,
+        message: &str,
+    ) {
         let expected = format!("{{\n  \"unavailable\": \"{message}\"\n}}\n");
 
         assert_eq!(
-            run_timeline_body(response.clone(), true),
+            run_timeline_body(responses.clone(), true),
             expected,
             "timeline JSON unavailable output"
         );
         assert_eq!(
-            run_metrics_body(response.clone(), true),
+            run_metrics_body(responses.clone(), true),
             expected,
             "metrics JSON unavailable output"
         );
         assert_eq!(
-            run_activity_body(response, true),
+            run_activity_body(responses, true),
             expected,
             "activity JSON unavailable output"
         );
     }
 
-    fn assert_history_unavailable_text(response: spacetop_core::git::GitCmdResult, message: &str) {
+    fn assert_history_unavailable_text(
+        responses: Vec<spacetop_core::git::GitCmdResult>,
+        message: &str,
+    ) {
         let expected = format!("{message}\n");
 
         assert_eq!(
-            run_timeline_body(response.clone(), false),
+            run_timeline_body(responses.clone(), false),
             expected,
             "timeline text unavailable output"
         );
         assert_eq!(
-            run_metrics_body(response.clone(), false),
+            run_metrics_body(responses.clone(), false),
             expected,
             "metrics text unavailable output"
         );
         assert_eq!(
-            run_activity_body(response, false),
+            run_activity_body(responses, false),
             expected,
             "activity text unavailable output"
         );
     }
 
-    fn run_timeline_body(response: spacetop_core::git::GitCmdResult, json: bool) -> String {
+    fn run_timeline_body(responses: Vec<spacetop_core::git::GitCmdResult>, json: bool) -> String {
         let fixture = fixture_repo_with_one_workflow();
         write_entity(&fixture.path().join("docs/workflow/001.md"));
-        let runner = TestGitRunner::new(response);
+        let runner = TestGitRunner::new(responses);
         let mut out = Vec::new();
 
         run_timeline(
@@ -781,10 +818,10 @@ mod tests {
         String::from_utf8(out).expect("utf8")
     }
 
-    fn run_metrics_body(response: spacetop_core::git::GitCmdResult, json: bool) -> String {
+    fn run_metrics_body(responses: Vec<spacetop_core::git::GitCmdResult>, json: bool) -> String {
         let fixture = fixture_repo_with_one_workflow();
         write_entity(&fixture.path().join("docs/workflow/001.md"));
-        let runner = TestGitRunner::new(response);
+        let runner = TestGitRunner::new(responses);
         let mut out = Vec::new();
 
         run_metrics(
@@ -800,10 +837,10 @@ mod tests {
         String::from_utf8(out).expect("utf8")
     }
 
-    fn run_activity_body(response: spacetop_core::git::GitCmdResult, json: bool) -> String {
+    fn run_activity_body(responses: Vec<spacetop_core::git::GitCmdResult>, json: bool) -> String {
         let fixture = fixture_repo_with_one_workflow();
         write_entity(&fixture.path().join("docs/workflow/001.md"));
-        let runner = TestGitRunner::new(response);
+        let runner = TestGitRunner::new(responses);
         let mut out = Vec::new();
 
         run_activity(
@@ -817,6 +854,24 @@ mod tests {
         .expect("activity");
 
         String::from_utf8(out).expect("utf8")
+    }
+
+    fn metadata_failure_responses() -> Vec<spacetop_core::git::GitCmdResult> {
+        vec![
+            git_ok("false\n"),
+            git_ok("abc123\x00100\nA\tdocs/workflow/001.md\n"),
+            git_ok("---\nid: 001\ntitle: Missing Status\n---\nbody\n"),
+        ]
+    }
+
+    fn history_success_responses() -> Vec<spacetop_core::git::GitCmdResult> {
+        vec![
+            git_ok("false\n"),
+            git_ok("abc123\x00100\nA\tdocs/workflow/001.md\n"),
+            git_ok(
+                "---\nid: 001\ntitle: Legacy entity: title with colon\nstatus: done\n---\nbody\n",
+            ),
+        ]
     }
 
     fn run_list_json_ids(
@@ -912,12 +967,14 @@ mod tests {
     }
 
     struct TestGitRunner {
-        response: spacetop_core::git::GitCmdResult,
+        responses: RefCell<Vec<spacetop_core::git::GitCmdResult>>,
     }
 
     impl TestGitRunner {
-        fn new(response: spacetop_core::git::GitCmdResult) -> Self {
-            Self { response }
+        fn new(responses: Vec<spacetop_core::git::GitCmdResult>) -> Self {
+            Self {
+                responses: RefCell::new(responses),
+            }
         }
     }
 
@@ -927,7 +984,11 @@ mod tests {
             _repo_root: &Path,
             _args: &[&str],
         ) -> std::io::Result<spacetop_core::git::GitCmdResult> {
-            Ok(self.response.clone())
+            let mut responses = self.responses.borrow_mut();
+            if responses.is_empty() {
+                return Err(std::io::Error::other("no more queued responses"));
+            }
+            Ok(responses.remove(0))
         }
     }
 

@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use serde_yaml::Value;
-
 use crate::git::GitRunner;
 use crate::index::{CommitId, CommitTime, StageEvent};
+use crate::parser::{split_frontmatter, top_level_scalar, SplitFrontmatter};
 use crate::query::{HistoryResult, HistoryUnavailable};
 
 pub struct GitHistorySource<'a, R> {
@@ -53,9 +52,9 @@ impl<'a, R: GitRunner> GitHistorySource<'a, R> {
                     &pathspec,
                 ],
             )
-            .map_err(|err| HistoryUnavailable::GitError(err.to_string()))?;
+            .map_err(|err| HistoryUnavailable::GitLogError(err.to_string()))?;
         if !out.status.success() {
-            return Err(HistoryUnavailable::GitError(out.stderr));
+            return Err(HistoryUnavailable::GitLogError(out.stderr));
         }
 
         self.events_from_log(repo_root, workflow_rel, &out.stdout)
@@ -65,12 +64,12 @@ impl<'a, R: GitRunner> GitHistorySource<'a, R> {
         let out = self
             .runner
             .run(repo_root, &["rev-parse", "--is-shallow-repository"])
-            .map_err(|err| HistoryUnavailable::GitError(err.to_string()))?;
+            .map_err(|err| HistoryUnavailable::GitProbeError(err.to_string()))?;
         if !out.status.success() && out.stderr.to_lowercase().contains("not a git repository") {
             return Err(HistoryUnavailable::NotGitRepository);
         }
         if !out.status.success() {
-            return Err(HistoryUnavailable::GitError(out.stderr));
+            return Err(HistoryUnavailable::GitProbeError(out.stderr));
         }
         if out.stdout.trim() == "true" {
             return Err(HistoryUnavailable::ShallowClone);
@@ -134,12 +133,19 @@ impl<'a, R: GitRunner> GitHistorySource<'a, R> {
         let blob = self
             .runner
             .run(repo_root, &["show", &spec])
-            .map_err(|err| HistoryUnavailable::GitError(err.to_string()))?;
+            .map_err(|err| HistoryUnavailable::GitBlobError {
+                path: path.to_string(),
+                message: err.to_string(),
+            })?;
         if !blob.status.success() {
-            return Err(HistoryUnavailable::GitError(blob.stderr));
+            return Err(HistoryUnavailable::GitBlobError {
+                path: path.to_string(),
+                message: blob.stderr,
+            });
         }
-        frontmatter_metadata(&blob.stdout).ok_or_else(|| {
-            HistoryUnavailable::GitError(format!("missing entity frontmatter in {path}"))
+        frontmatter_metadata(&blob.stdout).map_err(|message| HistoryUnavailable::MetadataError {
+            path: path.to_string(),
+            message,
         })
     }
 }
@@ -236,24 +242,22 @@ fn workflow_item_rel<'a>(workflow_rel: &str, path: &'a str) -> Option<&'a str> {
         .and_then(|path| path.strip_prefix('/'))
 }
 
-fn frontmatter_metadata(body: &str) -> Option<EntityMetadata> {
-    let mut lines = body.lines();
-    if lines.next()? != "---" {
-        return None;
-    }
-    let mut yaml = String::new();
-    for line in lines {
-        if line == "---" {
-            break;
-        }
-        yaml.push_str(line);
-        yaml.push('\n');
-    }
-    let value: Value = serde_yaml::from_str(&yaml).ok()?;
-    Some(EntityMetadata {
-        id: value.get("id")?.as_str()?.to_string(),
-        status: value.get("status")?.as_str()?.to_string(),
+fn frontmatter_metadata(body: &str) -> Result<EntityMetadata, String> {
+    let frontmatter = match split_frontmatter(body) {
+        Some(SplitFrontmatter::Ok { frontmatter, .. }) => frontmatter,
+        Some(SplitFrontmatter::Unterminated) => return Err("unterminated frontmatter".to_string()),
+        None => return Err("missing frontmatter".to_string()),
+    };
+    Ok(EntityMetadata {
+        id: required_metadata_scalar(frontmatter, "id")?,
+        status: required_metadata_scalar(frontmatter, "status")?,
     })
+}
+
+fn required_metadata_scalar(frontmatter: &str, field: &str) -> Result<String, String> {
+    top_level_scalar(frontmatter, field)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("missing {field}"))
 }
 
 #[cfg(test)]
@@ -308,6 +312,87 @@ mod tests {
                 call.args
             );
         }
+    }
+
+    #[test]
+    fn history_source_accepts_legacy_numeric_entity_id() {
+        let log = "abc123\x00100\nA\tdocs/workflow/_archive/scaffold-rust-cli-project.md\n";
+        let blob =
+            "---\nid: 001\ntitle: Legacy entity: title with colon\nstatus: done\n---\nbody\n";
+        let runner = RecordingGitRunner::new(vec![ok("false\n"), ok(log), ok(blob)]);
+
+        let events = GitHistorySource::new(&runner)
+            .load(&PathBuf::from("/repo"), "docs/workflow")
+            .expect("history load");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].entity_id, "001");
+        assert_eq!(events[0].to, "done");
+    }
+
+    #[test]
+    fn failed_log_reports_git_log_unavailable() {
+        let runner = RecordingGitRunner::new(vec![ok("false\n"), err(128, "fatal: bad object\n")]);
+
+        let err = GitHistorySource::new(&runner)
+            .load(&PathBuf::from("/repo"), "docs/workflow")
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            HistoryUnavailable::GitLogError("fatal: bad object\n".to_string())
+        );
+        assert_eq!(
+            err.user_message(),
+            "history unavailable: git log could not be read"
+        );
+    }
+
+    #[test]
+    fn log_success_show_failure_reports_blob_unavailable() {
+        let log = "abc123\x00100\nA\tdocs/workflow/001.md\n";
+        let runner = RecordingGitRunner::new(vec![
+            ok("false\n"),
+            ok(log),
+            err(128, "fatal: path not found\n"),
+        ]);
+
+        let err = GitHistorySource::new(&runner)
+            .load(&PathBuf::from("/repo"), "docs/workflow")
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            HistoryUnavailable::GitBlobError {
+                path: "docs/workflow/001.md".to_string(),
+                message: "fatal: path not found\n".to_string(),
+            }
+        );
+        assert!(err
+            .user_message()
+            .contains("historical blob could not be read"));
+    }
+
+    #[test]
+    fn log_success_metadata_failure_reports_metadata_unavailable() {
+        let log = "abc123\x00100\nA\tdocs/workflow/001.md\n";
+        let blob = "---\nid: 001\ntitle: Missing Status\n---\nbody\n";
+        let runner = RecordingGitRunner::new(vec![ok("false\n"), ok(log), ok(blob)]);
+
+        let err = GitHistorySource::new(&runner)
+            .load(&PathBuf::from("/repo"), "docs/workflow")
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            HistoryUnavailable::MetadataError {
+                path: "docs/workflow/001.md".to_string(),
+                message: "missing status".to_string(),
+            }
+        );
+        assert!(err
+            .user_message()
+            .contains("historical entity metadata could not be parsed"));
     }
 
     #[test]
