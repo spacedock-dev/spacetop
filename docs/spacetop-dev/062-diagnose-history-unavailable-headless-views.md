@@ -421,3 +421,16 @@ Ratatui views while preserving Spacetop's read-only workflow contract.
 ### Summary
 
 Implemented the fix as a core history-loader correction rather than a UI workaround. History metadata now extracts only the historical `id` and `status` scalars it needs, preserves lexical IDs such as `001`, and reports distinct unavailable reasons for log, blob, and metadata failures so headless and TUI views stay consistent.
+
+## Stage Report: verify
+
+- DONE: Independently verify AC-1 and AC-4: root cause evidence and regression tests prove successful `git log` no longer collapses blob/metadata failures into a log failure.
+  Verified `5a76724` maps `git log`, `git show`, and metadata extraction to distinct unavailable variants; `cargo test -p spacetop-core git_history` passed 9/9 and `cargo test -p spacetop-core --test git_history_fixtures` passed 8/8.
+- DONE: Independently verify AC-2 and AC-3: reproduced headless metrics/activity/timeline commands emit useful history or precise reasons, and TUI history views use the same corrected result.
+  `metrics` emitted `completed_entities	57`, `activity` emitted history rows including task `062`, `timeline 056` emitted four transitions, headless history tests passed 5/5, and app/UI propagation tests passed.
+- DONE: Independently verify AC-5 and completion evidence: no workflow markdown write path was added, no-write guardrail passes, broader tests and `make lint` pass, and docs impact is correct.
+  Diff review found only read-oriented history/query/parser/headless/UI changes; `cargo test -p spacetop-core --test no_write_git_calls` passed 2/2, `cargo fmt --check`, `cargo test`, and `make lint` all exited 0, and README needs no update.
+
+### Summary
+
+Verification approves the implementation. The original headless reproduction now returns useful history output, downstream history-loader failures have precise user-facing reasons, TUI views use the same corrected history state, and the read-only workflow boundary remains covered by guardrails.
