@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#60"
 mod-block:
+archived: 2026-06-12T14:25:39Z
 ---
 
 When a workflow task file is moved into `_archive/`, a running Spacetop session
