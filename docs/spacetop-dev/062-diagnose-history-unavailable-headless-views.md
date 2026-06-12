@@ -408,3 +408,16 @@ ID metadata boundary, then split unavailable reasons so successful `git log`
 cannot be reported as a log failure when `git show` or metadata extraction is the
 actual problem. The test plan covers core, headless, app propagation, and
 Ratatui views while preserving Spacetop's read-only workflow contract.
+
+## Stage Report: implement
+
+- DONE: Identify and fix the actual history-loader boundary so successful `git log` is not reported as a git-log failure when blob or metadata processing is the failing operation.
+  Root cause was metadata extraction after successful `git log` and `git show`: `25016db0322d5fcb41241ab2589df266e8b1f058:docs/spacetop-dev/048-optional-entity-id.md` has raw `id/status`, but full YAML parsing failed on `title: Support optional entity ID (id-style: slug)` and collapsed to generic `GitError`; fixed in `5a76724`.
+- DONE: Add lowest-layer regression coverage for legacy numeric IDs, blob/metadata unavailable reasons, and headless/TUI propagation for metrics, activity, and timeline.
+  Added core mocked-runner tests, a real git fixture test, headless text/JSON queued-runner tests, app pass-through assertions, and Ratatui render assertions in `5a76724`.
+- DONE: Run reproduction commands, focused tests, broader applicable tests, no-write guardrail, and `make lint`, or record exact blockers and read-only evidence.
+  Passed: reproduction commands for `metrics`, `activity`, and `timeline 056` emitted history rows; focused tests; `cargo test`; `cargo test -p spacetop-core --test no_write_git_calls` (2/2); `make lint`.
+
+### Summary
+
+Implemented the fix as a core history-loader correction rather than a UI workaround. History metadata now extracts only the historical `id` and `status` scalars it needs, preserves lexical IDs such as `001`, and reports distinct unavailable reasons for log, blob, and metadata failures so headless and TUI views stay consistent.
