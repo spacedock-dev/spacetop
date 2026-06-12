@@ -1,7 +1,7 @@
 ---
 id: "060"
 title: Workflow Definition page supports mouse scroll wheel
-status: plan
+status: implement
 source: captain request 2026-06-12
 kind: feature
 risk: low
@@ -11,7 +11,7 @@ started: 2026-06-12T12:55:32Z
 completed:
 verdict:
 score: 0.62
-worktree:
+worktree: .worktrees/spacedock-ensign-060-workflow-definition-mouse-scroll
 issue:
 pr:
 ---
