@@ -14,6 +14,7 @@ score: 0.82
 worktree: .worktrees/codex-058-curl-install-script
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 New users should be able to copy one install command from the GitHub repository
