@@ -17,7 +17,9 @@ mod search;
 mod session;
 
 pub use history_worker::{spawn_history_worker, HistoryWorkerRequest, HistoryWorkerResult};
-pub use overview::{OverviewState, SelectedRow, SortMode, StageCount, SyncStatus, ViewScope};
+pub use overview::{
+    OverviewState, PreviewPlacement, SelectedRow, SortMode, StageCount, SyncStatus, ViewScope,
+};
 pub use picker::PickerState;
 pub use search::{
     matching_commands, CommandAction, CommandEntry, SearchMode, SearchState,

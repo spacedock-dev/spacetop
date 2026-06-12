@@ -1003,3 +1003,50 @@ fn footer_omits_broken_pill_when_no_parse_errors() {
         "footer must not show broken pill when there are no parse_errors"
     );
 }
+
+#[test]
+fn list_rows_rect_and_offset_facts_match_drawn_rows() {
+    // Anti-drift proof for mouse hit-testing (task 057): the row geometry
+    // recorded into the `list_rows_rect`/`list_offset` render-facts must
+    // equal where rows were actually painted, including when the List
+    // widget scrolls. Hit-testing reads only these facts, so this test ties
+    // them to pixels.
+    let items: Vec<Entity> = (0..40)
+        .map(|i| item(&format!("{i:03}"), &format!("Task number {i:03}"), "Body"))
+        .collect();
+    let mut app = app_with_items(items);
+    // Move selection deep enough that the list scrolls (offset > 0).
+    for _ in 0..35 {
+        app.handle_key(key(KeyCode::Down));
+    }
+    let mut terminal = Terminal::new(TestBackend::new(220, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let buffer = terminal.backend().buffer();
+
+    let state = app.as_overview().expect("overview mode");
+    let rows = state.list_rows_rect.get();
+    let offset = state.list_offset.get();
+    assert!(rows.height > 0, "rows rect must be recorded");
+    assert!(offset > 0, "fixture must scroll the list");
+
+    // The entity at absolute index `offset + p` paints at row `rows.y + p`.
+    for visible_pos in [0usize, 3, usize::from(rows.height) - 1] {
+        let index = offset + visible_pos;
+        let needle = format!("Task number {index:03}");
+        let expected_y = rows.y + visible_pos as u16;
+        let positions = find_text(buffer, &needle);
+        assert!(
+            positions
+                .iter()
+                .any(|(x, y)| *y == expected_y && *x >= rows.x && *x < rows.x + rows.width),
+            "{needle} should paint at recorded row y={expected_y}; found at {positions:?}"
+        );
+    }
+
+    // The preview render-fact is populated alongside (preview is open in
+    // this fixture) and sits to the right of the list in Left placement.
+    let preview = state.preview_rect.get();
+    let content = state.content_rect.get();
+    assert!(preview.width > 0, "preview rect must be recorded while open");
+    assert_eq!(preview.x, content.x + (content.width - preview.width));
+}

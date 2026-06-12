@@ -5,10 +5,9 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 
-use crate::app::{OverviewState, SelectedRow, ViewScope};
+use crate::app::{OverviewState, PreviewPlacement, SelectedRow, ViewScope};
 use spacetop_core::domain::EntityParseError;
 
-use super::layout::PreviewPlacement;
 use super::{diff, markdown};
 
 use std::cell::RefCell;
