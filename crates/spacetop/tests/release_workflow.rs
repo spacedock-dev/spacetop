@@ -65,7 +65,19 @@ fn release_workflow_is_driven_by_published_github_release() {
     let upload_step = step_named(upload_job, "Upload assets to existing release");
     let upload_script = string_field(upload_step, "run");
     assert!(
-        upload_script.contains("gh release upload \"${tag}\""),
+        upload_script.contains("repo=\"${GITHUB_REPOSITORY}\""),
+        "upload job has no checkout, so gh commands must use the workflow repository explicitly"
+    );
+    assert!(
+        upload_script.contains("gh release view \"${tag}\" --repo \"${repo}\""),
+        "asset preflight must not rely on git repository inference"
+    );
+    assert!(
+        !upload_script.contains("mapfile -t existing_assets < <(gh release view"),
+        "asset preflight must fail immediately when gh release view fails"
+    );
+    assert!(
+        upload_script.contains("gh release upload \"${tag}\" --repo \"${repo}\""),
         "release workflow must upload assets to the existing GitHub Release"
     );
     assert!(
