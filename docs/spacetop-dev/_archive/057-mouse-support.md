@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#56"
 mod-block:
+archived: 2026-06-12T08:11:15Z
 ---
 
 Add mouse interaction to the Spacetop TUI so the captain can inspect Spacedock
