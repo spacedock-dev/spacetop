@@ -71,6 +71,12 @@ jobs:
                   )
           PY
 
+          installer_url="https://raw.githubusercontent.com/spacedock-dev/spacetop/${tag}/install.sh"
+          if ! grep -Fq "${installer_url}" README.md; then
+            echo "README installer URL must be pinned to ${installer_url}" >&2
+            exit 1
+          fi
+
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
         env:
@@ -168,22 +174,11 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.validate.outputs.tag }}
-
       - name: Download release archives
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-
-      - name: Stage installer asset
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp install.sh dist/install.sh
 
       - name: Generate checksums
         shell: bash
@@ -198,7 +193,7 @@ jobs:
           set -euo pipefail
           tag="${{ needs.validate.outputs.tag }}"
           repo="${GITHUB_REPOSITORY}"
-          assets=(dist/*.tar.gz dist/SHA256SUMS dist/install.sh)
+          assets=(dist/*.tar.gz dist/SHA256SUMS)
 
           for asset in "${assets[@]}"; do
             if [[ ! -f "${asset}" ]]; then

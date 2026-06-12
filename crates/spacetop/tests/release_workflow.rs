@@ -52,6 +52,16 @@ fn release_workflow_is_driven_by_published_github_release() {
         !validation_script.contains("-n \"${RELEASE_NAME}\""),
         "release title validation must not allow an empty title"
     );
+    assert!(
+        validation_script.contains(
+            "installer_url=\"https://raw.githubusercontent.com/spacedock-dev/spacetop/${tag}/install.sh\""
+        ),
+        "release validation must construct the version-pinned installer URL"
+    );
+    assert!(
+        validation_script.contains("grep -Fq \"${installer_url}\" README.md"),
+        "release validation must require README installer URL to match the release tag"
+    );
 
     let build_job = field(field(&workflow, "jobs"), "build");
     let build_checkout = step_named(build_job, "Checkout");
@@ -62,18 +72,13 @@ fn release_workflow_is_driven_by_published_github_release() {
     );
 
     let upload_job = field(field(&workflow, "jobs"), "upload");
-    let upload_checkout = step_named(upload_job, "Checkout");
-    assert_eq!(
-        string_field(field(upload_checkout, "with"), "ref"),
-        "${{ needs.validate.outputs.tag }}",
-        "upload job must checkout the validated release tag before publishing install.sh"
-    );
-
-    let stage_installer_step = step_named(upload_job, "Stage installer asset");
-    let stage_installer_script = string_field(stage_installer_step, "run");
     assert!(
-        stage_installer_script.contains("cp install.sh dist/install.sh"),
-        "release workflow must stage install.sh as a GitHub Release asset"
+        find_step_named(upload_job, "Checkout").is_none(),
+        "upload job should not checkout source just to publish install.sh"
+    );
+    assert!(
+        find_step_named(upload_job, "Stage installer asset").is_none(),
+        "install.sh is served from a version-pinned raw URL and must not be staged as a release asset"
     );
 
     let upload_step = step_named(upload_job, "Upload assets to existing release");
@@ -95,8 +100,12 @@ fn release_workflow_is_driven_by_published_github_release() {
         "release workflow must upload assets to the existing GitHub Release"
     );
     assert!(
-        upload_script.contains("dist/install.sh"),
-        "release workflow must upload install.sh as a release asset"
+        upload_script.contains("assets=(dist/*.tar.gz dist/SHA256SUMS)"),
+        "release workflow must upload only release archives and checksums"
+    );
+    assert!(
+        !upload_script.contains("dist/install.sh"),
+        "release workflow must not upload install.sh as a release asset"
     );
     assert!(
         !upload_script.contains("gh release create"),
@@ -157,14 +166,15 @@ fn mapping_field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
 }
 
 fn step_named<'a>(job: &'a Value, name: &str) -> &'a Value {
+    find_step_named(job, name).unwrap_or_else(|| panic!("missing workflow step {name:?}"))
+}
+
+fn find_step_named<'a>(job: &'a Value, name: &str) -> Option<&'a Value> {
     let steps = field(job, "steps");
     let Value::Sequence(steps) = steps else {
         panic!("expected job steps sequence, got {steps:?}");
     };
-    steps
-        .iter()
-        .find(|step| string_field(step, "name") == name)
-        .unwrap_or_else(|| panic!("missing workflow step {name:?}"))
+    steps.iter().find(|step| string_field(step, "name") == name)
 }
 
 fn string_field<'a>(value: &'a Value, key: &str) -> &'a str {

@@ -6,6 +6,26 @@ Spacetop is a Rust terminal UI for browsing [Spacedock](https://github.com/clkao
 
 Spacedock stores workflow progress as markdown files in git. A workflow directory typically contains a `README.md` that defines stages and gates, plus entity files with YAML frontmatter such as `id`, `title`, and `status`. Spacetop is intended to make those state files easier to inspect from the terminal.
 
+## Installation
+
+Install the latest released binary with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/spacedock-dev/spacetop/v0.1.0/install.sh | sh
+```
+
+The installer script is pinned to the documented release tag, so later changes
+on `main` cannot change this install path accidentally. It installs the latest
+released binary from GitHub Releases, verifies the selected archive against the
+release `SHA256SUMS` file, and installs `spacetop` to `~/.cargo/bin` by default.
+The supported binary platforms are macOS Apple Silicon and Linux x64.
+
+Override the install directory with an absolute path:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/spacedock-dev/spacetop/v0.1.0/install.sh | SPACETOP_INSTALL_DIR=/usr/local/bin sh
+```
+
 ## Goals
 
 - Discover or open a Spacedock workflow directory.
@@ -25,56 +45,6 @@ query/export commands, and explicitly sync with `git pull --ff-only`.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.
-
-## Expected Stack
-
-- Rust
-- Cargo workspace with `spacetop-core` for pure workflow logic and `spacetop`
-  for the CLI/TUI binary
-- `ratatui` for terminal UI rendering
-- `crossterm` for terminal backend and input events
-- `serde` and `serde_yaml` for structured metadata parsing
-- `notify` for filesystem watching
-- `walkdir` for workflow discovery
-- `thiserror` and `anyhow` for structured errors at the right boundary
-
-## Prerequisites
-
-Install Rust (which includes the Rust toolchain and Cargo) using `rustup`:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-After installation, verify both tools are available:
-
-```bash
-rustc --version
-cargo --version
-```
-
-## Development
-
-Common local commands:
-
-```bash
-cargo fmt
-cargo test
-make lint
-cargo run -p spacetop -- --workflow-dir docs/spacetop-dev
-cargo run -p spacetop -- list --workflow-dir docs/spacetop-dev --json
-cargo run -p spacetop -- export --workflow-dir docs/spacetop-dev --json
-```
-
-Workspace layout:
-
-- `crates/spacetop-core/` contains domain, parser, discovery, watcher, git sync,
-  and editor helpers. It has no terminal UI dependencies.
-- `crates/spacetop/` contains the CLI, TUI app state, rendering, terminal event
-  loop, and release-only Sentry setup.
-- `tests/fixtures/` contains shared integration-test fixtures.
-
-Release and versioning policy lives in `docs/release-policy.md`.
 
 ## Headless CLI
 
@@ -154,31 +124,72 @@ the TUI. Invalid, duplicate, or reserved keybindings also fall back to defaults
 with warnings. Config and session files are never read from or written into
 Spacedock workflow directories.
 
-### Setup
+## Safety
+
+Spacetop should be read-only by default. The only current writes are the explicit
+`Y` sync action (`git pull --ff-only`) and session persistence under the user
+state path described above. Future workflow-state write features should make
+state changes explicit and easy to audit through git.
+
+## Development
+
+### Expected Stack
+
+- Rust
+- Cargo workspace with `spacetop-core` for pure workflow logic and `spacetop`
+  for the CLI/TUI binary
+- `ratatui` for terminal UI rendering
+- `crossterm` for terminal backend and input events
+- `serde` and `serde_yaml` for structured metadata parsing
+- `notify` for filesystem watching
+- `walkdir` for workflow discovery
+- `thiserror` and `anyhow` for structured errors at the right boundary
+
+### Prerequisites
+
+Install Rust, which includes the Rust toolchain and Cargo, using `rustup`:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+After installation, verify both tools are available:
+
+```bash
+rustc --version
+cargo --version
+```
 
 On a fresh clone, install the required Rust components once:
 
-    make bootstrap
+```bash
+make bootstrap
+```
 
 This adds the `clippy` component to the active toolchain. `make lint` and
 `make build` will refuse to run until clippy is available and will point you
 back at this command.
 
-### Install Released Binary
-
-Install the latest released binary with one command:
+### Common Commands
 
 ```bash
-curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | sh
+cargo fmt
+cargo test
+make lint
+cargo run -p spacetop -- --workflow-dir docs/spacetop-dev
+cargo run -p spacetop -- list --workflow-dir docs/spacetop-dev --json
+cargo run -p spacetop -- export --workflow-dir docs/spacetop-dev --json
 ```
 
-The installer supports macOS Apple Silicon and Linux x64, verifies the selected
-archive against the release `SHA256SUMS` file, and installs `spacetop` to
-`~/.cargo/bin` by default. Override the install directory with an absolute path:
+### Workspace Layout
 
-```bash
-curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | SPACETOP_INSTALL_DIR=/usr/local/bin sh
-```
+- `crates/spacetop-core/` contains domain, parser, discovery, watcher, git sync,
+  and editor helpers. It has no terminal UI dependencies.
+- `crates/spacetop/` contains the CLI, TUI app state, rendering, terminal event
+  loop, and release-only Sentry setup.
+- `tests/fixtures/` contains shared integration-test fixtures.
+
+Release and versioning policy lives in `docs/release-policy.md`.
 
 ### Install Local Build
 
@@ -202,10 +213,3 @@ To remove the installed binary:
 ```bash
 make uninstall
 ```
-
-## Safety
-
-Spacetop should be read-only by default. The only current writes are the explicit
-`Y` sync action (`git pull --ff-only`) and session persistence under the user
-state path described above. Future workflow-state write features should make
-state changes explicit and easy to audit through git.

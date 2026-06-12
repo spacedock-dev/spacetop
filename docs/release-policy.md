@@ -43,17 +43,18 @@ The first supported binary assets are:
 - `spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz`
 - `spacetop-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`
 - `SHA256SUMS`
-- `install.sh`
 
 The macOS archive targets Apple Silicon. The Linux archive targets x64 GNU
 Linux.
 
 The README curl installer is the documented user install path for released
-binaries. The README downloads `install.sh` from the latest GitHub Release, not
-from a moving source branch. The installer depends on those two archive assets
-and `SHA256SUMS` retaining the filenames above. The installer resolves the
-latest release tag first, then downloads assets from the canonical
-`/releases/download/<tag>/` URLs.
+binaries. The README downloads `install.sh` from the current release tag, for
+example `https://raw.githubusercontent.com/spacedock-dev/spacetop/vX.Y.Z/install.sh`.
+This pins the bootstrap script to released source instead of the mutable `main`
+branch. `install.sh` is not uploaded as a per-release asset. The installer
+depends on the two archive assets and `SHA256SUMS` retaining the filenames
+above. The installer resolves the latest release tag first, then downloads
+assets from the canonical `/releases/download/<tag>/` URLs.
 
 ## Human Release Flow
 
@@ -61,15 +62,17 @@ latest release tag first, then downloads assets from the canonical
 2. Choose the next version.
 3. Update the root `Cargo.toml` workspace version.
 4. Run `cargo check` to update `Cargo.lock`.
-5. Move relevant `CHANGELOG.md` entries from `Unreleased` to `vX.Y.Z`.
-6. Commit with `release: vX.Y.Z`.
-7. Record the exact release commit SHA: `release_commit="$(git rev-parse HEAD)"`.
-8. Push `main`.
-9. Create and publish a GitHub Release for tag `vX.Y.Z`, targeting
+5. Update the README installer URL to
+   `https://raw.githubusercontent.com/spacedock-dev/spacetop/vX.Y.Z/install.sh`.
+6. Move relevant `CHANGELOG.md` entries from `Unreleased` to `vX.Y.Z`.
+7. Commit with `release: vX.Y.Z`.
+8. Record the exact release commit SHA: `release_commit="$(git rev-parse HEAD)"`.
+9. Push `main`.
+10. Create and publish a GitHub Release for tag `vX.Y.Z`, targeting
    `${release_commit}`.
-10. Let GitHub Actions build release assets and upload them to that existing
+11. Let GitHub Actions build release assets and upload them to that existing
    GitHub Release.
-11. Verify the Release page contains both platform archives and `SHA256SUMS`.
+12. Verify the Release page contains both platform archives and `SHA256SUMS`.
 
 CLI example:
 
@@ -92,6 +95,7 @@ The release workflow fails before uploading assets when:
 - the tag does not start with `v`
 - the tag version is not valid SemVer
 - the tag version differs from the workspace version
+- the README installer URL is not pinned to the release tag
 - `cargo fmt --check`, `cargo test`, or `make lint` fails
 - any target binary fails to build
 - the GitHub Release title differs from the tag
