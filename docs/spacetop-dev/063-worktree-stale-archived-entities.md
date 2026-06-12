@@ -205,3 +205,16 @@ the archive filename slug no longer matches the stale worktree file.
 ### Summary
 
 Closed 063 as a proof-focused follow-up to 059 with one test-only parser regression for the exact reported shape. Read-only safety is preserved: no stale worktree files are deleted, no workflow markdown write path was added, and the full `cargo test` run included `no_write_git_calls`; no README or policy update was needed because worktree-only semantics are unchanged.
+
+## Stage Report: verify
+
+- DONE: Verify the 063 branch satisfies AC-1 through AC-5 using current main plus the new exact-shape parser regression, without adding duplicate production behavior beyond task 059.
+  Approved against refreshed `origin/main` at `4eb7193`; the branch adds only `active_worktree_overlay_ignores_stale_archived_siblings`, which proves active `0x0c`, archived `0x0a`/`0x0b`, root frontmatter authority, worktree body overlay, and root-archive anchored archived scope.
+- DONE: Verify AC-6 and safety boundaries: no workflow markdown write path, no stale file deletion, no broadened git writes, and no docs/policy update needed unless semantics changed.
+  Branch diff has no production source changes; `no_write_git_calls` passed 2/2, `git_sync.rs` still limits sync to `git pull --ff-only`, and no README/policy update is needed because worktree-only semantics did not change.
+- DONE: Re-run or confirm the focused parser/app tests and `make lint`, then record an approval or rejection with exact evidence in the verify stage report.
+  Ran `cargo test -p spacetop-core worktree` (19/19 passed), `cargo test -p spacetop archive_move_reload_removes_stale_worktree_copy_from_active_scope` (1/1 passed), `cargo test -p spacetop-core --test no_write_git_calls` (2/2 passed), `make lint` (passed), and `git diff --check origin/main...HEAD` (passed).
+
+### Summary
+
+Approved. The 063 branch is correctly scoped as a test-only closure on top of task 059's parser behavior: stale archived sibling copies do not reappear in active scope, the legitimate active worktree overlay remains intact, archived scope stays rooted in `_archive/`, and the read-only/git-write boundaries remain enforced.
