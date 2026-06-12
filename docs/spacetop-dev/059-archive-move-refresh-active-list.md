@@ -1,7 +1,7 @@
 ---
 id: "059"
 title: Archived task remains in active list until restart
-status: plan
+status: implement
 source: captain bug report 2026-06-12
 kind: bugfix
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-06-12T12:53:10Z
 completed:
 verdict:
 score: 0.88
-worktree:
+worktree: .worktrees/spacedock-ensign-059-archive-move-refresh-active-list
 issue:
 pr:
 ---
