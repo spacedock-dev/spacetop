@@ -1,17 +1,17 @@
 ---
 id: "058"
 title: Add curl-based release installer
-status: verify
+status: done
 source: captain request 2026-06-12
 kind: feature
 risk: medium
 milestone: v1-maintenance
 proof: shell/install tests plus README and release-policy alignment
 started: 2026-06-12T09:55:09Z
-completed:
-verdict:
+completed: 2026-06-12T10:57:58Z
+verdict: PASSED
 score: 0.82
-worktree: .worktrees/codex-058-curl-install-script
+worktree:
 issue:
 pr: "#59"
 mod-block:
