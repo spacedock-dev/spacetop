@@ -172,3 +172,16 @@ Created a concrete implementation plan for separating preview `source:` and
 `worktree:` metadata into dedicated header lines. The plan keeps the change
 inside preview rendering, requires Ratatui regression tests before code edits,
 and preserves the docs/read-only boundaries for the later implementation stage.
+
+## Stage Report: implement
+
+- DONE: Implement the preview-header layout change in the preview rendering layer only, with `source:` and `worktree:` on dedicated lines.
+  Updated `build_preview_header_lines` so bottom preview keeps status/score compact, then renders dedicated `source:` and `worktree:` lines; parser/app/write paths were untouched.
+- DONE: Add Ratatui `TestBackend` regressions proving long `source`/`worktree` values do not share rows or overlap primary preview content.
+  Added row-coordinate regressions in `ui/tests/overview.rs` and `ui/tests/preview.rs`; both failed before the implementation and passed after it.
+- DONE: Run the targeted UI tests, `cargo fmt`, broader applicable tests, and `make lint`, or record exact blockers and docs-impact reasoning.
+  Ran targeted preview tests, `cargo fmt`, `cargo test -p spacetop` (357 lib tests plus package integration tests passed), and `make lint`; no docs update was needed because labels, keybindings, commands, and schema semantics did not change.
+
+### Summary
+
+Implemented the preview header bugfix for bottom placement while preserving the existing left-placement layout and worktree basename behavior. The change is scoped to preview rendering and Ratatui UI regressions, with no workflow markdown write behavior or product documentation changes.

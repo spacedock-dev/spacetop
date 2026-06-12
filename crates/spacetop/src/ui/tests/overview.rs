@@ -188,19 +188,50 @@ fn preview_opens_on_right_in_wide_terminals_and_bottom_in_taller_ones() {
 }
 
 #[test]
-fn bottom_preview_compacts_metadata_into_one_line() {
-    let mut work_item = item("001", "Bottom Preview", "Body");
+fn bottom_preview_renders_source_and_worktree_on_dedicated_lines() {
+    let mut work_item = item(
+        "001",
+        "Bottom Preview",
+        "Body starts here after the preview header.",
+    );
     work_item.score = Some(0.75);
-    work_item.source = Some("captain".to_string());
+    work_item.source =
+        Some("captain request with enough detail to prove source metadata owns a row".to_string());
+    work_item.worktree =
+        Some(".worktrees/spacedock-ensign-061-preview-header-source-worktree-lines".to_string());
     let app = app_with_items(vec![work_item]);
 
     let mut terminal = Terminal::new(TestBackend::new(80, 180)).expect("tall terminal");
     terminal.draw(|frame| render(frame, &app)).unwrap();
-    let rendered = buffer_text(terminal.backend().buffer());
+    let buffer = terminal.backend().buffer();
+    let status_y = find_text(buffer, "status:")[0].1;
+    let score_y = find_text(buffer, "score:")[0].1;
+    let source_y = find_text(buffer, "source:")[0].1;
+    let worktree_y = find_text(buffer, "worktree:")[0].1;
+    let body_divider_y = find_text(buffer, "── body")[0].1;
+    let body_y = find_text(buffer, "Body starts here")[0].1;
 
-    assert!(rendered.contains("status: ● design"));
-    assert!(rendered.contains("score: 0.75"));
-    assert!(rendered.contains("source: captain"));
+    assert_eq!(status_y, score_y, "status and score should stay compact");
+    assert_ne!(
+        status_y, source_y,
+        "source metadata must not share the status/score row"
+    );
+    assert_ne!(
+        status_y, worktree_y,
+        "worktree metadata must not share the status/score row"
+    );
+    assert_ne!(
+        source_y, worktree_y,
+        "source and worktree metadata must render on separate rows"
+    );
+    assert!(
+        body_divider_y > source_y.max(worktree_y),
+        "body divider must render below metadata rows"
+    );
+    assert!(
+        body_y > body_divider_y,
+        "body text must render below the divider"
+    );
 }
 
 #[test]
@@ -259,5 +290,17 @@ fn preview_renders_em_dash_for_empty_worktree() {
     assert!(
         rendered.contains("status: ● design"),
         "surrounding header should remain intact"
+    );
+    let buffer = terminal.backend().buffer();
+    let status_y = find_text(buffer, "status:")[0].1;
+    let source_y = find_text(buffer, "source:")[0].1;
+    let worktree_y = find_text(buffer, "worktree:")[0].1;
+    assert_ne!(
+        status_y, source_y,
+        "source metadata must not share the status row"
+    );
+    assert_ne!(
+        source_y, worktree_y,
+        "empty/default worktree metadata must render on its own row"
     );
 }
