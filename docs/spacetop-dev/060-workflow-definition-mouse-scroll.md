@@ -246,3 +246,16 @@ gate for the implement stage.
 ### Summary
 
 Implemented mouse-wheel scrolling for the full-pane Workflow Definition view without changing workflow parsing or markdown write behavior. The new tests cover Definition scroll input, help-overlay scoping, overview-state preservation, and visible Ratatui scroll movement.
+
+## Stage Report: verify
+
+- DONE: Independently verify AC-1: Workflow Definition mouse wheel up/down changes the Definition scroll offset and visible rendered content.
+  Evidence: `cargo test -p spacetop definition_mouse_wheel` passed 3/3 and `cargo test -p spacetop definition_scroll_offset_moves_prose_body` passed 1/1.
+- DONE: Independently verify AC-2 and AC-3: wheel behavior remains scoped to Definition/help state and existing keyboard behavior still passes.
+  Evidence: `cargo test -p spacetop definition` passed 20/20, including help-open, overview preservation, and Definition keyboard tests; `cargo test -p spacetop app::mouse::tests::wheel_targets_panel_under_cursor` passed 1/1.
+- DONE: Rerun targeted definition/mouse tests, broader applicable tests, and `make lint`; return an explicit APPROVED or REJECTED gate verdict with docs-impact judgment.
+  Evidence: `cargo fmt --check`, targeted tests, `cargo test -p spacetop` passed 395/395, and `make lint` passed. Verdict: APPROVED. Docs-impact: no blocking docs change; help/footer copy remains accurate and no keyboard/help behavior changed.
+
+### Summary
+
+Verified commit `b1b4fe3` plus the implementation report against all three acceptance criteria. The Definition mouse-wheel input is scoped to the full-pane Definition mode, existing overview mouse and Definition keyboard behavior still pass, and the required lint gate is clean.
