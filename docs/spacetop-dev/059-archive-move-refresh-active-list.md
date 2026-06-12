@@ -178,3 +178,16 @@ keeps archive visibility in app-state scope loading, and names focused tests plu
 ### Summary
 
 Implemented the fix in the typed parser/app-state path without adding any Spacetop workflow-write command. Worktree-only rows still appear normally, but a slug present under the main workflow `_archive/` now prevents a stale worktree copy from remaining active while archive loading remains owned by `WorkflowSources::load_archive`.
+
+## Stage Report: verify
+
+- DONE: Independently verify AC-1 and AC-2 with focused parser/app reload coverage proving archived slugs do not remain active and do appear in archived scope.
+  `cargo test -p spacetop-core parser::tests::archived_main_slug_suppresses_stale_worktree_copy -- --exact`, `cargo test -p spacetop-core parser::tests::malformed_archived_slug_still_suppresses_stale_worktree_copy -- --exact`, and `cargo test -p spacetop app::tests::archive_move_reload_removes_stale_worktree_copy_from_active_scope -- --exact` all passed.
+- DONE: Independently verify AC-3 and the read-only boundary by reviewing the diff for workflow writes/git-write broadening and running the no-write guardrail if applicable.
+  Production diff is limited to parser snapshot/worktree merge reads; no git sync/editor/write path changed, diff write operations are test-only archive moves, and `cargo test -p spacetop-core --test no_write_git_calls` passed.
+- DONE: Rerun required evidence including focused tests, broader applicable tests, and `make lint`; return an explicit APPROVED or REJECTED gate verdict with cited evidence.
+  `cargo test` passed across the workspace and `make lint` passed (`cargo clippy --all-targets --all-features -- -D warnings`); ignored real notify backend tests were not run because watcher production code was unchanged.
+
+### Summary
+
+APPROVED. The implementation satisfies AC-1 and AC-2 through parser and app reload regressions that exercise the stale worktree-copy archive move, and AC-3 remains intact because the production change only reads archive slugs before merging worktree items.
