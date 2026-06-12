@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#61"
 mod-block:
+archived: 2026-06-12T14:25:39Z
 ---
 
 The Workflow Definition page should support mouse scroll wheel input, matching
