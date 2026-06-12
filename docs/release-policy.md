@@ -55,24 +55,27 @@ Linux.
 4. Run `cargo check` to update `Cargo.lock`.
 5. Move relevant `CHANGELOG.md` entries from `Unreleased` to `vX.Y.Z`.
 6. Commit with `release: vX.Y.Z`.
-7. Push `main`.
-8. Create and publish a GitHub Release for tag `vX.Y.Z`, targeting the release
-   commit on `main`.
-9. Let GitHub Actions build release assets and upload them to that existing
+7. Record the exact release commit SHA: `release_commit="$(git rev-parse HEAD)"`.
+8. Push `main`.
+9. Create and publish a GitHub Release for tag `vX.Y.Z`, targeting
+   `${release_commit}`.
+10. Let GitHub Actions build release assets and upload them to that existing
    GitHub Release.
-10. Verify the Release page contains both platform archives and `SHA256SUMS`.
+11. Verify the Release page contains both platform archives and `SHA256SUMS`.
 
 CLI example:
 
 ```bash
 gh release create vX.Y.Z \
-  --target main \
+  --target "${release_commit}" \
   --title vX.Y.Z \
   --notes-file RELEASE_NOTES.md
 ```
 
 Creating a draft GitHub Release is allowed, but it does not build assets until
-the draft is published.
+the draft is published. When creating a Release in the web UI, use a tag that
+already points at the exact release commit or set the Release target to that
+specific commit.
 
 ## Failure Policy
 

@@ -46,7 +46,7 @@ jobs:
             exit 1
           fi
 
-          if [[ -n "${RELEASE_NAME}" && "${RELEASE_NAME}" != "${tag}" ]]; then
+          if [[ "${RELEASE_NAME}" != "${tag}" ]]; then
             echo "GitHub Release title must match tag ${tag}; got ${RELEASE_NAME}" >&2
             exit 1
           fi

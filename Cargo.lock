@@ -2596,6 +2596,7 @@ dependencies = [
  "sentry",
  "serde",
  "serde_json",
+ "serde_yaml",
  "similar",
  "spacetop-core",
  "tempfile",
