@@ -1,12 +1,14 @@
 # Spacetop - Claude Code
 
 @AGENTS.md
+@docs/code-review-policy.md
 
 ## Claude Code
 
 This file is a Claude Code adapter. `AGENTS.md` is the canonical source of repo
-policy for Spacetop; keep shared safety, architecture, test, lint, and workflow
-rules there.
+policy for Spacetop, and `docs/code-review-policy.md` is the shared review
+policy for Claude Code, Codex, and GitHub Copilot. Keep shared safety,
+architecture, test, lint, workflow, and review rules there.
 
 Claude-specific notes may live below this section, but they must not override or
 duplicate repo policy from `AGENTS.md`.
