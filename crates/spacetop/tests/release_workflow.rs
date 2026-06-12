@@ -53,14 +53,8 @@ fn release_workflow_is_driven_by_published_github_release() {
         "release title validation must not allow an empty title"
     );
     assert!(
-        validation_script.contains(
-            "installer_url=\"https://raw.githubusercontent.com/spacedock-dev/spacetop/${tag}/install.sh\""
-        ),
-        "release validation must construct the version-pinned installer URL"
-    );
-    assert!(
-        validation_script.contains("grep -Fq \"${installer_url}\" README.md"),
-        "release validation must require README installer URL to match the release tag"
+        !validation_script.contains("installer_url="),
+        "release validation should not require a version-pinned raw installer URL"
     );
 
     let build_job = field(field(&workflow, "jobs"), "build");
@@ -72,13 +66,18 @@ fn release_workflow_is_driven_by_published_github_release() {
     );
 
     let upload_job = field(field(&workflow, "jobs"), "upload");
-    assert!(
-        find_step_named(upload_job, "Checkout").is_none(),
-        "upload job should not checkout source just to publish install.sh"
+    let upload_checkout = step_named(upload_job, "Checkout");
+    assert_eq!(
+        string_field(field(upload_checkout, "with"), "ref"),
+        "${{ needs.validate.outputs.tag }}",
+        "upload job must checkout the validated release tag before publishing install.sh"
     );
+
+    let stage_installer_step = step_named(upload_job, "Stage installer asset");
+    let stage_installer_script = string_field(stage_installer_step, "run");
     assert!(
-        find_step_named(upload_job, "Stage installer asset").is_none(),
-        "install.sh is served from a version-pinned raw URL and must not be staged as a release asset"
+        stage_installer_script.contains("cp install.sh dist/install.sh"),
+        "release workflow must stage install.sh as a GitHub Release asset"
     );
 
     let upload_step = step_named(upload_job, "Upload assets to existing release");
@@ -100,12 +99,8 @@ fn release_workflow_is_driven_by_published_github_release() {
         "release workflow must upload assets to the existing GitHub Release"
     );
     assert!(
-        upload_script.contains("assets=(dist/*.tar.gz dist/SHA256SUMS)"),
-        "release workflow must upload only release archives and checksums"
-    );
-    assert!(
-        !upload_script.contains("dist/install.sh"),
-        "release workflow must not upload install.sh as a release asset"
+        upload_script.contains("dist/install.sh"),
+        "release workflow must upload install.sh as a release asset"
     );
     assert!(
         !upload_script.contains("gh release create"),

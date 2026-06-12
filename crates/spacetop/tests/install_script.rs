@@ -182,9 +182,9 @@ fn readme_documents_one_command_installer_and_install_dir_override() {
 
     assert!(
         readme.contains(
-            "curl -fsSL https://raw.githubusercontent.com/spacedock-dev/spacetop/v0.1.0/install.sh | sh"
+            "curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | sh"
         ),
-        "README should provide one copy-paste version-pinned curl install command"
+        "README should provide one copy-paste release-hosted curl install command"
     );
     assert!(
         !readme
@@ -192,10 +192,9 @@ fn readme_documents_one_command_installer_and_install_dir_override() {
         "README should not load install.sh from the mutable main branch"
     );
     assert!(
-        !readme.contains(
-            "https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh"
-        ),
-        "README should not load install.sh from GitHub Release assets"
+        !readme
+            .contains("https://raw.githubusercontent.com/spacedock-dev/spacetop/v0.1.0/install.sh"),
+        "README should not pin install.sh to the source tag"
     );
     assert!(
         readme.contains("SPACETOP_INSTALL_DIR"),
@@ -218,25 +217,9 @@ fn release_policy_documents_installer_asset_contract() {
     assert!(
         policy.contains("spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz")
             && policy.contains("spacetop-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz")
-            && policy.contains("SHA256SUMS"),
-        "release policy should keep the release asset contract explicit"
-    );
-    assert!(
-        policy
-            .contains("https://raw.githubusercontent.com/spacedock-dev/spacetop/vX.Y.Z/install.sh"),
-        "release policy should document the version-pinned installer URL"
-    );
-    assert!(
-        policy.contains("not uploaded as a per-release asset"),
-        "release policy should state install.sh is not a GitHub Release asset"
-    );
-    assert!(
-        policy.contains("README installer URL is not pinned to the release tag"),
-        "release policy should require README installer tag validation"
-    );
-    assert!(
-        !policy.contains("- `install.sh`"),
-        "release policy should not list install.sh as a release asset"
+            && policy.contains("SHA256SUMS")
+            && policy.contains("install.sh"),
+        "release policy should keep the installer asset contract explicit"
     );
 }
 

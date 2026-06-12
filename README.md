@@ -11,19 +11,19 @@ Spacedock stores workflow progress as markdown files in git. A workflow director
 Install the latest released binary with one command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/spacedock-dev/spacetop/v0.1.0/install.sh | sh
+curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | sh
 ```
 
-The installer script is pinned to the documented release tag, so later changes
-on `main` cannot change this install path accidentally. It installs the latest
-released binary from GitHub Releases, verifies the selected archive against the
-release `SHA256SUMS` file, and installs `spacetop` to `~/.cargo/bin` by default.
-The supported binary platforms are macOS Apple Silicon and Linux x64.
+The installer script is published with each GitHub Release, so later changes on
+`main` cannot change this install path accidentally. It installs the latest
+released binary, verifies the selected archive against the release `SHA256SUMS`
+file, and installs `spacetop` to `~/.cargo/bin` by default. The supported binary
+platforms are macOS Apple Silicon and Linux x64.
 
 Override the install directory with an absolute path:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/spacedock-dev/spacetop/v0.1.0/install.sh | SPACETOP_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/install.sh | SPACETOP_INSTALL_DIR=/usr/local/bin sh
 ```
 
 ## Goals
