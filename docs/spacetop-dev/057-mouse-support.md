@@ -8,10 +8,10 @@ risk: medium
 milestone: v2-p6
 proof:
 started: 2026-06-12T06:36:10Z
-completed:
-verdict:
+completed: 2026-06-12T08:11:09Z
+verdict: PASSED
 score: 0.7
-worktree: .worktrees/spacedock-ensign-057-mouse-support
+worktree:
 issue:
 pr: "#56"
 mod-block:
