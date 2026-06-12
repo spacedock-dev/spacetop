@@ -53,8 +53,8 @@ fn release_workflow_is_driven_by_published_github_release() {
         "release title validation must not allow an empty title"
     );
     assert!(
-        !validation_script.contains("installer_url="),
-        "release validation should not require a version-pinned raw installer URL"
+        !validation_script.contains("raw.githubusercontent.com/spacedock-dev/spacetop"),
+        "release validation should not depend on raw GitHub installer URLs"
     );
 
     let build_job = field(field(&workflow, "jobs"), "build");

@@ -192,9 +192,12 @@ fn readme_documents_one_command_installer_and_install_dir_override() {
         "README should not load install.sh from the mutable main branch"
     );
     assert!(
-        !readme
-            .contains("https://raw.githubusercontent.com/spacedock-dev/spacetop/v0.1.0/install.sh"),
-        "README should not pin install.sh to the source tag"
+        !readme.contains("https://raw.githubusercontent.com/spacedock-dev/spacetop/v"),
+        "README should not pin install.sh to any source tag"
+    );
+    assert!(
+        !readme.contains("https://raw.githubusercontent.com/spacedock-dev/spacetop/refs/tags/"),
+        "README should not pin install.sh to any refs/tags source URL"
     );
     assert!(
         readme.contains("SPACETOP_INSTALL_DIR"),
