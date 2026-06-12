@@ -510,11 +510,15 @@ mod tests {
 
     #[test]
     fn history_methods_surface_exact_unavailable_reason() {
-        let index = index().with_history_unavailable(HistoryUnavailable::ShallowClone);
+        let reason = HistoryUnavailable::MetadataError {
+            path: "docs/workflow/001.md".to_string(),
+            message: "missing status".to_string(),
+        };
+        let index = index().with_history_unavailable(reason.clone());
 
-        assert_eq!(index.timeline("010"), Err(HistoryUnavailable::ShallowClone));
-        assert_eq!(index.metrics(), Err(HistoryUnavailable::ShallowClone));
-        assert_eq!(index.activity(None), Err(HistoryUnavailable::ShallowClone));
+        assert_eq!(index.timeline("010"), Err(reason.clone()));
+        assert_eq!(index.metrics(), Err(reason.clone()));
+        assert_eq!(index.activity(None), Err(reason));
     }
 
     #[test]

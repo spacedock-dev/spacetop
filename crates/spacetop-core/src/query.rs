@@ -52,18 +52,43 @@ pub enum HistoryUnavailable {
     Loading,
     NotGitRepository,
     ShallowClone,
-    GitError(String),
+    GitProbeError(String),
+    GitLogError(String),
+    GitBlobError { path: String, message: String },
+    MetadataError { path: String, message: String },
 }
 
 impl HistoryUnavailable {
-    pub fn user_message(&self) -> &str {
+    pub fn user_message(&self) -> String {
         match self {
-            Self::NotImplemented => "history is not available until v2 P2",
-            Self::Loading => "history is loading",
-            Self::NotGitRepository => "history unavailable: not a git repository",
-            Self::ShallowClone => "history unavailable: shallow clone",
-            Self::GitError(_) => "history unavailable: git log could not be read",
+            Self::NotImplemented => "history is not available until v2 P2".to_string(),
+            Self::Loading => "history is loading".to_string(),
+            Self::NotGitRepository => "history unavailable: not a git repository".to_string(),
+            Self::ShallowClone => "history unavailable: shallow clone".to_string(),
+            Self::GitProbeError(_) => {
+                "history unavailable: git repository state could not be read".to_string()
+            }
+            Self::GitLogError(_) => "history unavailable: git log could not be read".to_string(),
+            Self::GitBlobError { path, message } => format_history_detail(
+                "history unavailable: historical blob could not be read",
+                path,
+                message,
+            ),
+            Self::MetadataError { path, message } => format_history_detail(
+                "history unavailable: historical entity metadata could not be parsed",
+                path,
+                message,
+            ),
         }
+    }
+}
+
+fn format_history_detail(prefix: &str, path: &str, message: &str) -> String {
+    let message = message.trim();
+    if message.is_empty() {
+        format!("{prefix} for {path}")
+    } else {
+        format!("{prefix} for {path}: {message}")
     }
 }
 
@@ -88,6 +113,26 @@ mod tests {
         assert_eq!(
             HistoryUnavailable::NotImplemented.user_message(),
             "history is not available until v2 P2"
+        );
+        assert_eq!(
+            HistoryUnavailable::GitLogError("fatal: bad object\n".to_string()).user_message(),
+            "history unavailable: git log could not be read"
+        );
+        assert_eq!(
+            HistoryUnavailable::GitBlobError {
+                path: "docs/workflow/001.md".to_string(),
+                message: "fatal: path not found\n".to_string(),
+            }
+            .user_message(),
+            "history unavailable: historical blob could not be read for docs/workflow/001.md: fatal: path not found"
+        );
+        assert_eq!(
+            HistoryUnavailable::MetadataError {
+                path: "docs/workflow/001.md".to_string(),
+                message: "missing status".to_string(),
+            }
+            .user_message(),
+            "history unavailable: historical entity metadata could not be parsed for docs/workflow/001.md: missing status"
         );
     }
 }

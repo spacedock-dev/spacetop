@@ -2444,25 +2444,20 @@ fn apply_history_result_surfaces_exact_unavailable_reason() {
     std::fs::create_dir_all(&root).unwrap();
     write_workflow(&root, "001");
     let mut app = App::load(root.clone()).expect("load");
+    let reason = spacetop_core::query::HistoryUnavailable::MetadataError {
+        path: "workflow/001.md".to_string(),
+        message: "missing status".to_string(),
+    };
 
     app.apply_history_result(HistoryWorkerResult {
         workflow_dir: root,
-        result: Err(spacetop_core::query::HistoryUnavailable::ShallowClone),
+        result: Err(reason.clone()),
     });
 
     let index = app.as_overview().unwrap().index();
-    assert_eq!(
-        index.timeline("001"),
-        Err(spacetop_core::query::HistoryUnavailable::ShallowClone)
-    );
-    assert_eq!(
-        index.metrics(),
-        Err(spacetop_core::query::HistoryUnavailable::ShallowClone)
-    );
-    assert_eq!(
-        index.activity(None),
-        Err(spacetop_core::query::HistoryUnavailable::ShallowClone)
-    );
+    assert_eq!(index.timeline("001"), Err(reason.clone()));
+    assert_eq!(index.metrics(), Err(reason.clone()));
+    assert_eq!(index.activity(None), Err(reason));
 }
 
 #[test]

@@ -12,7 +12,7 @@ mod snapshot;
 mod worktree;
 
 pub use archive::{archive_dir, load_archived_items, load_archived_items_with_errors};
-pub(crate) use frontmatter::{split_frontmatter, SplitFrontmatter};
+pub(crate) use frontmatter::{split_frontmatter, top_level_scalar, SplitFrontmatter};
 pub use item::parse_work_item;
 pub use readme::parse_workflow_readme;
 pub use snapshot::load_workflow_dir;
