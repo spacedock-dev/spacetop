@@ -1,7 +1,7 @@
 ---
 id: "063"
 title: Worktree copies of archived entities reappear as active tasks
-status: implement
+status: verify
 source: captain bug report 2026-06-12
 kind: bugfix
 risk: medium
