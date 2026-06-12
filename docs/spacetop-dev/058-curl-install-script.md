@@ -220,3 +220,20 @@ Added a concrete plan for a repo-root POSIX shell installer, README install
 surface, release-policy note, and deterministic shell-script test coverage. The
 plan keeps the current release asset contract intact and defers any workflow
 change unless implementation proves another asset invariant is required.
+
+## Stage Report: implement
+
+- DONE: Delivers a top-level installer and README copy-paste install command matching the current GitHub Release asset contract.
+  Commit `4a90126` adds executable `install.sh`, maps current macOS/Linux assets, and updates the README curl install command.
+- DONE: Adds deterministic tests for OS/arch selection, checksum verification, temp-dir cleanup, and temp install behavior without real network or system writes.
+  `cargo test -p spacetop --test install_script` passed with 8/8 tests using mocked shell commands and temporary install paths.
+- DONE: Updates release/install documentation as needed and records verification commands, including `make lint` for code/test changes.
+  Ran `cargo fmt`, `cargo test -p spacetop --test install_script`, `cargo test`, and `make lint`; all exited 0.
+
+### Summary
+
+Implemented the curl-based release installer without changing release asset
+names or release workflow packaging. The README now gives a one-command install
+path, release policy records the installer dependency on the existing archives
+and `SHA256SUMS`, and deterministic tests cover supported platforms, checksum
+paths, cleanup, and temporary install behavior.
