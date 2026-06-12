@@ -1,17 +1,17 @@
 ---
 id: "062"
 title: Diagnose history unavailable in metrics, activity, and timeline views
-status: verify
+status: done
 source: captain diagnostic request 2026-06-12
 kind: bugfix
 risk: medium
 milestone: v1-maintenance
 proof: reproduced headless commands plus core/headless regression tests and make lint
 started: 2026-06-12T13:01:29Z
-completed:
-verdict:
+completed: 2026-06-12T14:25:40Z
+verdict: PASSED
 score: 0.86
-worktree: .worktrees/spacedock-ensign-062-diagnose-history-unavailable-headless-views
+worktree:
 issue:
 pr: "#63"
 mod-block:
