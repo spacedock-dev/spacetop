@@ -69,7 +69,8 @@ latest release tag first, then downloads assets from the canonical
    `${release_commit}`.
 10. Let GitHub Actions build release assets and upload them to that existing
    GitHub Release.
-11. Verify the Release page contains both platform archives and `SHA256SUMS`.
+11. Verify the Release page contains both platform archives, `SHA256SUMS`, and
+   `install.sh`.
 
 CLI example:
 

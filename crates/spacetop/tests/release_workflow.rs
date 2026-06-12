@@ -52,6 +52,10 @@ fn release_workflow_is_driven_by_published_github_release() {
         !validation_script.contains("-n \"${RELEASE_NAME}\""),
         "release title validation must not allow an empty title"
     );
+    assert!(
+        !validation_script.contains("raw.githubusercontent.com/spacedock-dev/spacetop"),
+        "release validation should not depend on raw GitHub installer URLs"
+    );
 
     let build_job = field(field(&workflow, "jobs"), "build");
     let build_checkout = step_named(build_job, "Checkout");
@@ -157,14 +161,15 @@ fn mapping_field<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
 }
 
 fn step_named<'a>(job: &'a Value, name: &str) -> &'a Value {
+    find_step_named(job, name).unwrap_or_else(|| panic!("missing workflow step {name:?}"))
+}
+
+fn find_step_named<'a>(job: &'a Value, name: &str) -> Option<&'a Value> {
     let steps = field(job, "steps");
     let Value::Sequence(steps) = steps else {
         panic!("expected job steps sequence, got {steps:?}");
     };
-    steps
-        .iter()
-        .find(|step| string_field(step, "name") == name)
-        .unwrap_or_else(|| panic!("missing workflow step {name:?}"))
+    steps.iter().find(|step| string_field(step, "name") == name)
 }
 
 fn string_field<'a>(value: &'a Value, key: &str) -> &'a str {

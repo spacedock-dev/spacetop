@@ -187,6 +187,19 @@ fn readme_documents_one_command_installer_and_install_dir_override() {
         "README should provide one copy-paste release-hosted curl install command"
     );
     assert!(
+        !readme
+            .contains("https://raw.githubusercontent.com/spacedock-dev/spacetop/main/install.sh"),
+        "README should not load install.sh from the mutable main branch"
+    );
+    assert!(
+        !readme.contains("https://raw.githubusercontent.com/spacedock-dev/spacetop/v"),
+        "README should not pin install.sh to any source tag"
+    );
+    assert!(
+        !readme.contains("https://raw.githubusercontent.com/spacedock-dev/spacetop/refs/tags/"),
+        "README should not pin install.sh to any refs/tags source URL"
+    );
+    assert!(
         readme.contains("SPACETOP_INSTALL_DIR"),
         "README should document install directory override"
     );
