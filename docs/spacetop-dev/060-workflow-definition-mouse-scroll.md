@@ -13,7 +13,7 @@ verdict:
 score: 0.62
 worktree: .worktrees/spacedock-ensign-060-workflow-definition-mouse-scroll
 issue:
-pr:
+pr: "#61"
 mod-block: merge:pr-merge
 ---
 
