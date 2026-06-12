@@ -14,6 +14,7 @@ score: 0.9
 worktree: .worktrees/spacedock-ensign-063-worktree-stale-archived-entities
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Spacetop merges task files from workflow copies under `.worktrees/*` so an
