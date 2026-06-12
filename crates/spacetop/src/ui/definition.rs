@@ -27,12 +27,17 @@ const EM_DASH: &str = "\u{2014}";
 /// caller (the top-level `ui::render` match arm) hands us the whole
 /// frame area; we own header rows, the stages table, and the
 /// per-stage prose blocks.
-pub fn render_in(
+#[cfg(test)]
+fn render_in(frame: &mut Frame<'_>, area: Rect, definition: &WorkflowDefinition, scroll: usize) {
+    let _ = render_in_with_facts(frame, area, definition, scroll);
+}
+
+pub(crate) fn render_in_with_facts(
     frame: &mut Frame<'_>,
     area: Rect,
     definition: &WorkflowDefinition,
     scroll: usize,
-) {
+) -> usize {
     // Vertical layout:
     //   Row 0          - header
     //   Row 1          - scope sub-line
@@ -52,7 +57,7 @@ pub fn render_in(
     render_header(frame, chunks[0], definition);
     render_scope_subline(frame, chunks[1], definition);
     render_stages_table(frame, chunks[2], definition);
-    render_prose_body(frame, chunks[3], definition, scroll);
+    render_prose_body(frame, chunks[3], definition, scroll)
 }
 
 fn render_header(frame: &mut Frame<'_>, area: Rect, definition: &WorkflowDefinition) {
@@ -197,9 +202,9 @@ fn render_prose_body(
     area: Rect,
     definition: &WorkflowDefinition,
     scroll: usize,
-) {
+) -> usize {
     if area.height == 0 {
-        return;
+        return 0;
     }
     let dim = Style::default().add_modifier(Modifier::DIM);
 
@@ -260,6 +265,7 @@ fn render_prose_body(
             &mut sb_state,
         );
     }
+    max_scroll
 }
 
 /// Truncate `value` from the LEFT to fit in `available` cells. Prefixes
@@ -450,6 +456,41 @@ mod tests {
         assert!(
             rendered.contains("Approved design notes"),
             "expected plan prose substring in buffer; rendered=\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn definition_scroll_offset_moves_prose_body() {
+        let mut prose = HashMap::new();
+        let lines = (0..=30)
+            .map(|index| format!("line-{index:02}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        prose.insert("plan".to_string(), lines);
+        let definition = five_stage_fixture(PathBuf::from("/workflow-fixture"), prose);
+
+        let mut top_terminal = Terminal::new(TestBackend::new(120, 18)).expect("terminal");
+        top_terminal
+            .draw(|frame| render_in(frame, frame.area(), &definition, 0))
+            .expect("render");
+        let top_rendered = buffer_text(top_terminal.backend().buffer());
+        assert!(
+            top_rendered.contains("line-00"),
+            "top render should show early prose; rendered=\n{top_rendered}"
+        );
+
+        let mut scrolled_terminal = Terminal::new(TestBackend::new(120, 18)).expect("terminal");
+        scrolled_terminal
+            .draw(|frame| render_in(frame, frame.area(), &definition, 8))
+            .expect("render");
+        let scrolled_rendered = buffer_text(scrolled_terminal.backend().buffer());
+        assert!(
+            !scrolled_rendered.contains("line-00"),
+            "scrolled render should move early prose out of view; rendered=\n{scrolled_rendered}"
+        );
+        assert!(
+            scrolled_rendered.contains("line-10"),
+            "scrolled render should show later prose; rendered=\n{scrolled_rendered}"
         );
     }
 

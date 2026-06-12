@@ -13,8 +13,8 @@ use super::keys::OverviewKeyAction;
 use super::overview::{OverviewState, PreviewPlacement};
 use super::{OverviewSession, PickerState};
 
-/// Rows moved per wheel notch over the preview body.
-const WHEEL_SCROLL_ROWS: isize = 3;
+/// Rows moved per wheel notch over scrollable body panels.
+pub(crate) const WHEEL_SCROLL_ROWS: isize = 3;
 
 /// What an overview cell coordinate falls on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

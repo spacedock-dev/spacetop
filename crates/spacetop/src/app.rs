@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
@@ -183,9 +184,20 @@ impl AppMode {
     }
 }
 
+fn definition_scroll_down(scroll: &mut usize, rows: usize, max_scroll: usize) {
+    let current = (*scroll).min(max_scroll);
+    *scroll = current.saturating_add(rows).min(max_scroll);
+}
+
+fn definition_scroll_up(scroll: &mut usize, rows: usize, max_scroll: usize) {
+    let current = (*scroll).min(max_scroll);
+    *scroll = current.saturating_sub(rows);
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct App {
     mode: AppMode,
+    definition_max_scroll: Cell<usize>,
     config: SpacetopConfig,
     config_warnings: Vec<ConfigWarning>,
     resolved_keymap: ResolvedKeymap,
@@ -327,6 +339,7 @@ impl App {
         let resolved_keymap = ResolvedKeymap::from_config(&config);
         Self {
             mode,
+            definition_max_scroll: Cell::new(usize::MAX),
             config,
             config_warnings,
             resolved_keymap,
@@ -424,6 +437,10 @@ impl App {
             AppMode::Definition { scroll, .. } => Some(*scroll),
             _ => None,
         }
+    }
+
+    pub(crate) fn set_definition_max_scroll(&self, max_scroll: usize) {
+        self.definition_max_scroll.set(max_scroll);
     }
 
     pub fn as_picker(&self) -> Option<&PickerState> {
@@ -753,6 +770,7 @@ impl App {
             return;
         }
 
+        let definition_max_scroll = self.definition_max_scroll.get();
         match &mut self.mode {
             AppMode::Overview(_) => {}
             AppMode::Picker(state) => match key.code {
@@ -781,16 +799,16 @@ impl App {
                     self.mode = AppMode::Overview(restored);
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    *scroll = scroll.saturating_add(1);
+                    definition_scroll_down(scroll, 1, definition_max_scroll);
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
-                    *scroll = scroll.saturating_sub(1);
+                    definition_scroll_up(scroll, 1, definition_max_scroll);
                 }
                 KeyCode::PageDown => {
-                    *scroll = scroll.saturating_add(10);
+                    definition_scroll_down(scroll, 10, definition_max_scroll);
                 }
                 KeyCode::PageUp => {
-                    *scroll = scroll.saturating_sub(10);
+                    definition_scroll_up(scroll, 10, definition_max_scroll);
                 }
                 KeyCode::Home => {
                     *scroll = 0;
@@ -908,15 +926,36 @@ impl App {
     }
 
     /// Mouse-event peer to [`App::handle_key`]. Inert while the help popup
-    /// is open; non-overview, non-picker modes (Definition, Search,
-    /// Timeline, Metrics, Activity, Relations) are deliberately inert per
-    /// the captain-selected scope of task 057.
+    /// is open. Overview and picker modes keep their own hit-testing paths;
+    /// the full-pane Definition view handles only wheel scrolling, while
+    /// Search, Timeline, Metrics, Activity, and Relations remain inert.
     pub fn handle_mouse(&mut self, mouse: MouseEvent) {
         if self.help_open {
             return;
         }
+        let definition_max_scroll = self.definition_max_scroll.get();
         let action = match &mut self.mode {
             AppMode::Overview(session) => mouse::handle_overview_mouse(session, mouse),
+            AppMode::Definition { scroll, .. } => {
+                match mouse.kind {
+                    crossterm::event::MouseEventKind::ScrollDown => {
+                        definition_scroll_down(
+                            scroll,
+                            mouse::WHEEL_SCROLL_ROWS as usize,
+                            definition_max_scroll,
+                        );
+                    }
+                    crossterm::event::MouseEventKind::ScrollUp => {
+                        definition_scroll_up(
+                            scroll,
+                            mouse::WHEEL_SCROLL_ROWS as usize,
+                            definition_max_scroll,
+                        );
+                    }
+                    _ => {}
+                }
+                return;
+            }
             AppMode::Picker(_) | AppMode::PickerOverlay { .. } => {
                 self.handle_picker_mouse(mouse);
                 return;
