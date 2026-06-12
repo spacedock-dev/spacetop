@@ -1,7 +1,7 @@
 ---
 id: "062"
 title: Diagnose history unavailable in metrics, activity, and timeline views
-status: implement
+status: verify
 source: captain diagnostic request 2026-06-12
 kind: bugfix
 risk: medium
