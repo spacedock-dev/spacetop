@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#66"
 mod-block:
+archived: 2026-06-12T17:53:36Z
 ---
 
 Spacetop merges task files from workflow copies under `.worktrees/*` so an
