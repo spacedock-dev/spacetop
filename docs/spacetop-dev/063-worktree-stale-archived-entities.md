@@ -13,7 +13,7 @@ verdict:
 score: 0.9
 worktree: .worktrees/spacedock-ensign-063-worktree-stale-archived-entities
 issue:
-pr:
+pr: "#66"
 mod-block: merge:pr-merge
 ---
 
