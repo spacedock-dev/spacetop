@@ -4,15 +4,18 @@ Spacetop releases are published through GitHub Releases. Local `make install`
 builds remain available for contributors, but release assets are the supported
 user install path.
 
-## Version Source Of Truth
+## Release Trigger And Version Agreement
 
 The root `Cargo.toml` `[workspace.package] version` is the source of truth.
 Both `spacetop` and `spacetop-core` inherit this version.
 
+The release workflow is triggered by publishing a GitHub Release. The workflow
+loads the release tag from the GitHub Release event, not from a pushed tag event.
+
 Release tags use the form `vX.Y.Z`. Pre-release tags use SemVer pre-release
 syntax such as `v0.2.0-rc.1`.
 
-Before publishing, these values must match:
+Before release assets are uploaded, these values must match:
 
 - root `Cargo.toml` workspace version
 - `Cargo.lock` package entries for `spacetop` and `spacetop-core`
@@ -52,26 +55,44 @@ Linux.
 4. Run `cargo check` to update `Cargo.lock`.
 5. Move relevant `CHANGELOG.md` entries from `Unreleased` to `vX.Y.Z`.
 6. Commit with `release: vX.Y.Z`.
-7. Tag with `vX.Y.Z`.
-8. Push `main` and the tag.
-9. Let GitHub Actions build release assets.
-10. Review and publish the draft GitHub Release.
+7. Record the exact release commit SHA: `release_commit="$(git rev-parse HEAD)"`.
+8. Push `main`.
+9. Create and publish a GitHub Release for tag `vX.Y.Z`, targeting
+   `${release_commit}`.
+10. Let GitHub Actions build release assets and upload them to that existing
+   GitHub Release.
+11. Verify the Release page contains both platform archives and `SHA256SUMS`.
+
+CLI example:
+
+```bash
+gh release create vX.Y.Z \
+  --target "${release_commit}" \
+  --title vX.Y.Z \
+  --notes-file RELEASE_NOTES.md
+```
+
+Creating a draft GitHub Release is allowed, but it does not build assets until
+the draft is published. When creating a Release in the web UI, use a tag that
+already points at the exact release commit or set the Release target to that
+specific commit.
 
 ## Failure Policy
 
-The release workflow fails before publishing when:
+The release workflow fails before uploading assets when:
 
 - the tag does not start with `v`
 - the tag version is not valid SemVer
 - the tag version differs from the workspace version
 - `cargo fmt --check`, `cargo test`, or `make lint` fails
 - any target binary fails to build
+- the GitHub Release title differs from the tag
 - any built binary reports the wrong version
 - checksum generation fails
-- a GitHub Release or asset already exists for the tag
+- the GitHub Release already has an asset with a name the workflow would upload
 
-The workflow must not publish a partial release. If one platform fails, the
-whole release fails.
+The workflow must not upload a partial platform set. If one platform fails, the
+upload job does not run.
 
 ## Sentry
 

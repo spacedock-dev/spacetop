@@ -1,12 +1,15 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
 
 permissions:
   contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,6 +25,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -34,10 +39,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          tag="${GITHUB_REF_NAME}"
+          tag="${RELEASE_TAG}"
           semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
           if [[ ! "${tag}" =~ ${semver} ]]; then
             echo "release tag must look like vX.Y.Z or vX.Y.Z-prerelease: ${tag}" >&2
+            exit 1
+          fi
+
+          if [[ "${RELEASE_NAME}" != "${tag}" ]]; then
+            echo "GitHub Release title must match tag ${tag}; got ${RELEASE_NAME}" >&2
             exit 1
           fi
 
@@ -61,15 +71,11 @@ jobs:
                   )
           PY
 
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            echo "GitHub Release ${tag} already exists" >&2
-            exit 1
-          fi
-
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
         env:
-          GH_TOKEN: ${{ github.token }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
 
       - name: Check formatting
         run: cargo fmt --check
@@ -96,6 +102,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -150,8 +158,8 @@ jobs:
           path: dist/spacetop-v${{ needs.validate.outputs.version }}-${{ matrix.target }}.tar.gz
           if-no-files-found: error
 
-  publish:
-    name: Publish draft GitHub Release
+  upload:
+    name: Upload assets to GitHub Release
     needs:
       - validate
       - build
@@ -160,9 +168,6 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Download release archives
         uses: actions/download-artifact@v4
         with:
@@ -176,32 +181,31 @@ jobs:
           cd dist
           sha256sum *.tar.gz > SHA256SUMS
 
-      - name: Extract release notes
-        shell: bash
-        run: |
-          set -euo pipefail
-          version="${{ needs.validate.outputs.version }}"
-          awk -v version="v${version}" '
-            $0 == "## " version { capture=1; next }
-            capture && /^## / { exit }
-            capture { print }
-          ' CHANGELOG.md > RELEASE_NOTES.md
-          if [[ ! -s RELEASE_NOTES.md ]]; then
-            cat > RELEASE_NOTES.md <<EOF
-          Spacetop v${version}
-
-          See CHANGELOG.md for release details.
-          EOF
-          fi
-
-      - name: Create draft release
+      - name: Upload assets to existing release
         shell: bash
         run: |
           set -euo pipefail
           tag="${{ needs.validate.outputs.tag }}"
-          gh release create "${tag}" dist/*.tar.gz dist/SHA256SUMS \
-            --draft \
-            --title "${tag}" \
-            --notes-file RELEASE_NOTES.md
+          assets=(dist/*.tar.gz dist/SHA256SUMS)
+
+          for asset in "${assets[@]}"; do
+            if [[ ! -f "${asset}" ]]; then
+              echo "missing release asset: ${asset}" >&2
+              exit 1
+            fi
+          done
+
+          mapfile -t existing_assets < <(gh release view "${tag}" --json assets --jq '.assets[].name')
+          for asset in "${assets[@]}"; do
+            asset_name="$(basename "${asset}")"
+            for existing_asset in "${existing_assets[@]}"; do
+              if [[ "${existing_asset}" == "${asset_name}" ]]; then
+                echo "GitHub Release ${tag} already has asset ${asset_name}" >&2
+                exit 1
+              fi
+            done
+          done
+
+          gh release upload "${tag}" "${assets[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
