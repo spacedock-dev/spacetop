@@ -22,8 +22,8 @@ Authority order:
 
 Tool-specific files such as `CLAUDE.md` and
 `.github/copilot-instructions.md` may add setup requirements for that tool, but
-they must not weaken the read-only, test, lint, Clean Code, or code review rules
-here.
+they must not weaken the read-only, test, lint, or Clean Code rules here, or
+the review rules in `docs/code-review-policy.md`.
 
 ## Project Context
 

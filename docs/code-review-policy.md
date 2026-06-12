@@ -1,8 +1,8 @@
 # Spacetop Code Review Policy
 
-**Owner:** CTO policy for human and AI reviewers
-**Applies to:** all pull requests, local branch reviews, and agent review passes
-**Last reviewed:** 2026-06-12
+- **Owner:** CTO policy for human and AI reviewers
+- **Applies to:** all pull requests, local branch reviews, and agent review passes
+- **Last reviewed:** 2026-06-12
 
 This is the canonical code review policy for Spacetop. `AGENTS.md` remains the
 mandatory repo entrypoint and highest repo contract. If this file conflicts with

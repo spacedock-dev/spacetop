@@ -1,8 +1,8 @@
 # Spacetop Development Policy
 
-**Owner:** CTO policy for Spacetop maintainers and agents
-**Applies to:** all code, documentation, workflow, and architecture changes
-**Last reviewed:** 2026-06-11
+- **Owner:** CTO policy for Spacetop maintainers and agents
+- **Applies to:** all code, documentation, workflow, and architecture changes
+- **Last reviewed:** 2026-06-11
 
 Canonical authority lives in `AGENTS.md`. This document expands the rationale,
 boundaries, and examples behind that repo contract; it must not define stronger
