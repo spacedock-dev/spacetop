@@ -83,7 +83,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             // Full-pane workflow definition view scoped to the active tab.
             // No tab strip, no graph ribbon, no status footer.
             let definition = underlying.active_state().definition();
-            definition::render_in(frame, frame.area(), definition, *scroll);
+            let max_scroll =
+                definition::render_in_with_facts(frame, frame.area(), definition, *scroll);
+            app.set_definition_max_scroll(max_scroll);
         }
         AppMode::Search { underlying, state } => {
             render_overview(

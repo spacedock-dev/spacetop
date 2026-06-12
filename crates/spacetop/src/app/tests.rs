@@ -1895,6 +1895,34 @@ fn definition_mouse_wheel_scrolls_definition_view() {
 }
 
 #[test]
+fn definition_mouse_wheel_up_after_end_uses_rendered_max_scroll() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+
+    app.handle_key(key(KeyCode::Char('D')));
+    app.set_definition_max_scroll(10);
+    app.handle_key(key(KeyCode::End));
+    assert_eq!(app.definition_scroll(), Some(usize::MAX));
+
+    app.handle_mouse(mouse(MouseEventKind::ScrollUp));
+
+    assert_eq!(app.definition_scroll(), Some(7));
+}
+
+#[test]
+fn definition_key_up_after_end_uses_rendered_max_scroll() {
+    let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
+
+    app.handle_key(key(KeyCode::Char('D')));
+    app.set_definition_max_scroll(10);
+    app.handle_key(key(KeyCode::End));
+    assert_eq!(app.definition_scroll(), Some(usize::MAX));
+
+    app.handle_key(key(KeyCode::Up));
+
+    assert_eq!(app.definition_scroll(), Some(9));
+}
+
+#[test]
 fn definition_mouse_wheel_is_ignored_while_help_open() {
     let mut app = App::from_snapshot(PathBuf::from("workflow"), snapshot_with_items(2));
 
