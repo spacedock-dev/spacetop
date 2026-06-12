@@ -165,3 +165,16 @@ Created a concrete implementation handoff for the archive-move refresh bug. The
 plan isolates the likely stale active row to parser worktree merge semantics,
 keeps archive visibility in app-state scope loading, and names focused tests plus
 `make lint` as the completion gate for the later implementation stage.
+
+## Stage Report: implement
+
+- DONE: Implement the archive-move refresh fix at the typed parser/app-state layer so an archived main-branch slug cannot remain active through a stale worktree copy.
+  Commit `ff0cc6b`: parser snapshot loading now collects `_archive` slugs by path and suppresses matching worktree-only active rows.
+- DONE: Add focused regression coverage proving the moved task disappears from active scope and appears in archived scope after the same reload path.
+  Commit `ff0cc6b`: parser tests cover valid and malformed archived slugs; app test covers `App::reload()` followed by archived-scope toggle.
+- DONE: Run the focused tests, broader applicable tests, and `make lint`, or record exact blockers with read-only/write-safety evidence.
+  Focused parser/app tests passed; `cargo test` passed; `make lint` passed; ignored notify tests were not run because watcher code was unchanged.
+
+### Summary
+
+Implemented the fix in the typed parser/app-state path without adding any Spacetop workflow-write command. Worktree-only rows still appear normally, but a slug present under the main workflow `_archive/` now prevents a stale worktree copy from remaining active while archive loading remains owned by `WorkflowSources::load_archive`.
