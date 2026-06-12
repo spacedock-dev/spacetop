@@ -1,13 +1,13 @@
 ---
 id: "058"
 title: Add curl-based release installer
-status: shape
+status: plan
 source: captain request 2026-06-12
 kind: feature
 risk: medium
 milestone: v1-maintenance
 proof: shell/install tests plus README and release-policy alignment
-started:
+started: 2026-06-12T09:55:09Z
 completed:
 verdict:
 score: 0.82
