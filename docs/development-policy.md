@@ -1,8 +1,8 @@
 # Spacetop Development Policy
 
-**Owner:** CTO policy for Spacetop maintainers and agents  
-**Applies to:** all code, documentation, workflow, and architecture changes  
-**Last reviewed:** 2026-06-11
+- **Owner:** CTO policy for Spacetop maintainers and agents
+- **Applies to:** all code, documentation, workflow, and architecture changes
+- **Last reviewed:** 2026-06-11
 
 Canonical authority lives in `AGENTS.md`. This document expands the rationale,
 boundaries, and examples behind that repo contract; it must not define stronger
@@ -243,14 +243,10 @@ End with a direct recommendation. Do not make the user design the option set.
 
 ## Review Policy
 
-Reviews should protect user-facing behavior and the read-only contract.
-
-- Findings first, ordered by severity.
-- Each finding needs a file/line reference and concrete impact.
-- "Looks fine" is acceptable only after checking relevant tests and risky paths.
-- Missing evidence is a real review result.
-- Reject changes that move parsing assumptions into UI code, broaden git writes,
-  skip required lint gates, or make terminal behavior untestable.
+The canonical review protocol lives in `docs/code-review-policy.md`. Keep review
+rules there so Codex, Claude Code, and GitHub Copilot all load the same policy.
+This development policy may explain the rationale, but it must not duplicate or
+drift from the review file.
 
 ## Completion Gate
 

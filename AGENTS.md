@@ -9,14 +9,21 @@ repo policy; `docs/development-policy.md` is supporting detail and must stay
 subordinate to this file. If they conflict, follow `AGENTS.md` and fix the policy
 drift before continuing.
 
+For code review tasks, all agents must also read
+`docs/code-review-policy.md`. That file is the single maintained review policy
+for Codex, Claude Code, and GitHub Copilot. Keep tool-specific instruction files
+as loaders only; do not duplicate review rules there.
+
 Authority order:
 
 1. The user's current request.
 2. This `AGENTS.md` repo contract.
 3. Existing code, tests, and workflow state.
 
-Tool-specific files such as `CLAUDE.md` may add setup requirements for that tool,
-but they must not weaken the read-only, test, lint, or Clean Code rules here.
+Tool-specific files such as `CLAUDE.md` and
+`.github/copilot-instructions.md` may add setup requirements for that tool, but
+they must not weaken the read-only, test, lint, or Clean Code rules here, or
+the review rules in `docs/code-review-policy.md`.
 
 ## Project Context
 
@@ -120,7 +127,7 @@ Keep module boundaries clear and testable:
 - `crates/spacetop/src/ui/picker.rs` owns picker dialog rendering.
 - `crates/spacetop-core/tests/no_terminal_deps.rs` enforces that
   `spacetop-core` does not depend on terminal crates.
-- `crates/spacetop/tests/` contains bin-facing integration tests; 
+- `crates/spacetop/tests/` contains bin-facing integration tests;
   `crates/spacetop-core/tests/` contains core guardrails and watcher smoke
   tests; `tests/fixtures/` remains at the workspace root.
 
