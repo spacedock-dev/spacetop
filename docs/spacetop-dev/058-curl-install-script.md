@@ -237,3 +237,51 @@ names or release workflow packaging. The README now gives a one-command install
 path, release policy records the installer dependency on the existing archives
 and `SHA256SUMS`, and deterministic tests cover supported platforms, checksum
 paths, cleanup, and temporary install behavior.
+
+## Stage Report: verify
+
+- DONE: Independently verify all four acceptance criteria against the worktree
+  diff, release asset contract, implementation report, and fresh test output.
+  Evidence: AC-1 passes through `README.md` documenting the raw GitHub
+  `install.sh` pipe command, default `~/.cargo/bin`, and
+  `SPACETOP_INSTALL_DIR` override, with assertions in
+  `crates/spacetop/tests/install_script.rs`. AC-2 passes because `install.sh`
+  maps `Darwin:arm64|aarch64` to `aarch64-apple-darwin`, maps
+  `Linux:x86_64|amd64` to `x86_64-unknown-linux-gnu`, and rejects unsupported
+  pairs before network or install work; the focused tests cover both supported
+  targets and `Darwin x86_64` rejection. AC-3 passes because the script
+  downloads `SHA256SUMS`, derives the selected archive from that file, verifies
+  with `sha256sum -c` or `shasum -a 256 -c`, and exits before extraction or
+  install on checksum failure or missing checksum tooling; focused tests cover
+  success, mismatch, fallback, and missing-tool cases. AC-4 passes because the
+  script requires an absolute install dir, defaults through `HOME` to
+  `~/.cargo/bin`, writes only the script-owned temp dir plus the target binary
+  path, traps cleanup, and runs the installed `spacetop --version`; focused
+  tests assert temp cleanup, temp install placement, and version invocation.
+- DONE: Check README and release policy alignment with the existing release
+  workflow asset contract.
+  Evidence: `.github/workflows/release.yml` packages
+  `dist/spacetop-v${version}-${target}.tar.gz` for the target matrix and
+  generates `SHA256SUMS`; `docs/release-policy.md` keeps the supported assets
+  as `spacetop-vX.Y.Z-aarch64-apple-darwin.tar.gz`,
+  `spacetop-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`, and `SHA256SUMS`; the
+  installer consumes exactly that contract through
+  `https://github.com/${SPACETOP_REPO:-spacedock-dev/spacetop}/releases/latest/download`.
+- DONE: Run the required verification gates in the assigned worktree.
+  Evidence: `cargo fmt --check` exited 0; `cargo test -p spacetop --test
+  install_script` exited 0 with 8 passed; `cargo test` exited 0 across the
+  workspace suites, including the installer suite and existing read-only/git
+  guardrails, with only the 3 expected watcher real-backend tests ignored;
+  `make lint` exited 0 under `cargo clippy --all-targets --all-features -- -D
+  warnings`.
+- DONE: Return a clear verification verdict and route feedback only if defects
+  remain.
+  Evidence: VERDICT: PASSED. No blocking defects or missing evidence found, so
+  no feedback is routed back to `implement`.
+
+### Summary
+
+Verified commit `4a90126` for the curl-based release installer. The installer,
+README, release policy, release workflow contract, and mocked shell integration
+tests satisfy AC-1 through AC-4, and the focused test, full test, format check,
+and lint gates all pass in the assigned worktree.
