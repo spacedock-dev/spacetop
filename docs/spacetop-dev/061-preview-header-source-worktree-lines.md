@@ -1,7 +1,7 @@
 ---
 id: "061"
 title: Preview header gives source and worktree separate lines
-status: plan
+status: implement
 source: captain request 2026-06-12
 kind: bugfix
 risk: low
@@ -11,7 +11,7 @@ started: 2026-06-12T12:53:54Z
 completed:
 verdict:
 score: 0.66
-worktree:
+worktree: .worktrees/spacedock-ensign-061-preview-header-source-worktree-lines
 issue:
 pr:
 ---
