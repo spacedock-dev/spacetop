@@ -152,3 +152,16 @@ If the implementer changes Rust code outside the listed owned files, they must n
 ### Summary
 
 Created a focused implementation handoff for centralizing entity identity in core. The shortest safe path is one exported `entity_identity` helper module, deleting duplicate slug derivation from worktree merge, index lookup, and TUI selection, with parser/index/app tests proving flat, folder-form, archived, worktree-only, reload, and read-only behavior.
+
+## Stage Report: implement
+
+- DONE: core entity identity helper/module is implemented and duplicate slug derivation is removed from parser worktree, WorkflowIndex, and TUI overview selection
+  Commit `e2c6de1` adds `spacetop_core::entity_identity` and migrates parser item/worktree, `WorkflowIndex`, and overview selection to it; grep found no local `slug_of`/`slug_of_path` helpers in the target files.
+- DONE: focused core/parser/index/app tests cover flat paths, folder-form index.md paths, archived/worktree behavior, and selection preservation
+  `cargo test -p spacetop-core entity_identity`, `parser::tests`, `index::tests`, `cargo test -p spacetop app::tests`, and full `cargo test -p spacetop-core` all passed.
+- DONE: Ponytail full mode is used for the implementation and recorded in the stage report, or the worker stops blocked if Ponytail mode is unavailable
+  Ponytail full mode was available from `/Users/kent/.codex/plugins/cache/ponytail/ponytail/4.7.0/skills/ponytail/SKILL.md` and used to keep the change to one small helper module plus direct caller migration.
+
+### Summary
+
+Centralized entity path identity in `spacetop-core` for flat files and folder-form `index.md` entities, then removed duplicate slug derivation from parser worktree merge, index lookup, parser ID fallback, and overview selection. Added active/worktree folder-form loading where archive behavior already existed, and verified the read-first guardrail with `cargo test -p spacetop-core --test no_write_git_calls` plus `make lint`.
