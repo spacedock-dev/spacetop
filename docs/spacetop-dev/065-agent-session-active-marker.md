@@ -12,7 +12,7 @@ verdict:
 score: 0.84
 worktree: .worktrees/spacedock-ensign-065-agent-session-active-marker
 issue: https://github.com/spacedock-dev/spacetop/issues/28
-pr:
+pr: "#68"
 id: 065
 mod-block: merge:pr-merge
 ---
