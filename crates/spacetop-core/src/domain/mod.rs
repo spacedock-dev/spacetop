@@ -259,7 +259,7 @@ pub struct AgentSessionEvidence {
 
 impl AgentSessionEvidence {
     pub fn is_active_marker(&self) -> bool {
-        self.confidence == AttributionConfidence::High
+        self.confidence >= AttributionConfidence::Medium
             && self.run_state == AgentSessionState::Running
     }
 }

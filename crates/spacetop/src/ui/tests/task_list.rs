@@ -141,11 +141,11 @@ fn task_row_renders_active_session_marker_from_typed_attribution() {
     let rendered = buffer_text(terminal.backend().buffer());
 
     assert!(
-        rendered.contains("@   Active task"),
-        "active row should include fixed-width @ marker before the title; rendered: {rendered:?}"
+        rendered.contains("\u{25CF}   Active task"),
+        "active row should include fixed-width running marker before the title; rendered: {rendered:?}"
     );
     assert!(
-        !rendered.contains("@   Inactive task"),
+        !rendered.contains("\u{25CF}   Inactive task"),
         "inactive row must not render the active marker"
     );
 }

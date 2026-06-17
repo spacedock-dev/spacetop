@@ -46,8 +46,9 @@ headless query/export commands, and explicitly sync with `git pull --ff-only`.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.
-The active-session marker is local inferred evidence only; it is not an
-authoritative assignment, lock, waiting, or stuck-state signal.
+The active-session marker (`●`) is local inferred evidence for running
+medium-or-better local session matches only; it is not an authoritative
+assignment, lock, waiting, or stuck-state signal.
 
 ## Headless CLI
 

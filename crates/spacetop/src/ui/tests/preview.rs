@@ -212,10 +212,18 @@ fn preview_renders_session_metadata_without_transcript_content() {
         rendered.contains("agent: Codex"),
         "preview should name the matched agent; rendered: {rendered:?}"
     );
-    assert!(rendered.contains("session: Mendel"));
-    assert!(rendered.contains("confidence: high"));
+    assert!(rendered.contains("status:"));
+    assert!(rendered.contains("session: Mendel high"));
+    assert!(!rendered.contains("confidence: high"));
     assert!(rendered.contains("state: running"));
     assert!(rendered.contains("latest: 1718000000"));
+    let status_index = rendered.find("status:").expect("status line");
+    let agent_index = rendered.find("agent: Codex").expect("agent line");
+    let source_index = rendered.find("source:").expect("source line");
+    assert!(
+        status_index < agent_index && agent_index < source_index,
+        "agent line should sit between status/score and source; rendered: {rendered:?}"
+    );
     assert!(
         !rendered.contains("prompt:") && !rendered.contains("response:"),
         "preview metadata must not expose transcript fields"

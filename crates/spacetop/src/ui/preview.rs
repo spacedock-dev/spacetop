@@ -381,6 +381,7 @@ fn build_preview_header_lines<'a>(
                 spans.push(Span::styled("score: ", dim));
                 spans.push(Span::raw(score.clone()));
                 lines.push(Line::from(spans));
+                push_session_attribution_line(&mut lines, item, state, dim);
                 lines.push(Line::from(vec![
                     Span::styled("source: ", dim),
                     Span::raw(source.to_string()),
@@ -393,17 +394,13 @@ fn build_preview_header_lines<'a>(
                     Span::styled("score: ", dim),
                     Span::raw(score.clone()),
                 ]));
+                push_session_attribution_line(&mut lines, item, state, dim);
                 lines.push(Line::from(vec![
                     Span::styled("source: ", dim),
                     Span::raw(source.to_string()),
                 ]));
                 lines.push(Line::from(worktree_segment.clone()));
             }
-        }
-    }
-    if state.view_scope() == ViewScope::Active {
-        if let Some(line) = session_attribution_line(item, state, dim) {
-            lines.push(line);
         }
     }
     // Render the entity path relative to the workflow root so it fits the
@@ -438,6 +435,19 @@ fn build_preview_header_lines<'a>(
     lines
 }
 
+fn push_session_attribution_line<'a>(
+    lines: &mut Vec<Line<'a>>,
+    item: &'a spacetop_core::domain::Entity,
+    state: &OverviewState,
+    dim: Style,
+) {
+    if state.view_scope() == ViewScope::Active {
+        if let Some(line) = session_attribution_line(item, state, dim) {
+            lines.push(line);
+        }
+    }
+}
+
 fn session_attribution_line<'a>(
     item: &'a spacetop_core::domain::Entity,
     state: &OverviewState,
@@ -460,10 +470,7 @@ fn session_attribution_line<'a>(
         Span::raw(agent_label),
         Span::raw("  \u{00B7}  "),
         Span::styled("session: ", dim),
-        Span::raw(session_label.to_string()),
-        Span::raw("  \u{00B7}  "),
-        Span::styled("confidence: ", dim),
-        Span::raw(best.confidence.label()),
+        Span::raw(format!("{} {}", session_label, best.confidence.label())),
         Span::raw("  \u{00B7}  "),
         Span::styled("state: ", dim),
         Span::raw(best.run_state.label()),

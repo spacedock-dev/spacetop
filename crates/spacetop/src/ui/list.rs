@@ -179,7 +179,7 @@ fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListIte
                 && state.index().entity_has_active_session_marker(&item.id)
             {
                 (
-                    "@ ",
+                    "\u{25CF} ",
                     Style::default()
                         .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),

@@ -466,6 +466,42 @@ mod tests {
     }
 
     #[test]
+    fn running_medium_confidence_match_is_active() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("repo-session.jsonl"),
+            &format!(
+                r#"{{"pid":4242,"agent_nickname":"Mendel","workdir":"{}","note":"065"}}"#,
+                repo.display()
+            ),
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+        };
+        let probe = FixtureProbe {
+            running: HashSet::from([4242]),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert_eq!(
+            report.attributions[0].evidence[0].confidence,
+            AttributionConfidence::Medium
+        );
+        assert!(report.attributions[0].has_active_marker());
+    }
+
+    #[test]
     fn stale_or_low_confidence_evidence_does_not_mark_active() {
         let tmp = tempfile::tempdir().expect("tmp");
         let repo = tmp.path().join("repo");
