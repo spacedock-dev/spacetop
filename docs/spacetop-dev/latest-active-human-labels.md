@@ -42,3 +42,16 @@ Fix two UI readability issues in the active-session metadata shown for a selecte
 ### Summary
 
 Use the existing preview rendering path and its existing Ratatui regression test. Keep the fix UI-local: the domain model still exposes the three internal states and Unix activity seconds, while the preview converts only the displayed words and timestamp into human-readable text.
+
+## Stage Report: implement
+
+- DONE: Preview renders recent/stale with self-describing human-facing labels while preserving the internal three-state model.
+  Commit 9b07b4e keeps `AgentSessionState` unchanged and maps only preview display text to `recent activity` and `stale activity`.
+- DONE: Preview renders latest activity as a human-readable latest-active value instead of raw Unix seconds.
+  Commit 9b07b4e formats `latest_activity_unix` as a UTC calendar timestamp in the preview.
+- DONE: Focused preview test is updated and required Rust checks are run or clearly reported if blocked.
+  Ran `cargo test -p spacetop ui::tests::preview::preview_renders_session_metadata_without_transcript_content -- --exact`, `cargo test`, and `make lint`; all passed.
+
+### Summary
+
+Implemented the smallest UI-local formatting change for active-session preview metadata. The focused Ratatui preview test now covers the expanded recent/stale labels and verifies the latest activity value no longer renders as raw Unix seconds.
