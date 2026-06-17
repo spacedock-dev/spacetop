@@ -216,7 +216,7 @@ fn preview_renders_session_metadata_without_transcript_content() {
     assert!(rendered.contains("status:"));
     assert!(rendered.contains("session: Mendel high"));
     assert!(!rendered.contains("confidence: high"));
-    assert!(rendered.contains("state: recent activity"));
+    assert!(rendered.contains("state: active recently"));
     assert!(!rendered.contains("state: recent  \u{00B7}"));
     assert!(
         rendered.contains("2024-06-10 06:13:20 UTC"),
@@ -244,7 +244,7 @@ fn preview_renders_session_metadata_without_transcript_content() {
     terminal.draw(|frame| render(frame, &app)).expect("render");
     let rendered = buffer_text(terminal.backend().buffer());
 
-    assert!(rendered.contains("state: stale activity"));
+    assert!(rendered.contains("state: no recent activity"));
     assert!(!rendered.contains("state: stale  \u{00B7}"));
 }
 

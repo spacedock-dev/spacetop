@@ -482,8 +482,8 @@ fn session_attribution_line<'a>(
 
 fn session_state_label(state: spacetop_core::domain::AgentSessionState) -> &'static str {
     match state {
-        spacetop_core::domain::AgentSessionState::Stale => "stale activity",
-        spacetop_core::domain::AgentSessionState::Recent => "recent activity",
+        spacetop_core::domain::AgentSessionState::Stale => "no recent activity",
+        spacetop_core::domain::AgentSessionState::Recent => "active recently",
         spacetop_core::domain::AgentSessionState::Running => state.label(),
     }
 }
