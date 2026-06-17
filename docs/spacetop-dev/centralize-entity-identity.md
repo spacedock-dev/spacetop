@@ -165,3 +165,16 @@ Created a focused implementation handoff for centralizing entity identity in cor
 ### Summary
 
 Centralized entity path identity in `spacetop-core` for flat files and folder-form `index.md` entities, then removed duplicate slug derivation from parser worktree merge, index lookup, parser ID fallback, and overview selection. Added active/worktree folder-form loading where archive behavior already existed, and verified the read-first guardrail with `cargo test -p spacetop-core --test no_write_git_calls` plus `make lint`.
+
+## Stage Report: verify
+
+- DONE: Independently inspect the worktree diff and confirm AC-1 through AC-5 have concrete evidence.
+  Evidence: AC-1 passes because `spacetop_core::entity_identity` is exported and used by parser item ID fallback, worktree merge/sort/archive suppression, `WorkflowIndex::rebuild_lookup_maps`, and `OverviewState` reload/sort selection; grep found no remaining local `slug_of` or `slug_of_path` helper in the target files. AC-2 is covered by parser and index tests for flat files, folder-form `index.md`, archived folder suppression, worktree-only folder items, and active folder-form loading. AC-3 passes because `crates/spacetop/src/app/overview.rs` imports `entity_slug` from core and no longer owns slug derivation. AC-4 passes by diff inspection and guardrail tests: no new workflow markdown write path, git write broadening, editor/config/session behavior, or dependency was introduced. AC-5 is recorded in the implement report: Ponytail full mode was available and used to keep the refactor to one helper module plus direct caller migration.
+- DONE: Rerun the required verification commands, including `make lint` and `no_write_git_calls`.
+  Evidence: `cargo test -p spacetop-core entity_identity` passed 3/3; `cargo test -p spacetop-core parser::tests` passed 43/43; `cargo test -p spacetop-core index::tests` passed 21/21; `cargo test -p spacetop-core --test no_write_git_calls` passed 2/2; `cargo test -p spacetop app::tests` passed 97/97; `make lint` passed; full `cargo test -p spacetop-core` passed 159 unit tests, 8 git-history fixture tests, `no_terminal_deps`, `no_write_git_calls`, and doc-tests, with 3 watcher tests ignored by design.
+- DONE: Write a verify stage report with PASSED or REJECTED recommendation and any required feedback for implement.
+  Evidence: Recommendation: PASSED. No blocking defects or missing required evidence found; no implement feedback cycle is needed.
+
+### Summary
+
+PASSED. The branch centralizes entity path identity in core without expanding workflow writes or weakening module boundaries. Flat, folder-form, archived, worktree-only, index lookup, and overview selection behavior all have focused passing coverage, and the required lint/read-only guardrails are green as of 2026-06-17T02:48:52Z.
