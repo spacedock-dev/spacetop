@@ -14,7 +14,7 @@ score: 0.86
 worktree: .worktrees/spacedock-ensign-centralize-entity-identity
 issue:
 pr: "#67"
-mod-block: merge:pr-merge
+mod-block:
 ---
 
 Create a focused refactor that centralizes workflow entity identity rules so parser, worktree merge, index lookup, and TUI selection stop re-implementing slug derivation independently.
