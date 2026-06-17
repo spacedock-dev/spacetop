@@ -1,16 +1,16 @@
 ---
 title: Agent session active marker
-status: verify
+status: done
 source: docs/spacetop-dev/_artifacts/2026-06-14-agent-session-progress-survey.md; https://github.com/spacedock-dev/spacetop/issues/28
 kind: feature
 risk: medium
 milestone: v2-later
 proof: scanner fixtures, app result application tests, Ratatui task-row rendering tests, make lint
 started: 2026-06-17T03:45:57Z
-completed:
-verdict:
+completed: 2026-06-17T04:33:57Z
+verdict: PASSED
 score: 0.84
-worktree: .worktrees/spacedock-ensign-065-agent-session-active-marker
+worktree:
 issue: https://github.com/spacedock-dev/spacetop/issues/28
 pr: "#68"
 id: 065
