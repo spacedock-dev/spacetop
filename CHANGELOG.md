@@ -10,6 +10,18 @@ release notes.
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Removed
+
+### Internal
+
+## v0.2.0 - 2026-06-17
+
+### Added
+
 - GitHub Release deployment policy for macOS arm64 and Linux x64 binary assets.
 
 ### Changed
