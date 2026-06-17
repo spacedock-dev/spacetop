@@ -12,7 +12,7 @@ verdict:
 score: 0.72
 worktree: .worktrees/spacedock-ensign-latest-active-human-labels
 issue:
-pr:
+pr: "#69"
 id: 066
 mod-block: merge:pr-merge
 ---
