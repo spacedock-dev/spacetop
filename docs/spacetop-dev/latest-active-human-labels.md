@@ -14,7 +14,7 @@ worktree: .worktrees/spacedock-ensign-latest-active-human-labels
 issue:
 pr: "#69"
 id: 066
-mod-block: merge:pr-merge
+mod-block:
 ---
 
 Fix two UI readability issues in the active-session metadata shown for a selected task.
