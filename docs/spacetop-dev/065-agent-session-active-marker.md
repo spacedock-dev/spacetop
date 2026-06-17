@@ -1,6 +1,6 @@
 ---
 title: Agent session active marker
-status: implement
+status: verify
 source: docs/spacetop-dev/_artifacts/2026-06-14-agent-session-progress-survey.md; https://github.com/spacedock-dev/spacetop/issues/28
 kind: feature
 risk: medium
