@@ -113,8 +113,6 @@ pub struct OverviewState {
     pub task_page_size: Cell<usize>,
     pub sort_mode: SortMode,
     pub sync_status: Option<SyncStatus>,
-    pub session_activity_loading: bool,
-    pub session_activity_error: Option<String>,
     /// Percent of the content area given to the list pane in Left
     /// placement (preview to the right). One ratio per placement so the
     /// session-held drag result survives aspect-ratio flips; defaults
@@ -186,8 +184,6 @@ impl OverviewState {
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
             sync_status: None,
-            session_activity_loading: false,
-            session_activity_error: None,
             split_percent_left: 50,
             split_percent_bottom: 30,
             divider_drag: false,
@@ -248,8 +244,6 @@ impl OverviewState {
             task_page_size: Cell::new(10),
             sort_mode: SortMode::default(),
             sync_status: None,
-            session_activity_loading: false,
-            session_activity_error: None,
             split_percent_left: 50,
             split_percent_bottom: 30,
             divider_drag: false,
@@ -280,8 +274,6 @@ impl OverviewState {
 
         self.index = index;
         self.index.clear_session_attributions();
-        self.session_activity_loading = true;
-        self.session_activity_error = None;
         // Invalidate archive view — a watcher-driven reload may have touched
         // `_archive/` too. Dropping the cached list forces a rescan the next
         // time the user toggles to archived scope.
@@ -371,13 +363,7 @@ impl OverviewState {
     }
 
     pub fn session_activity_worker_request(&self) -> Option<SessionActivityWorkerRequest> {
-        let entities = self.index.query(EntityQuery {
-            scope: QueryScope::Active,
-            status: None,
-            text: None,
-            field_filters: Vec::new(),
-            sort: EntitySort::Id,
-        });
+        let entities = self.index.session_scan_entities();
         (!entities.is_empty()).then(|| {
             SessionActivityWorkerRequest::from_state(&self.workflow_dir, &self.repo_root, entities)
         })
@@ -387,19 +373,13 @@ impl OverviewState {
         if result.workflow_dir != self.workflow_dir || result.repo_root != self.repo_root {
             return;
         }
-        self.session_activity_loading = false;
         match result.result {
             Ok(report) => {
-                self.session_activity_error = if report.errors.is_empty() {
-                    None
-                } else {
-                    Some(report.errors.join("; "))
-                };
                 self.index.replace_session_scan_report(report);
             }
             Err(err) => {
-                self.session_activity_error = Some(err.to_string());
                 self.index.clear_session_attributions();
+                self.index.set_session_scan_error(err.to_string());
             }
         }
     }

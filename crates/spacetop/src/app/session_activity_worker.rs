@@ -2,16 +2,16 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 
-use spacetop_core::domain::{Entity, SessionScanReport};
+use spacetop_core::domain::SessionScanReport;
 use spacetop_core::session_activity::{
-    scan_local_sessions, SessionRoots, SessionScanError, SessionScanRequest,
+    scan_local_sessions, SessionRoots, SessionScanEntity, SessionScanError, SessionScanRequest,
 };
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionActivityWorkerRequest {
     pub workflow_dir: PathBuf,
     pub repo_root: PathBuf,
-    pub entities: Vec<Entity>,
+    pub entities: Vec<SessionScanEntity>,
     pub roots: SessionRoots,
 }
 
@@ -23,7 +23,11 @@ pub struct SessionActivityWorkerResult {
 }
 
 impl SessionActivityWorkerRequest {
-    pub fn from_state(workflow_dir: &Path, repo_root: &Path, entities: Vec<Entity>) -> Self {
+    pub fn from_state(
+        workflow_dir: &Path,
+        repo_root: &Path,
+        entities: Vec<SessionScanEntity>,
+    ) -> Self {
         Self {
             workflow_dir: workflow_dir.to_path_buf(),
             repo_root: repo_root.to_path_buf(),

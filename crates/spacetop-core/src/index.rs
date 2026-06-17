@@ -12,6 +12,7 @@ use crate::query::{
     EntityQuery, EntitySort, FieldFilter, HistoryResult, HistoryUnavailable, QueryScope,
 };
 use crate::relations::{EntityDetails, RelationView};
+use crate::session_activity::SessionScanEntity;
 use crate::sources::{ArchiveSnapshot, WorkflowSources};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -158,6 +159,11 @@ impl WorkflowIndex {
     pub fn clear_session_attributions(&mut self) {
         self.session_attributions.clear();
         self.session_scan_error = None;
+    }
+
+    pub fn set_session_scan_error(&mut self, message: String) {
+        self.session_attributions.clear();
+        self.session_scan_error = Some(message);
     }
 
     pub fn definition(&self) -> &WorkflowDefinition {
@@ -345,6 +351,10 @@ impl WorkflowIndex {
     pub fn entity_has_active_session_marker(&self, entity_id: &str) -> bool {
         self.session_attribution_for_entity_id(entity_id)
             .is_some_and(EntitySessionAttribution::has_active_marker)
+    }
+
+    pub fn session_scan_entities(&self) -> Vec<SessionScanEntity> {
+        self.active.iter().map(SessionScanEntity::from).collect()
     }
 
     pub fn session_scan_error(&self) -> Option<&str> {

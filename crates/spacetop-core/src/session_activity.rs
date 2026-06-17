@@ -20,8 +20,27 @@ const MAX_SCAN_FILE_BYTES: u64 = 1_000_000;
 pub struct SessionScanRequest {
     pub workflow_dir: PathBuf,
     pub repo_root: PathBuf,
-    pub entities: Vec<Entity>,
+    pub entities: Vec<SessionScanEntity>,
     pub roots: SessionRoots,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionScanEntity {
+    pub id: String,
+    pub path: PathBuf,
+    pub worktree: Option<String>,
+    pub worktree_source: Option<PathBuf>,
+}
+
+impl From<&Entity> for SessionScanEntity {
+    fn from(entity: &Entity) -> Self {
+        Self {
+            id: entity.id.clone(),
+            path: entity.path.clone(),
+            worktree: entity.worktree.clone(),
+            worktree_source: entity.worktree_source.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -109,6 +128,7 @@ pub fn scan_local_sessions_with<P: ProcessProbe>(
 ) -> Result<SessionScanReport, SessionScanError> {
     let mut errors = Vec::new();
     let mut per_entity: HashMap<String, Vec<AgentSessionEvidence>> = HashMap::new();
+    let mut pid_cache: HashMap<u32, bool> = HashMap::new();
     let root_pairs = request.roots.all_roots();
 
     for (agent, root) in &root_pairs {
@@ -156,7 +176,8 @@ pub fn scan_local_sessions_with<P: ProcessProbe>(
             };
             let activity_time = metadata.modified().ok();
             let pid = extract_pid(&content);
-            let run_state = classify_run_state(pid, activity_time, process_probe, now);
+            let run_state =
+                classify_run_state(pid, activity_time, process_probe, now, &mut pid_cache);
             for entity in &request.entities {
                 if let Some((confidence, matched_worktree)) =
                     match_entity(entity, &request.workflow_dir, &request.repo_root, &content)
@@ -225,8 +246,14 @@ fn classify_run_state<P: ProcessProbe>(
     activity_time: Option<SystemTime>,
     process_probe: &P,
     now: SystemTime,
+    pid_cache: &mut HashMap<u32, bool>,
 ) -> AgentSessionState {
-    if pid.is_some_and(|pid| process_probe.is_running(pid)) {
+    let is_running = pid.is_some_and(|pid| {
+        *pid_cache
+            .entry(pid)
+            .or_insert_with(|| process_probe.is_running(pid))
+    });
+    if is_running {
         return AgentSessionState::Running;
     }
     if activity_time.is_some_and(|time| {
@@ -240,7 +267,7 @@ fn classify_run_state<P: ProcessProbe>(
 }
 
 fn match_entity(
-    entity: &Entity,
+    entity: &SessionScanEntity,
     workflow_dir: &Path,
     repo_root: &Path,
     content: &str,
@@ -296,20 +323,12 @@ fn candidate_paths(repo_root: &Path, raw: &str) -> Vec<PathBuf> {
 }
 
 fn extract_pid(content: &str) -> Option<u32> {
-    for key in ["\"pid\"", "pid"] {
-        if let Some(pid) = extract_number_after_key(content, key) {
-            return Some(pid);
-        }
-    }
-    None
-}
-
-fn extract_number_after_key(content: &str, key: &str) -> Option<u32> {
+    let key = "\"pid\"";
     let start = content.find(key)? + key.len();
     let after_key = &content[start..];
-    let digits: String = after_key
+    let after_colon = after_key.trim_start().strip_prefix(':')?.trim_start();
+    let digits: String = after_colon
         .chars()
-        .skip_while(|ch| !ch.is_ascii_digit())
         .take_while(|ch| ch.is_ascii_digit())
         .collect();
     digits.parse().ok()
@@ -366,8 +385,20 @@ mod tests {
         }
     }
 
-    fn entity(id: &str, worktree: Option<&str>) -> Entity {
-        Entity {
+    struct CountingProbe {
+        running: HashSet<u32>,
+        calls: std::cell::Cell<usize>,
+    }
+
+    impl ProcessProbe for CountingProbe {
+        fn is_running(&self, pid: u32) -> bool {
+            self.calls.set(self.calls.get() + 1);
+            self.running.contains(&pid)
+        }
+    }
+
+    fn entity(id: &str, worktree: Option<&str>) -> SessionScanEntity {
+        SessionScanEntity::from(&Entity {
             path: PathBuf::from(format!("{id}-task.md")),
             id: id.to_string(),
             title: format!("task {id}"),
@@ -383,7 +414,7 @@ mod tests {
             body: "body".to_string(),
             worktree_source: None,
             main_body: None,
-        }
+        })
     }
 
     fn write_session(path: &Path, body: &str) {
@@ -533,5 +564,44 @@ mod tests {
             report.attributions[0].evidence[0].run_state,
             AgentSessionState::Running
         );
+    }
+
+    #[test]
+    fn extract_pid_ignores_unquoted_substrings() {
+        assert_eq!(extract_pid(r#"{"pid":4242}"#), Some(4242));
+        assert_eq!(extract_pid(r#"rapid123 mentions 065"#), None);
+        assert_eq!(extract_pid(r#"pid: 4242"#), None);
+    }
+
+    #[test]
+    fn repeated_pid_probe_is_cached_per_scan() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        let worktree = repo.join(".worktrees/task-065");
+        for idx in 0..2 {
+            write_session(
+                &root.join(format!("session-{idx}.jsonl")),
+                &format!(r#"{{"pid":4242,"workdir":"{}"}}"#, worktree.display()),
+            );
+        }
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+        };
+        let probe = CountingProbe {
+            running: HashSet::from([4242]),
+            calls: std::cell::Cell::new(0),
+        };
+
+        scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert_eq!(probe.calls.get(), 1, "pid should be probed once per scan");
     }
 }

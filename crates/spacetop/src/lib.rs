@@ -5,7 +5,7 @@ pub mod ui;
 
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::TryRecvError;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
@@ -187,7 +187,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
         std::sync::mpsc::Receiver<watcher::RefreshSignal>,
     )> = start_watcher_for(&mut app);
     let mut history_worker_state = start_history_worker_for(&app);
-    let mut session_activity_worker_state = start_session_activity_worker_for(&app);
+    let mut session_activity_worker_state = SessionActivityWorkerState::start_for(&app);
 
     loop {
         terminal
@@ -208,7 +208,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
                     Ok(_) => {
                         if app.reload_with_rediscovery().is_ok() {
                             history_worker_state = start_history_worker_for(&app);
-                            session_activity_worker_state = start_session_activity_worker_for(&app);
+                            session_activity_worker_state.request_scan(&app);
                         }
                     }
                     Err(TryRecvError::Empty) => break,
@@ -236,7 +236,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
         if prior_mode_was_picker && matches!(app.mode(), AppMode::Overview(_)) {
             watcher_state = start_watcher_for(&mut app);
             history_worker_state = start_history_worker_for(&app);
-            session_activity_worker_state = start_session_activity_worker_for(&app);
+            session_activity_worker_state.request_scan(&app);
         }
 
         // 3. Drain pending picker-overlay open request: re-run discovery
@@ -269,7 +269,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
             }
             watcher_state = start_watcher_for(&mut app);
             history_worker_state = start_history_worker_for(&app);
-            session_activity_worker_state = start_session_activity_worker_for(&app);
+            session_activity_worker_state.request_scan(&app);
         }
 
         // 5. Drain pending sync request: redraw once with the in-flight
@@ -282,7 +282,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
                 .context("failed to draw terminal UI")?;
             apply_pending_sync(&mut app, &StdGitRunner);
             history_worker_state = start_history_worker_for(&app);
-            session_activity_worker_state = start_session_activity_worker_for(&app);
+            session_activity_worker_state.request_scan(&app);
         }
 
         // 6. Drain pending "open file in $EDITOR" intent: suspend the TUI,
@@ -342,11 +342,29 @@ fn start_history_worker_for(app: &App) -> Option<std::sync::mpsc::Receiver<Histo
     app.history_worker_request().map(app::spawn_history_worker)
 }
 
-fn start_session_activity_worker_for(
-    app: &App,
-) -> Option<std::sync::mpsc::Receiver<SessionActivityWorkerResult>> {
-    app.session_activity_worker_request()
-        .map(app::spawn_session_activity_worker)
+#[derive(Default)]
+struct SessionActivityWorkerState {
+    receiver: Option<Receiver<SessionActivityWorkerResult>>,
+    rescan_requested: bool,
+}
+
+impl SessionActivityWorkerState {
+    fn start_for(app: &App) -> Self {
+        let mut state = Self::default();
+        state.request_scan(app);
+        state
+    }
+
+    fn request_scan(&mut self, app: &App) {
+        if self.receiver.is_some() {
+            self.rescan_requested = true;
+            return;
+        }
+        self.receiver = app
+            .session_activity_worker_request()
+            .map(app::spawn_session_activity_worker);
+        self.rescan_requested = false;
+    }
 }
 
 fn drain_history_worker(
@@ -371,12 +389,9 @@ fn drain_history_worker(
     }
 }
 
-fn drain_session_activity_worker(
-    app: &mut App,
-    worker: &mut Option<std::sync::mpsc::Receiver<SessionActivityWorkerResult>>,
-) {
+fn drain_session_activity_worker(app: &mut App, worker: &mut SessionActivityWorkerState) {
     let mut clear_worker = false;
-    if let Some(rx) = worker.as_ref() {
+    if let Some(rx) = worker.receiver.as_ref() {
         match rx.try_recv() {
             Ok(result) => {
                 app.apply_session_activity_result(result);
@@ -389,7 +404,10 @@ fn drain_session_activity_worker(
         }
     }
     if clear_worker {
-        *worker = None;
+        worker.receiver = None;
+        if worker.rescan_requested {
+            worker.request_scan(app);
+        }
     }
 }
 
