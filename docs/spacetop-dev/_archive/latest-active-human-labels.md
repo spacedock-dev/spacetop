@@ -1,20 +1,21 @@
 ---
 title: Human-readable active-session state and latest time
-status: verify
+status: done
 source: User feedback, 2026-06-17
 kind: bugfix
 risk: low
 milestone: v1-maintenance
 proof: Ratatui preview test plus make lint
 started: 2026-06-17T06:36:07Z
-completed:
-verdict:
+completed: 2026-06-17T07:25:45Z
+verdict: PASSED
 score: 0.72
-worktree: .worktrees/spacedock-ensign-latest-active-human-labels
+worktree:
 issue:
 pr: "#69"
 id: 066
 mod-block:
+archived: 2026-06-17T07:25:56Z
 ---
 
 Fix two UI readability issues in the active-session metadata shown for a selected task.
