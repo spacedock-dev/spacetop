@@ -612,6 +612,48 @@ fn worktree_only_items_shown() {
 }
 
 #[test]
+fn active_folder_form_item_loads_from_index_md() {
+    let root = unique_temp_dir("active-folder-form");
+    let wf = root.join("docs/wf");
+    write_minimal_workflow(&wf, None, None);
+    let task_dir = wf.join("task-folder");
+    fs::create_dir_all(&task_dir).expect("task dir");
+    write_markdown(&task_dir.join("index.md"), &entity_md("064", "Folder Task"));
+    write_markdown(&task_dir.join("notes.md"), &entity_md("065", "Nested Note"));
+
+    let snapshot = load_workflow_dir(&wf, &root).expect("load");
+
+    assert_eq!(snapshot.items.len(), 1);
+    assert_eq!(snapshot.items[0].title, "Folder Task");
+}
+
+#[test]
+fn worktree_only_folder_form_item_loads_from_index_md() {
+    let root = unique_temp_dir("wt-folder-form");
+    let wf = root.join("docs/wf");
+    write_minimal_workflow(&wf, None, None);
+    let wt_task_dir = root.join(".worktrees/wt-1/docs/wf/folder-task");
+    fs::create_dir_all(&wt_task_dir).expect("worktree task dir");
+    write_minimal_workflow(&root.join(".worktrees/wt-1/docs/wf"), None, None);
+    write_markdown(
+        &wt_task_dir.join("index.md"),
+        &entity_md("064", "Worktree Folder Task"),
+    );
+
+    let snapshot = load_workflow_dir(&wf, &root).expect("load");
+
+    assert_eq!(snapshot.items.len(), 1);
+    assert_eq!(snapshot.items[0].title, "Worktree Folder Task");
+    assert!(
+        snapshot.items[0]
+            .worktree_source
+            .as_ref()
+            .is_some_and(|path| path.ends_with("folder-task/index.md")),
+        "worktree-only folder item should keep its source path"
+    );
+}
+
+#[test]
 fn worktree_version_wins_on_hash_mismatch() {
     // AC-4: same slug in main and worktree with different content.
     // After the merged-view fix: FO-owned fields (title, status) come from main;
@@ -874,6 +916,43 @@ fn archived_main_slug_suppresses_stale_worktree_copy() {
     assert!(
         archived.iter().any(|item| item.id == "059"),
         "moved task should be available from archived scope"
+    );
+}
+
+#[test]
+fn archived_folder_slug_suppresses_stale_worktree_copy() {
+    let root = unique_temp_dir("archived-folder-stale-wt");
+    let wf = root.join("docs/wf");
+    write_two_state_workflow(&wf, None, None);
+    let archived_dir = wf.join("_archive/task-folder");
+    fs::create_dir_all(&archived_dir).expect("archive folder");
+    write_markdown(
+        &archived_dir.join("index.md"),
+        &entity_md_with_status("064", "Archived Folder", "done", "archived body"),
+    );
+
+    let wt = root.join(".worktrees/wt-1/docs/wf");
+    write_two_state_workflow(
+        &wt,
+        Some("task-folder.md"),
+        Some(&entity_md_with_status(
+            "064",
+            "Stale Folder",
+            "design",
+            "stale worktree body",
+        )),
+    );
+
+    let snapshot = load_workflow_dir(&wf, &root).expect("load active snapshot");
+
+    assert!(
+        snapshot.items.iter().all(|item| item.id != "064"),
+        "archived folder slug must not be resurrected from worktree copy: {:?}",
+        snapshot
+            .items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>()
     );
 }
 
