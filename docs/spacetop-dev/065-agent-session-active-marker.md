@@ -92,3 +92,16 @@ Verified by: scanner failure tests, existing no-terminal-deps guardrail, no work
 ### Summary
 
 Planned the first active-session marker slice as a typed local attribution pipeline: core scans and ranks local Codex/Claude Code structural evidence, app state refreshes it in the background, and Ratatui renders only derived metadata. The plan preserves Spacetop's read-only contract and identifies the implementation proof path: scanner fixtures, ranking tests, app application tests, task-row rendering tests, preview metadata tests, `cargo test`, and `make lint`.
+
+## Stage Report: implement
+
+- DONE: implement typed core attribution for Codex and Claude Code local session evidence, including fixture-root scanners, confidence/run-state ranking, and no transcript-content retention.
+  Evidence: commit `ffc2609` adds `spacetop_core::session_activity` and domain attribution types; core fixture tests cover running Codex, running Claude Code, and stale/weak evidence.
+- DONE: implement non-blocking app attribution refresh state that applies results to the active workflow, treats scanner failures as non-fatal, and refreshes on workflow reload.
+  Evidence: commit `ffc2609` adds `app/session_activity_worker.rs`, event-loop refresh hooks, matching/stale/failure app tests, and typed `WorkflowIndex` result application.
+- DONE: render the active-session marker and preview metadata from typed state with Unicode/ASCII behavior, focused tests, cargo fmt, cargo test, and make lint evidence.
+  Evidence: commit `ffc2609` renders ASCII `@ ` row markers and preview metadata; `cargo fmt`, `cargo test`, and `make lint` passed.
+
+### Summary
+
+Implemented the read-only first slice for active local agent-session attribution. Core scanning correlates structural Codex and Claude Code session evidence to active workflow entities, app state refreshes attribution in a background worker, and the TUI renders an `@ ` active marker plus privacy-preserving preview metadata from typed state only.
