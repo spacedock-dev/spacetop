@@ -15,6 +15,7 @@ worktree:
 issue:
 pr: "#67"
 mod-block:
+archived: 2026-06-17T03:04:54Z
 ---
 
 Create a focused refactor that centralizes workflow entity identity rules so parser, worktree merge, index lookup, and TUI selection stop re-implementing slug derivation independently.
