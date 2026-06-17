@@ -1,6 +1,6 @@
 ---
 title: Human-readable active-session state and latest time
-status: implement
+status: verify
 source: User feedback, 2026-06-17
 kind: bugfix
 risk: low
