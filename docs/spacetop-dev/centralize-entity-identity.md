@@ -1,7 +1,7 @@
 ---
 id: 064
 title: Centralize entity identity module
-status: implement
+status: verify
 source: Architecture refactor scan on 2026-06-17; implement using Ponytail mode
 kind: refactor
 risk: medium
