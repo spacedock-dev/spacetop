@@ -157,20 +157,21 @@ release_commit="$(git rev-parse HEAD)"
 git push origin main
 ```
 
-Create release notes without leaving the terminal. For a small release, write a
-short `RELEASE_NOTES.md` from the changelog section:
+Create release notes without leaving the terminal. Always start from the
+previous release tag so merged PRs and the full compare link are included:
 
 ```bash
-awk -v tag="${tag}" '
-  index($0, "## " tag) == 1 { in_section = 1; print; next }
-  in_section && /^## / { exit }
-  in_section { print }
-' CHANGELOG.md > RELEASE_NOTES.md
+previous_tag=v0.1.0
+gh api repos/spacedock-dev/spacetop/releases/generate-notes \
+  -f tag_name="${tag}" \
+  -f previous_tag_name="${previous_tag}" \
+  --jq .body > RELEASE_NOTES.md
 ```
 
-Inspect and edit `RELEASE_NOTES.md` if needed. Then create and publish the
-GitHub Release. Publishing the Release is the action that starts the release
-workflow:
+Inspect `RELEASE_NOTES.md` before publishing. Keep the merged PR list and full
+compare link, and add a short curated highlights section when the generated
+notes are too raw. Then create and publish the GitHub Release. Publishing the
+Release is the action that starts the release workflow:
 
 ```bash
 gh release create "${tag}" \
