@@ -1,17 +1,17 @@
 ---
 id: 064
 title: Centralize entity identity module
-status: verify
+status: done
 source: Architecture refactor scan on 2026-06-17; implement using Ponytail mode
 kind: refactor
 risk: medium
 milestone: v2-later
 proof: cargo test -p spacetop-core entity_identity && cargo test -p spacetop app::tests && make lint
 started: 2026-06-17T02:33:11Z
-completed:
-verdict:
+completed: 2026-06-17T03:04:42Z
+verdict: PASSED
 score: 0.86
-worktree: .worktrees/spacedock-ensign-centralize-entity-identity
+worktree:
 issue:
 pr: "#67"
 mod-block:
