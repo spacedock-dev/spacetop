@@ -129,12 +129,13 @@ fn task_list_uses_configured_selection_background() {
 
 #[test]
 fn task_row_renders_active_session_marker_from_typed_attribution() {
-    let app = app_with_active_session_marker(
+    let app = app_with_session_attribution(
         vec![
             item("064", "Inactive task", "Body"),
             item("065", "Active task", "Body"),
         ],
         "065",
+        spacetop_core::domain::AgentSessionState::Running,
     );
     let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
     terminal.draw(|frame| render(frame, &app)).expect("render");

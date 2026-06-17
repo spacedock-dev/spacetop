@@ -56,7 +56,11 @@ fn app_with_items(items: Vec<Entity>) -> App {
     app
 }
 
-fn app_with_active_session_marker(mut items: Vec<Entity>, entity_id: &str) -> App {
+fn app_with_session_attribution(
+    mut items: Vec<Entity>,
+    entity_id: &str,
+    run_state: spacetop_core::domain::AgentSessionState,
+) -> App {
     let root = PathBuf::from("/tmp/spacetop-test");
     for item in &mut items {
         if item.id == entity_id && item.worktree.is_none() {
@@ -104,7 +108,7 @@ fn app_with_active_session_marker(mut items: Vec<Entity>, entity_id: &str) -> Ap
                     session_id: "session-065".to_string(),
                     display_name: Some("Mendel".to_string()),
                     confidence: spacetop_core::domain::AttributionConfidence::High,
-                    run_state: spacetop_core::domain::AgentSessionState::Running,
+                    run_state,
                     latest_activity_unix: Some(1_718_000_000),
                     matched_worktree: Some(PathBuf::from(format!(".worktrees/task-{entity_id}"))),
                 }],

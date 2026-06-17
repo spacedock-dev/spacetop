@@ -196,13 +196,14 @@ fn preview_renders_markdown_body_instead_of_raw_markers() {
 
 #[test]
 fn preview_renders_session_metadata_without_transcript_content() {
-    let app = app_with_active_session_marker(
+    let app = app_with_session_attribution(
         vec![item(
             "065",
             "Active task",
             "Visible markdown body, not a transcript leak.",
         )],
         "065",
+        spacetop_core::domain::AgentSessionState::Recent,
     );
     let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
     terminal.draw(|frame| render(frame, &app)).expect("render");
@@ -215,8 +216,14 @@ fn preview_renders_session_metadata_without_transcript_content() {
     assert!(rendered.contains("status:"));
     assert!(rendered.contains("session: Mendel high"));
     assert!(!rendered.contains("confidence: high"));
-    assert!(rendered.contains("state: running"));
-    assert!(rendered.contains("latest: 1718000000"));
+    assert!(rendered.contains("state: recent"));
+    assert!(!rendered.contains("state: recent activity"));
+    assert!(!rendered.contains("state: active recently"));
+    assert!(
+        rendered.contains(" ago"),
+        "latest activity should be human-readable; rendered: {rendered:?}"
+    );
+    assert!(!rendered.contains("latest: 1718000000"));
     let status_index = rendered.find("status:").expect("status line");
     let agent_index = rendered.find("agent: Codex").expect("agent line");
     let source_index = rendered.find("source:").expect("source line");
@@ -228,6 +235,19 @@ fn preview_renders_session_metadata_without_transcript_content() {
         !rendered.contains("prompt:") && !rendered.contains("response:"),
         "preview metadata must not expose transcript fields"
     );
+
+    let app = app_with_session_attribution(
+        vec![item("066", "Stale task", "Visible markdown body.")],
+        "066",
+        spacetop_core::domain::AgentSessionState::Stale,
+    );
+    let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(rendered.contains("state: stale"));
+    assert!(!rendered.contains("state: stale activity"));
+    assert!(!rendered.contains("state: no recent activity"));
 }
 
 #[test]

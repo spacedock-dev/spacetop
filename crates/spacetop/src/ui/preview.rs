@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 thread_local! {
     /// Per-render-thread memoization of the termimad markdown render. Lives in
@@ -463,7 +464,7 @@ fn session_attribution_line<'a>(
         .unwrap_or(best.session_id.as_str());
     let latest = best
         .latest_activity_unix
-        .map(|ts| ts.to_string())
+        .map(format_latest_activity)
         .unwrap_or_else(|| "n/a".to_string());
     Some(Line::from(vec![
         Span::styled("agent: ", dim),
@@ -473,11 +474,37 @@ fn session_attribution_line<'a>(
         Span::raw(format!("{} {}", session_label, best.confidence.label())),
         Span::raw("  \u{00B7}  "),
         Span::styled("state: ", dim),
-        Span::raw(best.run_state.label()),
+        Span::raw(session_state_label(best.run_state)),
         Span::raw("  \u{00B7}  "),
         Span::styled("latest: ", dim),
         Span::raw(latest),
     ]))
+}
+
+fn session_state_label(state: spacetop_core::domain::AgentSessionState) -> &'static str {
+    match state {
+        spacetop_core::domain::AgentSessionState::Stale => "stale",
+        spacetop_core::domain::AgentSessionState::Recent => "recent",
+        spacetop_core::domain::AgentSessionState::Running => state.label(),
+    }
+}
+
+fn format_latest_activity(timestamp: i64) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(timestamp);
+    let age = now.saturating_sub(timestamp);
+    const MINUTE: i64 = 60;
+    const HOUR: i64 = 60 * MINUTE;
+    const DAY: i64 = 24 * HOUR;
+
+    match age {
+        0..MINUTE => "just now".to_string(),
+        MINUTE..HOUR => format!("{}m ago", age / MINUTE),
+        HOUR..DAY => format!("{}h ago", age / HOUR),
+        _ => format!("{}d ago", age / DAY),
+    }
 }
 
 fn agent_label(attribution: &spacetop_core::domain::EntitySessionAttribution) -> &'static str {
