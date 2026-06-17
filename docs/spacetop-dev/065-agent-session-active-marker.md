@@ -105,3 +105,16 @@ Planned the first active-session marker slice as a typed local attribution pipel
 ### Summary
 
 Implemented the read-only first slice for active local agent-session attribution. Core scanning correlates structural Codex and Claude Code session evidence to active workflow entities, app state refreshes attribution in a background worker, and the TUI renders an `@ ` active marker plus privacy-preserving preview metadata from typed state only.
+
+## Stage Report: verify
+
+- DONE: verify every acceptance criterion has concrete implementation and test evidence, including Codex and Claude running markers, stale/weak no-marker behavior, preview metadata, scanner failure resilience, and core terminal-free safety.
+  Evidence: inspected `session_activity`, `WorkflowIndex`, app worker/application, list/preview render paths, and matching core/app/Ratatui tests; AC-1 through AC-5 are covered.
+- DONE: independently inspect the implementation diff and rerun or validate required proof commands, especially cargo fmt, cargo test, make lint, and the no-terminal-deps guardrail.
+  Evidence: reviewed `main...HEAD`; `cargo fmt --check`, `cargo test`, and `make lint` passed; `cargo test` included `crates/spacetop-core/tests/no_terminal_deps.rs` 1/1 and `no_write_git_calls.rs` 2/2.
+- DONE: decide PASSED or REJECTED with specific defects or approval notes, preserving privacy/read-only requirements and naming any missing evidence.
+  Evidence: PASSED recommendation; no blocking defects found, no workflow-write path found, and targeted privacy/read-only scan found only test fixture writes.
+
+### Summary
+
+PASSED. The branch implements local, read-only active-session attribution through typed core metadata, applies it asynchronously in app state, and renders only structural marker/preview details without transcript content.
