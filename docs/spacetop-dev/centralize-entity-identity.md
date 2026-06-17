@@ -147,8 +147,34 @@ If the implementer changes Rust code outside the listed owned files, they must n
 - DONE: Proof strategy maps each acceptance criterion to the lowest practical test layer and required commands.
   AC-1 is covered by core identity unit tests plus duplicate-helper grep review, AC-2 by parser and index tests, AC-3 by app selection tests through `OverviewState`, AC-4 by `no_write_git_calls` and `make lint`, and AC-5 by the implement report naming Ponytail full mode or stopping as blocked.
 - DONE: Ponytail mode is explicitly used for planning, or the stage report records Ponytail mode/tooling as unavailable and stops without substituting another mode.
-  Ponytail full mode was available in this Codex session via `/Users/kent/.codex/plugins/cache/ponytail/ponytail/4.7.0/skills/ponytail/SKILL.md` and used to keep the plan to one small core module plus direct caller migration.
+  Ponytail full mode was available in this Codex session and used to keep the plan to one small core module plus direct caller migration.
 
 ### Summary
 
 Created a focused implementation handoff for centralizing entity identity in core. The shortest safe path is one exported `entity_identity` helper module, deleting duplicate slug derivation from worktree merge, index lookup, and TUI selection, with parser/index/app tests proving flat, folder-form, archived, worktree-only, reload, and read-only behavior.
+
+## Stage Report: implement
+
+- DONE: core entity identity helper/module is implemented and duplicate slug derivation is removed from parser worktree, WorkflowIndex, and TUI overview selection
+  Commit `e2c6de1` adds `spacetop_core::entity_identity` and migrates parser item/worktree, `WorkflowIndex`, and overview selection to it; grep found no local `slug_of`/`slug_of_path` helpers in the target files.
+- DONE: focused core/parser/index/app tests cover flat paths, folder-form index.md paths, archived/worktree behavior, and selection preservation
+  `cargo test -p spacetop-core entity_identity`, `parser::tests`, `index::tests`, `cargo test -p spacetop app::tests`, and full `cargo test -p spacetop-core` all passed.
+- DONE: Ponytail full mode is used for the implementation and recorded in the stage report, or the worker stops blocked if Ponytail mode is unavailable
+  Ponytail full mode was available in this Codex session and used to keep the change to one small helper module plus direct caller migration.
+
+### Summary
+
+Centralized entity path identity in `spacetop-core` for flat files and folder-form `index.md` entities, then removed duplicate slug derivation from parser worktree merge, index lookup, parser ID fallback, and overview selection. Added active/worktree folder-form loading where archive behavior already existed, and verified the read-first guardrail with `cargo test -p spacetop-core --test no_write_git_calls` plus `make lint`.
+
+## Stage Report: verify
+
+- DONE: Independently inspect the worktree diff and confirm AC-1 through AC-5 have concrete evidence.
+  Evidence: AC-1 passes because `spacetop_core::entity_identity` is exported and used by parser item ID fallback, worktree merge/sort/archive suppression, `WorkflowIndex::rebuild_lookup_maps`, and `OverviewState` reload/sort selection; grep found no remaining local `slug_of` or `slug_of_path` helper in the target files. AC-2 is covered by parser and index tests for flat files, folder-form `index.md`, archived folder suppression, worktree-only folder items, and active folder-form loading. AC-3 passes because `crates/spacetop/src/app/overview.rs` imports `entity_slug` from core and no longer owns slug derivation. AC-4 passes by diff inspection and guardrail tests: no new workflow markdown write path, git write broadening, editor/config/session behavior, or dependency was introduced. AC-5 is recorded in the implement report: Ponytail full mode was available and used to keep the refactor to one helper module plus direct caller migration.
+- DONE: Rerun the required verification commands, including `make lint` and `no_write_git_calls`.
+  Evidence: `cargo test -p spacetop-core entity_identity` passed 3/3; `cargo test -p spacetop-core parser::tests` passed 43/43; `cargo test -p spacetop-core index::tests` passed 21/21; `cargo test -p spacetop-core --test no_write_git_calls` passed 2/2; `cargo test -p spacetop app::tests` passed 97/97; `make lint` passed; full `cargo test -p spacetop-core` passed 159 unit tests, 8 git-history fixture tests, `no_terminal_deps`, `no_write_git_calls`, and doc-tests, with 3 watcher tests ignored by design.
+- DONE: Write a verify stage report with PASSED or REJECTED recommendation and any required feedback for implement.
+  Evidence: Recommendation: PASSED. No blocking defects or missing required evidence found; no implement feedback cycle is needed.
+
+### Summary
+
+PASSED. The branch centralizes entity path identity in core without expanding workflow writes or weakening module boundaries. Flat, folder-form, archived, worktree-only, index lookup, and overview selection behavior all have focused passing coverage, and the required lint/read-only guardrails are green as of 2026-06-17T02:48:52Z.

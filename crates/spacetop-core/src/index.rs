@@ -4,6 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{Entity, EntityParseError, WorkflowDefinition};
+use crate::entity_identity::entity_slug;
 pub use crate::metrics::Metrics;
 use crate::query::{
     EntityQuery, EntitySort, FieldFilter, HistoryResult, HistoryUnavailable, QueryScope,
@@ -319,7 +320,7 @@ impl WorkflowIndex {
         self.by_slug.clear();
         for entity in self.archived.iter().chain(self.active.iter()) {
             self.by_id.insert(entity.id.clone(), entity.clone());
-            if let Some(slug) = slug_of(&entity.path) {
+            if let Some(slug) = entity_slug(&entity.path) {
                 self.by_slug.insert(slug, entity.clone());
             }
         }
@@ -348,18 +349,6 @@ fn compare_ids(a: &str, b: &str) -> std::cmp::Ordering {
     match (an, bn) {
         (Some(x), Some(y)) => x.cmp(&y).then_with(|| a.cmp(b)),
         _ => a.cmp(b),
-    }
-}
-
-fn slug_of(path: &Path) -> Option<String> {
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned());
-    match stem.as_deref() {
-        Some("index") => path
-            .parent()
-            .and_then(|p| p.file_name())
-            .map(|s| s.to_string_lossy().into_owned()),
-        Some(_) => stem,
-        None => None,
     }
 }
 
@@ -498,6 +487,43 @@ mod tests {
         let result = index().query(query);
         let ids: Vec<String> = result.into_iter().map(|entity| entity.id).collect();
         assert_eq!(ids, ["001", "002", "010"]);
+    }
+
+    #[test]
+    fn entity_by_slug_resolves_flat_and_folder_form_paths() {
+        let mut active_folder = entity("020", "Active folder", "plan");
+        active_folder.path = PathBuf::from("active-folder/index.md");
+        let mut archived_folder = entity("030", "Archived folder", "verify");
+        archived_folder.path = PathBuf::from("_archive/archived-folder/index.md");
+        let active = WorkflowSnapshot {
+            definition: definition(),
+            items: vec![entity("010", "Flat active", "plan"), active_folder],
+            parse_errors: Vec::new(),
+        };
+        let index = WorkflowIndex::from_sources(WorkflowSources {
+            active,
+            archive: ArchiveSnapshot {
+                entities: vec![archived_folder],
+                parse_errors: Vec::new(),
+                error: None,
+            },
+        });
+
+        assert_eq!(index.entity_by_slug("010").expect("flat").id, "010");
+        assert_eq!(
+            index
+                .entity_by_slug("active-folder")
+                .expect("active folder")
+                .id,
+            "020"
+        );
+        assert_eq!(
+            index
+                .entity_by_slug("archived-folder")
+                .expect("archived folder")
+                .id,
+            "030"
+        );
     }
 
     #[test]

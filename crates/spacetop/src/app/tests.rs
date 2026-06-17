@@ -1219,6 +1219,37 @@ fn reload_from_index_preserves_selection_by_slug() {
 }
 
 #[test]
+fn reload_from_index_preserves_folder_form_selection_by_slug() {
+    let root = PathBuf::from("/tmp/spacetop-folder-index-test");
+    let first = snapshot_from_items(vec![
+        item_at(root.join("001-first.md"), "001", "first", "plan"),
+        item_at(root.join("folder-second/index.md"), "002", "second", "plan"),
+    ]);
+    let mut state = OverviewState::from_snapshot(root.clone(), first);
+    state.select_next();
+    assert_eq!(state.selected_item().expect("selected").id, "002");
+
+    let second = snapshot_from_items(vec![
+        item_at(root.join("003-third.md"), "003", "third", "plan"),
+        item_at(
+            root.join("folder-second/index.md"),
+            "002",
+            "second changed",
+            "plan",
+        ),
+    ]);
+    let index = spacetop_core::index::WorkflowIndex::from_sources(
+        spacetop_core::sources::WorkflowSources {
+            active: second,
+            archive: spacetop_core::sources::ArchiveSnapshot::empty(),
+        },
+    );
+    state.reload_from_index(index);
+
+    assert_eq!(state.selected_item().expect("selected").id, "002");
+}
+
+#[test]
 fn reload_replaces_index_contents() {
     let root = PathBuf::from("/tmp/spacetop-index-reload-test");
     let first = snapshot_from_items(vec![item_at(

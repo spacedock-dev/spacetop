@@ -7,6 +7,7 @@ use ratatui::layout::Rect;
 use spacetop_core::config::{DefaultScope, DefaultSort, SpacetopConfig};
 use spacetop_core::discovery::resolve_scan_root;
 use spacetop_core::domain::{Entity, EntityParseError, WorkflowSnapshot};
+use spacetop_core::entity_identity::entity_slug;
 pub use spacetop_core::index::StageCount;
 use spacetop_core::index::WorkflowIndex;
 use spacetop_core::parser::ParseError;
@@ -139,22 +140,6 @@ pub struct OverviewState {
     pub preview_rect: Cell<Rect>,
 }
 
-/// Derive a stable slug from a work-item path. Prefer the file stem; when the
-/// item lives in a folder-form `{slug}/index.md`, fall back to the parent
-/// directory name so reload selection-preservation still matches across the
-/// legacy and folder layouts.
-pub(crate) fn slug_of(path: &Path) -> Option<String> {
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned());
-    match stem.as_deref() {
-        Some("index") => path
-            .parent()
-            .and_then(|p| p.file_name())
-            .map(|s| s.to_string_lossy().into_owned()),
-        Some(_) => stem,
-        None => None,
-    }
-}
-
 impl OverviewState {
     pub fn empty(workflow_dir: PathBuf) -> Self {
         let repo_root = resolve_scan_root(&workflow_dir);
@@ -269,7 +254,7 @@ impl OverviewState {
     }
 
     /// Deterministic reload seam: swap the active snapshot in-place while
-    /// preserving selection by slug (file stem) with a clamped-index fallback.
+    /// preserving selection by core entity slug with a clamped-index fallback.
     /// Leaves `view_scope` and the archived-view state untouched — the
     /// watcher-driven refresh only re-parses active items; archived items are
     /// invalidated so the next scope toggle reloads them.
@@ -284,7 +269,7 @@ impl OverviewState {
     pub fn reload_from_index(&mut self, index: WorkflowIndex) {
         let prior_slug = self
             .selected_item()
-            .and_then(|entity| slug_of(&entity.path));
+            .and_then(|entity| entity_slug(&entity.path));
 
         self.index = index;
         // Invalidate archive view — a watcher-driven reload may have touched
@@ -305,7 +290,7 @@ impl OverviewState {
             let visible = self.visible_items();
             if let Some(pos) = visible
                 .iter()
-                .position(|entity| slug_of(&entity.path).as_deref() == Some(slug.as_str()))
+                .position(|entity| entity_slug(&entity.path).as_deref() == Some(slug.as_str()))
             {
                 self.set_scope_index(pos);
             } else if self.selected_index() >= len {
@@ -509,7 +494,7 @@ impl OverviewState {
     }
 
     /// Cycle the active-scope sort mode (Id -> Status -> Id). Preserves the
-    /// current selection by slug across the re-sort, mirroring the
+    /// current selection by core entity slug across the re-sort, mirroring the
     /// reload_from_snapshot pattern. No-op if there are no active items.
     pub fn cycle_sort_mode(&mut self) {
         let active_items = self.active_items();
@@ -521,7 +506,7 @@ impl OverviewState {
         let prior_slug = self
             .active_items()
             .get(self.selected_index)
-            .and_then(|item| slug_of(&item.path));
+            .and_then(|item| entity_slug(&item.path));
 
         self.sort_mode = match self.sort_mode {
             SortMode::Id => SortMode::Status,
@@ -537,7 +522,7 @@ impl OverviewState {
         if let Some(slug) = prior_slug {
             if let Some(pos) = items
                 .iter()
-                .position(|item| slug_of(&item.path).as_deref() == Some(slug.as_str()))
+                .position(|item| entity_slug(&item.path).as_deref() == Some(slug.as_str()))
             {
                 self.selected_index = pos;
                 return;

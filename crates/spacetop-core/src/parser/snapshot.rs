@@ -64,6 +64,13 @@ fn collect_active_item_paths(workflow_dir: &Path) -> Result<Vec<PathBuf>, ParseE
         }
         if is_markdown_path(&entry_path) {
             item_paths.push(entry_path);
+            continue;
+        }
+        if entry_path.is_dir() {
+            let index_path = entry_path.join("index.md");
+            if index_path.is_file() {
+                item_paths.push(index_path);
+            }
         }
     }
     item_paths.sort();

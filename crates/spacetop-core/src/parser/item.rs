@@ -4,6 +4,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::domain::Entity;
+use crate::entity_identity::entity_slug;
 
 use super::frontmatter::{extract_frontmatter, top_level_scalar_entries};
 use super::{display_path, optional_text, required, ParseError};
@@ -75,7 +76,7 @@ fn resolve_id(
         return Ok(id);
     }
     if id_style == Some("slug") {
-        if let Some(slug) = slug_of_path(path) {
+        if let Some(slug) = entity_slug(path) {
             return Ok(slug);
         }
     }
@@ -83,20 +84,6 @@ fn resolve_id(
         path: display_path(path),
         field: "id",
     })
-}
-
-/// Derive the slug identity for an entity path. Folder-form entities
-/// (`{slug}/index.md`) use the parent directory name; flat entities
-/// (`{slug}.md`) use the file stem. Mirrors `worktree::slug_of_path`.
-fn slug_of_path(path: &Path) -> Option<String> {
-    let stem = path.file_stem()?.to_string_lossy();
-    if stem == "index" {
-        path.parent()
-            .and_then(|p| p.file_name())
-            .map(|name| name.to_string_lossy().into_owned())
-    } else {
-        Some(stem.into_owned())
-    }
 }
 
 fn parse_work_item_frontmatter(

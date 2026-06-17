@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use sha1::{Digest, Sha1};
 
 use crate::domain::{Entity, EntityParseError};
+use crate::entity_identity::{archived_entity_paths, entity_slug_os};
 
 use super::archive::archive_dir;
 use super::snapshot::entity_parse_error_from;
@@ -96,24 +97,17 @@ fn collect_worktree_item_paths(workflow_dir: &Path) -> Vec<std::path::PathBuf> {
         }
         if is_markdown_path(&entry_path) {
             item_paths.push(entry_path);
+            continue;
+        }
+        if entry_path.is_dir() {
+            let index_path = entry_path.join("index.md");
+            if index_path.is_file() {
+                item_paths.push(index_path);
+            }
         }
     }
     item_paths.sort();
     item_paths
-}
-
-/// Derive the slug for a workflow entity path.
-/// For folder-form entities (`{slug}/index.md`), uses the parent directory name.
-/// For flat entities (`{slug}.md`), uses the file stem.
-pub(crate) fn slug_of_path(path: &Path) -> Option<OsString> {
-    let stem = path.file_stem()?;
-    if stem == "index" {
-        path.parent()
-            .and_then(|p| p.file_name())
-            .map(|s| s.to_owned())
-    } else {
-        Some(stem.to_owned())
-    }
 }
 
 /// Merge main-branch items with worktree items using SHA-1 hash comparison.
@@ -130,13 +124,13 @@ pub(crate) fn merge_worktree_items(
     let mut index: HashMap<std::ffi::OsString, Entity> = main_items
         .into_iter()
         .filter_map(|item| {
-            let slug = slug_of_path(&item.path)?;
+            let slug = entity_slug_os(&item.path)?;
             Some((slug, item))
         })
         .collect();
 
     for wt_item in worktree_items {
-        let Some(slug) = slug_of_path(&wt_item.path) else {
+        let Some(slug) = entity_slug_os(&wt_item.path) else {
             continue;
         };
         let Some(main_item) = index.get(&slug) else {
@@ -158,8 +152,8 @@ pub(crate) fn merge_worktree_items(
 
     let mut result: Vec<_> = index.into_values().collect();
     result.sort_by(|a, b| {
-        let a_slug = slug_of_path(&a.path);
-        let b_slug = slug_of_path(&b.path);
+        let a_slug = entity_slug_os(&a.path);
+        let b_slug = entity_slug_os(&b.path);
         a_slug.cmp(&b_slug).then_with(|| a.path.cmp(&b.path))
     });
     result
@@ -167,13 +161,8 @@ pub(crate) fn merge_worktree_items(
 
 fn archived_slug_exists(workflow_dir: &Path, slug: &OsString) -> bool {
     let archive_root = archive_dir(workflow_dir);
-    let mut flat_name = slug.clone();
-    flat_name.push(".md");
-    archive_root.join(Path::new(&flat_name)).is_file()
-        || archive_root
-            .join(Path::new(slug))
-            .join("index.md")
-            .is_file()
+    let (flat_path, folder_path) = archived_entity_paths(&archive_root, slug);
+    flat_path.is_file() || folder_path.is_file()
 }
 
 fn merged_worktree_item(main_item: &Entity, wt_item: Entity) -> Option<Entity> {
