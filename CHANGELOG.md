@@ -22,3 +22,6 @@ release notes.
 ### Removed
 
 ### Internal
+
+- Documented an end-to-end GitHub Release runbook that can be executed from
+  Claude Code or Codex.

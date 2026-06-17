@@ -86,6 +86,141 @@ the draft is published. When creating a Release in the web UI, use a tag that
 already points at the exact release commit or set the Release target to that
 specific commit.
 
+## End-To-End Agent Runbook
+
+This process is designed to run entirely from Claude Code or Codex using local
+shell commands and the `gh` CLI. Do not use the GitHub web UI unless the CLI is
+unavailable.
+
+Prerequisites:
+
+- The local checkout is on `main` and includes every change intended for the
+  release.
+- `gh auth status` succeeds for the release repository.
+- The release actor can push to `main` and create GitHub Releases.
+- For the next release after the current `v0.1.0`, choose either a patch
+  version such as `v0.1.1` or a minor version such as `v0.2.0` according to the
+  version meaning above.
+
+Preparation:
+
+```bash
+git switch main
+git pull --ff-only
+cargo fmt
+cargo test
+make lint
+```
+
+Set the release version once and reuse it for every command:
+
+```bash
+version=0.1.1
+tag="v${version}"
+```
+
+Update the root `Cargo.toml` `[workspace.package] version` to `${version}`
+using the agent's file editor, then refresh Cargo metadata:
+
+```bash
+cargo check
+```
+
+The workspace crates inherit this version. `cargo check` updates `Cargo.lock`
+so its `spacetop` and `spacetop-core` package entries match the release tag.
+
+Update `CHANGELOG.md` by moving release-ready entries from `Unreleased` under a
+new heading:
+
+```markdown
+## v0.1.1 - YYYY-MM-DD
+```
+
+Use the actual release date in UTC. Keep a fresh `Unreleased` section above the
+new version heading.
+
+Run the completion gate again after the version and changelog edits:
+
+```bash
+cargo fmt
+cargo test
+make lint
+```
+
+Commit and push the exact release commit:
+
+```bash
+git status --short
+git add Cargo.toml Cargo.lock CHANGELOG.md
+git commit -m "release: ${tag}"
+release_commit="$(git rev-parse HEAD)"
+git push origin main
+```
+
+Create release notes without leaving the terminal. For a small release, write a
+short `RELEASE_NOTES.md` from the changelog section:
+
+```bash
+awk -v tag="${tag}" '
+  index($0, "## " tag) == 1 { in_section = 1; print; next }
+  in_section && /^## / { exit }
+  in_section { print }
+' CHANGELOG.md > RELEASE_NOTES.md
+```
+
+Inspect and edit `RELEASE_NOTES.md` if needed. Then create and publish the
+GitHub Release. Publishing the Release is the action that starts the release
+workflow:
+
+```bash
+gh release create "${tag}" \
+  --target "${release_commit}" \
+  --title "${tag}" \
+  --notes-file RELEASE_NOTES.md
+```
+
+Watch the release workflow from the terminal:
+
+```bash
+gh run list --workflow Release --limit 1
+gh run watch
+```
+
+If `gh run watch` does not select the release run automatically, copy the run id
+from `gh run list` and run:
+
+```bash
+gh run watch RUN_ID
+```
+
+After the workflow succeeds, verify the published assets:
+
+```bash
+gh release view "${tag}" --json tagName,name,isDraft,isPrerelease,targetCommitish,assets
+gh release download "${tag}" --pattern SHA256SUMS --pattern install.sh --dir /tmp/spacetop-release-check
+gh release download "${tag}" --pattern "spacetop-${tag}-*.tar.gz" --dir /tmp/spacetop-release-check
+cd /tmp/spacetop-release-check
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum -c SHA256SUMS
+else
+  shasum -a 256 -c SHA256SUMS
+fi
+```
+
+The release is complete only when the GitHub Release contains:
+
+- `spacetop-${tag}-aarch64-apple-darwin.tar.gz`
+- `spacetop-${tag}-x86_64-unknown-linux-gnu.tar.gz`
+- `SHA256SUMS`
+- `install.sh`
+
+Clean local scratch files after verification:
+
+```bash
+rm -f RELEASE_NOTES.md
+rm -rf /tmp/spacetop-release-check
+```
+
 ## Failure Policy
 
 The release workflow fails before uploading assets when:
