@@ -55,3 +55,16 @@ Use the existing preview rendering path and its existing Ratatui regression test
 ### Summary
 
 Implemented the smallest UI-local formatting change for active-session preview metadata. The focused Ratatui preview test now covers the expanded recent/stale labels and verifies the latest activity value no longer renders as raw Unix seconds.
+
+## Stage Report: verify
+
+- DONE: Verify AC-1: recent/stale preview labels are self-describing while the internal three-state model is preserved.
+  Diff keeps `AgentSessionState::{Stale,Recent,Running}` and live PID classification unchanged; preview maps only Recent/Stale display text to `recent activity`/`stale activity`.
+- DONE: Verify AC-2: latest activity is shown as a human-readable latest-active value, not raw Unix seconds.
+  Focused render proof contains `2024-06-10 06:13:20 UTC` and rejects `latest: 1718000000`.
+- DONE: Verify AC-3: focused rendering coverage and required checks are present; rerun focused proof and make lint if practical.
+  Ran `cargo test -p spacetop ui::tests::preview::preview_renders_session_metadata_without_transcript_content -- --exact` and `make lint`; both passed.
+
+### Summary
+
+Approved. The change is UI-local, preserves the running-vs-recent behavior that depends on live PID evidence, and adds focused Ratatui coverage for both human-facing labels and the formatted latest activity time.
