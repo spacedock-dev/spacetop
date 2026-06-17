@@ -147,7 +147,7 @@ If the implementer changes Rust code outside the listed owned files, they must n
 - DONE: Proof strategy maps each acceptance criterion to the lowest practical test layer and required commands.
   AC-1 is covered by core identity unit tests plus duplicate-helper grep review, AC-2 by parser and index tests, AC-3 by app selection tests through `OverviewState`, AC-4 by `no_write_git_calls` and `make lint`, and AC-5 by the implement report naming Ponytail full mode or stopping as blocked.
 - DONE: Ponytail mode is explicitly used for planning, or the stage report records Ponytail mode/tooling as unavailable and stops without substituting another mode.
-  Ponytail full mode was available in this Codex session via `/Users/kent/.codex/plugins/cache/ponytail/ponytail/4.7.0/skills/ponytail/SKILL.md` and used to keep the plan to one small core module plus direct caller migration.
+  Ponytail full mode was available in this Codex session and used to keep the plan to one small core module plus direct caller migration.
 
 ### Summary
 
@@ -160,7 +160,7 @@ Created a focused implementation handoff for centralizing entity identity in cor
 - DONE: focused core/parser/index/app tests cover flat paths, folder-form index.md paths, archived/worktree behavior, and selection preservation
   `cargo test -p spacetop-core entity_identity`, `parser::tests`, `index::tests`, `cargo test -p spacetop app::tests`, and full `cargo test -p spacetop-core` all passed.
 - DONE: Ponytail full mode is used for the implementation and recorded in the stage report, or the worker stops blocked if Ponytail mode is unavailable
-  Ponytail full mode was available from `/Users/kent/.codex/plugins/cache/ponytail/ponytail/4.7.0/skills/ponytail/SKILL.md` and used to keep the change to one small helper module plus direct caller migration.
+  Ponytail full mode was available in this Codex session and used to keep the change to one small helper module plus direct caller migration.
 
 ### Summary
 
