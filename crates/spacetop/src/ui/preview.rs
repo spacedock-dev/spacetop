@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 thread_local! {
     /// Per-render-thread memoization of the termimad markdown render. Lives in
@@ -463,7 +464,7 @@ fn session_attribution_line<'a>(
         .unwrap_or(best.session_id.as_str());
     let latest = best
         .latest_activity_unix
-        .map(format_unix_time_utc)
+        .map(format_latest_activity)
         .unwrap_or_else(|| "n/a".to_string());
     Some(Line::from(vec![
         Span::styled("agent: ", dim),
@@ -488,31 +489,22 @@ fn session_state_label(state: spacetop_core::domain::AgentSessionState) -> &'sta
     }
 }
 
-fn format_unix_time_utc(timestamp: i64) -> String {
-    let days = timestamp.div_euclid(86_400);
-    let seconds = timestamp.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days);
-    let hour = seconds / 3_600;
-    let minute = seconds % 3_600 / 60;
-    let second = seconds % 60;
+fn format_latest_activity(timestamp: i64) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(timestamp);
+    let age = now.saturating_sub(timestamp);
+    const MINUTE: i64 = 60;
+    const HOUR: i64 = 60 * MINUTE;
+    const DAY: i64 = 24 * HOUR;
 
-    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02} UTC")
-}
-
-fn civil_from_days(days_since_unix_epoch: i64) -> (i64, i64, i64) {
-    let z = days_since_unix_epoch + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let day_of_era = z - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_prime = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
-    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
-    let year = year + if month <= 2 { 1 } else { 0 };
-
-    (year, month, day)
+    match age {
+        0..MINUTE => "just now".to_string(),
+        MINUTE..HOUR => format!("{}m ago", age / MINUTE),
+        HOUR..DAY => format!("{}h ago", age / HOUR),
+        _ => format!("{}d ago", age / DAY),
+    }
 }
 
 fn agent_label(attribution: &spacetop_core::domain::EntitySessionAttribution) -> &'static str {

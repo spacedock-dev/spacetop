@@ -196,7 +196,7 @@ fn preview_renders_markdown_body_instead_of_raw_markers() {
 
 #[test]
 fn preview_renders_session_metadata_without_transcript_content() {
-    let app = app_with_active_session_marker(
+    let app = app_with_session_attribution(
         vec![item(
             "065",
             "Active task",
@@ -220,7 +220,7 @@ fn preview_renders_session_metadata_without_transcript_content() {
     assert!(!rendered.contains("state: recent activity"));
     assert!(!rendered.contains("state: active recently"));
     assert!(
-        rendered.contains("2024-06-10") && rendered.contains("06:13:20 UTC"),
+        rendered.contains(" ago"),
         "latest activity should be human-readable; rendered: {rendered:?}"
     );
     assert!(!rendered.contains("latest: 1718000000"));
@@ -236,7 +236,7 @@ fn preview_renders_session_metadata_without_transcript_content() {
         "preview metadata must not expose transcript fields"
     );
 
-    let app = app_with_active_session_marker(
+    let app = app_with_session_attribution(
         vec![item("066", "Stale task", "Visible markdown body.")],
         "066",
         spacetop_core::domain::AgentSessionState::Stale,

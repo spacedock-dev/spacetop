@@ -56,7 +56,7 @@ fn app_with_items(items: Vec<Entity>) -> App {
     app
 }
 
-fn app_with_active_session_marker(
+fn app_with_session_attribution(
     mut items: Vec<Entity>,
     entity_id: &str,
     run_state: spacetop_core::domain::AgentSessionState,
