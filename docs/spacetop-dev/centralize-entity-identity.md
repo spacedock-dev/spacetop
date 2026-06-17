@@ -1,7 +1,7 @@
 ---
 id: 064
 title: Centralize entity identity module
-status: plan
+status: implement
 source: Architecture refactor scan on 2026-06-17; implement using Ponytail mode
 kind: refactor
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-06-17T02:33:11Z
 completed:
 verdict:
 score: 0.86
-worktree:
+worktree: .worktrees/spacedock-ensign-centralize-entity-identity
 issue:
 pr:
 ---
