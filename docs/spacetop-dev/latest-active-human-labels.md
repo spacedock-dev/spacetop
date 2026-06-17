@@ -1,6 +1,6 @@
 ---
 title: Human-readable active-session state and latest time
-status: plan
+status: implement
 source: User feedback, 2026-06-17
 kind: bugfix
 risk: low
@@ -10,7 +10,7 @@ started: 2026-06-17T06:36:07Z
 completed:
 verdict:
 score: 0.72
-worktree:
+worktree: .worktrees/spacedock-ensign-latest-active-human-labels
 issue:
 pr:
 id: 066
