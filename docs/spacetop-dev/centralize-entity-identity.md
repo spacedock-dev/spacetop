@@ -13,7 +13,7 @@ verdict:
 score: 0.86
 worktree: .worktrees/spacedock-ensign-centralize-entity-identity
 issue:
-pr:
+pr: "#67"
 mod-block: merge:pr-merge
 ---
 
