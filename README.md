@@ -38,13 +38,16 @@ curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/in
 
 Spacetop is an active read-first TUI. It can discover workflows, open an explicit
 workflow directory, parse active and archived work items, preview markdown,
-render workflow graphs, show selected worktree state, open query-backed search,
-timeline, metrics, activity, and relation views, auto-refresh filesystem changes,
-read YAML user config, restore per-workflow session state, expose headless
-query/export commands, and explicitly sync with `git pull --ff-only`.
+render workflow graphs, show selected worktree state, mark active tasks that
+match a running local Codex or Claude Code session, open query-backed search,
+timeline, metrics, activity, and relation views, auto-refresh filesystem
+changes, read YAML user config, restore per-workflow session state, expose
+headless query/export commands, and explicitly sync with `git pull --ff-only`.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.
+The active-session marker is local inferred evidence only; it is not an
+authoritative assignment, lock, waiting, or stuck-state signal.
 
 ## Headless CLI
 

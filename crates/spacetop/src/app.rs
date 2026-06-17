@@ -17,6 +17,7 @@ mod overview;
 mod picker;
 mod search;
 mod session;
+mod session_activity_worker;
 
 pub use history_worker::{spawn_history_worker, HistoryWorkerRequest, HistoryWorkerResult};
 pub use overview::{
@@ -28,6 +29,9 @@ pub use search::{
     SEARCH_VISIBLE_RESULT_LIMIT,
 };
 pub use session::{OverviewSession, WorkflowSwitch};
+pub use session_activity_worker::{
+    spawn_session_activity_worker, SessionActivityWorkerRequest, SessionActivityWorkerResult,
+};
 
 pub(crate) use keys::ResolvedKeymap;
 use keys::{handle_overview_key_with_keymap, OverviewKeyAction};
@@ -512,6 +516,20 @@ impl App {
     pub fn apply_history_result(&mut self, result: HistoryWorkerResult) {
         if let Some(session) = self.mode.as_session_mut() {
             session.active_state_mut().apply_history_result(result);
+        }
+    }
+
+    pub fn session_activity_worker_request(&self) -> Option<SessionActivityWorkerRequest> {
+        self.mode
+            .as_session()
+            .and_then(|session| session.active_state().session_activity_worker_request())
+    }
+
+    pub fn apply_session_activity_result(&mut self, result: SessionActivityWorkerResult) {
+        if let Some(session) = self.mode.as_session_mut() {
+            session
+                .active_state_mut()
+                .apply_session_activity_result(result);
         }
     }
 

@@ -175,6 +175,18 @@ fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListIte
             } else {
                 ("  ", Style::default())
             };
+            let (active_marker, active_marker_style) = if scope == ViewScope::Active
+                && state.index().entity_has_active_session_marker(&item.id)
+            {
+                (
+                    "@ ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                ("  ", Style::default())
+            };
 
             let mut spans: Vec<Span<'_>> = vec![
                 Span::styled(gutter_text, gutter_style),
@@ -182,6 +194,7 @@ fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListIte
                 Span::raw(" "),
                 Span::styled(id_str, id_style),
                 Span::raw("  "),
+                Span::styled(active_marker, active_marker_style),
                 Span::styled(wt_marker, wt_marker_style),
                 Span::styled(item.title.clone(), title_style),
             ];

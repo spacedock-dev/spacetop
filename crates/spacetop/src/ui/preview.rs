@@ -401,6 +401,11 @@ fn build_preview_header_lines<'a>(
             }
         }
     }
+    if state.view_scope() == ViewScope::Active {
+        if let Some(line) = session_attribution_line(item, state, dim) {
+            lines.push(line);
+        }
+    }
     // Render the entity path relative to the workflow root so it fits the
     // preview header and stays Smart-Selection-clickable in terminals that
     // resolve relative paths against OSC 7. Fall back to the absolute path
@@ -431,6 +436,53 @@ fn build_preview_header_lines<'a>(
     lines.push(Line::from(Span::styled(divider, dim)));
 
     lines
+}
+
+fn session_attribution_line<'a>(
+    item: &'a spacetop_core::domain::Entity,
+    state: &OverviewState,
+    dim: Style,
+) -> Option<Line<'a>> {
+    let attribution = state.index().session_attribution_for_entity_id(&item.id)?;
+    let best = attribution.best_evidence()?;
+    let agent_label = agent_label(attribution);
+    let session_label = best
+        .display_name
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(best.session_id.as_str());
+    let latest = best
+        .latest_activity_unix
+        .map(|ts| ts.to_string())
+        .unwrap_or_else(|| "n/a".to_string());
+    Some(Line::from(vec![
+        Span::styled("agent: ", dim),
+        Span::raw(agent_label),
+        Span::raw("  \u{00B7}  "),
+        Span::styled("session: ", dim),
+        Span::raw(session_label.to_string()),
+        Span::raw("  \u{00B7}  "),
+        Span::styled("confidence: ", dim),
+        Span::raw(best.confidence.label()),
+        Span::raw("  \u{00B7}  "),
+        Span::styled("state: ", dim),
+        Span::raw(best.run_state.label()),
+        Span::raw("  \u{00B7}  "),
+        Span::styled("latest: ", dim),
+        Span::raw(latest),
+    ]))
+}
+
+fn agent_label(attribution: &spacetop_core::domain::EntitySessionAttribution) -> &'static str {
+    let mut kinds = attribution.evidence.iter().map(|evidence| evidence.agent);
+    let Some(first) = kinds.next() else {
+        return "unknown";
+    };
+    if kinds.any(|kind| kind != first) {
+        "multi-agent"
+    } else {
+        first.label()
+    }
 }
 
 fn line_width(line: &Line<'_>) -> usize {

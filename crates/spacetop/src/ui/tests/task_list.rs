@@ -128,6 +128,29 @@ fn task_list_uses_configured_selection_background() {
 }
 
 #[test]
+fn task_row_renders_active_session_marker_from_typed_attribution() {
+    let app = app_with_active_session_marker(
+        vec![
+            item("064", "Inactive task", "Body"),
+            item("065", "Active task", "Body"),
+        ],
+        "065",
+    );
+    let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(
+        rendered.contains("@   Active task"),
+        "active row should include fixed-width @ marker before the title; rendered: {rendered:?}"
+    );
+    assert!(
+        !rendered.contains("@   Inactive task"),
+        "inactive row must not render the active marker"
+    );
+}
+
+#[test]
 fn footer_uses_configured_background() {
     let config = spacetop_core::config::SpacetopConfig {
         theme: spacetop_core::config::ThemeConfig {

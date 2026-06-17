@@ -197,6 +197,106 @@ pub struct Entity {
     pub main_body: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AgentKind {
+    Codex,
+    ClaudeCode,
+}
+
+impl AgentKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Codex => "Codex",
+            Self::ClaudeCode => "Claude Code",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum AttributionConfidence {
+    Low,
+    Medium,
+    High,
+}
+
+impl AttributionConfidence {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum AgentSessionState {
+    Stale,
+    Recent,
+    Running,
+}
+
+impl AgentSessionState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Stale => "stale",
+            Self::Recent => "recent",
+            Self::Running => "running",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionEvidence {
+    pub agent: AgentKind,
+    pub session_id: String,
+    pub display_name: Option<String>,
+    pub confidence: AttributionConfidence,
+    pub run_state: AgentSessionState,
+    pub latest_activity_unix: Option<i64>,
+    pub matched_worktree: Option<PathBuf>,
+}
+
+impl AgentSessionEvidence {
+    pub fn is_active_marker(&self) -> bool {
+        self.confidence == AttributionConfidence::High
+            && self.run_state == AgentSessionState::Running
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntitySessionAttribution {
+    pub entity_id: String,
+    pub evidence: Vec<AgentSessionEvidence>,
+}
+
+impl EntitySessionAttribution {
+    pub fn best_evidence(&self) -> Option<&AgentSessionEvidence> {
+        self.evidence.iter().max_by_key(|evidence| {
+            (
+                evidence.run_state,
+                evidence.confidence,
+                evidence.latest_activity_unix,
+            )
+        })
+    }
+
+    pub fn has_active_marker(&self) -> bool {
+        self.evidence
+            .iter()
+            .any(AgentSessionEvidence::is_active_marker)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionScanReport {
+    pub workflow_dir: PathBuf,
+    pub repo_root: PathBuf,
+    pub scanned_roots: Vec<PathBuf>,
+    pub attributions: Vec<EntitySessionAttribution>,
+    pub errors: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkflowSnapshot {
     pub definition: WorkflowDefinition,

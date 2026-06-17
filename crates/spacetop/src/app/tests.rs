@@ -1,11 +1,16 @@
-use super::{App, AppMode, HistoryWorkerResult, ViewScope};
+use super::{App, AppMode, HistoryWorkerResult, SessionActivityWorkerResult, ViewScope};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use spacetop_core::discovery::DiscoveredWorkflow;
-use spacetop_core::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
+use spacetop_core::domain::{
+    AgentKind, AgentSessionEvidence, AgentSessionState, AttributionConfidence, Entity,
+    EntitySessionAttribution, SessionScanReport, StageDefinition, WorkflowDefinition,
+    WorkflowSnapshot,
+};
+use spacetop_core::session_activity::SessionScanError;
 use spacetop_core::sources::ArchiveSnapshot;
 
 #[test]
@@ -2412,6 +2417,96 @@ fn set_sync_status_routes_to_active_overview_and_survives_reload_from_snapshot()
         "sync_status must survive reload_from_snapshot, got {:?}",
         app.sync_status()
     );
+}
+
+#[test]
+fn matching_session_activity_result_applies_to_active_workflow() {
+    let workflow_dir = PathBuf::from("/tmp/spacetop-session-activity/workflow");
+    let mut app = App::from_snapshot(workflow_dir.clone(), snapshot_with_items(1));
+    let repo_root = app.repo_root().expect("repo root").to_path_buf();
+
+    app.apply_session_activity_result(SessionActivityWorkerResult {
+        workflow_dir: workflow_dir.clone(),
+        repo_root: repo_root.clone(),
+        result: Ok(session_report(&workflow_dir, &repo_root, "000")),
+    });
+
+    assert!(
+        app.as_overview()
+            .expect("overview")
+            .index()
+            .entity_has_active_session_marker("000"),
+        "matching scan report should mark entity 000 active"
+    );
+}
+
+#[test]
+fn stale_session_activity_result_for_other_workflow_is_ignored() {
+    let workflow_dir = PathBuf::from("/tmp/spacetop-session-activity/workflow");
+    let mut app = App::from_snapshot(workflow_dir.clone(), snapshot_with_items(1));
+    let repo_root = app.repo_root().expect("repo root").to_path_buf();
+
+    app.apply_session_activity_result(SessionActivityWorkerResult {
+        workflow_dir: PathBuf::from("/tmp/other-workflow"),
+        repo_root: repo_root.clone(),
+        result: Ok(session_report(&workflow_dir, &repo_root, "000")),
+    });
+
+    assert!(
+        !app.as_overview()
+            .expect("overview")
+            .index()
+            .entity_has_active_session_marker("000"),
+        "stale scan report must not apply after workflow changes"
+    );
+}
+
+#[test]
+fn session_activity_scan_failure_is_non_fatal_and_clears_stale_marker() {
+    let workflow_dir = PathBuf::from("/tmp/spacetop-session-activity/workflow");
+    let mut app = App::from_snapshot(workflow_dir.clone(), snapshot_with_items(1));
+    let repo_root = app.repo_root().expect("repo root").to_path_buf();
+    app.apply_session_activity_result(SessionActivityWorkerResult {
+        workflow_dir: workflow_dir.clone(),
+        repo_root: repo_root.clone(),
+        result: Ok(session_report(&workflow_dir, &repo_root, "000")),
+    });
+
+    app.apply_session_activity_result(SessionActivityWorkerResult {
+        workflow_dir,
+        repo_root,
+        result: Err(SessionScanError {
+            message: "fixture scanner failed".to_string(),
+        }),
+    });
+
+    let overview = app.as_overview().expect("overview");
+    assert_eq!(overview.visible_items().len(), 1);
+    assert!(
+        !overview.index().entity_has_active_session_marker("000"),
+        "failed scans should clear stale attribution without dropping workflow rows"
+    );
+}
+
+fn session_report(workflow_dir: &Path, repo_root: &Path, entity_id: &str) -> SessionScanReport {
+    SessionScanReport {
+        workflow_dir: workflow_dir.to_path_buf(),
+        repo_root: repo_root.to_path_buf(),
+        scanned_roots: Vec::new(),
+        errors: Vec::new(),
+        attributions: vec![EntitySessionAttribution {
+            entity_id: entity_id.to_string(),
+            evidence: vec![AgentSessionEvidence {
+                agent: AgentKind::Codex,
+                session_id: "session-000".to_string(),
+                display_name: Some("Mendel".to_string()),
+                confidence: AttributionConfidence::High,
+                run_state: AgentSessionState::Running,
+                latest_activity_unix: Some(1_718_000_000),
+                matched_worktree: Some(PathBuf::from(".worktrees/task-000")),
+            }],
+        }],
+    }
 }
 
 #[test]

@@ -56,6 +56,69 @@ fn app_with_items(items: Vec<Entity>) -> App {
     app
 }
 
+fn app_with_active_session_marker(mut items: Vec<Entity>, entity_id: &str) -> App {
+    let root = PathBuf::from("/tmp/spacetop-test");
+    for item in &mut items {
+        if item.id == entity_id && item.worktree.is_none() {
+            item.worktree = Some(format!(".worktrees/task-{entity_id}"));
+        }
+    }
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            stages: vec![StageDefinition {
+                name: "design".to_string(),
+                initial: true,
+                terminal: false,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: false,
+                concurrency: None,
+            }],
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
+        },
+        items,
+        parse_errors: Vec::new(),
+    };
+    let mut state = OverviewState::from_snapshot(root.clone(), snapshot);
+    let repo_root = state.repo_root.clone();
+    state.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
+        workflow_dir: root.clone(),
+        repo_root: repo_root.clone(),
+        result: Ok(spacetop_core::domain::SessionScanReport {
+            workflow_dir: root,
+            repo_root,
+            scanned_roots: Vec::new(),
+            errors: Vec::new(),
+            attributions: vec![spacetop_core::domain::EntitySessionAttribution {
+                entity_id: entity_id.to_string(),
+                evidence: vec![spacetop_core::domain::AgentSessionEvidence {
+                    agent: spacetop_core::domain::AgentKind::Codex,
+                    session_id: "session-065".to_string(),
+                    display_name: Some("Mendel".to_string()),
+                    confidence: spacetop_core::domain::AttributionConfidence::High,
+                    run_state: spacetop_core::domain::AgentSessionState::Running,
+                    latest_activity_unix: Some(1_718_000_000),
+                    matched_worktree: Some(PathBuf::from(format!(".worktrees/task-{entity_id}"))),
+                }],
+            }],
+        }),
+    });
+    let mut app = App::from_session(OverviewSession::single(state, true));
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    app
+}
+
 fn item(id: &str, title: &str, body: &str) -> Entity {
     Entity {
         path: PathBuf::from(format!("/tmp/{id}.md")),
