@@ -15,6 +15,7 @@ issue: https://github.com/spacedock-dev/spacetop/issues/28
 pr: "#68"
 id: 065
 mod-block:
+archived: 2026-06-17T04:34:12Z
 ---
 
 Implement the narrow first slice from the 2026-06-14 agent session progress survey: show whether an active task appears to be handled by a currently running matched Codex or Claude Code session.
