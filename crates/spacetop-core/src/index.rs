@@ -3,13 +3,16 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::domain::{Entity, EntityParseError, WorkflowDefinition};
+use crate::domain::{
+    Entity, EntityParseError, EntitySessionAttribution, SessionScanReport, WorkflowDefinition,
+};
 use crate::entity_identity::entity_slug;
 pub use crate::metrics::Metrics;
 use crate::query::{
     EntityQuery, EntitySort, FieldFilter, HistoryResult, HistoryUnavailable, QueryScope,
 };
 use crate::relations::{EntityDetails, RelationView};
+use crate::session_activity::SessionScanEntity;
 use crate::sources::{ArchiveSnapshot, WorkflowSources};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -24,6 +27,8 @@ pub struct WorkflowIndex {
     by_slug: HashMap<String, Entity>,
     history_events: Vec<StageEvent>,
     history_unavailable: Option<HistoryUnavailable>,
+    session_attributions: HashMap<String, EntitySessionAttribution>,
+    session_scan_error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -75,6 +80,8 @@ impl WorkflowIndex {
             by_slug: HashMap::new(),
             history_events: Vec::new(),
             history_unavailable: Some(HistoryUnavailable::NotImplemented),
+            session_attributions: HashMap::new(),
+            session_scan_error: None,
         };
         index.rebuild_lookup_maps();
         index
@@ -134,6 +141,29 @@ impl WorkflowIndex {
     pub fn mark_history_loading(&mut self) {
         self.history_events.clear();
         self.history_unavailable = Some(HistoryUnavailable::Loading);
+    }
+
+    pub fn replace_session_scan_report(&mut self, report: SessionScanReport) {
+        self.session_scan_error = if report.errors.is_empty() {
+            None
+        } else {
+            Some(report.errors.join("; "))
+        };
+        self.session_attributions = report
+            .attributions
+            .into_iter()
+            .map(|attribution| (attribution.entity_id.clone(), attribution))
+            .collect();
+    }
+
+    pub fn clear_session_attributions(&mut self) {
+        self.session_attributions.clear();
+        self.session_scan_error = None;
+    }
+
+    pub fn set_session_scan_error(&mut self, message: String) {
+        self.session_attributions.clear();
+        self.session_scan_error = Some(message);
     }
 
     pub fn definition(&self) -> &WorkflowDefinition {
@@ -309,6 +339,26 @@ impl WorkflowIndex {
             worktree: entity.worktree.clone(),
             relations: self.related(entity_id),
         })
+    }
+
+    pub fn session_attribution_for_entity_id(
+        &self,
+        entity_id: &str,
+    ) -> Option<&EntitySessionAttribution> {
+        self.session_attributions.get(entity_id)
+    }
+
+    pub fn entity_has_active_session_marker(&self, entity_id: &str) -> bool {
+        self.session_attribution_for_entity_id(entity_id)
+            .is_some_and(EntitySessionAttribution::has_active_marker)
+    }
+
+    pub fn session_scan_entities(&self) -> Vec<SessionScanEntity> {
+        self.active.iter().map(SessionScanEntity::from).collect()
+    }
+
+    pub fn session_scan_error(&self) -> Option<&str> {
+        self.session_scan_error.as_deref()
     }
 
     fn history_unavailable(&self) -> Option<HistoryUnavailable> {
@@ -582,6 +632,39 @@ mod tests {
         assert_eq!(metrics.throughput_completed, 0);
         assert_eq!(metrics.completed_entities, 0);
         assert_eq!(index.activity(None), Ok(Vec::new()));
+    }
+
+    #[test]
+    fn session_scan_report_indexes_active_marker_by_entity_id() {
+        let mut index = index();
+        index.replace_session_scan_report(crate::domain::SessionScanReport {
+            workflow_dir: PathBuf::from("/tmp/workflow"),
+            repo_root: PathBuf::from("/tmp"),
+            scanned_roots: Vec::new(),
+            errors: Vec::new(),
+            attributions: vec![crate::domain::EntitySessionAttribution {
+                entity_id: "010".to_string(),
+                evidence: vec![crate::domain::AgentSessionEvidence {
+                    agent: crate::domain::AgentKind::Codex,
+                    session_id: "session-010".to_string(),
+                    display_name: Some("Mendel".to_string()),
+                    confidence: crate::domain::AttributionConfidence::High,
+                    run_state: crate::domain::AgentSessionState::Running,
+                    latest_activity_unix: Some(1_718_000_000),
+                    matched_worktree: Some(PathBuf::from(".worktrees/010")),
+                }],
+            }],
+        });
+
+        assert!(index.entity_has_active_session_marker("010"));
+        assert!(!index.entity_has_active_session_marker("002"));
+        assert_eq!(
+            index
+                .session_attribution_for_entity_id("010")
+                .and_then(|attr| attr.best_evidence())
+                .map(|evidence| evidence.session_id.as_str()),
+            Some("session-010")
+        );
     }
 
     #[test]

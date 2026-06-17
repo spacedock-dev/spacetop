@@ -195,6 +195,42 @@ fn preview_renders_markdown_body_instead_of_raw_markers() {
 }
 
 #[test]
+fn preview_renders_session_metadata_without_transcript_content() {
+    let app = app_with_active_session_marker(
+        vec![item(
+            "065",
+            "Active task",
+            "Visible markdown body, not a transcript leak.",
+        )],
+        "065",
+    );
+    let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(
+        rendered.contains("agent: Codex"),
+        "preview should name the matched agent; rendered: {rendered:?}"
+    );
+    assert!(rendered.contains("status:"));
+    assert!(rendered.contains("session: Mendel high"));
+    assert!(!rendered.contains("confidence: high"));
+    assert!(rendered.contains("state: running"));
+    assert!(rendered.contains("latest: 1718000000"));
+    let status_index = rendered.find("status:").expect("status line");
+    let agent_index = rendered.find("agent: Codex").expect("agent line");
+    let source_index = rendered.find("source:").expect("source line");
+    assert!(
+        status_index < agent_index && agent_index < source_index,
+        "agent line should sit between status/score and source; rendered: {rendered:?}"
+    );
+    assert!(
+        !rendered.contains("prompt:") && !rendered.contains("response:"),
+        "preview metadata must not expose transcript fields"
+    );
+}
+
+#[test]
 fn preview_renders_markdown_tables_as_aligned_rows() {
     // termimad renders tables with Unicode box-drawing borders. We check
     // that the preceding paragraph and every cell value land in the

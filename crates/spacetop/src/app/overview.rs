@@ -16,6 +16,7 @@ use spacetop_core::session_state::{WorkflowScope, WorkflowSession};
 use spacetop_core::sources::{ArchiveSnapshot, WorkflowSources};
 
 use super::history_worker::{HistoryWorkerRequest, HistoryWorkerResult};
+use super::session_activity_worker::{SessionActivityWorkerRequest, SessionActivityWorkerResult};
 
 /// Selection target in the task list — either a real work item or a synthetic
 /// "broken" row representing an entity whose frontmatter failed to parse.
@@ -272,6 +273,7 @@ impl OverviewState {
             .and_then(|entity| entity_slug(&entity.path));
 
         self.index = index;
+        self.index.clear_session_attributions();
         // Invalidate archive view — a watcher-driven reload may have touched
         // `_archive/` too. Dropping the cached list forces a rescan the next
         // time the user toggles to archived scope.
@@ -357,6 +359,28 @@ impl OverviewState {
     pub fn apply_history_result(&mut self, result: HistoryWorkerResult) {
         if result.workflow_dir == self.workflow_dir {
             self.index.replace_history_result(result.result);
+        }
+    }
+
+    pub fn session_activity_worker_request(&self) -> Option<SessionActivityWorkerRequest> {
+        let entities = self.index.session_scan_entities();
+        (!entities.is_empty()).then(|| {
+            SessionActivityWorkerRequest::from_state(&self.workflow_dir, &self.repo_root, entities)
+        })
+    }
+
+    pub fn apply_session_activity_result(&mut self, result: SessionActivityWorkerResult) {
+        if result.workflow_dir != self.workflow_dir || result.repo_root != self.repo_root {
+            return;
+        }
+        match result.result {
+            Ok(report) => {
+                self.index.replace_session_scan_report(report);
+            }
+            Err(err) => {
+                self.index.clear_session_attributions();
+                self.index.set_session_scan_error(err.to_string());
+            }
         }
     }
 
