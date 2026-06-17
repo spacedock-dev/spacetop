@@ -14,6 +14,7 @@ worktree: .worktrees/spacedock-ensign-065-agent-session-active-marker
 issue: https://github.com/spacedock-dev/spacetop/issues/28
 pr:
 id: 065
+mod-block: merge:pr-merge
 ---
 
 Implement the narrow first slice from the 2026-06-14 agent session progress survey: show whether an active task appears to be handled by a currently running matched Codex or Claude Code session.
