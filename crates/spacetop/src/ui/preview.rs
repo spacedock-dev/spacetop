@@ -463,7 +463,7 @@ fn session_attribution_line<'a>(
         .unwrap_or(best.session_id.as_str());
     let latest = best
         .latest_activity_unix
-        .map(|ts| ts.to_string())
+        .map(format_unix_time_utc)
         .unwrap_or_else(|| "n/a".to_string());
     Some(Line::from(vec![
         Span::styled("agent: ", dim),
@@ -473,11 +473,46 @@ fn session_attribution_line<'a>(
         Span::raw(format!("{} {}", session_label, best.confidence.label())),
         Span::raw("  \u{00B7}  "),
         Span::styled("state: ", dim),
-        Span::raw(best.run_state.label()),
+        Span::raw(session_state_label(best.run_state)),
         Span::raw("  \u{00B7}  "),
         Span::styled("latest: ", dim),
         Span::raw(latest),
     ]))
+}
+
+fn session_state_label(state: spacetop_core::domain::AgentSessionState) -> &'static str {
+    match state {
+        spacetop_core::domain::AgentSessionState::Stale => "stale activity",
+        spacetop_core::domain::AgentSessionState::Recent => "recent activity",
+        spacetop_core::domain::AgentSessionState::Running => state.label(),
+    }
+}
+
+fn format_unix_time_utc(timestamp: i64) -> String {
+    let days = timestamp.div_euclid(86_400);
+    let seconds = timestamp.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds / 3_600;
+    let minute = seconds % 3_600 / 60;
+    let second = seconds % 60;
+
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02} UTC")
+}
+
+fn civil_from_days(days_since_unix_epoch: i64) -> (i64, i64, i64) {
+    let z = days_since_unix_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    let year = year + if month <= 2 { 1 } else { 0 };
+
+    (year, month, day)
 }
 
 fn agent_label(attribution: &spacetop_core::domain::EntitySessionAttribution) -> &'static str {
