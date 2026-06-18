@@ -25,3 +25,34 @@ Acceptance criteria:
 - AC-3: Task-list active marker behavior remains unchanged.
 - AC-4: Ratatui preview tests cover the revised wording and ensure the removed `via:` label does not reappear.
 - AC-5: Verification includes `cargo test -p spacetop` for relevant UI tests and `make lint`, or records blockers.
+
+## Stage Report
+
+Stage: plan
+
+Checklist:
+
+- DONE: Identified the selected-task preview metadata rendering path at `crates/spacetop/src/ui/preview.rs`, specifically `session_attribution_line`.
+- DONE: Chose the minimal wording change: render `session: Mendel` and a separate `confidence: high`, while removing `via: <reason>` from the normal preview header.
+- DONE: Kept the plan scoped away from running-state detection, session scan logic, and task-list active marker behavior.
+- DONE: Named focused UI coverage in `crates/spacetop/src/ui/tests/preview.rs` for revised preview wording and `crates/spacetop/src/ui/tests/task_list.rs` for unchanged active markers.
+- SKIPPED: Code implementation, because this stage was plan-only.
+- SKIPPED: Test execution, because no code was changed in the plan stage.
+- FAILED: None.
+
+Plan summary:
+
+Update only the preview header assembly in `session_attribution_line` so the selected-task preview shows:
+
+`agent: Codex  ·  session: Mendel  ·  confidence: high  ·  state: recent  ·  latest: 3h ago`
+
+The implementation should remove the `via:` segment entirely from the normal preview header, keep `state:` terse (`running`, `recent`, `stale`), and leave core attribution/liveness semantics untouched.
+
+Verification commands for the implementation stage:
+
+```bash
+cargo test -p spacetop preview_renders_session_metadata_without_transcript_content
+cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution
+cargo test -p spacetop
+make lint
+```
