@@ -22,3 +22,16 @@ Spacetop can still mark a newly created Spacedock task as `running` by attaching
 - **AC-3:** The session attribution path should make the accepted relationship explicit in code: task id, slug, workflow path, worktree path, or other deliberate evidence.
 - **AC-4:** Tests must cover the screenshot-shaped false positive: a new task with an unrelated active session should render as non-running.
 - **AC-5:** Verification includes focused core tests for session attribution and the relevant TUI rendering test, plus `make lint`.
+
+## Stage Report: plan
+
+- DONE: Map the current false-positive path from session artifact matching through displayed running state.
+  `match_entity()` currently accepts task-id/slug-only low-confidence matches; `RunStateClassifier` can then upgrade that unrelated matched session to `running`, and the UI renders the resulting attribution.
+- DONE: Define the smallest accepted relationship rule and exact owned files/tests for implementation.
+  Reject id-only/slug-only matches; keep high worktree matches and medium workflow/repo-plus-id-or-slug matches in `crates/spacetop-core/src/session_activity.rs`, with focused core plus preview/task-list rendering regressions.
+- DONE: Specify verification commands for the screenshot-shaped unrelated workspace regression.
+  Run `cargo test -p spacetop-core session_activity`, focused `spacetop` preview/task-list tests, full `cargo test`, and `make lint`.
+
+### Summary
+
+The plan keeps the fix in the core session-attribution matcher instead of adding UI state or new abstractions. The intended implementation is to remove loose id/slug-only attribution so unrelated live sessions, including sessions rooted under `dataagentbench`, cannot produce a Spacetop task `running` marker.
