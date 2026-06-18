@@ -441,11 +441,7 @@ fn match_entity(
     let has_workflow = content.contains(&workflow_dir.to_string_lossy().to_string())
         || content.contains(&repo_root.to_string_lossy().to_string());
 
-    match (has_workflow, has_entity_id || has_slug) {
-        (true, true) => Some((AttributionConfidence::Medium, None)),
-        (false, true) => Some((AttributionConfidence::Low, None)),
-        _ => None,
-    }
+    (has_workflow && (has_entity_id || has_slug)).then_some((AttributionConfidence::Medium, None))
 }
 
 fn contains_entity_id(content: &str, id: &str) -> bool {
@@ -1073,7 +1069,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_or_low_confidence_evidence_does_not_mark_active() {
+    fn id_only_evidence_does_not_match_entity() {
         let tmp = tempfile::tempdir().expect("tmp");
         let repo = tmp.path().join("repo");
         let workflow = repo.join("docs/spacetop-dev");
@@ -1096,15 +1092,37 @@ mod tests {
         let report =
             scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
 
-        assert!(!report.attributions[0].has_active_marker());
-        assert_eq!(
-            report.attributions[0].evidence[0].confidence,
-            AttributionConfidence::Low
+        assert!(report.attributions.is_empty());
+    }
+
+    #[test]
+    fn live_unrelated_workspace_session_with_entity_id_does_not_match_entity() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("spacetop");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
+            r#"{"pid":4242,"agent_nickname":"Mendel","workdir":"/Users/kent/Dev/InfuseAI/GitHub/dataagentbench","note":"created task 068"}"#,
         );
-        assert_ne!(
-            report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Running
-        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("068", None)],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = FixtureProbe {
+            running: HashSet::from([4242]),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert!(report.attributions.is_empty());
     }
 
     #[test]

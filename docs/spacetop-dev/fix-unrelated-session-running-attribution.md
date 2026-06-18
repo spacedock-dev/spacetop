@@ -37,3 +37,16 @@ Spacetop can still mark a newly created Spacedock task as `running` by attaching
 ### Summary
 
 The plan keeps the fix in the core session-attribution matcher instead of adding UI state or new abstractions. The intended implementation is to remove loose id/slug-only attribution so unrelated live sessions, including sessions rooted under `dataagentbench`, cannot produce a Spacetop task `running` marker.
+
+## Stage Report: implement
+
+- DONE: Reject id-only and slug-only session matches in `crates/spacetop-core/src/session_activity.rs`.
+  `match_entity()` now returns medium confidence only when workflow/repo evidence is present together with the entity id or slug; worktree and worktree-source matches remain high confidence.
+- DONE: Added screenshot-shaped regressions for the unrelated live `dataagentbench` session case.
+  Core coverage proves a live Codex session rooted elsewhere that mentions task `068` produces no attribution, and the preview rendering regression proves the app renders no running marker or session metadata for that scan result.
+- DONE: Ran focused and required verification.
+  `cargo test -p spacetop-core session_activity`, `cargo test -p spacetop preview_omits_session_metadata_for_unrelated_running_session`, `cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution`, `cargo test`, and `make lint` passed. The existing real-notify watcher tests remained ignored under the default `cargo test` run.
+
+### Summary
+
+Implemented the matcher fix by removing loose low-confidence id/slug-only attribution. Unrelated live sessions can no longer mark a Spacetop task as `running` unless the transcript also contains deliberate workflow/repo or worktree relationship evidence.

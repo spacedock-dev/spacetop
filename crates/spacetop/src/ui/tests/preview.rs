@@ -253,6 +253,107 @@ fn preview_renders_session_metadata_without_transcript_content() {
 }
 
 #[test]
+fn preview_omits_session_metadata_for_unrelated_running_session() {
+    use spacetop_core::session_activity::{
+        scan_local_sessions_with, ProcessProbe, SessionRoots, SessionScanEntity, SessionScanRequest,
+    };
+    use std::collections::{HashMap, HashSet};
+    use std::fs;
+    use std::path::Path;
+    use std::time::SystemTime;
+
+    struct RunningProbe {
+        running: HashSet<u32>,
+    }
+
+    impl ProcessProbe for RunningProbe {
+        fn is_running(&self, pid: u32) -> bool {
+            self.running.contains(&pid)
+        }
+    }
+
+    fn write_session(path: &Path, body: &str) {
+        fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
+        fs::write(path, body).expect("write session");
+    }
+
+    let tmp = tempfile::tempdir().expect("tmp");
+    let workflow = tmp.path().join("spacetop/docs/spacetop-dev");
+    let root = tmp.path().join("codex");
+    let entity = item("068", "New task", "Visible markdown body.");
+    let snapshot = spacetop_core::domain::WorkflowSnapshot {
+        definition: spacetop_core::domain::WorkflowDefinition {
+            root: workflow.clone(),
+            stages: vec![spacetop_core::domain::StageDefinition {
+                name: "design".to_string(),
+                initial: true,
+                terminal: false,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: false,
+                concurrency: None,
+            }],
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
+        },
+        items: vec![entity.clone()],
+        parse_errors: Vec::new(),
+    };
+    let mut state = OverviewState::from_snapshot(workflow.clone(), snapshot);
+    let repo = state.repo_root.clone();
+    write_session(
+        &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
+        r#"{"pid":4242,"agent_nickname":"Mendel","workdir":"/Users/kent/Dev/InfuseAI/GitHub/dataagentbench","note":"created task 068"}"#,
+    );
+    let request = SessionScanRequest {
+        workflow_dir: workflow.clone(),
+        repo_root: repo.clone(),
+        entities: vec![SessionScanEntity {
+            id: entity.id.clone(),
+            path: entity.path.clone(),
+            worktree: entity.worktree.clone(),
+            worktree_source: entity.worktree_source.clone(),
+        }],
+        roots: SessionRoots {
+            codex: vec![root],
+            claude_code: Vec::new(),
+        },
+        previous_session_files: HashMap::new(),
+    };
+    let report = scan_local_sessions_with(
+        &request,
+        &RunningProbe {
+            running: HashSet::from([4242]),
+        },
+        SystemTime::now(),
+    )
+    .expect("scan succeeds");
+    state.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
+        workflow_dir: workflow,
+        repo_root: repo,
+        session_files: HashMap::new(),
+        result: Ok(report),
+    });
+    let mut app = App::from_session(OverviewSession::single(state, true));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(!rendered.contains("\u{25CF}   New task"));
+    assert!(!rendered.contains("agent: Codex"));
+    assert!(!rendered.contains("state: running"));
+    assert!(!rendered.contains("session: Mendel"));
+}
+
+#[test]
 fn preview_renders_markdown_tables_as_aligned_rows() {
     // termimad renders tables with Unicode box-drawing borders. We check
     // that the preceding paragraph and every cell value land in the
