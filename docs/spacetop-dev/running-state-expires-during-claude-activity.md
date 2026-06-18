@@ -1,6 +1,6 @@
 ---
 title: Keep running state during Claude session activity
-status: implement
+status: verify
 source: "User report on 2026-06-18: while handling a Razorback workflow item in Claude Code, Spacetop marks it running from a session write and then clears it about every 2 seconds even though the agent is still active"
 kind: bugfix
 risk: medium
