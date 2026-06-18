@@ -1,12 +1,12 @@
 ---
 title: Refine session preview wording
-status: shape
+status: plan
 source: "Follow-up from task 067 on 2026-06-18: preview metadata wording is too implementation-heavy"
 kind: feature
 risk: low
 milestone: v1-maintenance
 proof: Ratatui preview rendering tests covering the revised session metadata line
-started:
+started: 2026-06-18T10:28:19Z
 completed:
 verdict:
 score: 0.78
