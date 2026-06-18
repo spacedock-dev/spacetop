@@ -278,3 +278,20 @@ remains `recent`.
 
 Refactored running detection into explicit liveness evidence so future false
 positives can be diagnosed by source instead of guessing which rule fired.
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Verify the liveness refactor separates attribution, evidence source, and marker state without changing active-marker semantics.
+  Evidence: `match_entity` still owns attribution, `AgentSessionLiveness` owns `pid`/`resume`/`write`/`mtime`/`stale` evidence, and `AgentSessionEvidence::is_active_marker()` still requires medium-or-better derived `Running` state.
+- DONE: Confirm observed session-file writes remain a bounded running signal and mtime-only evidence stays recent.
+  Evidence: `observed_session_file_change_marks_matched_session_running_temporarily` passed and proves first-scan mtime is `Recent`, observed file changes become `Running`, and the signal falls back after the two-minute window.
+- DONE: Confirm the branch evidence includes focused session tests, preview evidence-source coverage, full cargo test, and make lint.
+  Evidence: `cargo test -p spacetop-core session_activity`, `cargo test -p spacetop session_activity`, `cargo test`, `make lint`, and `git diff --check` all passed in the assigned worktree.
+
+### Summary
+
+Verified commits `86ae11b` and `e5a85a5` against the captain's architectural
+concern. The current design keeps entity attribution, liveness evidence,
+derived run state, and UI marker policy distinct, preserves boundary-aware
+numeric ID matching for `067`, and does not broaden running detection to bare
+process-name or workdir-only matches.
