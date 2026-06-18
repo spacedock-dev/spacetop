@@ -12,7 +12,7 @@ verdict:
 score: 0.78
 worktree: .worktrees/spacedock-ensign-refine-session-preview-wording
 issue:
-pr:
+pr: "#73"
 id: 068
 mod-block: merge:pr-merge
 ---
