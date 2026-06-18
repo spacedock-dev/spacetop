@@ -94,6 +94,10 @@ impl std::error::Error for SessionScanError {}
 
 pub trait ProcessProbe {
     fn is_running(&self, pid: u32) -> bool;
+
+    fn command_lines(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -113,6 +117,24 @@ impl ProcessProbe for StdProcessProbe {
             .map(|output| output.status.success() && !output.stdout.is_empty())
             .unwrap_or(false)
     }
+
+    fn command_lines(&self) -> Vec<String> {
+        Command::new("ps")
+            .arg("-axo")
+            .arg("command=")
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| {
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
 }
 
 pub fn scan_local_sessions(
@@ -128,7 +150,13 @@ pub fn scan_local_sessions_with<P: ProcessProbe>(
 ) -> Result<SessionScanReport, SessionScanError> {
     let mut errors = Vec::new();
     let mut per_entity: HashMap<String, Vec<AgentSessionEvidence>> = HashMap::new();
-    let mut pid_cache: HashMap<u32, bool> = HashMap::new();
+    let command_lines = process_probe.command_lines();
+    let mut run_state_classifier = RunStateClassifier {
+        process_probe,
+        command_lines: &command_lines,
+        pid_cache: HashMap::new(),
+        session_cache: HashMap::new(),
+    };
     let root_pairs = request.roots.all_roots();
 
     for (agent, root) in &root_pairs {
@@ -176,8 +204,14 @@ pub fn scan_local_sessions_with<P: ProcessProbe>(
             };
             let activity_time = metadata.modified().ok();
             let pid = extract_pid(&content);
-            let run_state =
-                classify_run_state(pid, activity_time, process_probe, now, &mut pid_cache);
+            let live_session_key = live_session_key(*agent, entry.path(), &content);
+            let run_state = run_state_classifier.classify(
+                *agent,
+                live_session_key.as_deref(),
+                pid,
+                activity_time,
+                now,
+            );
             for entity in &request.entities {
                 if let Some((confidence, matched_worktree)) =
                     match_entity(entity, &request.workflow_dir, &request.repo_root, &content)
@@ -241,29 +275,46 @@ fn is_session_file(path: &Path) -> bool {
     )
 }
 
-fn classify_run_state<P: ProcessProbe>(
-    pid: Option<u32>,
-    activity_time: Option<SystemTime>,
-    process_probe: &P,
-    now: SystemTime,
-    pid_cache: &mut HashMap<u32, bool>,
-) -> AgentSessionState {
-    let is_running = pid.is_some_and(|pid| {
-        *pid_cache
-            .entry(pid)
-            .or_insert_with(|| process_probe.is_running(pid))
-    });
-    if is_running {
-        return AgentSessionState::Running;
+struct RunStateClassifier<'a, P: ProcessProbe> {
+    process_probe: &'a P,
+    command_lines: &'a [String],
+    pid_cache: HashMap<u32, bool>,
+    session_cache: HashMap<(AgentKind, String), bool>,
+}
+
+impl<'a, P: ProcessProbe> RunStateClassifier<'a, P> {
+    fn classify(
+        &mut self,
+        agent: AgentKind,
+        live_session_key: Option<&str>,
+        pid: Option<u32>,
+        activity_time: Option<SystemTime>,
+        now: SystemTime,
+    ) -> AgentSessionState {
+        let pid_is_running = pid.is_some_and(|pid| {
+            *self
+                .pid_cache
+                .entry(pid)
+                .or_insert_with(|| self.process_probe.is_running(pid))
+        });
+        let session_is_running = live_session_key.is_some_and(|key| {
+            *self
+                .session_cache
+                .entry((agent, key.to_string()))
+                .or_insert_with(|| has_live_session_command(agent, key, self.command_lines))
+        });
+        if pid_is_running || session_is_running {
+            return AgentSessionState::Running;
+        }
+        if activity_time.is_some_and(|time| {
+            now.duration_since(time)
+                .map(|age| age <= RECENT_ACTIVITY_WINDOW)
+                .unwrap_or(false)
+        }) {
+            return AgentSessionState::Recent;
+        }
+        AgentSessionState::Stale
     }
-    if activity_time.is_some_and(|time| {
-        now.duration_since(time)
-            .map(|age| age <= RECENT_ACTIVITY_WINDOW)
-            .unwrap_or(false)
-    }) {
-        return AgentSessionState::Recent;
-    }
-    AgentSessionState::Stale
 }
 
 fn match_entity(
@@ -334,6 +385,95 @@ fn extract_pid(content: &str) -> Option<u32> {
     digits.parse().ok()
 }
 
+fn live_session_key(agent: AgentKind, path: &Path, content: &str) -> Option<String> {
+    match agent {
+        AgentKind::Codex => uuid_in_value(&session_id(path)).map(str::to_string),
+        AgentKind::ClaudeCode => extract_json_string(content, "sessionId")
+            .and_then(|value| is_uuid_like(&value).then_some(value))
+            .or_else(|| is_uuid_like(&session_id(path)).then(|| session_id(path))),
+    }
+}
+
+fn has_live_session_command(agent: AgentKind, session_key: &str, command_lines: &[String]) -> bool {
+    command_lines
+        .iter()
+        .any(|line| command_matches_live_session(agent, session_key, line))
+}
+
+fn command_matches_live_session(agent: AgentKind, session_key: &str, command: &str) -> bool {
+    let tokens = command_tokens(command);
+    let Some(binary) = tokens.first() else {
+        return false;
+    };
+    match agent {
+        AgentKind::Codex => {
+            command_basename(binary) == "codex"
+                && (has_arg_pair(&tokens, "resume", session_key)
+                    || has_arg_pair(&tokens, "--resume", session_key)
+                    || has_arg_value(&tokens, "--resume", session_key))
+        }
+        AgentKind::ClaudeCode => {
+            command_basename(binary) == "claude"
+                && (has_arg_pair(&tokens, "--resume", session_key)
+                    || has_arg_value(&tokens, "--resume", session_key))
+        }
+    }
+}
+
+fn command_tokens(command: &str) -> Vec<String> {
+    command
+        .split_whitespace()
+        .map(|token| {
+            token
+                .trim_matches(|ch| matches!(ch, '"' | '\''))
+                .to_string()
+        })
+        .collect()
+}
+
+fn command_basename(command: &str) -> &str {
+    Path::new(command)
+        .file_name()
+        .and_then(OsStr::to_str)
+        .unwrap_or(command)
+}
+
+fn has_arg_pair(tokens: &[String], flag: &str, value: &str) -> bool {
+    tokens
+        .windows(2)
+        .any(|pair| pair[0] == flag && pair[1] == value)
+}
+
+fn has_arg_value(tokens: &[String], flag: &str, value: &str) -> bool {
+    let prefix = format!("{flag}=");
+    tokens
+        .iter()
+        .any(|token| token.strip_prefix(&prefix) == Some(value))
+}
+
+fn uuid_in_value(value: &str) -> Option<&str> {
+    if is_uuid_like(value) {
+        return Some(value);
+    }
+    value
+        .as_bytes()
+        .windows(36)
+        .position(is_uuid_like_bytes)
+        .map(|start| &value[start..start + 36])
+}
+
+fn is_uuid_like(value: &str) -> bool {
+    value.len() == 36 && is_uuid_like_bytes(value.as_bytes())
+}
+
+fn is_uuid_like_bytes(bytes: &[u8]) -> bool {
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => *byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
+}
+
 fn display_name(agent: AgentKind, path: &Path, content: &str) -> Option<String> {
     match agent {
         AgentKind::Codex => extract_json_string(content, "agent_nickname")
@@ -394,6 +534,21 @@ mod tests {
         fn is_running(&self, pid: u32) -> bool {
             self.calls.set(self.calls.get() + 1);
             self.running.contains(&pid)
+        }
+    }
+
+    struct CommandProbe {
+        running: HashSet<u32>,
+        command_lines: Vec<String>,
+    }
+
+    impl ProcessProbe for CommandProbe {
+        fn is_running(&self, pid: u32) -> bool {
+            self.running.contains(&pid)
+        }
+
+        fn command_lines(&self) -> Vec<String> {
+            self.command_lines.clone()
         }
     }
 
@@ -533,6 +688,155 @@ mod tests {
     }
 
     #[test]
+    fn pidless_codex_resume_command_marks_session_running() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        let session_uuid = "019ed968-6e77-7d71-9386-aae754c6c8be";
+        let session_stem = format!("rollout-2026-06-18T14-26-00-{session_uuid}");
+        write_session(
+            &root.join(format!("{session_stem}.jsonl")),
+            &format!(r#"{{"workdir":"{}","note":"065"}}"#, repo.display()),
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+        };
+        let probe = CommandProbe {
+            running: HashSet::new(),
+            command_lines: vec![format!("/opt/homebrew/bin/codex resume {session_uuid}")],
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert_eq!(
+            report.attributions[0].evidence[0].run_state,
+            AgentSessionState::Running
+        );
+        assert!(report.attributions[0].has_active_marker());
+    }
+
+    #[test]
+    fn pidless_claude_resume_command_marks_session_running() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("claude/projects/project-a");
+        let session_uuid = "f0d61fc8-8903-43c0-b916-4b02c45bf441";
+        let worktree = repo.join(".worktrees/task-065");
+        write_session(
+            &root.join("session.jsonl"),
+            &format!(
+                r#"{{"sessionId":"{session_uuid}","cwd":"{}"}}"#,
+                worktree.display()
+            ),
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            roots: SessionRoots {
+                codex: Vec::new(),
+                claude_code: vec![root],
+            },
+        };
+        let probe = CommandProbe {
+            running: HashSet::new(),
+            command_lines: vec![format!("claude --resume {session_uuid}")],
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert_eq!(
+            report.attributions[0].evidence[0].run_state,
+            AgentSessionState::Running
+        );
+        assert!(report.attributions[0].has_active_marker());
+    }
+
+    #[test]
+    fn pidless_match_without_live_session_command_falls_back_to_stale() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        let worktree = repo.join(".worktrees/task-065");
+        write_session(
+            &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
+            &format!(r#"{{"workdir":"{}"}}"#, worktree.display()),
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+        };
+        let probe = CommandProbe {
+            running: HashSet::new(),
+            command_lines: Vec::new(),
+        };
+
+        let report = scan_local_sessions_with(
+            &request,
+            &probe,
+            SystemTime::now() + Duration::from_secs(RECENT_ACTIVITY_WINDOW.as_secs() + 60),
+        )
+        .expect("scan succeeds");
+
+        assert_eq!(
+            report.attributions[0].evidence[0].run_state,
+            AgentSessionState::Stale
+        );
+        assert!(!report.attributions[0].has_active_marker());
+    }
+
+    #[test]
+    fn mtime_only_recent_match_does_not_mark_active() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        let worktree = repo.join(".worktrees/task-065");
+        write_session(
+            &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
+            &format!(r#"{{"workdir":"{}"}}"#, worktree.display()),
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+        };
+        let probe = CommandProbe {
+            running: HashSet::new(),
+            command_lines: Vec::new(),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert_eq!(
+            report.attributions[0].evidence[0].run_state,
+            AgentSessionState::Recent
+        );
+        assert!(!report.attributions[0].has_active_marker());
+    }
+
+    #[test]
     fn stale_or_low_confidence_evidence_does_not_mark_active() {
         let tmp = tempfile::tempdir().expect("tmp");
         let repo = tmp.path().join("repo");
@@ -571,6 +875,83 @@ mod tests {
         assert_eq!(extract_pid(r#"{"pid":4242}"#), Some(4242));
         assert_eq!(extract_pid(r#"rapid123 mentions 065"#), None);
         assert_eq!(extract_pid(r#"pid: 4242"#), None);
+    }
+
+    #[test]
+    fn live_session_key_extracts_agent_specific_uuid() {
+        assert_eq!(
+            live_session_key(
+                AgentKind::Codex,
+                Path::new("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
+                "{}"
+            )
+            .as_deref(),
+            Some("019ed968-6e77-7d71-9386-aae754c6c8be")
+        );
+        assert_eq!(
+            live_session_key(
+                AgentKind::ClaudeCode,
+                Path::new("session.jsonl"),
+                r#"{"sessionId":"f0d61fc8-8903-43c0-b916-4b02c45bf441"}"#
+            )
+            .as_deref(),
+            Some("f0d61fc8-8903-43c0-b916-4b02c45bf441")
+        );
+        assert_eq!(
+            live_session_key(
+                AgentKind::ClaudeCode,
+                Path::new("f0d61fc8-8903-43c0-b916-4b02c45bf441.jsonl"),
+                "{}"
+            )
+            .as_deref(),
+            Some("f0d61fc8-8903-43c0-b916-4b02c45bf441")
+        );
+        assert_eq!(
+            live_session_key(AgentKind::Codex, Path::new("session.jsonl"), "{}"),
+            None
+        );
+    }
+
+    #[test]
+    fn live_session_command_matching_requires_exact_resume_argv() {
+        let key = "019ed968-6e77-7d71-9386-aae754c6c8be";
+        assert!(command_matches_live_session(
+            AgentKind::Codex,
+            key,
+            &format!("codex resume {key}")
+        ));
+        assert!(command_matches_live_session(
+            AgentKind::Codex,
+            key,
+            &format!("codex --resume={key}")
+        ));
+        assert!(command_matches_live_session(
+            AgentKind::ClaudeCode,
+            key,
+            &format!("/usr/local/bin/claude --resume {key}")
+        ));
+
+        for command in [
+            "codex",
+            "claude",
+            "Codex.app/Contents/MacOS/helper",
+            "claude-helper --resume 019ed968-6e77-7d71-9386-aae754c6c8be",
+            "codex-helper resume 019ed968-6e77-7d71-9386-aae754c6c8be",
+            "codex --workdir /repo/.worktrees/task-065",
+            "claude --cwd /repo/.worktrees/task-065",
+            "sh -lc 'codex resume 019ed968-6e77-7d71-9386-aae754c6c8be'",
+            "codex resume 019ed968-6e77-7d71-9386-aae754c6c8be-extra",
+            "claude --resume 019ed968-6e77-7d71-9386-aae754c6c8be-extra",
+        ] {
+            assert!(
+                !command_matches_live_session(AgentKind::Codex, key, command),
+                "Codex false positive: {command}"
+            );
+            assert!(
+                !command_matches_live_session(AgentKind::ClaudeCode, key, command),
+                "Claude false positive: {command}"
+            );
+        }
     }
 
     #[test]

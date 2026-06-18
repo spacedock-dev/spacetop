@@ -7,8 +7,8 @@ risk: medium
 milestone: v1-maintenance
 proof: Reproduce with real Codex and Claude Code session logs/process table, then prove the refined rule with core tests plus make lint
 started: 2026-06-18T06:38:33Z
-completed:
-verdict:
+completed: 2026-06-18T06:50:57Z
+verdict: PASSED
 score: 0.86
 worktree: .worktrees/spacedock-ensign-refine-agent-status-running-detection
 issue:
@@ -182,3 +182,19 @@ Shaped the implementation around exact live session identity rather than PID-onl
 detection. The smallest reliable rule is PID as fallback plus exact Codex/Claude
 resume-session matching, with recent and stale still driven by artifact activity
 metadata and kept out of list-marker eligibility.
+
+## Stage Report: implement
+
+- DONE: Implemented exact live session identity detection in core.
+  Evidence: `ProcessProbe` now captures process command lines once per scan, `RunStateClassifier` keeps PID/session caches, Codex matches exact `codex resume <uuid>` or `--resume=<uuid>` shapes, and Claude Code matches exact `claude --resume <uuid>` or `--resume=<uuid>` shapes.
+- DONE: Preserved PID fallback, recent/stale metadata, and marker confidence rules.
+  Evidence: PID-positive tests still pass, pidless sessions without a matching live resume command fall back to stale/recent, and mtime-only recent evidence does not set `has_active_marker()`.
+- DONE: Covered false positives and verified the workspace.
+  Evidence: focused tests reject bare agent commands, helper commands, workdir-only commands, shell wrappers, and prefix/suffix session-id matches; `cargo test -p spacetop-core session_activity`, `cargo test`, and `make lint` passed.
+
+### Summary
+
+Implemented read-only running detection for PID-less resumed Codex and Claude
+Code sessions using exact session-id argv matching, while keeping JSON PID checks
+as a compatibility fallback and keeping recent/stale evidence out of active
+markers.
