@@ -3,10 +3,11 @@ pub mod cli;
 pub mod headless;
 pub mod ui;
 
+use std::collections::HashMap;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
 use app::{App, AppMode, HistoryWorkerResult, SessionActivityWorkerResult, SyncStatus};
@@ -21,6 +22,7 @@ use spacetop_core::config::{self, ConfigLoad, ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery;
 use spacetop_core::editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
 use spacetop_core::git_sync::{self, GitRunner, StdGitRunner, SyncOutcome};
+use spacetop_core::session_activity::SessionFileSnapshot;
 use spacetop_core::session_state;
 use spacetop_core::watcher::{self, WatcherBackend, WatcherConfig, WorkflowWatcher};
 
@@ -200,6 +202,7 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
 
         drain_history_worker(&mut app, &mut history_worker_state);
         drain_session_activity_worker(&mut app, &mut session_activity_worker_state);
+        session_activity_worker_state.request_periodic_scan(&app);
 
         // 1. Drain any pending refresh signals.
         if let Some((_, ref rx)) = watcher_state {
@@ -346,7 +349,11 @@ fn start_history_worker_for(app: &App) -> Option<std::sync::mpsc::Receiver<Histo
 struct SessionActivityWorkerState {
     receiver: Option<Receiver<SessionActivityWorkerResult>>,
     rescan_requested: bool,
+    session_files: HashMap<PathBuf, SessionFileSnapshot>,
+    last_request_at: Option<Instant>,
 }
+
+const SESSION_ACTIVITY_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 impl SessionActivityWorkerState {
     fn start_for(app: &App) -> Self {
@@ -356,14 +363,26 @@ impl SessionActivityWorkerState {
     }
 
     fn request_scan(&mut self, app: &App) {
+        self.last_request_at = Some(Instant::now());
         if self.receiver.is_some() {
             self.rescan_requested = true;
             return;
         }
-        self.receiver = app
-            .session_activity_worker_request()
-            .map(app::spawn_session_activity_worker);
+        self.receiver = app.session_activity_worker_request().map(|mut request| {
+            request.previous_session_files = self.session_files.clone();
+            app::spawn_session_activity_worker(request)
+        });
         self.rescan_requested = false;
+    }
+
+    fn request_periodic_scan(&mut self, app: &App) {
+        if self
+            .last_request_at
+            .is_some_and(|last| last.elapsed() < SESSION_ACTIVITY_POLL_INTERVAL)
+        {
+            return;
+        }
+        self.request_scan(app);
     }
 }
 
@@ -394,6 +413,9 @@ fn drain_session_activity_worker(app: &mut App, worker: &mut SessionActivityWork
     if let Some(rx) = worker.receiver.as_ref() {
         match rx.try_recv() {
             Ok(result) => {
+                if result.result.is_ok() {
+                    worker.session_files = result.session_files.clone();
+                }
                 app.apply_session_activity_result(result);
                 clear_worker = true;
             }

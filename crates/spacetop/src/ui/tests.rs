@@ -96,6 +96,7 @@ fn app_with_session_attribution(
     state.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
         workflow_dir: root.clone(),
         repo_root: repo_root.clone(),
+        session_files: std::collections::HashMap::new(),
         result: Ok(spacetop_core::domain::SessionScanReport {
             workflow_dir: root,
             repo_root,

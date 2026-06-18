@@ -14,6 +14,7 @@ use crate::domain::{
 use crate::entity_identity::entity_slug;
 
 const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(30 * 60);
+const OBSERVED_RUNNING_WINDOW: Duration = Duration::from_secs(2 * 60);
 const MAX_SCAN_FILE_BYTES: u64 = 1_000_000;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +23,14 @@ pub struct SessionScanRequest {
     pub repo_root: PathBuf,
     pub entities: Vec<SessionScanEntity>,
     pub roots: SessionRoots,
+    pub previous_session_files: HashMap<PathBuf, SessionFileSnapshot>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionFileSnapshot {
+    modified_unix: Option<i64>,
+    len: u64,
+    observed_running_until_unix: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,7 +149,22 @@ impl ProcessProbe for StdProcessProbe {
 pub fn scan_local_sessions(
     request: SessionScanRequest,
 ) -> Result<SessionScanReport, SessionScanError> {
-    scan_local_sessions_with(&request, &StdProcessProbe, SystemTime::now())
+    scan_local_sessions_with_snapshots(&request, &StdProcessProbe, SystemTime::now())
+        .map(|result| result.report)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionActivityScan {
+    pub report: SessionScanReport,
+    pub session_files: HashMap<PathBuf, SessionFileSnapshot>,
+}
+
+pub fn scan_local_sessions_with_snapshots<P: ProcessProbe>(
+    request: &SessionScanRequest,
+    process_probe: &P,
+    now: SystemTime,
+) -> Result<SessionActivityScan, SessionScanError> {
+    scan_local_sessions_inner(request, process_probe, now)
 }
 
 pub fn scan_local_sessions_with<P: ProcessProbe>(
@@ -148,8 +172,17 @@ pub fn scan_local_sessions_with<P: ProcessProbe>(
     process_probe: &P,
     now: SystemTime,
 ) -> Result<SessionScanReport, SessionScanError> {
+    scan_local_sessions_inner(request, process_probe, now).map(|result| result.report)
+}
+
+fn scan_local_sessions_inner<P: ProcessProbe>(
+    request: &SessionScanRequest,
+    process_probe: &P,
+    now: SystemTime,
+) -> Result<SessionActivityScan, SessionScanError> {
     let mut errors = Vec::new();
     let mut per_entity: HashMap<String, Vec<AgentSessionEvidence>> = HashMap::new();
+    let mut session_files = HashMap::new();
     let command_lines = process_probe.command_lines();
     let mut run_state_classifier = RunStateClassifier {
         process_probe,
@@ -191,6 +224,21 @@ pub fn scan_local_sessions_with<P: ProcessProbe>(
             if metadata.len() > MAX_SCAN_FILE_BYTES {
                 continue;
             }
+            let previous_snapshot = request.previous_session_files.get(entry.path());
+            let mut snapshot = SessionFileSnapshot::from_metadata(&metadata);
+            let changed_since_last_scan =
+                previous_snapshot.is_some_and(|previous| previous.has_different_metadata(snapshot));
+            if changed_since_last_scan {
+                snapshot.observed_running_until_unix =
+                    Some(system_time_unix(now + OBSERVED_RUNNING_WINDOW).unwrap_or(i64::MAX));
+            } else {
+                snapshot.observed_running_until_unix =
+                    previous_snapshot.and_then(|previous| previous.observed_running_until_unix);
+            }
+            let observed_file_activity_is_running = snapshot
+                .observed_running_until_unix
+                .is_some_and(|until| system_time_unix(now).is_some_and(|now| now <= until));
+            session_files.insert(entry.path().to_path_buf(), snapshot);
             let content = match fs::read_to_string(entry.path()) {
                 Ok(content) => content,
                 Err(err) => {
@@ -209,6 +257,7 @@ pub fn scan_local_sessions_with<P: ProcessProbe>(
                 *agent,
                 live_session_key.as_deref(),
                 pid,
+                observed_file_activity_is_running,
                 activity_time,
                 now,
             );
@@ -253,13 +302,30 @@ pub fn scan_local_sessions_with<P: ProcessProbe>(
         .collect();
     attributions.sort_by(|a, b| a.entity_id.cmp(&b.entity_id));
 
-    Ok(SessionScanReport {
-        workflow_dir: request.workflow_dir.clone(),
-        repo_root: request.repo_root.clone(),
-        scanned_roots: root_pairs.into_iter().map(|(_, root)| root).collect(),
-        attributions,
-        errors,
+    Ok(SessionActivityScan {
+        report: SessionScanReport {
+            workflow_dir: request.workflow_dir.clone(),
+            repo_root: request.repo_root.clone(),
+            scanned_roots: root_pairs.into_iter().map(|(_, root)| root).collect(),
+            attributions,
+            errors,
+        },
+        session_files,
     })
+}
+
+impl SessionFileSnapshot {
+    fn from_metadata(metadata: &fs::Metadata) -> Self {
+        Self {
+            modified_unix: metadata.modified().ok().and_then(system_time_unix),
+            len: metadata.len(),
+            observed_running_until_unix: None,
+        }
+    }
+
+    fn has_different_metadata(self, other: Self) -> bool {
+        self.modified_unix != other.modified_unix || self.len != other.len
+    }
 }
 
 fn is_pruned_dir(path: &Path) -> bool {
@@ -288,6 +354,7 @@ impl<'a, P: ProcessProbe> RunStateClassifier<'a, P> {
         agent: AgentKind,
         live_session_key: Option<&str>,
         pid: Option<u32>,
+        observed_file_activity_is_running: bool,
         activity_time: Option<SystemTime>,
         now: SystemTime,
     ) -> AgentSessionState {
@@ -303,7 +370,7 @@ impl<'a, P: ProcessProbe> RunStateClassifier<'a, P> {
                 .entry((agent, key.to_string()))
                 .or_insert_with(|| has_live_session_command(agent, key, self.command_lines))
         });
-        if pid_is_running || session_is_running {
+        if pid_is_running || session_is_running || observed_file_activity_is_running {
             return AgentSessionState::Running;
         }
         if activity_time.is_some_and(|time| {
@@ -610,6 +677,7 @@ mod tests {
                 codex: vec![root],
                 claude_code: Vec::new(),
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = FixtureProbe {
             running: HashSet::from([4242]),
@@ -647,6 +715,7 @@ mod tests {
                 codex: Vec::new(),
                 claude_code: vec![root],
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = FixtureProbe {
             running: HashSet::from([5150]),
@@ -683,6 +752,7 @@ mod tests {
                 codex: vec![root],
                 claude_code: Vec::new(),
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = FixtureProbe {
             running: HashSet::from([4242]),
@@ -718,6 +788,7 @@ mod tests {
                 codex: vec![root],
                 claude_code: Vec::new(),
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = CommandProbe {
             running: HashSet::new(),
@@ -757,6 +828,7 @@ mod tests {
                 codex: Vec::new(),
                 claude_code: vec![root],
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = CommandProbe {
             running: HashSet::new(),
@@ -792,6 +864,7 @@ mod tests {
                 codex: vec![root],
                 claude_code: Vec::new(),
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = CommandProbe {
             running: HashSet::new(),
@@ -831,6 +904,7 @@ mod tests {
                 codex: vec![root],
                 claude_code: Vec::new(),
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = CommandProbe {
             running: HashSet::new(),
@@ -848,6 +922,86 @@ mod tests {
     }
 
     #[test]
+    fn observed_session_file_change_marks_matched_session_running_temporarily() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        let session =
+            root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl");
+        write_session(
+            &session,
+            &format!(r#"{{"workdir":"{}","note":"065"}}"#, repo.display()),
+        );
+        let now = SystemTime::now();
+        let mut request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = CommandProbe {
+            running: HashSet::new(),
+            command_lines: Vec::new(),
+        };
+
+        let first =
+            scan_local_sessions_with_snapshots(&request, &probe, now).expect("scan succeeds");
+        assert_eq!(
+            first.report.attributions[0].evidence[0].run_state,
+            AgentSessionState::Recent
+        );
+        assert!(!first.report.attributions[0].has_active_marker());
+
+        fs::write(
+            &session,
+            format!(
+                r#"{{"workdir":"{}","note":"065","event":"next"}}"#,
+                request.repo_root.display()
+            ),
+        )
+        .expect("update session");
+        request.previous_session_files = first.session_files;
+        let second =
+            scan_local_sessions_with_snapshots(&request, &probe, now + Duration::from_secs(2))
+                .expect("scan succeeds");
+
+        assert_eq!(
+            second.report.attributions[0].evidence[0].run_state,
+            AgentSessionState::Running
+        );
+        assert!(second.report.attributions[0].has_active_marker());
+
+        request.previous_session_files = second.session_files;
+        let third = scan_local_sessions_with_snapshots(
+            &request,
+            &probe,
+            now + Duration::from_secs(2) + OBSERVED_RUNNING_WINDOW - Duration::from_secs(1),
+        )
+        .expect("scan succeeds");
+        assert_eq!(
+            third.report.attributions[0].evidence[0].run_state,
+            AgentSessionState::Running
+        );
+
+        request.previous_session_files = third.session_files;
+        let fourth = scan_local_sessions_with_snapshots(
+            &request,
+            &probe,
+            now + Duration::from_secs(2) + OBSERVED_RUNNING_WINDOW + Duration::from_secs(1),
+        )
+        .expect("scan succeeds");
+        assert_eq!(
+            fourth.report.attributions[0].evidence[0].run_state,
+            AgentSessionState::Recent
+        );
+    }
+
+    #[test]
     fn stale_or_low_confidence_evidence_does_not_mark_active() {
         let tmp = tempfile::tempdir().expect("tmp");
         let repo = tmp.path().join("repo");
@@ -862,6 +1016,7 @@ mod tests {
                 codex: vec![root],
                 claude_code: Vec::new(),
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = FixtureProbe {
             running: HashSet::new(),
@@ -917,6 +1072,7 @@ mod tests {
                 codex: Vec::new(),
                 claude_code: vec![root],
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = CommandProbe {
             running: HashSet::new(),
@@ -1027,6 +1183,7 @@ mod tests {
                 codex: vec![root],
                 claude_code: Vec::new(),
             },
+            previous_session_files: HashMap::new(),
         };
         let probe = CountingProbe {
             running: HashSet::from([4242]),

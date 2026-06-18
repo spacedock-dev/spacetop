@@ -219,6 +219,19 @@ product needs an additional explicit dispatch/worker registry signal. Do not
 loosen the rule to bare process-name or workdir-only matching unless the false
 positive risk is solved.
 
+## Verification Follow-up Resolution: Observed Session File Changes
+
+The implementation now keeps PID and exact resume-session matching, and adds a
+third running signal that only exists while Spacetop is open: a matched session
+file changed between session scans. The first scan of a recent file remains
+`recent`; only an observed size or mtime change on the same matched artifact can
+promote it to `running` for a two-minute in-memory window.
+
+This covers fresh-launched Codex or Claude Code workers that write to their
+session artifact without exposing a stable PID or `--resume <uuid>` process
+shape. It still does not claim an idle, non-writing worker is running, and it
+does not use process names, workdir-only process matches, or mtime-only evidence.
+
 ## Stage Report: verify
 
 - DONE: AC evidence covers exact live-session matching and rejects helper/bare/workdir-only false positives.
@@ -235,3 +248,19 @@ captain's recce false-positive case. The code now avoids raw numeric
 `content.contains(&entity.id)` matching, keeps exact live-session detection
 narrow, and leaves the already documented fresh-launch evidence gap as a
 separate product question rather than loosening the matcher.
+
+## Stage Report: verify follow-up
+
+- DONE: Fresh-launched worker activity can mark matched sessions running while Spacetop is open.
+  Evidence: the session scanner now carries previous file snapshots between TUI scans, polls every 2 seconds, and keeps a matched session `running` for two minutes after the same session file changes.
+- DONE: The stricter entity-id matching remains in the worktree.
+  Evidence: both the root-local change and the worktree use boundary-aware `contains_entity_id`, and tests reject `067` matches inside unrelated UUID substrings.
+- DONE: Verification reran after the follow-up change.
+  Evidence: `cargo fmt --check`, `cargo test -p spacetop-core session_activity`, `cargo test -p spacetop session_activity`, `cargo test`, and `make lint` passed.
+
+### Summary
+
+Resolved the fresh-worker detection gap without broadening process-name matching:
+running is now PID, exact resume-session argv, or observed matched session-file
+change during this Spacetop run with a two-minute linger; mtime-only evidence
+remains `recent`.
