@@ -11,6 +11,7 @@ use crate::domain::{
     AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, Entity,
     EntitySessionAttribution, SessionScanReport,
 };
+use crate::entity_identity::entity_slug;
 
 const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(30 * 60);
 const OBSERVED_RUNNING_WINDOW: Duration = Duration::from_secs(2 * 60);
@@ -411,6 +412,10 @@ fn match_entity(
     repo_root: &Path,
     content: &str,
 ) -> Option<(AttributionConfidence, Option<PathBuf>)> {
+    if has_conflicting_dispatch_assignment(entity, content) {
+        return None;
+    }
+
     let worktree = entity
         .worktree
         .as_deref()
@@ -436,6 +441,33 @@ fn match_entity(
         .into_iter()
         .any(|path| content.contains(&path.to_string_lossy().to_string()))
         .then_some((AttributionConfidence::Medium, None))
+}
+
+fn has_conflicting_dispatch_assignment(entity: &SessionScanEntity, content: &str) -> bool {
+    let Some(entity_slug) = entity_slug(&entity.path) else {
+        return false;
+    };
+    dispatch_assignment_slugs(content).any(|assigned_slug| assigned_slug != entity_slug)
+}
+
+fn dispatch_assignment_slugs(content: &str) -> impl Iterator<Item = String> + '_ {
+    const PREFIX: &str = "/tmp/spacedock-dispatch/spacedock-ensign-";
+
+    content.match_indices(PREFIX).filter_map(|(start, _)| {
+        let after_prefix = &content[start + PREFIX.len()..];
+        let end = after_prefix.find(".md")?;
+        let stem = &after_prefix[..end];
+        dispatch_slug_from_stem(stem).map(str::to_string)
+    })
+}
+
+fn dispatch_slug_from_stem(stem: &str) -> Option<&str> {
+    const STAGES: &[&str] = &["shape", "plan", "implement", "verify", "done", "pr-merge"];
+
+    STAGES
+        .iter()
+        .find_map(|stage| stem.strip_suffix(&format!("-{stage}")))
+        .filter(|slug| !slug.is_empty())
 }
 
 #[cfg(test)]
@@ -1231,6 +1263,39 @@ mod tests {
             report.attributions[0].evidence[0].confidence,
             AttributionConfidence::Medium
         );
+    }
+
+    #[test]
+    fn conflicting_dispatch_assignment_blocks_task_file_test_data_match() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("spacetop");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("heisenberg-070-verify.jsonl"),
+            r#"{"agent_nickname":"Heisenberg","body":"Read /tmp/spacedock-dispatch/spacedock-ensign-fix-unrelated-session-running-attribution-verify.md. Regression mentions docs/spacetop-dev/refine-session-preview-wording.md as test data."}"#,
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow.clone(),
+            repo_root: repo.clone(),
+            entities: vec![entity_with_path(
+                "068",
+                workflow.join("refine-session-preview-wording.md"),
+            )],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = FixtureProbe {
+            running: HashSet::new(),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert!(report.attributions.is_empty());
     }
 
     #[test]

@@ -95,3 +95,22 @@ Feedback cycle 1 fixed the remaining same-repo false positive by requiring expli
 ### Summary
 
 PASS for implementation commit `a2c1cae`. The feedback-cycle regression is covered by executable core tests, the positive explicit task-file case remains intact, and the required full test and lint gates pass.
+
+### Feedback Cycles
+
+- Cycle 2, live repro rejected on 2026-06-18: explicit task-file text is still too broad when it appears as test data inside a verifier assignment for another task. A Heisenberg verify session for task `070` can contain `/tmp/spacedock-dispatch/spacedock-ensign-fix-unrelated-session-running-attribution-verify.md` and mention `docs/spacetop-dev/refine-session-preview-wording.md`, causing entity `068` to be attributed incorrectly.
+
+### Feedback Cycle 2 Result
+
+- DONE: Added dispatch-assignment slug detection for local Spacedock dispatch files.
+  Session transcripts containing `/tmp/spacedock-dispatch/spacedock-ensign-<slug>-<stage>.md` now expose the assigned slug for attribution filtering.
+- DONE: Blocked conflicting assignment matches before task-file evidence is accepted.
+  If a session has an assigned dispatch slug and it differs from the candidate entity slug, the candidate is not attributed even when its task file path appears as test data.
+- DONE: Preserved positive explicit task-file attribution when no conflicting assignment is present.
+  `explicit_task_file_reference_matches_non_worktree_entity` still covers the `docs/spacetop-dev/refine-session-preview-wording.md` positive case for entity `068`.
+- DONE: Ran focused verification.
+  `cargo test -p spacetop-core session_activity`, `cargo test -p spacetop preview_omits_session_metadata_for_unrelated_running_session`, and `cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution` passed.
+
+### Summary
+
+Feedback cycle 2 fixed the live repro by making dispatch assignment identity a negative filter for other task candidates. Explicit task-file mentions remain valid only when they are not contradicted by an assigned Spacedock dispatch slug.
