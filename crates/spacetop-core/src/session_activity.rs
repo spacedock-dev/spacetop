@@ -245,6 +245,7 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
                     continue;
                 }
             };
+            session_files.insert(entry.path().to_path_buf(), snapshot);
             let activity_time = metadata.modified().ok();
             let pid = extract_pid(&content);
             let live_session_key = live_session_key(*agent, entry.path(), &content);
@@ -274,7 +275,6 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
                 activity_time,
                 now,
             });
-            session_files.insert(entry.path().to_path_buf(), snapshot);
             for (entity_id, confidence, matched_worktree) in matches {
                 let evidence = AgentSessionEvidence {
                     agent: *agent,
@@ -995,7 +995,7 @@ mod tests {
     }
 
     #[test]
-    fn unrelated_sessions_do_not_trigger_resume_command_scan_or_snapshot_retention() {
+    fn unrelated_sessions_do_not_trigger_resume_command_scan() {
         let tmp = tempfile::tempdir().expect("tmp");
         let repo = tmp.path().join("repo");
         let workflow = repo.join("docs/spacetop-dev");
@@ -1022,7 +1022,6 @@ mod tests {
             scan_local_sessions_with_snapshots(&request, &probe, SystemTime::now()).expect("scan");
 
         assert!(scan.report.attributions.is_empty());
-        assert!(scan.session_files.is_empty());
         assert_eq!(probe.command_line_calls.get(), 0);
     }
 
@@ -1116,6 +1115,80 @@ mod tests {
             AgentSessionState::Running
         );
         assert!(second.report.attributions[0].has_active_marker());
+
+        request.previous_session_files = second.session_files;
+        let third = scan_local_sessions_with_snapshots(
+            &request,
+            &probe,
+            now + Duration::from_secs(2) + OBSERVED_RUNNING_WINDOW - Duration::from_secs(1),
+        )
+        .expect("scan succeeds");
+        assert_eq!(
+            third.report.attributions[0].evidence[0].run_state(),
+            AgentSessionState::Running
+        );
+
+        request.previous_session_files = third.session_files;
+        let fourth = scan_local_sessions_with_snapshots(
+            &request,
+            &probe,
+            now + Duration::from_secs(2) + OBSERVED_RUNNING_WINDOW + Duration::from_secs(1),
+        )
+        .expect("scan succeeds");
+        assert_eq!(
+            fourth.report.attributions[0].evidence[0].run_state(),
+            AgentSessionState::Recent
+        );
+    }
+
+    #[test]
+    fn previously_unmatched_session_write_marks_running_until_grace_window_expires() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        let session =
+            root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl");
+        write_session(
+            &session,
+            r#"{"workdir":"/tmp/other-repo","note":"not this workflow"}"#,
+        );
+        let now = SystemTime::now();
+        let mut request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = CommandProbe {
+            running: HashSet::new(),
+            command_lines: Vec::new(),
+        };
+
+        let first =
+            scan_local_sessions_with_snapshots(&request, &probe, now).expect("scan succeeds");
+        assert!(first.report.attributions.is_empty());
+
+        fs::write(
+            &session,
+            format!(
+                r#"{{"workdir":"{}","note":"065-task.md"}}"#,
+                request.repo_root.display()
+            ),
+        )
+        .expect("update session");
+        request.previous_session_files = first.session_files;
+        let second =
+            scan_local_sessions_with_snapshots(&request, &probe, now + Duration::from_secs(2))
+                .expect("scan succeeds");
+        assert_eq!(
+            second.report.attributions[0].evidence[0].run_state(),
+            AgentSessionState::Running
+        );
 
         request.previous_session_files = second.session_files;
         let third = scan_local_sessions_with_snapshots(
