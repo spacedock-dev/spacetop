@@ -7,8 +7,8 @@ risk: medium
 milestone: v1-maintenance
 proof: Reproduce with real Codex and Claude Code session logs/process table, then prove the refined rule with core tests plus make lint
 started: 2026-06-18T06:38:33Z
-completed: 2026-06-18T06:50:57Z
-verdict: PASSED
+completed:
+verdict:
 score: 0.86
 worktree: .worktrees/spacedock-ensign-refine-agent-status-running-detection
 issue:
