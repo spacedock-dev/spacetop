@@ -67,3 +67,18 @@ Independent verification passes for implementation commit `4da629b`. The screens
 ### Feedback Cycles
 
 - Cycle 1, verify rejected on 2026-06-18: the fix still accepts same-repo incidental task-id mentions. Hegel's verifier session for task `070` can mention task `068` while running inside the Spacetop repo, causing task `068` to show Hegel as recent even though Hegel did not work on `068`. Tighten attribution so task identity requires explicit task-file/worktree evidence, not just repo path plus id/slug.
+
+### Feedback Cycle 1 Result
+
+- DONE: Tightened medium-confidence attribution to explicit task-file references only.
+  `match_entity()` no longer accepts `repo_root` or `workflow_dir` plus a bare id/slug. Non-worktree matches now require an explicit entity path candidate such as the absolute task path, repo-relative task path, workflow-relative task path, or task filename.
+- DONE: Preserved high-confidence worktree and `worktree_source` matches.
+  The worktree path checks still return high confidence before task-file matching.
+- DONE: Added rejected-screenshot regressions.
+  A Spacetop-rooted verifier session for task `070` that mentions task `068` and the Spacetop repo/workflow path produces no attribution for entity `068`; a session explicitly referencing `docs/spacetop-dev/refine-session-preview-wording.md` still attributes to entity `068`.
+- DONE: Ran focused verification.
+  `cargo test -p spacetop-core session_activity`, `cargo test -p spacetop preview_omits_session_metadata_for_unrelated_running_session`, and `cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution` passed.
+
+### Summary
+
+Feedback cycle 1 fixed the remaining same-repo false positive by requiring explicit task-file or worktree evidence for session attribution. Repo/workflow paths plus incidental task id or slug text are no longer sufficient.
