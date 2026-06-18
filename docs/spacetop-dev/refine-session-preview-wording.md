@@ -1,6 +1,6 @@
 ---
 title: Refine session preview wording
-status: plan
+status: implement
 source: "Follow-up from task 067 on 2026-06-18: preview metadata wording is too implementation-heavy"
 kind: feature
 risk: low
@@ -10,7 +10,7 @@ started: 2026-06-18T10:28:19Z
 completed:
 verdict:
 score: 0.78
-worktree:
+worktree: .worktrees/spacedock-ensign-refine-session-preview-wording
 issue:
 pr:
 id: 068
