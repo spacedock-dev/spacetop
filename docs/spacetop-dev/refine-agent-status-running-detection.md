@@ -12,7 +12,7 @@ verdict:
 score: 0.86
 worktree: .worktrees/spacedock-ensign-refine-agent-status-running-detection
 issue:
-pr:
+pr: "#70"
 id: 067
 mod-block: merge:pr-merge
 ---
