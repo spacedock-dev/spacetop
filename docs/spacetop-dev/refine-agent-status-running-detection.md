@@ -14,6 +14,7 @@ worktree: .worktrees/spacedock-ensign-refine-agent-status-running-detection
 issue:
 pr:
 id: 067
+mod-block: merge:pr-merge
 ---
 
 Codex and Claude Code session attribution currently treats running as a live PID match, but local experiments show real agent session logs often do not contain a reusable PID or do not match ps by PID. This makes the running state and active-session marker effectively unreachable.
