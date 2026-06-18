@@ -198,3 +198,23 @@ Implemented read-only running detection for PID-less resumed Codex and Claude
 Code sessions using exact session-id argv matching, while keeping JSON PID checks
 as a compatibility fallback and keeping recent/stale evidence out of active
 markers.
+
+## Verification Follow-up: Fresh-launched Agent Processes
+
+The captain raised an open verification question after the implement gate:
+fresh `codex` or `claude` launches may not include `--resume <uuid>` in the
+main process command line, even though the first officer can still dispatch
+workflow work from that session.
+
+Current implementation evidence covers resumed workers and PID-bearing session
+artifacts, but it does not prove fresh-launched workers always expose either a
+live JSON `"pid"` or a resume UUID in `ps`. If fresh dispatched worker processes
+also appear as plain `codex <prompt>` or `claude <prompt>`, the current rule will
+classify their matched artifacts as `recent` first and later `stale`, with no
+task-list active marker.
+
+The next verification session should launch fresh Codex and Claude Code workers,
+inspect the redacted process table and session artifacts, and decide whether the
+product needs an additional explicit dispatch/worker registry signal. Do not
+loosen the rule to bare process-name or workdir-only matching unless the false
+positive risk is solved.
