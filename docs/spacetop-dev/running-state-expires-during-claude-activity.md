@@ -69,3 +69,30 @@ Planned the task 071 fix path without code changes. The likely drop path is the 
 ### Verification
 
 - `cargo test -p spacetop-core session_activity -- --nocapture` passed: 21 tests passed, 0 failed.
+
+## Stage Report
+
+### Summary
+
+Implemented task 071 in `crates/spacetop-core/src/session_activity.rs` with a core-only fix. Session activity scans now retain readable session-file snapshots before entity matching, so write-derived liveness from a matching Claude Code or Codex session survives periodic cleanup scans until the observed write grace window expires. Ownership matching stayed unchanged and precise.
+
+Committed implementation as `7f9c74e Retain session write snapshots across scans`.
+
+### Checklist
+
+- DONE: Added failing-then-passing core regression coverage for a previously unmatched session file that later receives matching write activity and remains `running` across periodic scans.
+- DONE: Covered stale decay after the observed write grace window; the regression proves the state returns to `recent` after no further writes.
+- DONE: Kept the fix in `spacetop-core::session_activity` by retaining scanned readable session-file snapshots before entity matching instead of moving retention rules into UI or app state.
+- DONE: Preserved precise ownership matching; unrelated/id-only and conflicting-dispatch session cases remain covered by existing regression tests.
+- DONE: Updated the unrelated-session guard to assert the intended invariant: unrelated sessions do not produce attribution or trigger resume-command probing.
+- SKIPPED: App-level test changes, because the fix landed entirely in core and the worker already feeds core snapshots back into later scans.
+- SKIPPED: Documentation changes outside this task report, because no user-facing command, label, or semantic docs changed.
+- FAILED: None.
+
+### Verification
+
+- Red test observed: `cargo test -p spacetop-core previously_unmatched_session_write_marks_running_until_grace_window_expires -- --nocapture` failed before the fix with `left: Recent` and `right: Running`.
+- `cargo test -p spacetop-core session_activity -- --nocapture` passed after the fix: 22 tests passed, 0 failed.
+- `cargo fmt` ran after the Rust change.
+- `make lint` passed; it ran `cargo clippy --all-targets --all-features -- -D warnings`.
+- `git diff --check` passed.
