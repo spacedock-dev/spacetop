@@ -1,6 +1,6 @@
 ---
 title: Refine agent status running detection
-status: plan
+status: implement
 source: User report on 2026-06-18 that Codex and Claude Code sessions never match PID checks
 kind: bugfix
 risk: medium
@@ -10,7 +10,7 @@ started: 2026-06-18T06:38:33Z
 completed:
 verdict:
 score: 0.86
-worktree:
+worktree: .worktrees/spacedock-ensign-refine-agent-status-running-detection
 issue:
 pr:
 id: 067
