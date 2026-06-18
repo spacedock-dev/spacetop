@@ -12,7 +12,7 @@ verdict:
 score: 0.88
 worktree: .worktrees/spacedock-ensign-running-state-expires-during-claude-activity
 issue:
-pr:
+pr: "#72"
 id: 071
 mod-block: merge:pr-merge
 ---
