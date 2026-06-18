@@ -57,3 +57,16 @@ cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribu
 cargo test -p spacetop
 make lint
 ```
+
+## Stage Report: implement
+
+- DONE: Update the selected-task preview session metadata wording to remove `via:` and split confidence from the session label.
+  Implemented in commit `ef227f8`; preview now renders `session: Mendel` and `confidence: high` as separate segments.
+- DONE: Add or update focused Ratatui preview tests that fail if `via:` returns or confidence is folded into `session:`.
+  `cargo test -p spacetop preview_renders_session_metadata_without_transcript_content` passed and pins both regressions.
+- DONE: Preserve task-list active marker behavior and avoid changing session attribution/running-state logic.
+  `cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution` passed; no core session files or task-list rendering were edited.
+
+### Summary
+
+Refined the selected-task preview header wording so normal attribution metadata no longer exposes the liveness `via:` reason and confidence is no longer folded into the session label. Verification passed with the focused preview test, task-list guard test, full `cargo test -p spacetop`, `cargo fmt`, and `make lint`.
