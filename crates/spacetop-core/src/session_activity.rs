@@ -345,7 +345,7 @@ fn match_entity(
     }
 
     let slug = entity_slug(&entity.path);
-    let has_entity_id = !entity.id.trim().is_empty() && content.contains(&entity.id);
+    let has_entity_id = contains_entity_id(content, &entity.id);
     let has_slug = slug
         .as_deref()
         .is_some_and(|slug| !slug.is_empty() && content.contains(slug));
@@ -357,6 +357,17 @@ fn match_entity(
         (false, true) => Some((AttributionConfidence::Low, None)),
         _ => None,
     }
+}
+
+fn contains_entity_id(content: &str, id: &str) -> bool {
+    let id = id.trim();
+    !id.is_empty()
+        && content.match_indices(id).any(|(start, _)| {
+            let before = content[..start].chars().next_back();
+            let after = content[start + id.len()..].chars().next();
+            !before.is_some_and(|ch| ch.is_ascii_alphanumeric())
+                && !after.is_some_and(|ch| ch.is_ascii_alphanumeric())
+        })
 }
 
 fn candidate_paths(repo_root: &Path, raw: &str) -> Vec<PathBuf> {
@@ -875,6 +886,47 @@ mod tests {
         assert_eq!(extract_pid(r#"{"pid":4242}"#), Some(4242));
         assert_eq!(extract_pid(r#"rapid123 mentions 065"#), None);
         assert_eq!(extract_pid(r#"pid: 4242"#), None);
+    }
+
+    #[test]
+    fn entity_id_match_rejects_uuid_substrings() {
+        assert!(!contains_entity_id("uuid dfbf9616-b067-4cd4-8a65", "067"));
+        assert!(!contains_entity_id("uuid 09d0dbf9-0672-49ed", "067"));
+        assert!(contains_entity_id("task 067 is ready", "067"));
+        assert!(contains_entity_id("task-067.md", "067"));
+    }
+
+    #[test]
+    fn live_session_with_id_only_inside_uuid_does_not_match_entity() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp
+            .path()
+            .join("claude/projects/-Users-kent-Dev-InfuseAI-GitHub-recce");
+        let session_id = "2a301c1d-2d0c-4fe0-81d6-55b61507cdc0";
+        write_session(
+            &root.join(format!("{session_id}.jsonl")),
+            r#"{"uuid":"dfbf9616-b067-4cd4-8a65-59b90007284f","cwd":"/Users/kent/Dev/InfuseAI/GitHub/recce"}"#,
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("067", Some(".worktrees/task-067"))],
+            roots: SessionRoots {
+                codex: Vec::new(),
+                claude_code: vec![root],
+            },
+        };
+        let probe = CommandProbe {
+            running: HashSet::new(),
+            command_lines: vec![format!("claude --resume {session_id}")],
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert!(report.attributions.is_empty());
     }
 
     #[test]

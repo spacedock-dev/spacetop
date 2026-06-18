@@ -218,3 +218,20 @@ inspect the redacted process table and session artifacts, and decide whether the
 product needs an additional explicit dispatch/worker registry signal. Do not
 loosen the rule to bare process-name or workdir-only matching unless the false
 positive risk is solved.
+
+## Stage Report: verify
+
+- DONE: AC evidence covers exact live-session matching and rejects helper/bare/workdir-only false positives.
+  Evidence: `cargo test -p spacetop-core session_activity` passed 14 tests, including exact Codex/Claude resume matching and rejection of bare agent, helper, workdir-only, shell-wrapper, and prefix/suffix session-id commands.
+- DONE: The unrelated recce Claude session cannot match task 067 via UUID substrings or bare numeric id collisions.
+  Evidence: `live_session_with_id_only_inside_uuid_does_not_match_entity` proves the recce-shaped Claude session with `b067` inside an unrelated UUID yields no attribution for entity `067`; `entity_id_match_rejects_uuid_substrings` rejects `b067` and `0672` while preserving standalone `067`.
+- DONE: Verification evidence includes focused core tests plus full cargo test and make lint, or clear blockers.
+  Evidence: `cargo test -p spacetop-core session_activity`, `cargo test`, `make lint`, and `git diff --check` all passed in the assigned worktree.
+
+### Summary
+
+Verified the implementation against the task acceptance criteria and the
+captain's recce false-positive case. The code now avoids raw numeric
+`content.contains(&entity.id)` matching, keeps exact live-session detection
+narrow, and leaves the already documented fresh-launch evidence gap as a
+separate product question rather than loosening the matcher.
