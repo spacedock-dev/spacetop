@@ -1,6 +1,6 @@
 ---
 title: Fix unrelated session running attribution
-status: verify
+status: implement
 source: "Follow-up from 2026-06-18 screenshot: newly created task 068 is shown running from an unrelated dataagentbench Codex session"
 kind: bug
 risk: medium
