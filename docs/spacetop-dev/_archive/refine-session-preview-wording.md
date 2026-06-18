@@ -1,20 +1,21 @@
 ---
 title: Refine session preview wording
-status: verify
+status: done
 source: "Follow-up from task 067 on 2026-06-18: preview metadata wording is too implementation-heavy"
 kind: feature
 risk: low
 milestone: v1-maintenance
 proof: Ratatui preview rendering tests covering the revised session metadata line
 started: 2026-06-18T10:28:19Z
-completed:
-verdict:
+completed: 2026-06-18T11:04:26Z
+verdict: PASSED
 score: 0.78
-worktree: .worktrees/spacedock-ensign-refine-session-preview-wording
+worktree:
 issue:
 pr: "#73"
 id: 068
 mod-block:
+archived: 2026-06-18T11:04:32Z
 ---
 
 Refine the selected-task preview metadata for agent session attribution. The current wording exposes implementation details such as `session: xxx <effort>` and `via: <reason>` in the preview header, which is useful for debugging but too noisy for ordinary inspection.
