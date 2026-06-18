@@ -182,3 +182,116 @@ Shaped the implementation around exact live session identity rather than PID-onl
 detection. The smallest reliable rule is PID as fallback plus exact Codex/Claude
 resume-session matching, with recent and stale still driven by artifact activity
 metadata and kept out of list-marker eligibility.
+
+## Stage Report: implement
+
+- DONE: Implemented exact live session identity detection in core.
+  Evidence: `ProcessProbe` now captures process command lines once per scan, `RunStateClassifier` keeps PID/session caches, Codex matches exact `codex resume <uuid>` or `--resume=<uuid>` shapes, and Claude Code matches exact `claude --resume <uuid>` or `--resume=<uuid>` shapes.
+- DONE: Preserved PID fallback, recent/stale metadata, and marker confidence rules.
+  Evidence: PID-positive tests still pass, pidless sessions without a matching live resume command fall back to stale/recent, and mtime-only recent evidence does not set `has_active_marker()`.
+- DONE: Covered false positives and verified the workspace.
+  Evidence: focused tests reject bare agent commands, helper commands, workdir-only commands, shell wrappers, and prefix/suffix session-id matches; `cargo test -p spacetop-core session_activity`, `cargo test`, and `make lint` passed.
+
+### Summary
+
+Implemented read-only running detection for PID-less resumed Codex and Claude
+Code sessions using exact session-id argv matching, while keeping JSON PID checks
+as a compatibility fallback and keeping recent/stale evidence out of active
+markers.
+
+## Verification Follow-up: Fresh-launched Agent Processes
+
+The captain raised an open verification question after the implement gate:
+fresh `codex` or `claude` launches may not include `--resume <uuid>` in the
+main process command line, even though the first officer can still dispatch
+workflow work from that session.
+
+Current implementation evidence covers resumed workers and PID-bearing session
+artifacts, but it does not prove fresh-launched workers always expose either a
+live JSON `"pid"` or a resume UUID in `ps`. If fresh dispatched worker processes
+also appear as plain `codex <prompt>` or `claude <prompt>`, the current rule will
+classify their matched artifacts as `recent` first and later `stale`, with no
+task-list active marker.
+
+The next verification session should launch fresh Codex and Claude Code workers,
+inspect the redacted process table and session artifacts, and decide whether the
+product needs an additional explicit dispatch/worker registry signal. Do not
+loosen the rule to bare process-name or workdir-only matching unless the false
+positive risk is solved.
+
+## Verification Follow-up Resolution: Observed Session File Changes
+
+The implementation now keeps PID and exact resume-session matching, and adds a
+third running signal that only exists while Spacetop is open: a matched session
+file changed between session scans. The first scan of a recent file remains
+`recent`; only an observed size or mtime change on the same matched artifact can
+promote it to `running` for a two-minute in-memory window.
+
+This covers fresh-launched Codex or Claude Code workers that write to their
+session artifact without exposing a stable PID or `--resume <uuid>` process
+shape. It still does not claim an idle, non-writing worker is running, and it
+does not use process names, workdir-only process matches, or mtime-only evidence.
+
+## Stage Report: verify
+
+- DONE: AC evidence covers exact live-session matching and rejects helper/bare/workdir-only false positives.
+  Evidence: `cargo test -p spacetop-core session_activity` passed 14 tests, including exact Codex/Claude resume matching and rejection of bare agent, helper, workdir-only, shell-wrapper, and prefix/suffix session-id commands.
+- DONE: The unrelated recce Claude session cannot match task 067 via UUID substrings or bare numeric id collisions.
+  Evidence: `live_session_with_id_only_inside_uuid_does_not_match_entity` proves the recce-shaped Claude session with `b067` inside an unrelated UUID yields no attribution for entity `067`; `entity_id_match_rejects_uuid_substrings` rejects `b067` and `0672` while preserving standalone `067`.
+- DONE: Verification evidence includes focused core tests plus full cargo test and make lint, or clear blockers.
+  Evidence: `cargo test -p spacetop-core session_activity`, `cargo test`, `make lint`, and `git diff --check` all passed in the assigned worktree.
+
+### Summary
+
+Verified the implementation against the task acceptance criteria and the
+captain's recce false-positive case. The code now avoids raw numeric
+`content.contains(&entity.id)` matching, keeps exact live-session detection
+narrow, and leaves the already documented fresh-launch evidence gap as a
+separate product question rather than loosening the matcher.
+
+## Stage Report: verify follow-up
+
+- DONE: Fresh-launched worker activity can mark matched sessions running while Spacetop is open.
+  Evidence: the session scanner now carries previous file snapshots between TUI scans, polls every 2 seconds, and keeps a matched session `running` for two minutes after the same session file changes.
+- DONE: The stricter entity-id matching remains in the worktree.
+  Evidence: both the root-local change and the worktree use boundary-aware `contains_entity_id`, and tests reject `067` matches inside unrelated UUID substrings.
+- DONE: Verification reran after the follow-up change.
+  Evidence: `cargo fmt --check`, `cargo test -p spacetop-core session_activity`, `cargo test -p spacetop session_activity`, `cargo test`, and `make lint` passed.
+
+### Summary
+
+Resolved the fresh-worker detection gap without broadening process-name matching:
+running is now PID, exact resume-session argv, or observed matched session-file
+change during this Spacetop run with a two-minute linger; mtime-only evidence
+remains `recent`.
+
+## Stage Report: architecture refactor
+
+- DONE: Split liveness evidence from derived run state.
+  Evidence: `AgentSessionLiveness` now records whether a session is live via PID, exact resume command, observed session write, recent mtime, or stale evidence; `AgentSessionEvidence::run_state()` derives the user-facing state from that evidence.
+- DONE: Made running-state debugging visible in preview.
+  Evidence: the selected-entity preview now renders `via: pid`, `via: resume`, `via: write`, `via: mtime`, or `via: stale` beside the existing `state:` label.
+- DONE: Kept active-marker semantics unchanged.
+  Evidence: `AgentSessionEvidence::is_active_marker()` still requires medium-or-better attribution plus derived `Running` state.
+
+### Summary
+
+Refactored running detection into explicit liveness evidence so future false
+positives can be diagnosed by source instead of guessing which rule fired.
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Verify the liveness refactor separates attribution, evidence source, and marker state without changing active-marker semantics.
+  Evidence: `match_entity` still owns attribution, `AgentSessionLiveness` owns `pid`/`resume`/`write`/`mtime`/`stale` evidence, and `AgentSessionEvidence::is_active_marker()` still requires medium-or-better derived `Running` state.
+- DONE: Confirm observed session-file writes remain a bounded running signal and mtime-only evidence stays recent.
+  Evidence: `observed_session_file_change_marks_matched_session_running_temporarily` passed and proves first-scan mtime is `Recent`, observed file changes become `Running`, and the signal falls back after the two-minute window.
+- DONE: Confirm the branch evidence includes focused session tests, preview evidence-source coverage, full cargo test, and make lint.
+  Evidence: `cargo test -p spacetop-core session_activity`, `cargo test -p spacetop session_activity`, `cargo test`, `make lint`, and `git diff --check` all passed in the assigned worktree.
+
+### Summary
+
+Verified commits `86ae11b` and `e5a85a5` against the captain's architectural
+concern. The current design keeps entity attribution, liveness evidence,
+derived run state, and UI marker policy distinct, preserves boundary-aware
+numeric ID matching for `067`, and does not broaden running detection to bare
+process-name or workdir-only matches.

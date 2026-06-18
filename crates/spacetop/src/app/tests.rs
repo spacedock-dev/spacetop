@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{
-    AgentKind, AgentSessionEvidence, AgentSessionState, AttributionConfidence, Entity,
+    AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, Entity,
     EntitySessionAttribution, SessionScanReport, StageDefinition, WorkflowDefinition,
     WorkflowSnapshot,
 };
@@ -2429,6 +2429,7 @@ fn matching_session_activity_result_applies_to_active_workflow() {
         workflow_dir: workflow_dir.clone(),
         repo_root: repo_root.clone(),
         result: Ok(session_report(&workflow_dir, &repo_root, "000")),
+        session_files: HashMap::new(),
     });
 
     assert!(
@@ -2450,6 +2451,7 @@ fn stale_session_activity_result_for_other_workflow_is_ignored() {
         workflow_dir: PathBuf::from("/tmp/other-workflow"),
         repo_root: repo_root.clone(),
         result: Ok(session_report(&workflow_dir, &repo_root, "000")),
+        session_files: HashMap::new(),
     });
 
     assert!(
@@ -2470,6 +2472,7 @@ fn session_activity_scan_failure_is_non_fatal_and_clears_stale_marker() {
         workflow_dir: workflow_dir.clone(),
         repo_root: repo_root.clone(),
         result: Ok(session_report(&workflow_dir, &repo_root, "000")),
+        session_files: HashMap::new(),
     });
 
     app.apply_session_activity_result(SessionActivityWorkerResult {
@@ -2478,6 +2481,7 @@ fn session_activity_scan_failure_is_non_fatal_and_clears_stale_marker() {
         result: Err(SessionScanError {
             message: "fixture scanner failed".to_string(),
         }),
+        session_files: HashMap::new(),
     });
 
     let overview = app.as_overview().expect("overview");
@@ -2501,7 +2505,7 @@ fn session_report(workflow_dir: &Path, repo_root: &Path, entity_id: &str) -> Ses
                 session_id: "session-000".to_string(),
                 display_name: Some("Mendel".to_string()),
                 confidence: AttributionConfidence::High,
-                run_state: AgentSessionState::Running,
+                liveness: AgentSessionLiveness::LivePid { pid: 4242 },
                 latest_activity_unix: Some(1_718_000_000),
                 matched_worktree: Some(PathBuf::from(".worktrees/task-000")),
             }],

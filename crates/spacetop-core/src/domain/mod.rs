@@ -252,15 +252,50 @@ pub struct AgentSessionEvidence {
     pub session_id: String,
     pub display_name: Option<String>,
     pub confidence: AttributionConfidence,
-    pub run_state: AgentSessionState,
+    pub liveness: AgentSessionLiveness,
     pub latest_activity_unix: Option<i64>,
     pub matched_worktree: Option<PathBuf>,
 }
 
 impl AgentSessionEvidence {
+    pub fn run_state(&self) -> AgentSessionState {
+        self.liveness.run_state()
+    }
+
     pub fn is_active_marker(&self) -> bool {
         self.confidence >= AttributionConfidence::Medium
-            && self.run_state == AgentSessionState::Running
+            && self.run_state() == AgentSessionState::Running
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentSessionLiveness {
+    LivePid { pid: u32 },
+    LiveResumeCommand { session_key: String },
+    ObservedSessionWrite { until_unix: i64 },
+    RecentMtime,
+    Stale,
+}
+
+impl AgentSessionLiveness {
+    pub fn run_state(&self) -> AgentSessionState {
+        match self {
+            Self::LivePid { .. }
+            | Self::LiveResumeCommand { .. }
+            | Self::ObservedSessionWrite { .. } => AgentSessionState::Running,
+            Self::RecentMtime => AgentSessionState::Recent,
+            Self::Stale => AgentSessionState::Stale,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::LivePid { .. } => "pid",
+            Self::LiveResumeCommand { .. } => "resume",
+            Self::ObservedSessionWrite { .. } => "write",
+            Self::RecentMtime => "mtime",
+            Self::Stale => "stale",
+        }
     }
 }
 
@@ -274,7 +309,7 @@ impl EntitySessionAttribution {
     pub fn best_evidence(&self) -> Option<&AgentSessionEvidence> {
         self.evidence.iter().max_by_key(|evidence| {
             (
-                evidence.run_state,
+                evidence.run_state(),
                 evidence.confidence,
                 evidence.latest_activity_unix,
             )

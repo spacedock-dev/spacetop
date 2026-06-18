@@ -93,9 +93,21 @@ fn app_with_session_attribution(
     };
     let mut state = OverviewState::from_snapshot(root.clone(), snapshot);
     let repo_root = state.repo_root.clone();
+    let liveness = match run_state {
+        spacetop_core::domain::AgentSessionState::Running => {
+            spacetop_core::domain::AgentSessionLiveness::LivePid { pid: 4242 }
+        }
+        spacetop_core::domain::AgentSessionState::Recent => {
+            spacetop_core::domain::AgentSessionLiveness::RecentMtime
+        }
+        spacetop_core::domain::AgentSessionState::Stale => {
+            spacetop_core::domain::AgentSessionLiveness::Stale
+        }
+    };
     state.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
         workflow_dir: root.clone(),
         repo_root: repo_root.clone(),
+        session_files: std::collections::HashMap::new(),
         result: Ok(spacetop_core::domain::SessionScanReport {
             workflow_dir: root,
             repo_root,
@@ -108,7 +120,7 @@ fn app_with_session_attribution(
                     session_id: "session-065".to_string(),
                     display_name: Some("Mendel".to_string()),
                     confidence: spacetop_core::domain::AttributionConfidence::High,
-                    run_state,
+                    liveness,
                     latest_activity_unix: Some(1_718_000_000),
                     matched_worktree: Some(PathBuf::from(format!(".worktrees/task-{entity_id}"))),
                 }],
