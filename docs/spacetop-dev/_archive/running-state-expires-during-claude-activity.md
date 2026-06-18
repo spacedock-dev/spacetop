@@ -1,20 +1,21 @@
 ---
 title: Keep running state during Claude session activity
-status: verify
+status: done
 source: "User report on 2026-06-18: while handling a Razorback workflow item in Claude Code, Spacetop marks it running from a session write and then clears it about every 2 seconds even though the agent is still active"
 kind: bugfix
 risk: medium
 milestone: v1-maintenance
 proof: cargo test -p spacetop-core session_activity and a focused TUI/app-state check for active write-event retention
 started: 2026-06-18T09:40:52Z
-completed:
-verdict:
+completed: 2026-06-18T10:26:51Z
+verdict: PASSED
 score: 0.88
-worktree: .worktrees/spacedock-ensign-running-state-expires-during-claude-activity
+worktree:
 issue:
 pr: "#72"
 id: 071
 mod-block:
+archived: 2026-06-18T10:26:55Z
 ---
 
 Spacetop should keep an item in the running state while the matching Claude Code or Codex session continues to show credible live activity. The current behavior can mark a matched session as running from a write event, then clear that running state on the short cleanup cadence, which makes an active worker appear to flicker between running and recent.
