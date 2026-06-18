@@ -63,3 +63,7 @@ Implemented the matcher fix by removing loose low-confidence id/slug-only attrib
 ### Summary
 
 Independent verification passes for implementation commit `4da629b`. The screenshot-shaped false positive is covered at the core attribution layer and in preview rendering, and the required full test and lint gates passed.
+
+### Feedback Cycles
+
+- Cycle 1, verify rejected on 2026-06-18: the fix still accepts same-repo incidental task-id mentions. Hegel's verifier session for task `070` can mention task `068` while running inside the Spacetop repo, causing task `068` to show Hegel as recent even though Hegel did not work on `068`. Tighten attribution so task identity requires explicit task-file/worktree evidence, not just repo path plus id/slug.
