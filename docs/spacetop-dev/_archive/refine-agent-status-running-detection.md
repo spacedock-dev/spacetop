@@ -1,20 +1,20 @@
 ---
 title: Refine agent status running detection
-status: verify
+status: done
 source: User report on 2026-06-18 that Codex and Claude Code sessions never match PID checks
 kind: bugfix
 risk: medium
 milestone: v1-maintenance
 proof: Reproduce with real Codex and Claude Code session logs/process table, then prove the refined rule with core tests plus make lint
 started: 2026-06-18T06:38:33Z
-completed:
-verdict:
+completed: 2026-06-18T08:21:31Z
+verdict: PASSED
 score: 0.86
-worktree: .worktrees/spacedock-ensign-refine-agent-status-running-detection
+worktree:
 issue:
 pr: "#70"
 id: 067
-mod-block: merge:pr-merge
+mod-block:
 ---
 
 Codex and Claude Code session attribution currently treats running as a live PID match, but local experiments show real agent session logs often do not contain a reusable PID or do not match ps by PID. This makes the running state and active-session marker effectively unreachable.
