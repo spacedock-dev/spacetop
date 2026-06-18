@@ -50,3 +50,16 @@ The plan keeps the fix in the core session-attribution matcher instead of adding
 ### Summary
 
 Implemented the matcher fix by removing loose low-confidence id/slug-only attribution. Unrelated live sessions can no longer mark a Spacetop task as `running` unless the transcript also contains deliberate workflow/repo or worktree relationship evidence.
+
+## Stage Report: verify
+
+- DONE: Confirm every acceptance criterion has code or test evidence, not only prose.
+  PASS: `match_entity()` requires workflow/repo plus id/slug or explicit worktree evidence, with core tests covering id-only and unrelated `dataagentbench` session rejection.
+- DONE: Re-run focused session attribution and UI regressions against the implementation worktree.
+  PASS: `cargo test -p spacetop-core session_activity`, `cargo test -p spacetop preview_omits_session_metadata_for_unrelated_running_session`, and `cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution` all passed.
+- DONE: Return a clear PASS/REJECT verdict with any defects or missing evidence.
+  PASS: `cargo test` and `make lint` passed; no defects or missing acceptance evidence found.
+
+### Summary
+
+Independent verification passes for implementation commit `4da629b`. The screenshot-shaped false positive is covered at the core attribution layer and in preview rendering, and the required full test and lint gates passed.
