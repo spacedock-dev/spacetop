@@ -412,6 +412,10 @@ fn match_entity(
     repo_root: &Path,
     content: &str,
 ) -> Option<(AttributionConfidence, Option<PathBuf>)> {
+    if has_conflicting_dispatch_assignment(entity, content) {
+        return None;
+    }
+
     let worktree = entity
         .worktree
         .as_deref()
@@ -421,33 +425,57 @@ fn match_entity(
         .map(|value| candidate_paths(repo_root, value))
         .unwrap_or_default();
     for path in &worktree_paths {
-        if content.contains(&path.to_string_lossy().to_string()) {
+        if content_mentions_path(content, path) {
             return Some((AttributionConfidence::High, Some(path.clone())));
         }
     }
     if entity
         .worktree_source
         .as_ref()
-        .is_some_and(|path| content.contains(&path.to_string_lossy().to_string()))
+        .is_some_and(|path| content_mentions_path(content, path))
     {
         return Some((AttributionConfidence::High, entity.worktree_source.clone()));
     }
 
-    let slug = entity_slug(&entity.path);
-    let has_entity_id = contains_entity_id(content, &entity.id);
-    let has_slug = slug
-        .as_deref()
-        .is_some_and(|slug| !slug.is_empty() && content.contains(slug));
-    let has_workflow = content.contains(&workflow_dir.to_string_lossy().to_string())
-        || content.contains(&repo_root.to_string_lossy().to_string());
-
-    match (has_workflow, has_entity_id || has_slug) {
-        (true, true) => Some((AttributionConfidence::Medium, None)),
-        (false, true) => Some((AttributionConfidence::Low, None)),
-        _ => None,
-    }
+    explicit_entity_reference_paths(entity, workflow_dir, repo_root)
+        .into_iter()
+        .any(|path| content_mentions_path(content, &path))
+        .then_some((AttributionConfidence::Medium, None))
 }
 
+fn content_mentions_path(content: &str, path: &Path) -> bool {
+    let path_text = path.to_string_lossy();
+    content.contains(path_text.as_ref())
+}
+
+fn has_conflicting_dispatch_assignment(entity: &SessionScanEntity, content: &str) -> bool {
+    let Some(entity_slug) = entity_slug(&entity.path) else {
+        return false;
+    };
+    dispatch_assignment_slugs(content).any(|assigned_slug| assigned_slug != entity_slug)
+}
+
+fn dispatch_assignment_slugs(content: &str) -> impl Iterator<Item = String> + '_ {
+    const PREFIX: &str = "/tmp/spacedock-dispatch/spacedock-ensign-";
+
+    content.match_indices(PREFIX).filter_map(|(start, _)| {
+        let after_prefix = &content[start + PREFIX.len()..];
+        let end = after_prefix.find(".md")?;
+        let stem = &after_prefix[..end];
+        dispatch_slug_from_stem(stem).map(str::to_string)
+    })
+}
+
+fn dispatch_slug_from_stem(stem: &str) -> Option<&str> {
+    const STAGES: &[&str] = &["shape", "plan", "implement", "verify", "done", "pr-merge"];
+
+    STAGES
+        .iter()
+        .find_map(|stage| stem.strip_suffix(&format!("-{stage}")))
+        .filter(|slug| !slug.is_empty())
+}
+
+#[cfg(test)]
 fn contains_entity_id(content: &str, id: &str) -> bool {
     let id = id.trim();
     !id.is_empty()
@@ -457,6 +485,42 @@ fn contains_entity_id(content: &str, id: &str) -> bool {
             !before.is_some_and(|ch| ch.is_ascii_alphanumeric())
                 && !after.is_some_and(|ch| ch.is_ascii_alphanumeric())
         })
+}
+
+fn explicit_entity_reference_paths(
+    entity: &SessionScanEntity,
+    workflow_dir: &Path,
+    repo_root: &Path,
+) -> Vec<PathBuf> {
+    let path = &entity.path;
+    let absolute = if path.is_absolute() {
+        path.clone()
+    } else {
+        repo_root.join(path)
+    };
+    let repo_relative = absolute.strip_prefix(repo_root).ok().map(Path::to_path_buf);
+    let workflow_relative = absolute
+        .strip_prefix(workflow_dir)
+        .ok()
+        .map(Path::to_path_buf);
+    let file_name = path
+        .file_name()
+        .filter(|name| *name != "index.md")
+        .map(PathBuf::from);
+
+    let mut seen = HashSet::new();
+    [
+        Some(path.clone()),
+        Some(absolute),
+        repo_relative,
+        workflow_relative,
+        file_name,
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|path| !path.as_os_str().is_empty())
+    .filter(|path| seen.insert(path.clone()))
+    .collect()
 }
 
 fn candidate_paths(repo_root: &Path, raw: &str) -> Vec<PathBuf> {
@@ -689,6 +753,12 @@ mod tests {
         })
     }
 
+    fn entity_with_path(id: &str, path: impl Into<PathBuf>) -> SessionScanEntity {
+        let mut entity = entity(id, None);
+        entity.path = path.into();
+        entity
+    }
+
     fn write_session(path: &Path, body: &str) {
         fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
         fs::write(path, body).expect("write session");
@@ -779,7 +849,7 @@ mod tests {
         write_session(
             &root.join("repo-session.jsonl"),
             &format!(
-                r#"{{"pid":4242,"agent_nickname":"Mendel","workdir":"{}","note":"065"}}"#,
+                r#"{{"pid":4242,"agent_nickname":"Mendel","workdir":"{}","note":"065-task.md"}}"#,
                 repo.display()
             ),
         );
@@ -817,7 +887,7 @@ mod tests {
         let session_stem = format!("rollout-2026-06-18T14-26-00-{session_uuid}");
         write_session(
             &root.join(format!("{session_stem}.jsonl")),
-            &format!(r#"{{"workdir":"{}","note":"065"}}"#, repo.display()),
+            &format!(r#"{{"workdir":"{}","note":"065-task.md"}}"#, repo.display()),
         );
         let request = SessionScanRequest {
             workflow_dir: workflow,
@@ -1002,7 +1072,7 @@ mod tests {
             root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl");
         write_session(
             &session,
-            &format!(r#"{{"workdir":"{}","note":"065"}}"#, repo.display()),
+            &format!(r#"{{"workdir":"{}","note":"065-task.md"}}"#, repo.display()),
         );
         let now = SystemTime::now();
         let mut request = SessionScanRequest {
@@ -1031,7 +1101,7 @@ mod tests {
         fs::write(
             &session,
             format!(
-                r#"{{"workdir":"{}","note":"065","event":"next"}}"#,
+                r#"{{"workdir":"{}","note":"065-task.md","event":"next"}}"#,
                 request.repo_root.display()
             ),
         )
@@ -1073,7 +1143,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_or_low_confidence_evidence_does_not_mark_active() {
+    fn id_only_evidence_does_not_match_entity() {
         let tmp = tempfile::tempdir().expect("tmp");
         let repo = tmp.path().join("repo");
         let workflow = repo.join("docs/spacetop-dev");
@@ -1096,15 +1166,177 @@ mod tests {
         let report =
             scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
 
-        assert!(!report.attributions[0].has_active_marker());
+        assert!(report.attributions.is_empty());
+    }
+
+    #[test]
+    fn live_unrelated_workspace_session_with_entity_id_does_not_match_entity() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("spacetop");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
+            r#"{"pid":4242,"agent_nickname":"Mendel","workdir":"/Users/kent/Dev/InfuseAI/GitHub/dataagentbench","note":"created task 068"}"#,
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("068", None)],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = FixtureProbe {
+            running: HashSet::from([4242]),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert!(report.attributions.is_empty());
+    }
+
+    #[test]
+    fn same_repo_session_with_incidental_entity_id_does_not_match_entity() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("spacetop");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("hegel-070.jsonl"),
+            &format!(
+                r#"{{"agent_nickname":"Hegel","workdir":"{}","body":"verifying task 070; task 068 was mentioned in the task body under {}"}}"#,
+                repo.display(),
+                workflow.display()
+            ),
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow.clone(),
+            repo_root: repo.clone(),
+            entities: vec![entity_with_path(
+                "068",
+                workflow.join("refine-session-preview-wording.md"),
+            )],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = FixtureProbe {
+            running: HashSet::new(),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert!(report.attributions.is_empty());
+    }
+
+    #[test]
+    fn explicit_task_file_reference_matches_non_worktree_entity() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("spacetop");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("task-068.jsonl"),
+            r#"{"agent_nickname":"Hegel","body":"review docs/spacetop-dev/refine-session-preview-wording.md"}"#,
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow.clone(),
+            repo_root: repo.clone(),
+            entities: vec![entity_with_path(
+                "068",
+                workflow.join("refine-session-preview-wording.md"),
+            )],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = FixtureProbe {
+            running: HashSet::new(),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert_eq!(report.attributions[0].entity_id, "068");
         assert_eq!(
             report.attributions[0].evidence[0].confidence,
-            AttributionConfidence::Low
+            AttributionConfidence::Medium
         );
-        assert_ne!(
-            report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Running
+    }
+
+    #[test]
+    fn conflicting_dispatch_assignment_blocks_task_file_test_data_match() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("spacetop");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("heisenberg-070-verify.jsonl"),
+            r#"{"agent_nickname":"Heisenberg","body":"Read /tmp/spacedock-dispatch/spacedock-ensign-fix-unrelated-session-running-attribution-verify.md. Regression mentions docs/spacetop-dev/refine-session-preview-wording.md as test data."}"#,
         );
+        let request = SessionScanRequest {
+            workflow_dir: workflow.clone(),
+            repo_root: repo.clone(),
+            entities: vec![entity_with_path(
+                "068",
+                workflow.join("refine-session-preview-wording.md"),
+            )],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = FixtureProbe {
+            running: HashSet::new(),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert!(report.attributions.is_empty());
+    }
+
+    #[test]
+    fn folder_entity_index_filename_alone_does_not_match_entity() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("spacetop");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("unrelated-index.jsonl"),
+            r#"{"agent_nickname":"Hegel","body":"inspect index.md in another folder"}"#,
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow.clone(),
+            repo_root: repo.clone(),
+            entities: vec![entity_with_path(
+                "071",
+                workflow.join("folder-form-task/index.md"),
+            )],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = FixtureProbe {
+            running: HashSet::new(),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert!(report.attributions.is_empty());
     }
 
     #[test]
