@@ -1,12 +1,12 @@
 ---
 title: Refine agent status running detection
-status: shape
+status: plan
 source: User report on 2026-06-18 that Codex and Claude Code sessions never match PID checks
 kind: bugfix
 risk: medium
 milestone: v1-maintenance
 proof: Reproduce with real Codex and Claude Code session logs/process table, then prove the refined rule with core tests plus make lint
-started:
+started: 2026-06-18T06:38:33Z
 completed:
 verdict:
 score: 0.86
