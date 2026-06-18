@@ -1,6 +1,6 @@
 ---
 title: Refine agent status running detection
-status: implement
+status: verify
 source: User report on 2026-06-18 that Codex and Claude Code sessions never match PID checks
 kind: bugfix
 risk: medium
