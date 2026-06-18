@@ -1,6 +1,6 @@
 ---
 title: Refine session preview wording
-status: implement
+status: verify
 source: "Follow-up from task 067 on 2026-06-18: preview metadata wording is too implementation-heavy"
 kind: feature
 risk: low
