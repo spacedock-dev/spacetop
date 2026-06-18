@@ -14,6 +14,7 @@ worktree: .worktrees/spacedock-ensign-refine-session-preview-wording
 issue:
 pr:
 id: 068
+mod-block: merge:pr-merge
 ---
 
 Refine the selected-task preview metadata for agent session attribution. The current wording exposes implementation details such as `session: xxx <effort>` and `via: <reason>` in the preview header, which is useful for debugging but too noisy for ordinary inspection.
