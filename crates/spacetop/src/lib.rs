@@ -414,7 +414,7 @@ fn drain_session_activity_worker(app: &mut App, worker: &mut SessionActivityWork
         match rx.try_recv() {
             Ok(result) => {
                 if result.result.is_ok() {
-                    worker.session_files = result.session_files.clone();
+                    worker.session_files.clone_from(&result.session_files);
                 }
                 app.apply_session_activity_result(result);
                 clear_worker = true;

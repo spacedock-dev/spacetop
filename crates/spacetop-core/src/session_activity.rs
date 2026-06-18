@@ -183,10 +183,9 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
     let mut errors = Vec::new();
     let mut per_entity: HashMap<String, Vec<AgentSessionEvidence>> = HashMap::new();
     let mut session_files = HashMap::new();
-    let command_lines = process_probe.command_lines();
     let mut run_state_classifier = RunStateClassifier {
         process_probe,
-        command_lines: &command_lines,
+        command_lines: None,
         pid_cache: HashMap::new(),
         session_cache: HashMap::new(),
     };
@@ -235,10 +234,6 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
                 snapshot.observed_running_until_unix =
                     previous_snapshot.and_then(|previous| previous.observed_running_until_unix);
             }
-            let observed_file_activity_is_running = snapshot
-                .observed_running_until_unix
-                .is_some_and(|until| system_time_unix(now).is_some_and(|now| now <= until));
-            session_files.insert(entry.path().to_path_buf(), snapshot);
             let content = match fs::read_to_string(entry.path()) {
                 Ok(content) => content,
                 Err(err) => {
@@ -253,6 +248,23 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
             let activity_time = metadata.modified().ok();
             let pid = extract_pid(&content);
             let live_session_key = live_session_key(*agent, entry.path(), &content);
+            let matches: Vec<_> = request
+                .entities
+                .iter()
+                .filter_map(|entity| {
+                    match_entity(entity, &request.workflow_dir, &request.repo_root, &content).map(
+                        |(confidence, matched_worktree)| {
+                            (entity.id.clone(), confidence, matched_worktree)
+                        },
+                    )
+                })
+                .collect();
+            if matches.is_empty() {
+                continue;
+            }
+            let observed_file_activity_is_running = snapshot
+                .observed_running_until_unix
+                .is_some_and(|until| system_time_unix(now).is_some_and(|now| now <= until));
             let liveness = run_state_classifier.classify(SessionLivenessInput {
                 agent: *agent,
                 live_session_key: live_session_key.as_deref(),
@@ -262,24 +274,18 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
                 activity_time,
                 now,
             });
-            for entity in &request.entities {
-                if let Some((confidence, matched_worktree)) =
-                    match_entity(entity, &request.workflow_dir, &request.repo_root, &content)
-                {
-                    let evidence = AgentSessionEvidence {
-                        agent: *agent,
-                        session_id: session_id(entry.path()),
-                        display_name: display_name(*agent, entry.path(), &content),
-                        confidence,
-                        liveness: liveness.clone(),
-                        latest_activity_unix: activity_time.and_then(system_time_unix),
-                        matched_worktree,
-                    };
-                    per_entity
-                        .entry(entity.id.clone())
-                        .or_default()
-                        .push(evidence);
-                }
+            session_files.insert(entry.path().to_path_buf(), snapshot);
+            for (entity_id, confidence, matched_worktree) in matches {
+                let evidence = AgentSessionEvidence {
+                    agent: *agent,
+                    session_id: session_id(entry.path()),
+                    display_name: display_name(*agent, entry.path(), &content),
+                    confidence,
+                    liveness: liveness.clone(),
+                    latest_activity_unix: activity_time.and_then(system_time_unix),
+                    matched_worktree,
+                };
+                per_entity.entry(entity_id).or_default().push(evidence);
             }
         }
     }
@@ -344,7 +350,7 @@ fn is_session_file(path: &Path) -> bool {
 
 struct RunStateClassifier<'a, P: ProcessProbe> {
     process_probe: &'a P,
-    command_lines: &'a [String],
+    command_lines: Option<Vec<String>>,
     pid_cache: HashMap<u32, bool>,
     session_cache: HashMap<(AgentKind, String), bool>,
 }
@@ -370,10 +376,13 @@ impl<'a, P: ProcessProbe> RunStateClassifier<'a, P> {
             return AgentSessionLiveness::LivePid { pid };
         }
         if let Some(session_key) = input.live_session_key.filter(|key| {
+            let command_lines = self
+                .command_lines
+                .get_or_insert_with(|| self.process_probe.command_lines());
             *self
                 .session_cache
                 .entry((input.agent, (*key).to_string()))
-                .or_insert_with(|| has_live_session_command(input.agent, key, self.command_lines))
+                .or_insert_with(|| has_live_session_command(input.agent, key, command_lines))
         }) {
             return AgentSessionLiveness::LiveResumeCommand {
                 session_key: session_key.to_string(),
@@ -644,6 +653,22 @@ mod tests {
         }
     }
 
+    struct CountingCommandProbe {
+        command_line_calls: std::cell::Cell<usize>,
+    }
+
+    impl ProcessProbe for CountingCommandProbe {
+        fn is_running(&self, _pid: u32) -> bool {
+            false
+        }
+
+        fn command_lines(&self) -> Vec<String> {
+            self.command_line_calls
+                .set(self.command_line_calls.get() + 1);
+            Vec::new()
+        }
+    }
+
     fn entity(id: &str, worktree: Option<&str>) -> SessionScanEntity {
         SessionScanEntity::from(&Entity {
             path: PathBuf::from(format!("{id}-task.md")),
@@ -897,6 +922,38 @@ mod tests {
             AgentSessionState::Stale
         );
         assert!(!report.attributions[0].has_active_marker());
+    }
+
+    #[test]
+    fn unrelated_sessions_do_not_trigger_resume_command_scan_or_snapshot_retention() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
+            r#"{"workdir":"/tmp/other-repo","note":"no task match"}"#,
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow,
+            repo_root: repo,
+            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = CountingCommandProbe {
+            command_line_calls: std::cell::Cell::new(0),
+        };
+
+        let scan =
+            scan_local_sessions_with_snapshots(&request, &probe, SystemTime::now()).expect("scan");
+
+        assert!(scan.report.attributions.is_empty());
+        assert!(scan.session_files.is_empty());
+        assert_eq!(probe.command_line_calls.get(), 0);
     }
 
     #[test]
