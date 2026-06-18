@@ -11,6 +11,7 @@ id: 070
 started: 2026-06-18T08:27:34Z
 worktree: .worktrees/spacedock-ensign-fix-unrelated-session-running-attribution
 mod-block: merge:pr-merge
+pr: "#71"
 ---
 
 # Fix unrelated session running attribution
