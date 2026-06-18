@@ -66,6 +66,8 @@ make lint
   `cargo test -p spacetop preview_renders_session_metadata_without_transcript_content` passed and pins both regressions.
 - DONE: Preserve task-list active marker behavior and avoid changing session attribution/running-state logic.
   `cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution` passed; no core session files or task-list rendering were edited.
+- SKIPPED: None.
+- FAILED: None.
 
 ### Summary
 
