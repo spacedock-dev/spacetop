@@ -82,3 +82,16 @@ Independent verification passes for implementation commit `4da629b`. The screens
 ### Summary
 
 Feedback cycle 1 fixed the remaining same-repo false positive by requiring explicit task-file or worktree evidence for session attribution. Repo/workflow paths plus incidental task id or slug text are no longer sufficient.
+
+## Stage Report: verify (cycle 1)
+
+- DONE: Confirm the Hegel-handles-070-but-mentions-068 regression has code evidence and passes.
+  PASS: `same_repo_session_with_incidental_entity_id_does_not_match_entity` covers a Spacetop-rooted Hegel session for task `070` that mentions task `068` plus the repo/workflow path and produces no attribution.
+- DONE: Confirm explicit task-file references still attribute to the intended non-worktree task.
+  PASS: `explicit_task_file_reference_matches_non_worktree_entity` attributes `docs/spacetop-dev/refine-session-preview-wording.md` to entity `068` with medium confidence.
+- DONE: Return PASS/REJECT with focused tests and make lint evidence.
+  PASS: `cargo test -p spacetop-core session_activity`, both focused `spacetop` UI tests, full `cargo test`, and `make lint` passed.
+
+### Summary
+
+PASS for implementation commit `a2c1cae`. The feedback-cycle regression is covered by executable core tests, the positive explicit task-file case remains intact, and the required full test and lint gates pass.
