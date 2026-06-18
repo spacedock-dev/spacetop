@@ -425,22 +425,27 @@ fn match_entity(
         .map(|value| candidate_paths(repo_root, value))
         .unwrap_or_default();
     for path in &worktree_paths {
-        if content.contains(&path.to_string_lossy().to_string()) {
+        if content_mentions_path(content, path) {
             return Some((AttributionConfidence::High, Some(path.clone())));
         }
     }
     if entity
         .worktree_source
         .as_ref()
-        .is_some_and(|path| content.contains(&path.to_string_lossy().to_string()))
+        .is_some_and(|path| content_mentions_path(content, path))
     {
         return Some((AttributionConfidence::High, entity.worktree_source.clone()));
     }
 
     explicit_entity_reference_paths(entity, workflow_dir, repo_root)
         .into_iter()
-        .any(|path| content.contains(&path.to_string_lossy().to_string()))
+        .any(|path| content_mentions_path(content, &path))
         .then_some((AttributionConfidence::Medium, None))
+}
+
+fn content_mentions_path(content: &str, path: &Path) -> bool {
+    let path_text = path.to_string_lossy();
+    content.contains(path_text.as_ref())
 }
 
 fn has_conflicting_dispatch_assignment(entity: &SessionScanEntity, content: &str) -> bool {
@@ -498,7 +503,10 @@ fn explicit_entity_reference_paths(
         .strip_prefix(workflow_dir)
         .ok()
         .map(Path::to_path_buf);
-    let file_name = path.file_name().map(PathBuf::from);
+    let file_name = path
+        .file_name()
+        .filter(|name| *name != "index.md")
+        .map(PathBuf::from);
 
     let mut seen = HashSet::new();
     [
@@ -1281,6 +1289,39 @@ mod tests {
             entities: vec![entity_with_path(
                 "068",
                 workflow.join("refine-session-preview-wording.md"),
+            )],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = FixtureProbe {
+            running: HashSet::new(),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert!(report.attributions.is_empty());
+    }
+
+    #[test]
+    fn folder_entity_index_filename_alone_does_not_match_entity() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("spacetop");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("unrelated-index.jsonl"),
+            r#"{"agent_nickname":"Hegel","body":"inspect index.md in another folder"}"#,
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow.clone(),
+            repo_root: repo.clone(),
+            entities: vec![entity_with_path(
+                "071",
+                workflow.join("folder-form-task/index.md"),
             )],
             roots: SessionRoots {
                 codex: vec![root],
