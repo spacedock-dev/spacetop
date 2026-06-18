@@ -1,6 +1,6 @@
 ---
 title: Fix unrelated session running attribution
-status: verify
+status: done
 source: "Follow-up from 2026-06-18 screenshot: newly created task 068 is shown running from an unrelated dataagentbench Codex session"
 kind: bug
 risk: medium
@@ -9,9 +9,11 @@ proof: Focused session-activity tests with unrelated workspace/session fixtures 
 score: 0.86
 id: 070
 started: 2026-06-18T08:27:34Z
-worktree: .worktrees/spacedock-ensign-fix-unrelated-session-running-attribution
-mod-block: merge:pr-merge
+worktree:
+mod-block:
 pr: "#71"
+verdict: PASSED
+completed: 2026-06-18T09:32:44Z
 ---
 
 # Fix unrelated session running attribution
