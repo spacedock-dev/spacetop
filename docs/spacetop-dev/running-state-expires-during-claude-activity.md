@@ -96,3 +96,19 @@ Committed implementation as `7f9c74e Retain session write snapshots across scans
 - `cargo fmt` ran after the Rust change.
 - `make lint` passed; it ran `cargo clippy --all-targets --all-features -- -D warnings`.
 - `git diff --check` passed.
+
+## Stage Report: verify
+
+- DONE: Independently verify the write-derived running retention fix and stale-decay behavior from the implementation branch.
+  PASS: `previously_unmatched_session_write_marks_running_until_grace_window_expires` covers write-derived running retention until `OBSERVED_RUNNING_WINDOW` and decay back to `Recent` after the grace window.
+- DONE: Confirm ownership matching remains precise and unrelated/id-only sessions are not attributed.
+  PASS: `session_activity` regressions cover id-only evidence, unrelated workspace sessions, incidental same-repo ID mentions, conflicting dispatch assignments, and folder `index.md` false matches.
+- DONE: Check every acceptance criterion has code/test evidence and report PASS or REJECT with commands run.
+  PASS: AC-1 through AC-4 are covered in `crates/spacetop-core/src/session_activity.rs`; no app-level change is needed because snapshot retention is produced by core and consumed by the existing scan replacement path.
+- SKIPPED: Manual TUI check.
+  The acceptance criteria are covered at the focused core layer and `make lint` passed; no terminal-only behavior changed.
+- FAILED: None.
+
+### Summary
+
+PASS. The branch retains readable session-file snapshots before entity matching, which lets a later matching Claude Code or Codex write become `ObservedSessionWrite` and stay `running` across cleanup ticks until the intended grace window expires. I found no review findings, and verification passed with `cargo test -p spacetop-core session_activity -- --nocapture`, `git diff --check main...HEAD`, and `make lint`.
