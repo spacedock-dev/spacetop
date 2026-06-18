@@ -214,10 +214,11 @@ fn preview_renders_session_metadata_without_transcript_content() {
         "preview should name the matched agent; rendered: {rendered:?}"
     );
     assert!(rendered.contains("status:"));
-    assert!(rendered.contains("session: Mendel high"));
-    assert!(!rendered.contains("confidence: high"));
+    assert!(rendered.contains("session: Mendel"));
+    assert!(rendered.contains("confidence: high"));
+    assert!(!rendered.contains("session: Mendel high"));
     assert!(rendered.contains("state: recent"));
-    assert!(rendered.contains("via: mtime"));
+    assert!(!rendered.contains("via:"));
     assert!(!rendered.contains("state: recent activity"));
     assert!(!rendered.contains("state: active recently"));
     assert!(
@@ -247,7 +248,7 @@ fn preview_renders_session_metadata_without_transcript_content() {
     let rendered = buffer_text(terminal.backend().buffer());
 
     assert!(rendered.contains("state: stale"));
-    assert!(rendered.contains("via: stale"));
+    assert!(!rendered.contains("via:"));
     assert!(!rendered.contains("state: stale activity"));
     assert!(!rendered.contains("state: no recent activity"));
 }

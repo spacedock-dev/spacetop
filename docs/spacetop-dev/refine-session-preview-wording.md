@@ -57,3 +57,35 @@ cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribu
 cargo test -p spacetop
 make lint
 ```
+
+## Stage Report: implement
+
+- DONE: Update the selected-task preview session metadata wording to remove `via:` and split confidence from the session label.
+  Implemented in commit `ef227f8`; preview now renders `session: Mendel` and `confidence: high` as separate segments.
+- DONE: Add or update focused Ratatui preview tests that fail if `via:` returns or confidence is folded into `session:`.
+  `cargo test -p spacetop preview_renders_session_metadata_without_transcript_content` passed and pins both regressions.
+- DONE: Preserve task-list active marker behavior and avoid changing session attribution/running-state logic.
+  `cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution` passed; no core session files or task-list rendering were edited.
+- SKIPPED: None.
+- FAILED: None.
+
+### Summary
+
+Refined the selected-task preview header wording so normal attribution metadata no longer exposes the liveness `via:` reason and confidence is no longer folded into the session label. Verification passed with the focused preview test, task-list guard test, full `cargo test -p spacetop`, `cargo fmt`, and `make lint`.
+
+## Stage Report: verify
+
+- DONE: Verify the preview header no longer renders `via:` and separates session confidence from the session label.
+  PASS: Diff changes only `session_attribution_line` preview segments; focused preview test passed and asserts `session: Mendel`, `confidence: high`, no `session: Mendel high`, and no `via:`.
+- DONE: Confirm task-list active marker behavior and session attribution logic were not changed.
+  PASS: Diff touches no task-list or core session attribution files, and `cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution` passed.
+- DONE: Check every acceptance criterion has test evidence and report PASS or REJECT with commands run.
+  PASS: AC-1 through AC-5 are covered by focused preview assertions, the task-list guard, `cargo test -p spacetop`, and `make lint`; verdict is PASS.
+- SKIPPED: None.
+- FAILED: None.
+
+### Summary
+
+Verified task 068 against branch `spacedock-ensign/refine-session-preview-wording`. The implementation satisfies the acceptance criteria: normal preview metadata omits `via:`, splits confidence into its own segment, preserves terse session state wording, and leaves task-list active marker behavior unchanged.
+
+Commands run: `cargo test -p spacetop preview_renders_session_metadata_without_transcript_content`; `cargo test -p spacetop task_row_renders_active_session_marker_from_typed_attribution`; `cargo test -p spacetop`; `make lint`.
