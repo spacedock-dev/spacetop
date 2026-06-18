@@ -649,7 +649,7 @@ mod tests {
                     session_id: "session-010".to_string(),
                     display_name: Some("Mendel".to_string()),
                     confidence: crate::domain::AttributionConfidence::High,
-                    run_state: crate::domain::AgentSessionState::Running,
+                    liveness: crate::domain::AgentSessionLiveness::LivePid { pid: 4242 },
                     latest_activity_unix: Some(1_718_000_000),
                     matched_worktree: Some(PathBuf::from(".worktrees/010")),
                 }],

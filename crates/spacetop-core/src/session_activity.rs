@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
 
 use crate::domain::{
-    AgentKind, AgentSessionEvidence, AgentSessionState, AttributionConfidence, Entity,
+    AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, Entity,
     EntitySessionAttribution, SessionScanReport,
 };
 use crate::entity_identity::entity_slug;
@@ -253,14 +253,15 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
             let activity_time = metadata.modified().ok();
             let pid = extract_pid(&content);
             let live_session_key = live_session_key(*agent, entry.path(), &content);
-            let run_state = run_state_classifier.classify(
-                *agent,
-                live_session_key.as_deref(),
+            let liveness = run_state_classifier.classify(SessionLivenessInput {
+                agent: *agent,
+                live_session_key: live_session_key.as_deref(),
                 pid,
                 observed_file_activity_is_running,
+                observed_running_until_unix: snapshot.observed_running_until_unix,
                 activity_time,
                 now,
-            );
+            });
             for entity in &request.entities {
                 if let Some((confidence, matched_worktree)) =
                     match_entity(entity, &request.workflow_dir, &request.repo_root, &content)
@@ -270,7 +271,7 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
                         session_id: session_id(entry.path()),
                         display_name: display_name(*agent, entry.path(), &content),
                         confidence,
-                        run_state,
+                        liveness: liveness.clone(),
                         latest_activity_unix: activity_time.and_then(system_time_unix),
                         matched_worktree,
                     };
@@ -288,7 +289,7 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
         .map(|(entity_id, mut evidence)| {
             evidence.sort_by_key(|evidence| {
                 (
-                    std::cmp::Reverse(evidence.run_state),
+                    std::cmp::Reverse(evidence.run_state()),
                     std::cmp::Reverse(evidence.confidence),
                     std::cmp::Reverse(evidence.latest_activity_unix),
                 )
@@ -348,39 +349,51 @@ struct RunStateClassifier<'a, P: ProcessProbe> {
     session_cache: HashMap<(AgentKind, String), bool>,
 }
 
+struct SessionLivenessInput<'a> {
+    agent: AgentKind,
+    live_session_key: Option<&'a str>,
+    pid: Option<u32>,
+    observed_file_activity_is_running: bool,
+    observed_running_until_unix: Option<i64>,
+    activity_time: Option<SystemTime>,
+    now: SystemTime,
+}
+
 impl<'a, P: ProcessProbe> RunStateClassifier<'a, P> {
-    fn classify(
-        &mut self,
-        agent: AgentKind,
-        live_session_key: Option<&str>,
-        pid: Option<u32>,
-        observed_file_activity_is_running: bool,
-        activity_time: Option<SystemTime>,
-        now: SystemTime,
-    ) -> AgentSessionState {
-        let pid_is_running = pid.is_some_and(|pid| {
+    fn classify(&mut self, input: SessionLivenessInput<'_>) -> AgentSessionLiveness {
+        if let Some(pid) = input.pid.filter(|pid| {
             *self
                 .pid_cache
-                .entry(pid)
-                .or_insert_with(|| self.process_probe.is_running(pid))
-        });
-        let session_is_running = live_session_key.is_some_and(|key| {
+                .entry(*pid)
+                .or_insert_with(|| self.process_probe.is_running(*pid))
+        }) {
+            return AgentSessionLiveness::LivePid { pid };
+        }
+        if let Some(session_key) = input.live_session_key.filter(|key| {
             *self
                 .session_cache
-                .entry((agent, key.to_string()))
-                .or_insert_with(|| has_live_session_command(agent, key, self.command_lines))
-        });
-        if pid_is_running || session_is_running || observed_file_activity_is_running {
-            return AgentSessionState::Running;
+                .entry((input.agent, (*key).to_string()))
+                .or_insert_with(|| has_live_session_command(input.agent, key, self.command_lines))
+        }) {
+            return AgentSessionLiveness::LiveResumeCommand {
+                session_key: session_key.to_string(),
+            };
         }
-        if activity_time.is_some_and(|time| {
-            now.duration_since(time)
+        if input.observed_file_activity_is_running {
+            return AgentSessionLiveness::ObservedSessionWrite {
+                until_unix: input.observed_running_until_unix.unwrap_or_default(),
+            };
+        }
+        if input.activity_time.is_some_and(|time| {
+            input
+                .now
+                .duration_since(time)
                 .map(|age| age <= RECENT_ACTIVITY_WINDOW)
                 .unwrap_or(false)
         }) {
-            return AgentSessionState::Recent;
+            return AgentSessionLiveness::RecentMtime;
         }
-        AgentSessionState::Stale
+        AgentSessionLiveness::Stale
     }
 }
 
@@ -591,6 +604,7 @@ fn system_time_unix(time: SystemTime) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::AgentSessionState;
     use std::fs;
 
     struct FixtureProbe {
@@ -799,7 +813,7 @@ mod tests {
             scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
 
         assert_eq!(
-            report.attributions[0].evidence[0].run_state,
+            report.attributions[0].evidence[0].run_state(),
             AgentSessionState::Running
         );
         assert!(report.attributions[0].has_active_marker());
@@ -839,7 +853,7 @@ mod tests {
             scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
 
         assert_eq!(
-            report.attributions[0].evidence[0].run_state,
+            report.attributions[0].evidence[0].run_state(),
             AgentSessionState::Running
         );
         assert!(report.attributions[0].has_active_marker());
@@ -879,7 +893,7 @@ mod tests {
         .expect("scan succeeds");
 
         assert_eq!(
-            report.attributions[0].evidence[0].run_state,
+            report.attributions[0].evidence[0].run_state(),
             AgentSessionState::Stale
         );
         assert!(!report.attributions[0].has_active_marker());
@@ -915,7 +929,7 @@ mod tests {
             scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
 
         assert_eq!(
-            report.attributions[0].evidence[0].run_state,
+            report.attributions[0].evidence[0].run_state(),
             AgentSessionState::Recent
         );
         assert!(!report.attributions[0].has_active_marker());
@@ -952,7 +966,7 @@ mod tests {
         let first =
             scan_local_sessions_with_snapshots(&request, &probe, now).expect("scan succeeds");
         assert_eq!(
-            first.report.attributions[0].evidence[0].run_state,
+            first.report.attributions[0].evidence[0].run_state(),
             AgentSessionState::Recent
         );
         assert!(!first.report.attributions[0].has_active_marker());
@@ -971,7 +985,7 @@ mod tests {
                 .expect("scan succeeds");
 
         assert_eq!(
-            second.report.attributions[0].evidence[0].run_state,
+            second.report.attributions[0].evidence[0].run_state(),
             AgentSessionState::Running
         );
         assert!(second.report.attributions[0].has_active_marker());
@@ -984,7 +998,7 @@ mod tests {
         )
         .expect("scan succeeds");
         assert_eq!(
-            third.report.attributions[0].evidence[0].run_state,
+            third.report.attributions[0].evidence[0].run_state(),
             AgentSessionState::Running
         );
 
@@ -996,7 +1010,7 @@ mod tests {
         )
         .expect("scan succeeds");
         assert_eq!(
-            fourth.report.attributions[0].evidence[0].run_state,
+            fourth.report.attributions[0].evidence[0].run_state(),
             AgentSessionState::Recent
         );
     }
@@ -1031,7 +1045,7 @@ mod tests {
             AttributionConfidence::Low
         );
         assert_ne!(
-            report.attributions[0].evidence[0].run_state,
+            report.attributions[0].evidence[0].run_state(),
             AgentSessionState::Running
         );
     }

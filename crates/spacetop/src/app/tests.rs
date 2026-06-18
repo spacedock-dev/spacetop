@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{
-    AgentKind, AgentSessionEvidence, AgentSessionState, AttributionConfidence, Entity,
+    AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, Entity,
     EntitySessionAttribution, SessionScanReport, StageDefinition, WorkflowDefinition,
     WorkflowSnapshot,
 };
@@ -2505,7 +2505,7 @@ fn session_report(workflow_dir: &Path, repo_root: &Path, entity_id: &str) -> Ses
                 session_id: "session-000".to_string(),
                 display_name: Some("Mendel".to_string()),
                 confidence: AttributionConfidence::High,
-                run_state: AgentSessionState::Running,
+                liveness: AgentSessionLiveness::LivePid { pid: 4242 },
                 latest_activity_unix: Some(1_718_000_000),
                 matched_worktree: Some(PathBuf::from(".worktrees/task-000")),
             }],

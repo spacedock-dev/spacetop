@@ -264,3 +264,17 @@ Resolved the fresh-worker detection gap without broadening process-name matching
 running is now PID, exact resume-session argv, or observed matched session-file
 change during this Spacetop run with a two-minute linger; mtime-only evidence
 remains `recent`.
+
+## Stage Report: architecture refactor
+
+- DONE: Split liveness evidence from derived run state.
+  Evidence: `AgentSessionLiveness` now records whether a session is live via PID, exact resume command, observed session write, recent mtime, or stale evidence; `AgentSessionEvidence::run_state()` derives the user-facing state from that evidence.
+- DONE: Made running-state debugging visible in preview.
+  Evidence: the selected-entity preview now renders `via: pid`, `via: resume`, `via: write`, `via: mtime`, or `via: stale` beside the existing `state:` label.
+- DONE: Kept active-marker semantics unchanged.
+  Evidence: `AgentSessionEvidence::is_active_marker()` still requires medium-or-better attribution plus derived `Running` state.
+
+### Summary
+
+Refactored running detection into explicit liveness evidence so future false
+positives can be diagnosed by source instead of guessing which rule fired.
