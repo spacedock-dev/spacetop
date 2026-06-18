@@ -1,6 +1,6 @@
 ---
 title: Keep running state during Claude session activity
-status: plan
+status: implement
 source: "User report on 2026-06-18: while handling a Razorback workflow item in Claude Code, Spacetop marks it running from a session write and then clears it about every 2 seconds even though the agent is still active"
 kind: bugfix
 risk: medium
@@ -10,7 +10,7 @@ started: 2026-06-18T09:40:52Z
 completed:
 verdict:
 score: 0.88
-worktree:
+worktree: .worktrees/spacedock-ensign-running-state-expires-during-claude-activity
 issue:
 pr:
 id: 071
