@@ -14,6 +14,7 @@ worktree: .worktrees/spacedock-ensign-running-state-expires-during-claude-activi
 issue:
 pr:
 id: 071
+mod-block: merge:pr-merge
 ---
 
 Spacetop should keep an item in the running state while the matching Claude Code or Codex session continues to show credible live activity. The current behavior can mark a matched session as running from a write event, then clear that running state on the short cleanup cadence, which makes an active worker appear to flicker between running and recent.
