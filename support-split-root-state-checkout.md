@@ -158,3 +158,147 @@ behavior unchanged. Resolved the two open questions from the draft: the
 `.worktrees` merge is a no-op for split-root state entities (anchor stays on the
 definition dir), and `_archive/` must load from the resolved entity dir. No
 implementation here — this is a read-only shaping pass.
+
+## Implementation Plan (plan stage)
+
+### Spike decision
+
+**No spike needed.** The mechanism is proven: `state: .spacedock-state` is already
+a top-level scalar in the real `docs/spacetop-dev/README.md`, the state checkout
+already exists with active + `_archive/` entities, and `split_frontmatter` +
+`serde_yaml` already parse the README frontmatter. The change is an additive
+optional field plus a path-join; no new dependency, no unproven I/O. The
+regression test (AC-3) is itself the proof harness.
+
+### Design: definition dir vs entity dir
+
+Introduce one new typed fact — the resolved **entity directory** — and thread it
+where entity/archive scans happen, while README parse and `WorkflowDefinition.root`
+stay on the definition dir. Resolution lives in the parser (domain-before-UI); no
+UI code reads `state:`.
+
+Resolution rule (pure, testable):
+- `entity_dir(definition_dir, state) = match state { None | "" | "$inline" => definition_dir, rel => definition_dir.join(rel) }`.
+
+### Step 1 — Parse `state:` in `parser/readme.rs` (parser layer)
+
+- Add `#[serde(default)] state: Option<String>` to `RawWorkflowFrontmatter`
+  (`crates/spacetop-core/src/parser/readme.rs:236`).
+- Add `pub state: Option<String>` to `WorkflowDefinition`
+  (`crates/spacetop-core/src/domain/mod.rs`, the struct with `root`/`stages`),
+  and set it from `raw.state` in `parse_workflow_readme` (around `readme.rs:66`).
+  `root` stays the README parent (unchanged).
+- Update the four `WorkflowDefinition { ... }` literals that construct the struct
+  by hand (`app/overview.rs:148` `empty`, `sources.rs:104` test, `index.rs`
+  tests, any others) to add `state: None`. `cargo build` will flag each.
+- Add a pure unit test: `state:` round-trips (`Some(".spacedock-state")` when
+  present, `None` when absent).
+
+### Step 2 — Resolve + thread the entity dir in `parser/snapshot.rs`
+
+- Add a pure helper `pub(crate) fn resolve_entity_dir(definition_dir: &Path, state: Option<&str>) -> PathBuf`
+  implementing the rule above (treat `""`/`"$inline"` as single-root).
+- In `load_workflow_dir(path, repo_root)` (`crates/spacetop-core/src/parser/snapshot.rs:11`):
+  - parse README from `path` (unchanged).
+  - `let entity_dir = resolve_entity_dir(path, definition.state.as_deref());`
+  - `collect_active_item_paths(&entity_dir)` instead of `path` (line 18).
+  - worktree-merge base: pass `&entity_dir` to `merge_worktree_items(...)` (line 38)
+    so `archived_slug_exists` consults the entity dir's `_archive/`. The
+    `scan_worktrees` strip-prefix stays on `path`/repo_root (definition dir) —
+    split-root state entities are not mirrored under `.worktrees`, so this stays
+    a no-op for them; do not retarget the worktree scan at the state checkout.
+- Add a unit test on `resolve_entity_dir` (relative join; `$inline`/`None`/`""`
+  → definition dir).
+
+### Step 3 — Thread the entity dir to archive loading in `sources.rs`
+
+- `WorkflowSources::load_archive(workflow_dir, definition)`
+  (`crates/spacetop-core/src/sources.rs:46`) currently joins `_archive` onto
+  `workflow_dir`. Change it to resolve the entity dir from
+  `definition.root` + `definition.state` (it already has the `definition`) and
+  pass that resolved dir to `ArchiveSource::load`. This keeps the call sites in
+  `app/overview.rs:602`, `headless.rs:117/200`, and `index.rs` unchanged — they
+  keep passing the definition `workflow_dir`; resolution happens inside.
+- `archive_dir`/`load_archived_items*` in `parser/archive.rs` stay as-is (they
+  already take whatever dir they're handed); only the dir handed in changes.
+
+### Step 4 — No app/lib/watcher signature changes required
+
+- `OverviewState`, `WorkflowIndex::load`, discovery, and the watcher keep
+  operating on the definition dir (`DiscoveredWorkflow.root`). The watcher
+  watches the definition dir recursively today; for split-root, entity edits land
+  in `<definition_dir>/.spacedock-state/`, which IS under the watched dir, so
+  refresh still fires. Confirm (not change) this in the plan's verification.
+- Definition view (`ui/definition.rs`), tabs, picker all read
+  `definition.root` — correct to stay on the definition dir.
+
+### Lowest-practical-layer proof (AC-2/AC-3)
+
+- **Parser/index test (primary).** Add a split-root fixture under
+  `tests/fixtures/` (or build it in a `tempdir` in `parser/tests.rs`): a
+  `README.md` with `state: state-sub` + `stages`, entity `*.md` files and an
+  `_archive/*.md` under `state-sub/`, and NO entity files beside the README.
+  Assert `load_workflow_dir(def_dir, repo_root).items` is non-empty AND
+  `WorkflowSources::load_archive(def_dir, &definition).entities` is non-empty.
+  This test fails against `main` (which scans the README dir and finds zero).
+- **Single-root regression guard.** Keep an existing single-root fixture test
+  green (state absent → entities beside README still load) — the many existing
+  `load_workflow_dir(&wf, &root)` tests in `parser/tests.rs` already cover this;
+  add one explicit `state: $inline` case asserting identical behavior to absent.
+- **UI render assertion (only if needed).** The empty-list regression is fully
+  pinned at the parser/index layer above, so a `TestBackend` test is optional.
+  Add one only if review wants the list-rows render proven; the existing
+  `ui/tests.rs` `from_sources` harness can host it without new scaffolding.
+
+Exact commands (run all before completion):
+- `cargo fmt`
+- `cargo test` (parser, index, app, ui suites)
+- `make lint` (`cargo clippy --all-targets --all-features -- -D warnings`)
+- Manual smoke (evidence, not a gate): `cargo run -p spacetop -- --workflow-dir docs/spacetop-dev`
+  must now show the split-root task list instead of empty.
+
+### Docs to update in the same change
+
+- `README.md` "Current Product Shape": note that entity/archive loading resolves
+  the README `state:` field (relative path → state checkout dir; `$inline`/absent
+  → entities beside the README).
+- `AGENTS.md` "Workflow Parsing Rules": add the `state:`-resolution contract; and
+  "Code Map" for `parser/snapshot.rs` / `parser/readme.rs` to mention entity-dir
+  resolution. No `docs/code-review-policy.md` change needed.
+
+### Owned files
+
+- `crates/spacetop-core/src/parser/readme.rs` (parse `state:`)
+- `crates/spacetop-core/src/domain/mod.rs` (`WorkflowDefinition.state`)
+- `crates/spacetop-core/src/parser/snapshot.rs` (`resolve_entity_dir`, thread)
+- `crates/spacetop-core/src/sources.rs` (`load_archive` resolves entity dir)
+- `crates/spacetop-core/src/parser/tests.rs` (split-root + `$inline` fixtures)
+- struct-literal callers needing `state: None` (build-flagged)
+- `README.md`, `AGENTS.md` (docs)
+
+### Read-only / Clean Code guardrails
+
+- No writes added; the change only redirects which directory entities are READ
+  from. `no_write_git_calls.rs` and `no_terminal_deps.rs` guardrails are
+  untouched and must stay green. `state:` resolution is a pure helper with unit
+  tests; UI code never parses it.
+
+## Stage Report: plan
+
+- DONE: Produce a step-by-step implementation plan for the definition-dir vs entity-dir split (parse `state:` in readme.rs, resolve in snapshot.rs, thread to collect_active_item_paths / archive_dir/load_archive / worktree-merge base; keep WorkflowDefinition.root/discovery on definition dir) with exact files, functions, signature changes
+  Steps 1-4 above name each file/function: `RawWorkflowFrontmatter.state`, `WorkflowDefinition.state`, `resolve_entity_dir` in snapshot.rs, `load_archive` resolving internally; worktree scan deliberately left on the definition dir.
+- DONE: Specify the lowest-practical-layer proof: split-root fixture + parser/index tests asserting non-empty active AND archived (must fail against main), single-root unchanged, optional TestBackend; name exact commands
+  Proof section pins the parser/index split-root fixture test as primary (fails on main), adds a `$inline` single-root guard, marks the `TestBackend` test optional; commands listed: `cargo fmt`, `cargo test`, `make lint`, plus a manual smoke.
+- DONE: Identify docs updates in the same change (README "Current Product Shape" + AGENTS.md "Workflow Parsing Rules"/Code Map) and state spike need
+  Docs section lists README + AGENTS.md edits; spike decision recorded as "no spike needed" with the proven mechanism (existing `state:` scalar + serde_yaml + path-join).
+
+### Summary
+
+Plan keeps the change additive and parser-local: a new optional `state:` field on
+the README frontmatter and `WorkflowDefinition`, a pure `resolve_entity_dir`
+helper, and re-pointing the active-item scan, archive load, and worktree-merge
+base at the resolved entity dir while README parse, discovery, the watcher, and
+`WorkflowDefinition.root` stay on the definition dir. No spike needed; the
+split-root fixture parser/index test is the proof and fails against `main`. App,
+lib, and watcher need no signature changes because resolution happens inside the
+parser/sources layer.
