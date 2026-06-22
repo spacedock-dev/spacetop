@@ -1,14 +1,17 @@
 ---
 title: Agent status false positives on undispatched tasks
-status: verify
+status: done
 source: captain report (session)
 kind: bugfix
 risk: medium
 id: 072
 started: 2026-06-22T05:14:50Z
 worktree: .worktrees/spacedock-ensign-agent-status-false-positives
-mod-block: merge:pr-merge
-pr: "#74"
+mod-block:
+pr: pr-merge:74
+verdict: passed
+completed: 2026-06-22T07:14:58Z
+archived: 2026-06-22T07:14:58Z
 ---
 
 Agent status detection produces many false positives: it reports a running/active
