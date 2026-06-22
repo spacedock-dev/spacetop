@@ -326,3 +326,22 @@ state checkout, absent from code worktrees). Headless `export` against the real
 split-root workflow loads 2 active + 70 archived entities, proving the
 empty-list regression is fixed; the same export on a code worktree without the
 state checkout returns 0/0 without crashing.
+
+## Stage Report: verify
+
+- DONE: Independently re-run the verification commands against the worktree branch (cargo fmt --check, cargo test, make lint) and record actual output — do not trust the implement report's claims
+  Re-ran on branch f3b5d70 in the worktree: `cargo fmt --check` exit 0; `cargo test` all suites green (199 passed, 0 failed, 3 watcher tests ignored-by-design); `make lint` (clippy --all-targets --all-features -D warnings) exit 0.
+- DONE: Confirm every acceptance criterion (AC-1..AC-6) has concrete evidence: AC-3 split-root fixture test genuinely fails against main and passes on the branch; AC-4 single-root/$inline behavior unchanged; state: parsed in the parser layer (not UI); docs (README + AGENTS.md) updated in the same change
+  AC-1: `state:` parsed into `RawWorkflowFrontmatter`+`WorkflowDefinition.state` in parser; no spacetop UI code reads it (grep confirms only unrelated `state` field names). AC-2: `resolve_entity_dir` unit tests (relative→join; None/""/"  "/"$inline"→def dir). AC-3: branch test `split_root_loads_active_and_archived_from_state_checkout` passes; a temporary repro built against main's API rendered 0 active/0 archived for the same layout (then removed, uncommitted) — fail-on-main proven behaviorally, not just by inference. AC-4: `inline_state_keeps_single_root_behavior` passes; existing single-root suite green. AC-5: fmt/test/lint all pass. AC-6: README "Status" + AGENTS.md "Workflow Parsing Rules"/"Code Map" updated in commit f3b5d70.
+- DONE: Render a verification verdict (PASSED or REJECTED) with any defects or missing evidence, and confirm read-only/git/config contracts and the no_terminal_deps/no_write_git_calls guardrails are intact
+  Verdict PASSED. Guardrails `no_terminal_deps` (1/1) and `no_write_git_calls` (2/2) green; change adds no writes, no git-write subcommands, no config/session path changes. One Low defect: `domain/mod.rs:101` doc comment links `[Self::entity_root]`, a method that does not exist (resolver is the free fn `resolve_entity_dir`); broken intra-doc link, non-blocking (clippy does not run rustdoc so lint stays green).
+
+### Summary
+
+End-to-end verified. The branch-built binary loads 2 active + 70 archived
+entities from the real split-root `docs/spacetop-dev` (matching on-disk counts,
+`definition.state=.spacedock-state`); the main-built binary renders 0/0 for the
+same workflow — the reported empty-list regression, now fixed. All six ACs have
+concrete evidence; fmt/test/lint and both safety guardrails pass. One Low,
+non-blocking defect: a broken `[Self::entity_root]` rustdoc link in
+`domain/mod.rs` (should point at `resolve_entity_dir`). Verdict: PASSED.
