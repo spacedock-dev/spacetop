@@ -7,6 +7,8 @@ risk: medium
 id: 073
 started: 2026-06-22T07:39:16Z
 worktree: .worktrees/spacedock-ensign-support-split-root-state-checkout
+mod-block: merge:pr-merge
+pr: "#75"
 ---
 
 ## Problem statement
