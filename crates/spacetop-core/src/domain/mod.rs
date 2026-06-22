@@ -246,6 +246,25 @@ impl AgentSessionState {
     }
 }
 
+/// Whether a matched session is anchored to a *dispatched worker* for this
+/// entity, as opposed to merely mentioning the entity in passing. Only an
+/// anchored session may drive the active marker: a live orchestrator session
+/// that references an undispatched task's file path is `None` and must not
+/// light up as running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DispatchAnchor {
+    /// The session matched via the entity's own worktree path (High-confidence
+    /// ownership): a worker running in the entity's isolated worktree.
+    OwnedWorktree,
+    /// The session carries a positive
+    /// `/tmp/spacedock-dispatch/spacedock-ensign-<slug>-<stage>.md` marker for
+    /// this entity's slug: explicit dispatch evidence.
+    DispatchedForEntity,
+    /// No dispatch/ownership evidence — a bare path/id mention. Not eligible to
+    /// drive the active marker on its own.
+    None,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionEvidence {
     pub agent: AgentKind,
@@ -255,6 +274,7 @@ pub struct AgentSessionEvidence {
     pub liveness: AgentSessionLiveness,
     pub latest_activity_unix: Option<i64>,
     pub matched_worktree: Option<PathBuf>,
+    pub dispatch_anchor: DispatchAnchor,
 }
 
 impl AgentSessionEvidence {
@@ -263,8 +283,8 @@ impl AgentSessionEvidence {
     }
 
     pub fn is_active_marker(&self) -> bool {
-        self.confidence >= AttributionConfidence::Medium
-            && self.run_state() == AgentSessionState::Running
+        self.run_state() == AgentSessionState::Running
+            && self.dispatch_anchor != DispatchAnchor::None
     }
 }
 

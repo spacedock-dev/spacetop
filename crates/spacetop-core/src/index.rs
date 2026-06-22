@@ -652,6 +652,7 @@ mod tests {
                     liveness: crate::domain::AgentSessionLiveness::LivePid { pid: 4242 },
                     latest_activity_unix: Some(1_718_000_000),
                     matched_worktree: Some(PathBuf::from(".worktrees/010")),
+                    dispatch_anchor: crate::domain::DispatchAnchor::OwnedWorktree,
                 }],
             }],
         });

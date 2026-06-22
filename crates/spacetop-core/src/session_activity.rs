@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use walkdir::WalkDir;
 
 use crate::domain::{
-    AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, Entity,
-    EntitySessionAttribution, SessionScanReport,
+    AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, DispatchAnchor,
+    Entity, EntitySessionAttribution, SessionScanReport,
 };
 use crate::entity_identity::entity_slug;
 
@@ -254,8 +254,20 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
                 .iter()
                 .filter_map(|entity| {
                     match_entity(entity, &request.workflow_dir, &request.repo_root, &content).map(
-                        |(confidence, matched_worktree)| {
-                            (entity.id.clone(), confidence, matched_worktree)
+                        |entity_match| {
+                            let dispatch_anchor = if entity_match.worktree_anchored {
+                                DispatchAnchor::OwnedWorktree
+                            } else if has_matching_dispatch_assignment(entity, &content) {
+                                DispatchAnchor::DispatchedForEntity
+                            } else {
+                                DispatchAnchor::None
+                            };
+                            (
+                                entity.id.clone(),
+                                entity_match.confidence,
+                                entity_match.matched_worktree,
+                                dispatch_anchor,
+                            )
                         },
                     )
                 })
@@ -275,7 +287,7 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
                 activity_time,
                 now,
             });
-            for (entity_id, confidence, matched_worktree) in matches {
+            for (entity_id, confidence, matched_worktree, dispatch_anchor) in matches {
                 let evidence = AgentSessionEvidence {
                     agent: *agent,
                     session_id: session_id(entry.path()),
@@ -284,6 +296,7 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
                     liveness: liveness.clone(),
                     latest_activity_unix: activity_time.and_then(system_time_unix),
                     matched_worktree,
+                    dispatch_anchor,
                 };
                 per_entity.entry(entity_id).or_default().push(evidence);
             }
@@ -406,12 +419,21 @@ impl<'a, P: ProcessProbe> RunStateClassifier<'a, P> {
     }
 }
 
+/// Outcome of matching one session against one entity. `worktree_anchored`
+/// records whether the match came via the entity's own worktree path, which is
+/// an ownership-anchored signal that may drive the active marker.
+struct EntityMatch {
+    confidence: AttributionConfidence,
+    matched_worktree: Option<PathBuf>,
+    worktree_anchored: bool,
+}
+
 fn match_entity(
     entity: &SessionScanEntity,
     workflow_dir: &Path,
     repo_root: &Path,
     content: &str,
-) -> Option<(AttributionConfidence, Option<PathBuf>)> {
+) -> Option<EntityMatch> {
     if has_conflicting_dispatch_assignment(entity, content) {
         return None;
     }
@@ -426,7 +448,11 @@ fn match_entity(
         .unwrap_or_default();
     for path in &worktree_paths {
         if content_mentions_path(content, path) {
-            return Some((AttributionConfidence::High, Some(path.clone())));
+            return Some(EntityMatch {
+                confidence: AttributionConfidence::High,
+                matched_worktree: Some(path.clone()),
+                worktree_anchored: true,
+            });
         }
     }
     if entity
@@ -434,13 +460,30 @@ fn match_entity(
         .as_ref()
         .is_some_and(|path| content_mentions_path(content, path))
     {
-        return Some((AttributionConfidence::High, entity.worktree_source.clone()));
+        return Some(EntityMatch {
+            confidence: AttributionConfidence::High,
+            matched_worktree: entity.worktree_source.clone(),
+            worktree_anchored: true,
+        });
     }
 
     explicit_entity_reference_paths(entity, workflow_dir, repo_root)
         .into_iter()
         .any(|path| content_mentions_path(content, &path))
-        .then_some((AttributionConfidence::Medium, None))
+        .then_some(EntityMatch {
+            confidence: AttributionConfidence::Medium,
+            matched_worktree: None,
+            worktree_anchored: false,
+        })
+}
+
+/// True when the session carries a positive dispatch marker for this entity's
+/// own slug — explicit evidence that a worker was dispatched to work it.
+fn has_matching_dispatch_assignment(entity: &SessionScanEntity, content: &str) -> bool {
+    let Some(entity_slug) = entity_slug(&entity.path) else {
+        return false;
+    };
+    dispatch_assignment_slugs(content).any(|assigned_slug| assigned_slug == entity_slug)
 }
 
 fn content_mentions_path(content: &str, path: &Path) -> bool {
@@ -841,7 +884,12 @@ mod tests {
     }
 
     #[test]
-    fn running_medium_confidence_match_is_active() {
+    fn running_medium_confidence_match_without_dispatch_marker_is_not_active() {
+        // AC-2 regression: a single live session (real running pid) that merely
+        // references an undispatched task's file path — no dispatch marker, not
+        // anchored to the entity's worktree — must NOT light up as active. This
+        // is the orchestrator false positive the fix removes. The session stays
+        // alive (Running) and matched (Medium), but earns no active marker.
         let tmp = tempfile::tempdir().expect("tmp");
         let repo = tmp.path().join("repo");
         let workflow = repo.join("docs/spacetop-dev");
@@ -849,14 +897,17 @@ mod tests {
         write_session(
             &root.join("repo-session.jsonl"),
             &format!(
-                r#"{{"pid":4242,"agent_nickname":"Mendel","workdir":"{}","note":"065-task.md"}}"#,
+                r#"{{"pid":4242,"agent_nickname":"Mendel","workdir":"{}","note":"docs/spacetop-dev/agent-status-false-positives.md"}}"#,
                 repo.display()
             ),
         );
         let request = SessionScanRequest {
-            workflow_dir: workflow,
+            workflow_dir: workflow.clone(),
             repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
+            entities: vec![entity_with_path(
+                "072",
+                workflow.join("agent-status-false-positives.md"),
+            )],
             roots: SessionRoots {
                 codex: vec![root],
                 claude_code: Vec::new(),
@@ -874,6 +925,54 @@ mod tests {
             report.attributions[0].evidence[0].confidence,
             AttributionConfidence::Medium
         );
+        assert_eq!(
+            report.attributions[0].evidence[0].run_state(),
+            AgentSessionState::Running
+        );
+        assert!(!report.attributions[0].has_active_marker());
+    }
+
+    #[test]
+    fn running_session_with_matching_dispatch_marker_is_active() {
+        // New positive case: a live session carrying a positive dispatch marker
+        // for this entity's own slug qualifies as active even though it only
+        // matched at Medium confidence (no worktree on the entity).
+        let tmp = tempfile::tempdir().expect("tmp");
+        let repo = tmp.path().join("repo");
+        let workflow = repo.join("docs/spacetop-dev");
+        let root = tmp.path().join("codex");
+        write_session(
+            &root.join("dispatched-session.jsonl"),
+            r#"{"pid":4242,"agent_nickname":"Mendel","body":"Read /tmp/spacedock-dispatch/spacedock-ensign-agent-status-false-positives-implement.md and review docs/spacetop-dev/agent-status-false-positives.md"}"#,
+        );
+        let request = SessionScanRequest {
+            workflow_dir: workflow.clone(),
+            repo_root: repo,
+            entities: vec![entity_with_path(
+                "072",
+                workflow.join("agent-status-false-positives.md"),
+            )],
+            roots: SessionRoots {
+                codex: vec![root],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let probe = FixtureProbe {
+            running: HashSet::from([4242]),
+        };
+
+        let report =
+            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+
+        assert_eq!(
+            report.attributions[0].evidence[0].confidence,
+            AttributionConfidence::Medium
+        );
+        assert_eq!(
+            report.attributions[0].evidence[0].dispatch_anchor,
+            DispatchAnchor::DispatchedForEntity
+        );
         assert!(report.attributions[0].has_active_marker());
     }
 
@@ -885,9 +984,10 @@ mod tests {
         let root = tmp.path().join("codex");
         let session_uuid = "019ed968-6e77-7d71-9386-aae754c6c8be";
         let session_stem = format!("rollout-2026-06-18T14-26-00-{session_uuid}");
+        let worktree = repo.join(".worktrees/task-065");
         write_session(
             &root.join(format!("{session_stem}.jsonl")),
-            &format!(r#"{{"workdir":"{}","note":"065-task.md"}}"#, repo.display()),
+            &format!(r#"{{"workdir":"{}"}}"#, worktree.display()),
         );
         let request = SessionScanRequest {
             workflow_dir: workflow,
@@ -1069,9 +1169,10 @@ mod tests {
         let root = tmp.path().join("codex");
         let session =
             root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl");
+        let worktree = repo.join(".worktrees/task-065");
         write_session(
             &session,
-            &format!(r#"{{"workdir":"{}","note":"065-task.md"}}"#, repo.display()),
+            &format!(r#"{{"workdir":"{}"}}"#, worktree.display()),
         );
         let now = SystemTime::now();
         let mut request = SessionScanRequest {
@@ -1099,10 +1200,7 @@ mod tests {
 
         fs::write(
             &session,
-            format!(
-                r#"{{"workdir":"{}","note":"065-task.md","event":"next"}}"#,
-                request.repo_root.display()
-            ),
+            format!(r#"{{"workdir":"{}","event":"next"}}"#, worktree.display()),
         )
         .expect("update session");
         request.previous_session_files = first.session_files;

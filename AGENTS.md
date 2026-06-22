@@ -113,6 +113,15 @@ Keep module boundaries clear and testable:
   filtering, debounce, fallback backend selection, and refresh signaling.
 - `crates/spacetop-core/src/git_sync.rs` owns the explicit read-refresh sync
   path and must remain limited to audited fast-forward pulls.
+- `crates/spacetop-core/src/session_activity.rs` scans local agent session logs
+  and attributes them to entities, and `domain/mod.rs`
+  (`AgentSessionLiveness`/`AgentSessionEvidence`/`EntitySessionAttribution`) holds
+  the typed result. The active-session marker requires a dispatched-worker or
+  own-worktree anchor (typed `DispatchAnchor`), not a bare task-file-path mention:
+  `is_active_marker()` is `run_state == Running && dispatch_anchor != None`. A live
+  orchestrator session that merely references an undispatched task classifies as
+  not-active. `run_state`/`confidence` reporting for recent/stale and preview text
+  is unchanged.
 - `crates/spacetop-core/src/editor.rs` owns opening selected files in an
   external editor/viewer path; it must not become a workflow-state writer
   without explicit policy change.

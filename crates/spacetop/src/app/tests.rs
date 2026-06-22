@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{
-    AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, Entity,
-    EntitySessionAttribution, SessionScanReport, StageDefinition, WorkflowDefinition,
+    AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, DispatchAnchor,
+    Entity, EntitySessionAttribution, SessionScanReport, StageDefinition, WorkflowDefinition,
     WorkflowSnapshot,
 };
 use spacetop_core::session_activity::SessionScanError;
@@ -2508,6 +2508,7 @@ fn session_report(workflow_dir: &Path, repo_root: &Path, entity_id: &str) -> Ses
                 liveness: AgentSessionLiveness::LivePid { pid: 4242 },
                 latest_activity_unix: Some(1_718_000_000),
                 matched_worktree: Some(PathBuf::from(".worktrees/task-000")),
+                dispatch_anchor: DispatchAnchor::OwnedWorktree,
             }],
         }],
     }

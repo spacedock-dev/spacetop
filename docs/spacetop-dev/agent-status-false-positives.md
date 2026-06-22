@@ -292,3 +292,25 @@ worktree/resume running tests and a new positive dispatch-marker test, verified
 with `cargo test` and `make lint`. No spike needed; the mechanism reuses existing
 helpers and fixture patterns. One `AGENTS.md` behavior note ships in the same
 change; read-only/git/config contracts are untouched.
+
+## Stage Report: implement
+
+- DONE: Implement the typed DispatchAnchor per the plan: add the enum + field on AgentSessionEvidence, populate it in scan_local_sessions_inner (own-worktree match plus a positive dispatch-slug check for this entity), and change is_active_marker() to require Running && dispatch_anchor != None
+  `DispatchAnchor` enum (`OwnedWorktree`/`DispatchedForEntity`/`None`) + `dispatch_anchor` field added (`domain/mod.rs`); `match_entity` now returns an `EntityMatch` carrying `worktree_anchored`, and `scan_local_sessions_inner` sets the anchor from the worktree match or the new `has_matching_dispatch_assignment` slug check (`session_activity.rs`); `is_active_marker()` is now `run_state == Running && dispatch_anchor != None`.
+- DONE: Add the AC-2 regression test (live session referencing the task file path with NO dispatch marker must classify not-active) and a new positive dispatch-marker test; keep the existing AC-3 worktree/resume running tests passing
+  Added `running_medium_confidence_match_without_dispatch_marker_is_not_active` (AC-2: live pid + Medium path-mention, no marker -> Running but `!has_active_marker()`) and `running_session_with_matching_dispatch_marker_is_active`; re-anchored the Codex resume and observed-write fixtures to the entity worktree so AC-3 keeps passing. `cargo test -p spacetop-core session_activity`: 23/23 passed.
+- DONE: Run and record reproducible evidence (cargo fmt, cargo test, make lint) and update the AGENTS.md session-activity behavior note in the same change
+  `cargo fmt` clean; full `cargo test` all green (every `test result:` line `0 failed`); `make lint` finished with no warnings; added a `session_activity.rs`/`domain/mod.rs` Code Map note to `AGENTS.md` describing the dispatched-worker/own-worktree active-marker rule.
+
+### Summary
+
+Narrowed the active-session marker to a typed dispatch/ownership signal so a live
+orchestrator session that only references an undispatched task no longer lights up
+as running. Added `DispatchAnchor` on session evidence, populated it from the
+worktree match and a positive dispatch-slug check, and made `is_active_marker()`
+require `Running && dispatch_anchor != None`. The former
+`running_medium_confidence_match_is_active` test (which encoded the bug) became the
+AC-2 negative regression; a new positive dispatch-marker test covers
+`DispatchedForEntity`; AC-3 worktree/resume tests stay green after re-anchoring
+their fixtures to the entity's worktree. `cargo fmt`, full `cargo test`, and
+`make lint` all pass; read-only/git/config contracts untouched.
