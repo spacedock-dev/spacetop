@@ -1,6 +1,6 @@
 ---
 title: Agent status false positives on undispatched tasks
-status: shape
+status: plan
 source: captain report (session)
 kind: bugfix
 risk: medium
