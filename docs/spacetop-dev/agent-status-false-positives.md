@@ -7,6 +7,8 @@ risk: medium
 id: 072
 started: 2026-06-22T05:14:50Z
 worktree: .worktrees/spacedock-ensign-agent-status-false-positives
+mod-block: merge:pr-merge
+pr: "#74"
 ---
 
 Agent status detection produces many false positives: it reports a running/active
