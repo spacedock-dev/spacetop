@@ -98,8 +98,8 @@ pub struct WorkflowDefinition {
     pub root: PathBuf,
     /// Raw README `state:` declaration, verbatim. `None`/empty/`$inline` means
     /// single-root (entities live beside the README); a relative path names a
-    /// split-root state checkout. Resolve it through [`Self::entity_root`]
-    /// rather than reading this field directly.
+    /// split-root state checkout. Resolve it through the parser's
+    /// `resolve_entity_dir` helper rather than reading this field directly.
     pub state: Option<String>,
     pub stages: Vec<StageDefinition>,
     pub id_style: Option<String>,
