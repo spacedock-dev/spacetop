@@ -129,6 +129,128 @@ lowest practical proof. TUI marker rendering is downstream and unchanged.
   write, and the read-only contract is untouched.
 - Milestone: v1-maintenance (consistent with the related task 069).
 
+## Plan
+
+### Owned files / modules
+
+- `crates/spacetop-core/src/session_activity.rs` — matcher + classifier (primary change).
+- `crates/spacetop-core/src/domain/mod.rs` — `AgentSessionLiveness` /
+  `AgentSessionEvidence` / `EntitySessionAttribution` (model + marker predicate).
+- Tests in `crates/spacetop-core/src/session_activity.rs` (`#[cfg(test)] mod tests`)
+  — primary proof layer.
+- `AGENTS.md` Code Map / `## Current Product Shape` — one-line behavior note for
+  the narrowed marker rule (docs in the same change).
+
+### Design decision: what gates the active marker
+
+The active marker is `is_active_marker()` = `confidence >= Medium && run_state ==
+Running` (`domain/mod.rs:265`). The bug is that this never checks whether the
+matched session is a *dispatched worker for this entity*. The fix adds a positive
+dispatched-worker / ownership requirement.
+
+Two candidate liveness signals already encode strong ownership and should remain
+marker-eligible; the weak ones should not, on their own, drive the marker:
+
+- `LivePid` / `LiveResumeCommand` / `ObservedSessionWrite` from a session that
+  matched at `High` confidence via the entity's **own worktree path**
+  (`match_entity` worktree branch, `session_activity.rs:427-438`) — this is an
+  ownership-anchored running signal. KEEP marker-eligible.
+- A session carrying a positive `/tmp/spacedock-dispatch/spacedock-ensign-<slug>-
+  <stage>.md` marker **for this entity's slug** — explicit dispatch evidence.
+  KEEP marker-eligible. (Today `dispatch_assignment_slugs` is read only to
+  *reject* conflicting slugs; the plan also reads it as positive confirmation.)
+- A `Medium`-confidence match (bare task-file-path mention via
+  `explicit_entity_reference_paths`) with any Running liveness — this is the
+  orchestrator false positive. NOT marker-eligible on its own.
+
+Mechanism: introduce a typed notion of dispatch/ownership on the evidence so the
+marker predicate reads from typed state, not re-derived strings (Domain-before-UI,
+Code Map "consume through query methods"). Concretely, add a boolean-like typed
+field to `AgentSessionEvidence` — e.g. `dispatch_anchor: DispatchAnchor` with
+variants `OwnedWorktree` / `DispatchedForEntity` / `None` — set in
+`scan_local_sessions_inner` from (a) the worktree-confidence match and (b) a new
+positive `dispatch_assignment_slugs(content)` check against this entity's slug.
+Then `is_active_marker()` becomes:
+`run_state == Running && dispatch_anchor != None` (drop the bare `confidence >=
+Medium` gate as the sole qualifier). This keeps the predicate a pure function of
+typed evidence and removes the orchestrator path from the active set while leaving
+`run_state`/`confidence` reporting intact for preview/detail text.
+
+### Step-by-step
+
+1. **Add the typed ownership signal to the domain.** In `domain/mod.rs`, add
+   `DispatchAnchor` enum and a `dispatch_anchor` field on `AgentSessionEvidence`;
+   update `is_active_marker()` to require `Running && dispatch_anchor !=
+   DispatchAnchor::None`. Keep `run_state()`, `confidence`, and `best_evidence()`
+   unchanged so recent/stale reporting and preview text are unaffected.
+2. **Populate the anchor in the scanner.** In `session_activity.rs`
+   `scan_local_sessions_inner`, compute the anchor per (entity, session): set
+   `OwnedWorktree` when `match_entity` returned via the worktree branch (thread a
+   small enum/flag out of `match_entity` instead of today's
+   `Option<PathBuf>`-only return, or compute alongside it); set
+   `DispatchedForEntity` when `dispatch_assignment_slugs(content)` contains this
+   entity's `entity_slug`. Construct `AgentSessionEvidence` with that anchor.
+3. **Add a positive dispatch-slug check** reusing `dispatch_assignment_slugs` and
+   `entity_slug` (already present) — no new parsing surface.
+4. **Run the lowest-layer proof** (tests below).
+5. **Update docs** (`AGENTS.md` behavior note) in the same change.
+
+### Lowest-practical-layer proof
+
+Core `session_activity` tests (`#[cfg(test)] mod tests`), fixture-driven via
+`FixtureProbe` / `CommandProbe`:
+
+- **AC-2 regression (new, primary):** live session (`pid` in `FixtureProbe`)
+  whose content references `docs/spacetop-dev/agent-status-false-positives.md`
+  (Medium match) with **no** dispatch marker → assert
+  `run_state() == Running` (still alive) but
+  `!attribution.has_active_marker()`. This is the test that fails today and must
+  pass after the change.
+- **AC-3 positive cases (must keep passing):** the existing
+  `running_codex_worktree_match_is_high_confidence_active`,
+  `running_claude_code_worktree_match_is_high_confidence_active`,
+  `pidless_codex_resume_command_marks_session_running`, and
+  `pidless_claude_resume_command_marks_session_running` tests — worktree-anchored
+  and resume-command running sessions stay `has_active_marker()`.
+- **New positive dispatch-marker test:** a live session carrying
+  `/tmp/spacedock-dispatch/spacedock-ensign-<this-slug>-implement.md` and a
+  Medium-only match → asserts `has_active_marker()` (dispatch anchor qualifies a
+  non-worktree task).
+- **Marker rendering:** existing `crates/spacetop/src/ui/tests/task_list.rs`
+  marker test continues to assert the green dot for a Running attribution; it
+  drives `has_active_marker()` through `entity_has_active_session_marker`, so no
+  TUI logic change is needed. If the test fixture builds evidence directly, set
+  its `dispatch_anchor` so it stays marker-eligible.
+
+Note on the existing `mtime_only_recent_match_does_not_mark_active` and
+`pidless_match_without_live_session_command_falls_back_to_stale` tests: these
+already assert no active marker for non-Running states and remain valid.
+
+### Verification commands
+
+- `cargo fmt`
+- `cargo test` (full workspace; covers the new core tests and existing UI tests)
+- `cargo test -p spacetop-core session_activity` (focused fast loop during dev)
+- `make lint` (`cargo clippy --all-targets --all-features -- -D warnings`) —
+  required completion gate.
+
+### Docs / policy updates in the same change
+
+- `AGENTS.md`: update the session-activity behavior note (under Code Map for
+  `session_activity.rs` / `domain/mod.rs`) to state the active marker now requires
+  a dispatched-worker or own-worktree anchor, not a bare path mention. No policy
+  rule changes (read-only/git/config contracts untouched). No README user-facing
+  command change (the marker is described, not commanded).
+
+### Spike
+
+No spike needed. The proving mechanism — fixture session files + `ProcessProbe`
+fakes driving `scan_local_sessions_with` and asserting `has_active_marker()` /
+`run_state()` — is already established by the existing tests in the same module
+(`session_activity.rs:767-1572`). The change reuses existing helpers
+(`dispatch_assignment_slugs`, `entity_slug`, `match_entity`) and adds one typed
+field plus one predicate condition.
+
 ## Stage Report: shape
 
 - DONE: Pin the root cause: identify the exact signal that currently classifies a task/agent as running or active, and explain why it fires for tasks that were never dispatched
@@ -148,3 +270,24 @@ dispatch slugs. Defined a negative-case acceptance criterion with a concrete
 false-positive example, kept the positive dispatched/worktree cases in scope, and
 located the fix in the session-activity/liveness domain model rather than TUI
 rendering. Risk medium, milestone v1-maintenance.
+
+## Stage Report: plan
+
+- DONE: Produce a step-by-step implementation plan naming the owned files/modules (`session_activity.rs` matcher/classifier, `domain/mod.rs` liveness/attribution) and the exact change that makes the active marker require a positive dispatched-worker/ownership signal — not just a Medium path-mention plus any Running liveness
+  Plan adds a typed `DispatchAnchor` field on `AgentSessionEvidence` set in `scan_local_sessions_inner` from the worktree-confidence match and a positive `dispatch_assignment_slugs` check; `is_active_marker()` becomes `Running && dispatch_anchor != None` (`domain/mod.rs:265`, `session_activity.rs:409`/`:451`).
+- DONE: Specify the lowest-practical-layer proof: core session-activity tests with a fixture reproducing the AC-2 false positive (live session referencing the task path, no dispatch marker → not active) and the AC-3 positive cases (dispatch-marker / worktree-anchored) still passing; name exact verification commands (`cargo test`, `make lint`)
+  Named the new AC-2 regression test, the four existing AC-3 worktree/resume tests that must keep passing, and a new positive dispatch-marker test; verification: `cargo fmt`, `cargo test`, `cargo test -p spacetop-core session_activity`, `make lint`.
+- DONE: Identify any docs/policy updates needed in the same change (Code Map / behavior notes) and state whether a spike is needed before the matcher change, or record "no spike needed" with the proven mechanism
+  `AGENTS.md` session-activity behavior note updated in the same change; no policy/README command change; recorded "no spike needed" — fixture + `ProcessProbe` mechanism is already proven by existing tests in `session_activity.rs`.
+
+### Summary
+
+Planned a domain-first fix: introduce a typed `DispatchAnchor` on session
+evidence so the active marker requires either an own-worktree-anchored or a
+positively-dispatched running session, dropping the bare Medium-path-mention path
+that lets the orchestrator's live session light up undispatched tasks. The proof
+is a new AC-2 core regression test plus preservation of the existing
+worktree/resume running tests and a new positive dispatch-marker test, verified
+with `cargo test` and `make lint`. No spike needed; the mechanism reuses existing
+helpers and fixture patterns. One `AGENTS.md` behavior note ships in the same
+change; read-only/git/config contracts are untouched.
