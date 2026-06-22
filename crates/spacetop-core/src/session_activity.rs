@@ -480,10 +480,10 @@ fn match_entity(
 /// True when the session carries a positive dispatch marker for this entity's
 /// own slug — explicit evidence that a worker was dispatched to work it.
 fn has_matching_dispatch_assignment(entity: &SessionScanEntity, content: &str) -> bool {
-    let Some(entity_slug) = entity_slug(&entity.path) else {
+    let Some(target_slug) = entity_slug(&entity.path) else {
         return false;
     };
-    dispatch_assignment_slugs(content).any(|assigned_slug| assigned_slug == entity_slug)
+    dispatch_assignment_slugs(content).any(|assigned_slug| assigned_slug == target_slug)
 }
 
 fn content_mentions_path(content: &str, path: &Path) -> bool {

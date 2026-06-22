@@ -118,7 +118,7 @@ Keep module boundaries clear and testable:
   (`AgentSessionLiveness`/`AgentSessionEvidence`/`EntitySessionAttribution`) holds
   the typed result. The active-session marker requires a dispatched-worker or
   own-worktree anchor (typed `DispatchAnchor`), not a bare task-file-path mention:
-  `is_active_marker()` is `run_state == Running && dispatch_anchor != None`. A live
+  `is_active_marker()` is `run_state == Running && dispatch_anchor != DispatchAnchor::None`. A live
   orchestrator session that merely references an undispatched task classifies as
   not-active. `run_state`/`confidence` reporting for recent/stale and preview text
   is unchanged.
