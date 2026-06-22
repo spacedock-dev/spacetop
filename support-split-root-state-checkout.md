@@ -303,3 +303,26 @@ base at the resolved entity dir while README parse, discovery, the watcher, and
 split-root fixture parser/index test is the proof and fails against `main`. App,
 lib, and watcher need no signature changes because resolution happens inside the
 parser/sources layer.
+
+## Stage Report: implement
+
+- DONE: Implement the parser change per the plan: add optional state: to RawWorkflowFrontmatter and WorkflowDefinition, add the pure resolve_entity_dir helper, and thread the resolved entity dir to collect_active_item_paths, load_archive, and the worktree-merge base — keeping README parse, discovery, watcher, and WorkflowDefinition.root on the definition dir
+  `readme.rs` parses `state:`; `domain/mod.rs` carries `WorkflowDefinition.state`; `snapshot.rs::resolve_entity_dir` (pure) threads to `collect_active_item_paths` + `merge_worktree_items` base; `sources.rs::load_archive` resolves internally. Commit f3b5d70.
+- DONE: Add the split-root fixture parser/index test asserting non-empty active AND archived items (must fail against main) plus a $inline single-root guard; keep existing single-root fixtures green
+  `split_root_loads_active_and_archived_from_state_checkout` (asserts non-empty active + archived; fails on main) and `inline_state_keeps_single_root_behavior` added in `parser/tests.rs`; plus `resolve_entity_dir` and `state:` round-trip unit tests. All 373 core + spacetop suites green.
+- DONE: Run and record reproducible evidence (cargo fmt, cargo test, make lint) and update README "Current Product Shape" + AGENTS.md (Workflow Parsing Rules and Code Map) in the same change
+  `cargo fmt --check` clean, `cargo test` all suites pass, `make lint` (clippy -D warnings) clean, `no_terminal_deps`/`no_write_git_calls` guardrails pass. README "Status" + AGENTS.md "Workflow Parsing Rules"/"Code Map" updated in the same commit.
+
+### Summary
+
+Split the definition dir from the entity dir behind a new optional README
+`state:` field, resolved by one pure `resolve_entity_dir` helper that the active
+scan, worktree-merge base, and archive load all consult; discovery, the watcher,
+and `WorkflowDefinition.root` stay on the definition dir. A declared-but-absent
+state checkout now renders empty rather than erroring, which is also why
+real-fixture entity/archive tests were repointed onto synthetic single-root
+fixtures (the migrated `docs/spacetop-dev` keeps its entities/archive only in the
+state checkout, absent from code worktrees). Headless `export` against the real
+split-root workflow loads 2 active + 70 archived entities, proving the
+empty-list regression is fixed; the same export on a code worktree without the
+state checkout returns 0/0 without crashing.
