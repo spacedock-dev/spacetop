@@ -6,10 +6,10 @@ kind: feature
 risk: medium
 id: 073
 started: 2026-06-22T07:39:16Z
-worktree: .worktrees/spacedock-ensign-support-split-root-state-checkout
+worktree:
 mod-block:
 pr: pr-merge:75
-verdict: passed
+verdict: PASSED
 completed: 2026-06-22T08:47:06Z
 archived: 2026-06-22T08:47:06Z
 ---
