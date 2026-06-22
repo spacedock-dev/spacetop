@@ -147,6 +147,7 @@ impl OverviewState {
         let snapshot = WorkflowSnapshot {
             definition: spacetop_core::domain::WorkflowDefinition {
                 root: workflow_dir.clone(),
+                state: None,
                 stages: Vec::new(),
                 id_style: None,
                 entity_type: None,
@@ -891,6 +892,7 @@ mod tests {
         WorkflowSnapshot {
             definition: WorkflowDefinition {
                 root: PathBuf::from("/tmp/ow-test"),
+                state: None,
                 stages: vec![StageDefinition {
                     name: "design".to_string(),
                     initial: true,
@@ -959,6 +961,7 @@ mod tests {
         WorkflowSnapshot {
             definition: WorkflowDefinition {
                 root: PathBuf::from("/tmp/ow-test"),
+                state: None,
                 stages,
                 id_style: None,
                 entity_type: None,

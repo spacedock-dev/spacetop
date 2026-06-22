@@ -69,6 +69,7 @@ fn overview_hides_preview_until_enter_opens_preview_mode() {
     let snapshot = WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: root.clone(),
+            state: None,
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -126,8 +127,7 @@ fn active_view_header_shows_scope_and_archived_placeholder() {
 #[test]
 fn archived_view_preview_renders_verdict_and_completed() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
-    let mut app = App::load(root).expect("workflow should load");
+    let (mut app, _dir) = app_loaded_with_archived_item();
     app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
@@ -150,8 +150,7 @@ fn archived_view_preview_renders_verdict_and_completed() {
 #[test]
 fn archived_view_list_appends_verdict_glyphs() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
-    let mut app = App::load(root).expect("workflow should load");
+    let (mut app, _dir) = app_loaded_with_archived_item();
     app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
 
     let mut terminal =

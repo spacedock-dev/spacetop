@@ -91,6 +91,7 @@ fn task_list_uses_configured_selection_background() {
     let snapshot = spacetop_core::domain::WorkflowSnapshot {
         definition: spacetop_core::domain::WorkflowDefinition {
             root: root.clone(),
+            state: None,
             stages: vec![spacetop_core::domain::StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -164,6 +165,7 @@ fn footer_uses_configured_background() {
     let snapshot = spacetop_core::domain::WorkflowSnapshot {
         definition: spacetop_core::domain::WorkflowDefinition {
             root: root.clone(),
+            state: None,
             stages: vec![spacetop_core::domain::StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -253,6 +255,7 @@ fn task_row_long_phase_name_ellipsis() {
         let snapshot = spacetop_core::domain::WorkflowSnapshot {
             definition: spacetop_core::domain::WorkflowDefinition {
                 root: root.clone(),
+                state: None,
                 stages: vec![spacetop_core::domain::StageDefinition {
                     name: long_phase.to_string(),
                     initial: true,
@@ -689,6 +692,7 @@ fn app_with_broken_entity() -> App {
     let snapshot = spacetop_core::domain::WorkflowSnapshot {
         definition: spacetop_core::domain::WorkflowDefinition {
             root: root.clone(),
+            state: None,
             stages: vec![spacetop_core::domain::StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -726,6 +730,7 @@ fn app_with_archived_broken_entity_only() -> App {
     let root = PathBuf::from("/tmp/spacetop-archived-broken");
     let definition = spacetop_core::domain::WorkflowDefinition {
         root: root.clone(),
+        state: None,
         stages: vec![spacetop_core::domain::StageDefinition {
             name: "done".to_string(),
             initial: true,

@@ -204,6 +204,7 @@ mod tests {
         let snapshot = WorkflowSnapshot {
             definition: WorkflowDefinition {
                 root: root.clone(),
+                state: None,
                 stages: vec![StageDefinition {
                     name: "design".to_string(),
                     initial: true,

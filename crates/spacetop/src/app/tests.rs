@@ -234,8 +234,13 @@ fn loads_real_workflow_state_and_derives_stage_counts() {
 
 #[test]
 fn stage_counts_include_archived_done_items_from_the_workflow_archive() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
-    let mut app = App::load(root).expect("workflow should load");
+    // The real `docs/spacetop-dev` is split-root; its archive lives in a state
+    // checkout absent from a code worktree. Use a single-root tempdir fixture
+    // with an active item and one archived `done` item.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_workflow_with_archive(root, "001");
+    let mut app = App::load(root.to_path_buf()).expect("workflow should load");
     app.handle_key(key(KeyCode::Char('a')));
     app.handle_key(key(KeyCode::Char('a')));
 
@@ -697,8 +702,12 @@ fn default_view_scope_is_active_and_visible_items_match_snapshot() {
 
 #[test]
 fn toggle_scope_key_a_flips_to_archived_and_loads_lazily() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
-    let mut app = App::load(root).expect("workflow should load");
+    // Single-root tempdir fixture (real `docs/spacetop-dev` is split-root with
+    // its archive in an absent state checkout); needs at least one archived item.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    write_workflow_with_archive(root, "001");
+    let mut app = App::load(root.to_path_buf()).expect("workflow should load");
     assert_eq!(app.view_scope(), ViewScope::Active);
     assert!(app.archived_count().is_none());
 
@@ -1015,6 +1024,7 @@ fn snapshot_with_items(count: usize) -> WorkflowSnapshot {
     WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: PathBuf::from("workflow"),
+            state: None,
             stages: vec![
                 StageDefinition {
                     name: "plan".to_string(),
@@ -1072,6 +1082,7 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
     WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: PathBuf::from("workflow"),
+            state: None,
             stages: vec![StageDefinition {
                 name: "plan".to_string(),
                 initial: true,

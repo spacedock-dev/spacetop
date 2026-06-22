@@ -104,6 +104,11 @@ Keep module boundaries clear and testable:
 - `crates/spacetop-core/src/parser.rs` and `crates/spacetop-core/src/parser/*`
   own README/entity parsing, archive loading, frontmatter splitting, status
   validation, `.worktrees` scanning, and worktree merge behavior.
+  `parser/readme.rs` parses the optional `state:` field into
+  `WorkflowDefinition.state`; `parser/snapshot.rs::resolve_entity_dir` is the
+  single pure helper that turns `(definition_dir, state)` into the entity
+  directory, and `load_workflow_dir` / `sources.rs::load_archive` thread that
+  resolved dir to the active and archive scans.
 - `crates/spacetop-core/src/index.rs`, `query.rs`, and `sources.rs` own the
   v2 index/query spine; TUI code must consume `WorkflowIndex` through query
   methods instead of inferring schema rules from raw vectors.
@@ -163,6 +168,18 @@ Preserve the current parsing contracts unless the task explicitly changes them:
 
 - Workflow directories are identified by README frontmatter with `commissioned-by` starting with `spacedock@`.
 - Discovery prunes `.git`, `.worktrees`, `node_modules`, `vendor`, `dist`, `build`, `__pycache__`, and `tests`.
+- Split-root state: a README may declare `state:` to separate the definition
+  directory (where `README.md` lives, what discovery returns) from the entity
+  directory (where active `*.md` and `_archive/` are read). A relative `state:`
+  resolves the entity directory to `definition_dir.join(state)`; `$inline`,
+  empty, or absent keeps the entity directory equal to the definition directory
+  (single-root). Resolution is always relative to the definition directory; an
+  absolute `state:` or one with a `..` parent-traversal component is unsupported
+  and falls back to single-root rather than escaping the definition directory.
+  Discovery, the watcher, and `WorkflowDefinition.root` stay on the definition
+  directory; only entity/archive scans follow `state:`. A declared-but-absent
+  state checkout yields no entities rather than erroring (mirrors missing
+  `_archive/`).
 - Active item loading ignores `README.md`, `_mods`, `_archive`, and nested non-item files.
 - Status values must match stages from the workflow README.
 - Archived parsing skips malformed archived entries but surfaces archive IO errors.

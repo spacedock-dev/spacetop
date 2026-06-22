@@ -125,8 +125,18 @@ Body text should be preserved without frontmatter.
 #[test]
 fn loads_workflow_snapshot_from_directory_ignoring_mods_and_archive() {
     let root = unique_temp_dir("snapshot");
-    fs::copy(fixture_root().join("README.md"), root.join("README.md"))
-        .expect("README fixture should copy");
+    // The real `docs/spacetop-dev` README is now split-root (`state:`), so its
+    // entities live in a separate checkout. This test exercises the single-root
+    // active-loading + `_mods`/`_archive` ignore contract with entities beside
+    // the README, so strip the `state:` declaration from the copied README to
+    // keep it single-root while preserving the real 5-stage definition.
+    let readme = fs::read_to_string(fixture_root().join("README.md")).expect("read README fixture");
+    let readme: String = readme
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("state:"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    fs::write(root.join("README.md"), readme).expect("README fixture should write");
     write_markdown(
         &root.join("active.md"),
         r#"---
@@ -290,8 +300,31 @@ fn write_markdown(path: &Path, contents: &str) {
 
 #[test]
 fn load_archived_items_returns_entries_from_flat_files() {
-    let root = fixture_root();
-    let allowed = stage_names(&root);
+    // The real `docs/spacetop-dev` archive moved into the split-root state
+    // checkout, which is not present in a code worktree. Build a single-root
+    // archive fixture to exercise flat-file loading + status preservation.
+    let root = unique_temp_dir("archive-flat");
+    let archive = root.join("_archive");
+    fs::create_dir_all(&archive).expect("archive dir");
+    let allowed = vec!["design".to_string(), "done".to_string()];
+    write_markdown(
+        &archive.join("scaffold.md"),
+        &entity_md_with_status("001", "Scaffold Rust CLI Project", "done", "scaffold body"),
+    );
+    write_markdown(
+        &archive.join("parse.md"),
+        &entity_md_with_status(
+            "002",
+            "Parse Spacedock Workflow Files",
+            "done",
+            "parse body",
+        ),
+    );
+    write_markdown(
+        &archive.join("tui.md"),
+        &entity_md_with_status("003", "Build Initial TUI Overview", "done", "tui body"),
+    );
+
     let items = load_archived_items(&root, &allowed, None).expect("archive should load");
 
     assert!(items.len() >= 3, "expected at least 3 archived entries");
@@ -301,13 +334,13 @@ fn load_archived_items_returns_entries_from_flat_files() {
     assert!(titles.contains(&"Build Initial TUI Overview"));
     assert!(
         items.iter().any(|item| item.status == "done"),
-        "legacy archived items should preserve terminal frontmatter status"
+        "archived items should preserve terminal frontmatter status"
     );
     assert!(
         items
             .iter()
             .all(|item| allowed.iter().any(|status| status == &item.status)),
-        "archived items should preserve statuses from the current workflow stage set"
+        "archived items should preserve statuses from the workflow stage set"
     );
 }
 
@@ -1520,4 +1553,97 @@ fn sequential_workflow_id_behavior_unaffected() {
         ),
         "expected MissingRequiredField for id under sequential, got {err_seq:?}"
     );
+}
+
+/// Write a README declaring `state: <state_rel>` (or single-root when `None`)
+/// with `design`/`done` stages, returning the definition dir.
+fn write_split_root_readme(def_dir: &Path, state_rel: Option<&str>) {
+    fs::create_dir_all(def_dir).expect("definition dir");
+    let state_line = state_rel
+        .map(|s| format!("state: {s}\n"))
+        .unwrap_or_default();
+    let readme = format!(
+        "---\ncommissioned-by: spacedock@0.10.1\n{state_line}stages:\n  states:\n    - name: design\n      initial: true\n    - name: done\n      terminal: true\n---\n\n# Workflow\n"
+    );
+    fs::write(def_dir.join("README.md"), readme).expect("write README");
+}
+
+/// AC-2/AC-3 (primary regression). A split-root workflow — README with
+/// `state: state-sub`, active + `_archive/` entities under `state-sub/`, and NO
+/// entity files beside the README — renders its active AND archived entities.
+/// Against `main` (which scans the README dir) both lists are empty, so this
+/// test fails there and passes once entity-dir resolution lands.
+#[test]
+fn split_root_loads_active_and_archived_from_state_checkout() {
+    use crate::sources::WorkflowSources;
+
+    let root = unique_temp_dir("split-root");
+    let def = root.join("docs/wf");
+    write_split_root_readme(&def, Some(".spacedock-state"));
+    let state = def.join(".spacedock-state");
+
+    // Active entity lives in the state checkout, not beside the README.
+    write_markdown(
+        &state.join("active-task.md"),
+        &entity_md("001", "Active Task"),
+    );
+    // Archived entity lives under the state checkout's `_archive/`.
+    write_markdown(
+        &state.join("_archive").join("done-task.md"),
+        &entity_md_with_status("002", "Done Task", "done", "done body"),
+    );
+
+    let definition = parse_workflow_readme(&def.join("README.md")).expect("parse README");
+    assert_eq!(definition.state.as_deref(), Some(".spacedock-state"));
+    assert_eq!(definition.root, def, "definition root stays the README dir");
+
+    let snapshot = load_workflow_dir(&def, &root).expect("load split-root workflow");
+    let active_titles: Vec<&str> = snapshot.items.iter().map(|i| i.title.as_str()).collect();
+    assert!(
+        active_titles.contains(&"Active Task"),
+        "split-root active items must load from the state checkout; got {active_titles:?}"
+    );
+
+    let archive = WorkflowSources::load_archive(&def, &definition);
+    assert!(
+        archive.error.is_none(),
+        "archive load errored: {:?}",
+        archive.error
+    );
+    let archived_titles: Vec<&str> = archive.entities.iter().map(|e| e.title.as_str()).collect();
+    assert!(
+        archived_titles.contains(&"Done Task"),
+        "split-root archived items must load from the state checkout's _archive/; got {archived_titles:?}"
+    );
+}
+
+/// AC-4 (single-root guard). `state: $inline` is the explicit single-root
+/// sentinel: entities beside the README still load, and behavior is identical
+/// to omitting `state:` entirely.
+#[test]
+fn inline_state_keeps_single_root_behavior() {
+    use crate::sources::WorkflowSources;
+
+    let root = unique_temp_dir("inline-state");
+    let def = root.join("docs/wf");
+    write_split_root_readme(&def, Some("$inline"));
+
+    // Entities beside the README, as in any single-root workflow.
+    write_markdown(
+        &def.join("active-task.md"),
+        &entity_md("001", "Active Task"),
+    );
+    write_markdown(
+        &def.join("_archive").join("done-task.md"),
+        &entity_md_with_status("002", "Done Task", "done", "done body"),
+    );
+
+    let definition = parse_workflow_readme(&def.join("README.md")).expect("parse README");
+    let snapshot = load_workflow_dir(&def, &root).expect("load $inline workflow");
+    assert_eq!(snapshot.items.len(), 1);
+    assert_eq!(snapshot.items[0].title, "Active Task");
+
+    let archive = WorkflowSources::load_archive(&def, &definition);
+    assert_eq!(archive.entities.len(), 1);
+    assert_eq!(archive.entities[0].title, "Done Task");
 }

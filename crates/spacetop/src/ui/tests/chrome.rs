@@ -403,6 +403,7 @@ fn synthetic_session(n: usize) -> crate::app::OverviewSession {
     let snap = WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: PathBuf::from("/x/w0"),
+            state: None,
             stages: vec![StageDefinition {
                 name: "plan".to_string(),
                 initial: true,

@@ -27,6 +27,7 @@ fn app_with_items(items: Vec<Entity>) -> App {
     let snapshot = WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: root.clone(),
+            state: None,
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -70,6 +71,7 @@ fn app_with_session_attribution(
     let snapshot = WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: root.clone(),
+            state: None,
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -160,6 +162,7 @@ fn snapshot_with_body(id: &str, title: &str, body: &str) -> WorkflowSnapshot {
     WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: PathBuf::from("/tmp/ww-test"),
+            state: None,
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -181,6 +184,35 @@ fn snapshot_with_body(id: &str, title: &str, body: &str) -> WorkflowSnapshot {
         items: vec![item(id, title, body)],
         parse_errors: Vec::new(),
     }
+}
+
+/// Build a single-root workflow on disk with one active item and one rich
+/// archived item (carrying `verdict`, `completed`, and `worktree`), load it via
+/// `App::load`, and return the App with its backing tempdir (which must outlive
+/// the App). The real `docs/spacetop-dev` is split-root with its archive in a
+/// state checkout absent from a code worktree, so archived-scope render tests
+/// build their own single-root fixture instead.
+fn app_loaded_with_archived_item() -> (App, tempfile::TempDir) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(
+        root.join("README.md"),
+        "---\ncommissioned-by: spacedock@0.10.1\nstages:\n  states:\n    - name: design\n      initial: true\n    - name: done\n      terminal: true\n---\n\n# Workflow\n",
+    )
+    .expect("write README");
+    std::fs::write(
+        root.join("active.md"),
+        "---\nid: \"001\"\ntitle: Active Task\nstatus: design\n---\n\nactive body\n",
+    )
+    .expect("write active");
+    std::fs::create_dir_all(root.join("_archive")).expect("archive dir");
+    std::fs::write(
+        root.join("_archive").join("done.md"),
+        "---\nid: \"999\"\ntitle: Archived Done\nstatus: done\nverdict: PASSED\ncompleted: 2026-04-27T00:00:00Z\nworktree: .worktrees/task-999\n---\n\narchived body\n",
+    )
+    .expect("write archived");
+    let app = App::load(root.to_path_buf()).expect("workflow should load");
+    (app, dir)
 }
 
 fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
