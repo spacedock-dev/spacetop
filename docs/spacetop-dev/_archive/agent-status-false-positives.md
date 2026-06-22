@@ -6,10 +6,10 @@ kind: bugfix
 risk: medium
 id: 072
 started: 2026-06-22T05:14:50Z
-worktree: .worktrees/spacedock-ensign-agent-status-false-positives
+worktree:
 mod-block:
 pr: pr-merge:74
-verdict: passed
+verdict: PASSED
 completed: 2026-06-22T07:14:58Z
 archived: 2026-06-22T07:14:58Z
 ---
