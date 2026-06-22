@@ -1,6 +1,6 @@
 ---
 title: Support split-root workflows (read entities from the state checkout)
-status: implement
+status: verify
 source: captain report (session) — spacetop-dev migrated to split-root; task list renders empty
 kind: feature
 risk: medium
