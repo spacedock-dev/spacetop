@@ -314,3 +314,16 @@ AC-2 negative regression; a new positive dispatch-marker test covers
 `DispatchedForEntity`; AC-3 worktree/resume tests stay green after re-anchoring
 their fixtures to the entity's worktree. `cargo fmt`, full `cargo test`, and
 `make lint` all pass; read-only/git/config contracts untouched.
+
+## Stage Report: verify
+
+- DONE: Independently re-run the verification commands against the worktree branch (cargo fmt --check, cargo test, make lint) and record the actual output — do not trust the implement report's claims
+  `cargo fmt --check` exit 0 (clean); full `cargo test` exit 0 — every binary `0 failed` (lib 373, core 183, main 4, plus all integration suites; guardrails `no_write_git_calls` 2/2, `no_terminal_deps` 1/1); `make lint` (`cargo clippy --all-targets --all-features -- -D warnings`) exit 0, no warnings.
+- DONE: Confirm every acceptance criterion (AC-1..AC-4) has concrete evidence in the diff/tests: AC-2 negative regression genuinely flips (would fail under old logic, passes now), AC-3 positive worktree/resume cases still pass, AC-1 typed DispatchAnchor in the domain, AC-4 testable via ProcessProbe/fixtures with no machine-specific paths
+  AC-1: typed `DispatchAnchor` enum + `dispatch_anchor` field on `AgentSessionEvidence` (`domain/mod.rs`), predicate reads typed state. AC-2 flip proven empirically: temporarily reverting `is_active_marker()` to the old `confidence >= Medium && Running` logic makes `running_medium_confidence_match_without_dispatch_marker_is_not_active` FAIL at `assert!(!has_active_marker())` (`session_activity.rs:932`); restored fix → passes; worktree confirmed clean after. AC-3: `running_codex_worktree_match_is_high_confidence_active`, `running_claude_code_worktree_match_is_high_confidence_active`, `pidless_codex_resume_command_marks_session_running`, `pidless_claude_resume_command_marks_session_running` all pass (23/23 session_activity). AC-4: both new tests use `tempfile::tempdir()` + `FixtureProbe` — no machine-specific paths or process names.
+- DONE: Render a verification verdict (PASSED or REJECTED) with any defects or missing evidence, and confirm read-only/git/config contracts and the core-vs-UI boundary are untouched
+  Verdict PASSED. Diff touches only `domain/mod.rs`, `session_activity.rs`, `index.rs` (test fixture), two `spacetop` test fixtures, and `AGENTS.md` — no editor/git_sync/config/write paths. Read-only/git/config contracts intact (`no_write_git_calls` guardrail passes); core stays terminal-free (`no_terminal_deps` passes); TUI marker rendering unchanged (domain-before-UI preserved). `AGENTS.md` Code Map note updated in the same change.
+
+### Summary
+
+Independently re-verified the fix on branch `spacedock-ensign/agent-status-false-positives`: `cargo fmt --check`, full `cargo test`, and `make lint` all pass clean (no trusting the implement report). Proved the AC-2 negative regression genuinely flips by reverting `is_active_marker()` to the old logic — the new test failed at the active-marker assertion, then passed with the fix restored, leaving the worktree clean. All four acceptance criteria have concrete evidence; read-only/git/config contracts, the no-write-git and no-terminal-deps guardrails, and the core-vs-UI boundary are all untouched. Verdict: PASSED.
