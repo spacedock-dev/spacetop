@@ -5,6 +5,7 @@ source: captain report (session) — spacetop-dev migrated to split-root; task l
 kind: feature
 risk: medium
 id: 073
+started: 2026-06-22T07:39:16Z
 ---
 
 Spacetop renders an empty task list for the spacetop-dev workflow after it was
