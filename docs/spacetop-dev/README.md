@@ -1,5 +1,6 @@
 ---
 commissioned-by: spacedock@0.20.0
+state: .spacedock-state
 entity-type: development_task
 entity-label: task
 entity-label-plural: tasks
