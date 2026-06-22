@@ -48,8 +48,10 @@ Entity and archive loading honors a split-root layout: when a workflow README
 declares `state:` (a relative path such as `state: .spacedock-state`), active
 entities and `_archive/` are read from that state checkout while the README and
 discovery stay on the definition directory. `$inline`, an empty value, or an
-absent `state:` keeps entities beside the README (single-root, unchanged). A
-declared-but-absent state checkout renders an empty list rather than failing.
+absent `state:` keeps entities beside the README (single-root, unchanged); an
+absolute `state:` or one with `..` parent traversal is unsupported and also falls
+back to single-root. A declared-but-absent state checkout renders an empty list
+rather than failing.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.

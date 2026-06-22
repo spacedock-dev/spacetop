@@ -62,14 +62,25 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
 ///   itself (single-root, unchanged behavior).
 ///
 /// Resolution is always relative to the definition directory, never the repo
-/// root or cwd. An absolute `state:` is out of scope for this task; it would
-/// fall through to `join`, which discards the definition prefix — fixtures do
-/// not exercise it and it is not special-cased.
+/// root or cwd. Only a contained relative subpath is honored: an **absolute**
+/// `state:` (which `Path::join` would otherwise let escape the definition dir by
+/// discarding its prefix) or one containing any `..` parent-traversal component
+/// is treated as unsupported and falls back to the definition directory
+/// (single-root). This keeps an untrusted or misconfigured README from pointing
+/// entity/archive loading at arbitrary filesystem paths.
 pub(crate) fn resolve_entity_dir(definition_dir: &Path, state: Option<&str>) -> PathBuf {
-    match state.map(str::trim) {
-        None | Some("") | Some("$inline") => definition_dir.to_path_buf(),
-        Some(rel) => definition_dir.join(rel),
+    let rel = match state.map(str::trim) {
+        None | Some("") | Some("$inline") => return definition_dir.to_path_buf(),
+        Some(rel) => Path::new(rel),
+    };
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|component| component == std::path::Component::ParentDir)
+    {
+        return definition_dir.to_path_buf();
     }
+    definition_dir.join(rel)
 }
 
 pub(crate) fn entity_parse_error_from(path: &Path, err: &ParseError) -> EntityParseError {
@@ -128,6 +139,15 @@ mod tests {
     }
 
     #[test]
+    fn nested_relative_subpath_joins_definition_dir() {
+        let def = Path::new("/repo/docs/wf");
+        assert_eq!(
+            resolve_entity_dir(def, Some("state/sub")),
+            def.join("state/sub")
+        );
+    }
+
+    #[test]
     fn inline_empty_and_absent_state_resolve_to_definition_dir() {
         let def = Path::new("/repo/docs/wf");
         for state in [None, Some(""), Some("  "), Some("$inline")] {
@@ -135,6 +155,32 @@ mod tests {
                 resolve_entity_dir(def, state),
                 def.to_path_buf(),
                 "state {state:?} should keep entity dir == definition dir"
+            );
+        }
+    }
+
+    #[test]
+    fn absolute_state_falls_back_to_definition_dir() {
+        let def = Path::new("/repo/docs/wf");
+        // `Path::join` would otherwise discard `def` and return the absolute
+        // path verbatim, escaping the definition dir.
+        for state in ["/etc", "/tmp/evil", "/"] {
+            assert_eq!(
+                resolve_entity_dir(def, Some(state)),
+                def.to_path_buf(),
+                "absolute state {state:?} must fall back to the definition dir"
+            );
+        }
+    }
+
+    #[test]
+    fn parent_traversal_state_falls_back_to_definition_dir() {
+        let def = Path::new("/repo/docs/wf");
+        for state in ["../evil", "sub/../../x", ".."] {
+            assert_eq!(
+                resolve_entity_dir(def, Some(state)),
+                def.to_path_buf(),
+                "state {state:?} with parent traversal must fall back to the definition dir"
             );
         }
     }

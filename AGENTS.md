@@ -173,7 +173,9 @@ Preserve the current parsing contracts unless the task explicitly changes them:
   directory (where active `*.md` and `_archive/` are read). A relative `state:`
   resolves the entity directory to `definition_dir.join(state)`; `$inline`,
   empty, or absent keeps the entity directory equal to the definition directory
-  (single-root). Resolution is always relative to the definition directory.
+  (single-root). Resolution is always relative to the definition directory; an
+  absolute `state:` or one with a `..` parent-traversal component is unsupported
+  and falls back to single-root rather than escaping the definition directory.
   Discovery, the watcher, and `WorkflowDefinition.root` stay on the definition
   directory; only entity/archive scans follow `state:`. A declared-but-absent
   state checkout yields no entities rather than erroring (mirrors missing
