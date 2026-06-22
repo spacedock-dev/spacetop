@@ -123,6 +123,7 @@ fn app_with_session_attribution(
                     liveness,
                     latest_activity_unix: Some(1_718_000_000),
                     matched_worktree: Some(PathBuf::from(format!(".worktrees/task-{entity_id}"))),
+                    dispatch_anchor: spacetop_core::domain::DispatchAnchor::OwnedWorktree,
                 }],
             }],
         }),

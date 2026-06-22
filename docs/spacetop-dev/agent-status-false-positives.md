@@ -292,3 +292,57 @@ worktree/resume running tests and a new positive dispatch-marker test, verified
 with `cargo test` and `make lint`. No spike needed; the mechanism reuses existing
 helpers and fixture patterns. One `AGENTS.md` behavior note ships in the same
 change; read-only/git/config contracts are untouched.
+
+## Stage Report: implement
+
+- DONE: Implement the typed DispatchAnchor per the plan: add the enum + field on AgentSessionEvidence, populate it in scan_local_sessions_inner (own-worktree match plus a positive dispatch-slug check for this entity), and change is_active_marker() to require Running && dispatch_anchor != None
+  `DispatchAnchor` enum (`OwnedWorktree`/`DispatchedForEntity`/`None`) + `dispatch_anchor` field added (`domain/mod.rs`); `match_entity` now returns an `EntityMatch` carrying `worktree_anchored`, and `scan_local_sessions_inner` sets the anchor from the worktree match or the new `has_matching_dispatch_assignment` slug check (`session_activity.rs`); `is_active_marker()` is now `run_state == Running && dispatch_anchor != DispatchAnchor::None`.
+- DONE: Add the AC-2 regression test (live session referencing the task file path with NO dispatch marker must classify not-active) and a new positive dispatch-marker test; keep the existing AC-3 worktree/resume running tests passing
+  Added `running_medium_confidence_match_without_dispatch_marker_is_not_active` (AC-2: live pid + Medium path-mention, no marker -> Running but `!has_active_marker()`) and `running_session_with_matching_dispatch_marker_is_active`; re-anchored the Codex resume and observed-write fixtures to the entity worktree so AC-3 keeps passing. `cargo test -p spacetop-core session_activity`: 23/23 passed.
+- DONE: Run and record reproducible evidence (cargo fmt, cargo test, make lint) and update the AGENTS.md session-activity behavior note in the same change
+  `cargo fmt` clean; full `cargo test` all green (every `test result:` line `0 failed`); `make lint` finished with no warnings; added a `session_activity.rs`/`domain/mod.rs` Code Map note to `AGENTS.md` describing the dispatched-worker/own-worktree active-marker rule.
+
+### Summary
+
+Narrowed the active-session marker to a typed dispatch/ownership signal so a live
+orchestrator session that only references an undispatched task no longer lights up
+as running. Added `DispatchAnchor` on session evidence, populated it from the
+worktree match and a positive dispatch-slug check, and made `is_active_marker()`
+require `Running && dispatch_anchor != DispatchAnchor::None`. The former
+`running_medium_confidence_match_is_active` test (which encoded the bug) became the
+AC-2 negative regression; a new positive dispatch-marker test covers
+`DispatchedForEntity`; AC-3 worktree/resume tests stay green after re-anchoring
+their fixtures to the entity's worktree. `cargo fmt`, full `cargo test`, and
+`make lint` all pass; read-only/git/config contracts untouched.
+
+## Stage Report: verify
+
+- DONE: Independently re-run the verification commands against the worktree branch (cargo fmt --check, cargo test, make lint) and record the actual output — do not trust the implement report's claims
+  `cargo fmt --check` exit 0 (clean); full `cargo test` exit 0 — every binary `0 failed` (lib 373, core 183, main 4, plus all integration suites; guardrails `no_write_git_calls` 2/2, `no_terminal_deps` 1/1); `make lint` (`cargo clippy --all-targets --all-features -- -D warnings`) exit 0, no warnings.
+- DONE: Confirm every acceptance criterion (AC-1..AC-4) has concrete evidence in the diff/tests: AC-2 negative regression genuinely flips (would fail under old logic, passes now), AC-3 positive worktree/resume cases still pass, AC-1 typed DispatchAnchor in the domain, AC-4 testable via ProcessProbe/fixtures with no machine-specific paths
+  AC-1: typed `DispatchAnchor` enum + `dispatch_anchor` field on `AgentSessionEvidence` (`domain/mod.rs`), predicate reads typed state. AC-2 flip proven empirically: temporarily reverting `is_active_marker()` to the old `confidence >= Medium && Running` logic makes `running_medium_confidence_match_without_dispatch_marker_is_not_active` FAIL at `assert!(!has_active_marker())` (`session_activity.rs:932`); restored fix → passes; worktree confirmed clean after. AC-3: `running_codex_worktree_match_is_high_confidence_active`, `running_claude_code_worktree_match_is_high_confidence_active`, `pidless_codex_resume_command_marks_session_running`, `pidless_claude_resume_command_marks_session_running` all pass (23/23 session_activity). AC-4: both new tests use `tempfile::tempdir()` + `FixtureProbe` — no machine-specific paths or process names.
+- DONE: Render a verification verdict (PASSED or REJECTED) with any defects or missing evidence, and confirm read-only/git/config contracts and the core-vs-UI boundary are untouched
+  Verdict PASSED. Diff touches only `domain/mod.rs`, `session_activity.rs`, `index.rs` (test fixture), two `spacetop` test fixtures, and `AGENTS.md` — no editor/git_sync/config/write paths. Read-only/git/config contracts intact (`no_write_git_calls` guardrail passes); core stays terminal-free (`no_terminal_deps` passes); TUI marker rendering unchanged (domain-before-UI preserved). `AGENTS.md` Code Map note updated in the same change.
+
+### Summary
+
+Independently re-verified the fix on branch `spacedock-ensign/agent-status-false-positives`: `cargo fmt --check`, full `cargo test`, and `make lint` all pass clean (no trusting the implement report). Proved the AC-2 negative regression genuinely flips by reverting `is_active_marker()` to the old logic — the new test failed at the active-marker assertion, then passed with the fix restored, leaving the worktree clean. All four acceptance criteria have concrete evidence; read-only/git/config contracts, the no-write-git and no-terminal-deps guardrails, and the core-vs-UI boundary are all untouched. Verdict: PASSED.
+
+## Stage Report: pr-review
+
+- DONE: AGENTS.md Code Map note — qualify `dispatch_anchor != None` as `dispatch_anchor != DispatchAnchor::None`
+  Edited the `session_activity.rs`/`domain/mod.rs` Code Map entry so the inline predicate no longer reads like `Option::None`.
+- DONE: session_activity.rs — rename the local `entity_slug` binding that shadows the imported `entity_slug(..)` fn
+  Renamed the local to `target_slug` in `has_matching_dispatch_assignment` and updated its use; behavior identical, `make lint` clean.
+- DONE: Entity implement stage report — `dispatch_anchor != None` -> `dispatch_anchor != DispatchAnchor::None`
+  Fixed the evidence prose for the `is_active_marker()` line; left the verbatim checklist-item text unchanged.
+- DONE: Entity implement summary — `dispatch_anchor != None` -> `dispatch_anchor != DispatchAnchor::None`
+  Fixed the same predicate in the implement summary paragraph.
+
+### Summary
+
+Addressed the four GitHub Copilot review comments on PR #74: three doc/prose
+precision fixes qualifying the `DispatchAnchor::None` variant so it doesn't read
+as `Option::None`, and one code rename of a shadowing `entity_slug` local to
+`target_slug` in `has_matching_dispatch_assignment`. No behavior change. `cargo
+fmt`, full `cargo test` (all `0 failed`), and `make lint` (no warnings) all pass.
