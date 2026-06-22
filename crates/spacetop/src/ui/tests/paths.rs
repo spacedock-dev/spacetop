@@ -98,6 +98,7 @@ fn path_line_stays_visible_for_long_paths() {
     let snapshot = WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: workflow_dir.clone(),
+            state: None,
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,

@@ -435,6 +435,7 @@ mod tests {
     fn definition() -> WorkflowDefinition {
         WorkflowDefinition {
             root: PathBuf::from("/tmp/workflow"),
+            state: None,
             stages: vec![
                 StageDefinition {
                     name: "plan".to_string(),

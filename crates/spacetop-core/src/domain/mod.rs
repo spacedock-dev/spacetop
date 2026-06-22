@@ -93,7 +93,14 @@ fn stable_stage_hue(stage_name: &str) -> f32 {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkflowDefinition {
+    /// The definition directory: where `README.md` lives and what discovery
+    /// returns. Always the README's parent, never the resolved state checkout.
     pub root: PathBuf,
+    /// Raw README `state:` declaration, verbatim. `None`/empty/`$inline` means
+    /// single-root (entities live beside the README); a relative path names a
+    /// split-root state checkout. Resolve it through [`Self::entity_root`]
+    /// rather than reading this field directly.
+    pub state: Option<String>,
     pub stages: Vec<StageDefinition>,
     pub id_style: Option<String>,
     pub entity_type: Option<String>,
@@ -440,6 +447,7 @@ mod tests {
     ) -> WorkflowDefinition {
         WorkflowDefinition {
             root: PathBuf::new(),
+            state: None,
             stages,
             id_style: None,
             entity_type: None,

@@ -364,6 +364,7 @@ mod tests {
         let stage_colors = spacetop_core::domain::assign_stage_colors(&stages);
         WorkflowDefinition {
             root,
+            state: None,
             stages,
             id_style: Some("sequential".to_string()),
             entity_type: Some("development_task".to_string()),

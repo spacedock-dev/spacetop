@@ -1,7 +1,9 @@
 use std::path::Path;
 
 use crate::domain::{Entity, EntityParseError, WorkflowDefinition, WorkflowSnapshot};
-use crate::parser::{load_archived_items_with_errors, load_workflow_dir, ParseError};
+use crate::parser::{
+    load_archived_items_with_errors, load_workflow_dir, resolve_entity_dir, ParseError,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArchiveSnapshot {
@@ -49,8 +51,14 @@ impl WorkflowSources {
             .iter()
             .map(|stage| stage.name.clone())
             .collect::<Vec<_>>();
+        // Archives live under the resolved entity dir. For single-root workflows
+        // this equals `workflow_dir`; for split-root it is the state checkout.
+        // `workflow_dir` (the discovered definition dir) and `definition.root`
+        // name the same directory, so resolution is consistent with the active
+        // scan in `load_workflow_dir`.
+        let entity_dir = resolve_entity_dir(workflow_dir, definition.state.as_deref());
         ArchiveSource::load(
-            workflow_dir,
+            &entity_dir,
             &allowed_statuses,
             definition.id_style.as_deref(),
         )
@@ -104,6 +112,7 @@ mod tests {
         let active = WorkflowSnapshot {
             definition: crate::domain::WorkflowDefinition {
                 root: PathBuf::from("/tmp/workflow"),
+                state: None,
                 stages: Vec::new(),
                 id_style: None,
                 entity_type: None,

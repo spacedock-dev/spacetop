@@ -65,6 +65,7 @@ pub fn parse_workflow_readme(path: &Path) -> Result<WorkflowDefinition, ParseErr
         .collect();
     Ok(WorkflowDefinition {
         root: path.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
+        state: raw.state,
         stages,
         id_style: raw.id_style,
         entity_type: raw.entity_type,
@@ -243,6 +244,11 @@ struct RawWorkflowFrontmatter {
     entity_label: Option<String>,
     #[serde(rename = "entity-label-plural")]
     entity_label_plural: Option<String>,
+    /// Split-root state checkout declaration. A relative path resolves the
+    /// entity directory to `definition_dir.join(state)`; `$inline`/empty/absent
+    /// keep entities beside the README. See `parser::snapshot::resolve_entity_dir`.
+    #[serde(default)]
+    state: Option<String>,
     stages: Option<RawStageBlock>,
 }
 
@@ -518,6 +524,36 @@ mod tests {
                 "rejected missing source {src}; got {rejected_sources:?}"
             );
         }
+    }
+
+    /// AC-1: a top-level `state:` scalar round-trips into
+    /// `WorkflowDefinition.state`; absence leaves it `None`. `root` stays the
+    /// README's parent regardless.
+    #[test]
+    fn state_field_round_trips_from_frontmatter() {
+        let tmp = tempdir_path("state_field");
+        std::fs::create_dir_all(&tmp).expect("mkdir tmp");
+
+        let with_state = tmp.join("README.md");
+        std::fs::write(
+            &with_state,
+            "---\nstate: .spacedock-state\nstages:\n  states:\n    - name: plan\n---\n",
+        )
+        .expect("write readme");
+        let wf = parse_workflow_readme(&with_state).expect("parse");
+        assert_eq!(wf.state.as_deref(), Some(".spacedock-state"));
+        assert_eq!(wf.root, tmp);
+
+        let without = tmp.join("nested");
+        std::fs::create_dir_all(&without).expect("mkdir nested");
+        let without_path = without.join("README.md");
+        std::fs::write(
+            &without_path,
+            "---\nstages:\n  states:\n    - name: plan\n---\n",
+        )
+        .expect("write readme");
+        let wf2 = parse_workflow_readme(&without_path).expect("parse");
+        assert_eq!(wf2.state, None);
     }
 
     fn tempdir_path(label: &str) -> PathBuf {

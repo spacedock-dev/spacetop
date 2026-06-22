@@ -40,8 +40,7 @@ fn help_popup_documents_open_file_keybind_when_preview_open() {
 #[test]
 fn archived_preview_includes_worktree_segment() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
-    let mut app = App::load(root).expect("workflow should load");
+    let (mut app, _dir) = app_loaded_with_archived_item();
     app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
     app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
@@ -285,6 +284,7 @@ fn preview_omits_session_metadata_for_unrelated_running_session() {
     let snapshot = spacetop_core::domain::WorkflowSnapshot {
         definition: spacetop_core::domain::WorkflowDefinition {
             root: workflow.clone(),
+            state: None,
             stages: vec![spacetop_core::domain::StageDefinition {
                 name: "design".to_string(),
                 initial: true,
