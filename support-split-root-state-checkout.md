@@ -1,11 +1,12 @@
 ---
 title: Support split-root workflows (read entities from the state checkout)
-status: plan
+status: implement
 source: captain report (session) — spacetop-dev migrated to split-root; task list renders empty
 kind: feature
 risk: medium
 id: 073
 started: 2026-06-22T07:39:16Z
+worktree: .worktrees/spacedock-ensign-support-split-root-state-checkout
 ---
 
 ## Problem statement
