@@ -233,6 +233,8 @@ async function loadProject(github, owner, number) {
           fieldValues(first: 100) {
             nodes {
               ... on ProjectV2ItemFieldTextValue { text field { ...FieldName } }
+              ... on ProjectV2ItemFieldNumberValue { number field { ...FieldName } }
+              ... on ProjectV2ItemFieldDateValue { date field { ...FieldName } }
               ... on ProjectV2ItemFieldSingleSelectValue { name field { ...FieldName } }
             }
           }
@@ -258,7 +260,25 @@ async function loadProject(github, owner, number) {
     id: project.id,
     fields: Object.fromEntries(project.fields.nodes.filter(Boolean).map((field) => [field.name, field])),
     items,
+    itemValues: itemValuesById(items),
   };
+}
+
+function itemValuesById(items) {
+  return new Map(items.map((item) => [
+    item.id,
+    new Map(item.fieldValues.nodes
+      .filter((value) => value.field?.name)
+      .map((value) => [value.field.name, itemFieldValue(value)])),
+  ]));
+}
+
+function itemFieldValue(value) {
+  if (value.text !== undefined) return value.text;
+  if (value.number !== undefined) return String(value.number);
+  if (value.date !== undefined) return value.date;
+  if (value.name !== undefined) return value.name;
+  return "";
 }
 
 async function ensureProjectFields(github, project, core) {
@@ -304,7 +324,7 @@ function requireFieldType(fields, name, types) {
 async function upsertProjectItem(github, project, values) {
   const item = findItemByEntityId(project, values.entityId);
   const syncedItem = item || await createDraftItem(github, project.id, values);
-  if (item && item.content?.id) {
+  if (item && item.content?.id && (item.content.title !== values.title || item.content.body !== values.body)) {
     await updateDraftItem(github, item.content.id, values);
   }
   await updateFields(github, project, syncedItem.id, values);
@@ -338,19 +358,23 @@ async function updateDraftItem(github, draftIssueId, values) {
 }
 
 async function updateFields(github, project, itemId, values) {
-  await setField(github, project, itemId, "Entity ID", values.entityId);
-  await setField(github, project, itemId, "Status", values.status);
-  await setField(github, project, itemId, "Kind", values.kind);
-  await setField(github, project, itemId, "Score", values.score);
-  await setField(github, project, itemId, "Source", values.source);
-  await setField(github, project, itemId, "PR", values.pr);
-  await setField(github, project, itemId, "Updated At", values.updatedAt);
-  await setField(github, project, itemId, "Archived", String(values.archived));
+  const currentValues = project.itemValues.get(itemId) || new Map();
+  await setField(github, project, itemId, currentValues, "Entity ID", values.entityId);
+  await setField(github, project, itemId, currentValues, "Status", values.status);
+  await setField(github, project, itemId, currentValues, "Kind", values.kind);
+  await setField(github, project, itemId, currentValues, "Score", values.score);
+  await setField(github, project, itemId, currentValues, "Source", values.source);
+  await setField(github, project, itemId, currentValues, "PR", values.pr);
+  await setField(github, project, itemId, currentValues, "Updated At", values.updatedAt);
+  await setField(github, project, itemId, currentValues, "Archived", String(values.archived));
 }
 
-async function setField(github, project, itemId, name, value) {
+async function setField(github, project, itemId, currentValues, name, value) {
   const field = project.fields[name];
+  const expected = comparableFieldValue(field, value);
+  if (currentValues.get(name) === expected) return;
   if (value === null || value === undefined || value === "") {
+    if (!currentValues.has(name)) return;
     await clearField(github, project.id, itemId, field.id);
     return;
   }
@@ -373,6 +397,13 @@ async function setField(github, project, itemId, name, value) {
       }
     }
   `, { projectId: project.id, itemId, fieldId: field.id, value: fieldValue });
+}
+
+function comparableFieldValue(field, value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (field.dataType === "NUMBER") return String(Number(value));
+  if (field.dataType === "DATE") return String(value).slice(0, 10);
+  return String(value);
 }
 
 async function clearField(github, projectId, itemId, fieldId) {
