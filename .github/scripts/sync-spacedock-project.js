@@ -19,7 +19,7 @@ module.exports = async function sync({ github, context, core }) {
   const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
   const stateDir = path.join(workspace, "state");
   const definitionDir = path.join(workspace, "definition");
-  const branch = context.ref.replace("refs/heads/", "");
+  const branch = stateBranch(context);
   const workflowId = workflowIdFromBranch(branch);
   const definition = findWorkflowDefinition(definitionDir, workflowId);
   const projectConfig = definition.frontmatter["github-project"];
@@ -31,7 +31,7 @@ module.exports = async function sync({ github, context, core }) {
     throw new Error(`workflow ${workflowId} has invalid github-project.number: ${projectConfig.number}`);
   }
 
-  const changedFiles = changedMarkdownFiles(stateDir, context.payload.before, context.sha);
+  const changedFiles = filesToSync(stateDir, context);
   if (changedFiles.length === 0) {
     core.info("No changed markdown entity files.");
     return;
@@ -58,6 +58,13 @@ module.exports = async function sync({ github, context, core }) {
   }
 };
 
+function stateBranch(context) {
+  if (context.eventName === "workflow_dispatch") {
+    return `${STATE_PREFIX}${context.payload.inputs.workflow_id}`;
+  }
+  return context.ref.replace("refs/heads/", "");
+}
+
 function workflowIdFromBranch(branch) {
   if (!branch.startsWith(STATE_PREFIX)) {
     throw new Error(`expected branch ${STATE_PREFIX}<workflow-id>, got ${branch}`);
@@ -83,10 +90,25 @@ function findWorkflowDefinition(root, workflowId) {
   throw new Error(`no workflow README found with id: ${workflowId}`);
 }
 
+function filesToSync(cwd, context) {
+  if (context.eventName === "workflow_dispatch") {
+    return trackedMarkdownFiles(cwd);
+  }
+  return changedMarkdownFiles(cwd, context.payload.before, context.sha);
+}
+
+function trackedMarkdownFiles(cwd) {
+  return git(cwd, ["ls-files", "*.md"])
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((file) => !path.basename(file).startsWith("."));
+}
+
 function changedMarkdownFiles(cwd, before, after) {
   const zero = /^0+$/.test(before || "");
   const output = zero
-    ? git(cwd, ["ls-files", "*.md"])
+    ? trackedMarkdownFiles(cwd).join("\n")
     : git(cwd, ["diff", "--name-only", "--diff-filter=ACMR", `${before}..${after}`, "--", "*.md"]);
   return output
     .split("\n")
@@ -335,6 +357,14 @@ async function clearField(github, projectId, itemId, fieldId) {
 function selfTest() {
   assert.equal(workflowIdFromBranch("spacedock-state/spacetop-dev"), "spacetop-dev");
   assert.throws(() => workflowIdFromBranch("main"));
+  assert.equal(stateBranch({
+    eventName: "workflow_dispatch",
+    payload: { inputs: { workflow_id: "spacetop-dev" } },
+  }), "spacedock-state/spacetop-dev");
+  assert.equal(stateBranch({
+    eventName: "push",
+    ref: "refs/heads/spacedock-state/spacetop-dev",
+  }), "spacedock-state/spacetop-dev");
   const parsed = parseSimpleYaml(`
 id: spacetop-dev
 github-project:

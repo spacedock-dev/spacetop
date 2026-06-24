@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - "spacedock-state/**"
+  workflow_dispatch:
+    inputs:
+      workflow_id:
+        description: Workflow id to mirror, for example spacetop-dev
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -15,6 +21,7 @@ jobs:
       - name: Checkout state branch
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('spacedock-state/{0}', inputs.workflow_id) || github.ref }}
           fetch-depth: 0
           path: state
 
