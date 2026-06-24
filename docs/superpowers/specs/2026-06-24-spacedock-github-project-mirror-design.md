@@ -28,14 +28,15 @@ Spacedock markdown remains the single source of truth.
 - No two-way sync from GitHub Project edits back to markdown.
 - No full Project rebuild on every push.
 - No cache committed to state branches.
-- No automatic Project field creation.
+- No Project creation. Missing mirror-owned fields are created automatically;
+  existing fields are still type-checked.
 
 ## Operational Contract
 
-The GitHub Project must already contain these fields:
+The GitHub Project must already exist. The Action creates missing mirror-owned
+fields:
 
 - `Entity ID`
-- `Status`
 - `Kind`
 - `Score`
 - `Source`
@@ -43,8 +44,10 @@ The GitHub Project must already contain these fields:
 - `Updated At`
 - `Archived`
 
-The Action fails loudly if a required field is missing or a single-select field
-does not contain the value it needs, such as `Done` for archived entities.
+The Project should also contain `Status`, which usually exists on GitHub
+Projects by default. The Action fails loudly if an existing field has an
+unsupported type or a single-select field does not contain the value it needs,
+such as `Done` for archived entities.
 
 The Action uses `SPACEDOCK_PROJECT_TOKEN`. The built-in `GITHUB_TOKEN` is
 repository-scoped and does not expose a Project V2 write permission, so it

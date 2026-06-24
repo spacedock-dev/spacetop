@@ -14,6 +14,15 @@ const REQUIRED_FIELDS = [
   "Updated At",
   "Archived",
 ];
+const FIELD_TYPES = {
+  "Entity ID": "TEXT",
+  Kind: "TEXT",
+  Score: "NUMBER",
+  Source: "TEXT",
+  PR: "TEXT",
+  "Updated At": "DATE",
+  Archived: "TEXT",
+};
 
 module.exports = async function sync({ github, context, core }) {
   const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
@@ -37,7 +46,11 @@ module.exports = async function sync({ github, context, core }) {
     return;
   }
 
-  const project = await loadProject(github, projectConfig.owner, projectNumber);
+  const project = await ensureProjectFields(
+    github,
+    await loadProject(github, projectConfig.owner, projectNumber),
+    core
+  );
   requireFields(project.fields);
 
   for (const file of changedFiles) {
@@ -246,6 +259,25 @@ async function loadProject(github, owner, number) {
     fields: Object.fromEntries(project.fields.nodes.filter(Boolean).map((field) => [field.name, field])),
     items,
   };
+}
+
+async function ensureProjectFields(github, project, core) {
+  for (const [name, dataType] of Object.entries(FIELD_TYPES)) {
+    if (project.fields[name]) continue;
+    core.info(`Creating GitHub Project field: ${name}`);
+    const result = await github.graphql(`
+      mutation($projectId: ID!, $name: String!, $dataType: ProjectV2CustomFieldType!) {
+        createProjectV2Field(input: {projectId: $projectId, name: $name, dataType: $dataType}) {
+          projectV2Field {
+            ... on ProjectV2Field { id name dataType }
+            ... on ProjectV2SingleSelectField { id name dataType options { id name } }
+          }
+        }
+      }
+    `, { projectId: project.id, name, dataType });
+    project.fields[name] = result.createProjectV2Field.projectV2Field;
+  }
+  return project;
 }
 
 function requireFields(fields) {
