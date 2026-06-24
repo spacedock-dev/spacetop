@@ -1,10 +1,14 @@
 ---
 commissioned-by: spacedock@0.20.0
+id: spacetop-dev
 state: .spacedock-state
 entity-type: development_task
 entity-label: task
 entity-label-plural: tasks
 id-style: sequential
+github-project:
+  owner: spacedock-dev
+  number: 2
 stages:
   defaults:
     worktree: false
