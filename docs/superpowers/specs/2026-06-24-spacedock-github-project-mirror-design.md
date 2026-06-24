@@ -44,10 +44,10 @@ fields:
 - `Updated At`
 - `Archived`
 
-The Project may contain `Status`, which usually exists on GitHub Projects by
-default. If `Status` is a single-select field and lacks a workflow stage option,
-the Action skips that field instead of failing the whole mirror. Other existing
-single-select fields still fail loudly when they lack a needed value.
+`Status` is managed from the workflow README stages. If the Project lacks a
+`Status` field, the Action creates it as single-select. If it already exists as
+single-select, the Action preserves existing options and appends missing
+workflow stages plus `Done`.
 
 The Action uses `SPACEDOCK_PROJECT_TOKEN`. The built-in `GITHUB_TOKEN` is
 repository-scoped and does not expose a Project V2 write permission, so it

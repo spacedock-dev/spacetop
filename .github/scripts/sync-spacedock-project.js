@@ -16,6 +16,7 @@ const REQUIRED_FIELDS = [
 ];
 const FIELD_TYPES = {
   "Entity ID": "TEXT",
+  Status: "SINGLE_SELECT",
   Kind: "TEXT",
   Score: "NUMBER",
   Source: "TEXT",
@@ -39,6 +40,7 @@ module.exports = async function sync({ github, context, core }) {
   if (!Number.isInteger(projectNumber) || projectNumber < 1) {
     throw new Error(`workflow ${workflowId} has invalid github-project.number: ${projectConfig.number}`);
   }
+  const workflowStages = extractWorkflowStages(definition.path);
 
   const changedFiles = filesToSync(stateDir, context);
   if (changedFiles.length === 0) {
@@ -49,6 +51,7 @@ module.exports = async function sync({ github, context, core }) {
   const project = await ensureProjectFields(
     github,
     await loadProject(github, projectConfig.owner, projectNumber),
+    workflowStages,
     core
   );
   requireFields(project.fields);
@@ -101,6 +104,13 @@ function findWorkflowDefinition(root, workflowId) {
     }
   }
   throw new Error(`no workflow README found with id: ${workflowId}`);
+}
+
+function extractWorkflowStages(readmePath) {
+  const text = fs.readFileSync(readmePath, "utf8");
+  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return [];
+  return Array.from(match[1].matchAll(/^\s*-\s+name:\s*([A-Za-z0-9_-]+)\s*$/gm), (stage) => stage[1]);
 }
 
 function filesToSync(cwd, context) {
@@ -222,7 +232,7 @@ async function loadProject(github, owner, number) {
       fields(first: 100) {
         nodes {
           ... on ProjectV2Field { id name dataType }
-          ... on ProjectV2SingleSelectField { id name dataType options { id name } }
+          ... on ProjectV2SingleSelectField { id name dataType options { id name color description } }
         }
       }
       items(first: 100, after: $after) {
@@ -281,23 +291,73 @@ function itemFieldValue(value) {
   return "";
 }
 
-async function ensureProjectFields(github, project, core) {
+async function ensureProjectFields(github, project, workflowStages, core) {
   for (const [name, dataType] of Object.entries(FIELD_TYPES)) {
     if (project.fields[name]) continue;
     core.info(`Creating GitHub Project field: ${name}`);
+    const singleSelectOptions = name === "Status"
+      ? statusOptions(statusOptionNames(workflowStages))
+      : undefined;
     const result = await github.graphql(`
-      mutation($projectId: ID!, $name: String!, $dataType: ProjectV2CustomFieldType!) {
-        createProjectV2Field(input: {projectId: $projectId, name: $name, dataType: $dataType}) {
+      mutation($projectId: ID!, $name: String!, $dataType: ProjectV2CustomFieldType!, $singleSelectOptions: [ProjectV2SingleSelectFieldOptionInput!]) {
+        createProjectV2Field(input: {projectId: $projectId, name: $name, dataType: $dataType, singleSelectOptions: $singleSelectOptions}) {
           projectV2Field {
             ... on ProjectV2Field { id name dataType }
-            ... on ProjectV2SingleSelectField { id name dataType options { id name } }
+            ... on ProjectV2SingleSelectField { id name dataType options { id name color description } }
           }
         }
       }
-    `, { projectId: project.id, name, dataType });
+    `, { projectId: project.id, name, dataType, singleSelectOptions });
     project.fields[name] = result.createProjectV2Field.projectV2Field;
   }
+  await ensureStatusOptions(github, project, workflowStages, core);
   return project;
+}
+
+async function ensureStatusOptions(github, project, workflowStages, core) {
+  const field = project.fields.Status;
+  if (!field || field.dataType !== "SINGLE_SELECT") return;
+  const required = statusOptionNames(workflowStages);
+  const existing = new Set(field.options.map((option) => option.name.toLowerCase()));
+  const missing = required.filter((name) => !existing.has(name.toLowerCase()));
+  if (missing.length === 0) return;
+  core.info(`Adding GitHub Project Status options: ${missing.join(", ")}`);
+  const singleSelectOptions = [
+    ...field.options.map((option) => ({
+      id: option.id,
+      name: option.name,
+      color: option.color || "GRAY",
+      description: option.description || "",
+    })),
+    ...statusOptions(missing),
+  ];
+  const result = await github.graphql(`
+    mutation($fieldId: ID!, $singleSelectOptions: [ProjectV2SingleSelectFieldOptionInput!]) {
+      updateProjectV2Field(input: {fieldId: $fieldId, singleSelectOptions: $singleSelectOptions}) {
+        projectV2Field {
+          ... on ProjectV2SingleSelectField { id name dataType options { id name color description } }
+        }
+      }
+    }
+  `, { fieldId: field.id, singleSelectOptions });
+  project.fields.Status = result.updateProjectV2Field.projectV2Field;
+}
+
+function statusOptionNames(workflowStages) {
+  return Array.from(new Set([...workflowStages, "Done"].filter(Boolean)));
+}
+
+function statusOptions(names) {
+  return names.map((name) => ({
+    name,
+    color: statusColor(name),
+    description: "",
+  }));
+}
+
+function statusColor(name) {
+  if (name === "Done") return "GREEN";
+  return "GRAY";
 }
 
 function requireFields(fields) {
@@ -360,7 +420,7 @@ async function updateDraftItem(github, draftIssueId, values) {
 async function updateFields(github, project, itemId, values) {
   const currentValues = project.itemValues.get(itemId) || new Map();
   await setField(github, project, itemId, currentValues, "Entity ID", values.entityId);
-  await setField(github, project, itemId, currentValues, "Status", values.status, { skipMissingSingleSelect: true });
+  await setField(github, project, itemId, currentValues, "Status", values.status);
   await setField(github, project, itemId, currentValues, "Kind", values.kind);
   await setField(github, project, itemId, currentValues, "Score", values.score);
   await setField(github, project, itemId, currentValues, "Source", values.source);
@@ -447,6 +507,8 @@ score: 0.84
   assert.equal(values.status, "Done");
   assert.equal(values.archived, true);
   assert.equal(values.updatedAt, "2026-06-24T10:20:30Z");
+  assert.deepEqual(statusOptionNames(["shape", "plan", "done"]), ["shape", "plan", "done", "Done"]);
+  assert.deepEqual(statusOptions(["shape"]), [{ name: "shape", color: "GRAY", description: "" }]);
 }
 
 if (require.main === module) {
