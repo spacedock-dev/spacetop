@@ -203,7 +203,6 @@ async function loadProject(github, owner, number) {
   const projectQuery = `
     query($owner: String!, $number: Int!, $after: String) {
       organization(login: $owner) { projectV2(number: $number) { ...ProjectParts } }
-      user(login: $owner) { projectV2(number: $number) { ...ProjectParts } }
     }
     fragment ProjectParts on ProjectV2 {
       id
@@ -237,7 +236,7 @@ async function loadProject(github, owner, number) {
   const items = [];
   do {
     const data = await github.graphql(projectQuery, { owner, number, after });
-    project = data.organization?.projectV2 || data.user?.projectV2;
+    project = data.organization?.projectV2;
     if (!project) throw new Error(`GitHub Project not found: ${owner}/${number}`);
     items.push(...project.items.nodes);
     after = project.items.pageInfo.hasNextPage ? project.items.pageInfo.endCursor : null;
