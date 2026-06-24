@@ -360,7 +360,7 @@ async function updateDraftItem(github, draftIssueId, values) {
 async function updateFields(github, project, itemId, values) {
   const currentValues = project.itemValues.get(itemId) || new Map();
   await setField(github, project, itemId, currentValues, "Entity ID", values.entityId);
-  await setField(github, project, itemId, currentValues, "Status", values.status);
+  await setField(github, project, itemId, currentValues, "Status", values.status, { skipMissingSingleSelect: true });
   await setField(github, project, itemId, currentValues, "Kind", values.kind);
   await setField(github, project, itemId, currentValues, "Score", values.score);
   await setField(github, project, itemId, currentValues, "Source", values.source);
@@ -369,7 +369,7 @@ async function updateFields(github, project, itemId, values) {
   await setField(github, project, itemId, currentValues, "Archived", String(values.archived));
 }
 
-async function setField(github, project, itemId, currentValues, name, value) {
+async function setField(github, project, itemId, currentValues, name, value, options = {}) {
   const field = project.fields[name];
   const expected = comparableFieldValue(field, value);
   if (currentValues.get(name) === expected) return;
@@ -385,6 +385,7 @@ async function setField(github, project, itemId, currentValues, name, value) {
     fieldValue = { date: String(value).slice(0, 10) };
   } else if (field.dataType === "SINGLE_SELECT") {
     const option = field.options.find((candidate) => candidate.name.toLowerCase() === String(value).toLowerCase());
+    if (!option && options.skipMissingSingleSelect) return;
     if (!option) throw new Error(`field ${name} is missing option: ${value}`);
     fieldValue = { singleSelectOptionId: option.id };
   } else {

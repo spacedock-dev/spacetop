@@ -44,10 +44,10 @@ fields:
 - `Updated At`
 - `Archived`
 
-The Project should also contain `Status`, which usually exists on GitHub
-Projects by default. The Action fails loudly if an existing field has an
-unsupported type or a single-select field does not contain the value it needs,
-such as `Done` for archived entities.
+The Project may contain `Status`, which usually exists on GitHub Projects by
+default. If `Status` is a single-select field and lacks a workflow stage option,
+the Action skips that field instead of failing the whole mirror. Other existing
+single-select fields still fail loudly when they lack a needed value.
 
 The Action uses `SPACEDOCK_PROJECT_TOKEN`. The built-in `GITHUB_TOKEN` is
 repository-scoped and does not expose a Project V2 write permission, so it
