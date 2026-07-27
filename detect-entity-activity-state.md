@@ -637,3 +637,26 @@ Cycle 3 closes the remaining scanner gaps: Codex workers require their parent
 link, code-mode FO attribution comes only from nested executable command
 arguments, and periodic scans reuse privacy-safe projected summaries through
 validated per-file byte cursors.
+
+## Stage Report: verify (cycle 3)
+
+- DONE: Independently challenge all eleven acceptance criteria, especially exact structured event linkage, fail-closed false positives, FO/worker handoff, and human-gate precedence without plugin changes.
+  Verdict: REJECTED. AC-1/2/3/4/7/8/9 pass and AC-11 gates pass; AC-5/6/10 still fail because the new Codex `exec` fixture does not match the live JavaScript argument syntax, and same-size rewrite invalidation remains unproved.
+- DONE: Re-review implementation commit `ff6dfb8` against the three cycle-2 blockers.
+  Non-empty Codex parent linkage and the per-file projected-summary cursor substantially close two blockers, and the non-action `text(path)` negative is correctly scoped; the positive `exec` regression is synthetic rather than representative of current live calls.
+- FAILED: Parse the actual current Codex code-mode `exec` argument shape while continuing to ignore non-executing module text.
+  `session_activity.rs:748-770` extracts a balanced `tools.exec_command(...)` argument but accepts it only through `serde_json::from_str`; live modules use JavaScript object literals such as `{cmd: "...", workdir: "..."}`, while `tests/fixtures/session-activity/codex-fo-exec/rollout.jsonl:3` uses JSON-shaped `{"cmd":"..."}`. Add a bounded parser for string-valued `cmd`/`command` properties in the actual JavaScript object-literal shape and retain the `text(path)` false-positive regression.
+- FAILED: Prove the dispatched same-size rewrite case and make invalidation robust to unchanged metadata.
+  `session_activity.rs:385-388` reuses the prior summary when length and modification time match, while the new regression coverage at `session_activity.rs:2127-2285` proves append, truncate, delete, and unchanged reuse but never rewrites the file at equal length. Add a same-size rewrite test that proves a byte-zero reparse; if equal-length replacement can preserve the observed timestamp, strengthen the cached fingerprint/checkpoint so stale activity cannot survive.
+- DONE: Review the implementation diff for typed domain/parser/index/app/UI ownership, read-only boundaries, and exact Runtime/Session/Status/Updated rendering with no visible Confidence or Handler field.
+  Cycle 3 changes only scanner/cache code, fixtures, and design documentation; the previously accepted typed domain, index/app integration, read-only boundaries, exact labels, and high-salience human-gate rendering remain intact.
+- DONE: Run the required focused and full test/lint gates, report reproducible evidence, and issue an explicit PASSED or REJECTED verdict with actionable defects.
+  `cargo fmt --all -- --check`, 20 focused session-activity tests, 32 task-list tests, 71 preview tests, full `cargo test` (374 app and 188 core unit tests plus integration/doc tests), `git diff --check`, and `make lint` all passed; those suites do not cover the two failures above.
+
+### Summary
+
+REJECTED: commit `ff6dfb8` fixes structured Codex parent linkage and removes
+unchanged full-log rereads, but live Codex FO activity still fails because the
+extractor accepts JSON object syntax rather than the current JavaScript object
+literal. Verification also still lacks the explicitly requested same-size
+rewrite regression and robust proof against equal metadata.
