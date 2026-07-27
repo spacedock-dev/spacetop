@@ -1,6 +1,6 @@
 ---
 title: Detect entity activity and human-gated sessions
-status: verify
+status: implement
 source: "Follow-up from task 067 and the 2026-07-27 three-state activity design refinement"
 kind: feature
 risk: medium
@@ -518,6 +518,7 @@ fail-closed or complete for representative runtime artifacts.
 ### Feedback Cycles
 
 - Cycle 1: REJECTED — verify; surface 3 blocking scanner defects vs estimate not declared (n/a%); AC unchanged
+- Cycle 2: REJECTED — verify; surface 3 blocking Codex linkage/action-extraction and scan-cursor defects vs estimate not declared (n/a%); AC unchanged
 
 ## Stage Report: implement (cycle 2)
 
