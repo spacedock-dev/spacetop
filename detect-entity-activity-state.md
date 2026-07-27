@@ -491,3 +491,26 @@ domain semantics and deterministic precedence across worker, first-officer, and
 human-gate evidence. Updated the list, preview, app failure behavior, fixtures,
 and current product/design docs without changing the Spacedock plugin or workflow
 write boundary.
+
+## Stage Report: verify
+
+- DONE: Independently challenge all eleven acceptance criteria, especially exact structured event linkage, fail-closed false positives, FO/worker handoff, and human-gate precedence without plugin changes.
+  Verdict: REJECTED. AC-1/2/3/8/9 pass and AC-11 gates pass; AC-4/5/6/7/10 fail on dropped large logs, an unparsed live Codex FO tool shape, cross-session Claude linkage, and missing falsification coverage.
+- DONE: Review the implementation diff for typed domain/parser/index/app/UI ownership, read-only boundaries, and exact Runtime/Session/Status/Updated rendering with no visible Confidence or Handler field.
+  Commit `efcb0ef` keeps typed state in core, preserves read-only boundaries, and passes exact field/label styling tests, but the structured scanner has the blocking linkage defects below.
+- FAILED: Preserve worker activity when a session artifact grows beyond the scanner threshold.
+  `session_activity.rs:289-310` silently skips files over 4 MB, so a running entity becomes false-idle; this machine has 11 Codex and 8 Claude artifacts already above that limit. Stream JSONL or retain a safe parsed summary and test large append/truncation/deletion.
+- FAILED: Recognize the current Codex structured FO tool-call shape before dispatch.
+  Live schema projection shows `custom_tool_call` name `exec` with string input, while `session_activity.rs:800-874` only scopes object fields; the fixture uses `function_call` `Read`, so normal pre-dispatch entity reads/build steps do not produce `running · FO`. Pin and parse the live nested shape without transcript content.
+- FAILED: Correlate Claude worker start/idle evidence to the exact parent dispatch.
+  `session_activity.rs:604-680` keys teammate metadata globally by reusable worker name and accepts a same-name idle notification from any parent file, allowing one session to start or stop another session's worker. Preserve parent-session/call linkage and add a two-parent same-name false-positive test.
+- DONE: Run the required focused and full test/lint gates, report reproducible evidence, and issue an explicit PASSED or REJECTED verdict with actionable defects.
+  `cargo fmt --check`, 12 focused core tests, 32 task-list tests, 71 preview tests, full `cargo test` (374 app, 180 core plus integration/doc tests), and `make lint` all passed; the verdict remains REJECTED because passing tests do not cover the failures above.
+
+### Summary
+
+REJECTED pending three scanner fixes: remove the false-idle large-file cutoff,
+support the observed Codex FO call schema, and keep Claude worker lifecycle
+events linked to their exact parent dispatch. Domain/UI rendering and all
+required test/lint gates pass, but the current evidence reducer is not yet
+fail-closed or complete for representative runtime artifacts.
