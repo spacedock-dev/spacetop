@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
@@ -15,6 +17,7 @@ use crate::domain::{
 use crate::entity_identity::entity_slug;
 
 const DISPATCH_PREFIX: &str = "/tmp/spacedock-dispatch/spacedock-ensign-";
+const CHECKPOINT_BYTES: u64 = 128;
 const STAGES: &[&str] = &["shape", "plan", "implement", "verify", "done", "pr-merge"];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,10 +29,15 @@ pub struct SessionScanRequest {
     pub previous_session_files: HashMap<PathBuf, SessionFileSnapshot>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionFileSnapshot {
-    modified_unix: Option<i64>,
+    modified: Option<SystemTime>,
     len: u64,
+    cursor: u64,
+    complete_lines: u64,
+    checkpoint: Vec<u8>,
+    records: Vec<Value>,
+    parse_errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,8 +294,12 @@ fn scan_local_sessions_inner(
                     continue;
                 }
             };
-            let records = match parse_session_file(entry.path(), &mut errors) {
-                Ok(records) => records,
+            let snapshot = match load_session_snapshot(
+                entry.path(),
+                &metadata,
+                request.previous_session_files.get(entry.path()),
+            ) {
+                Ok(snapshot) => snapshot,
                 Err(err) => {
                     errors.push(format!(
                         "{} scan could not read {}: {err}",
@@ -297,20 +309,15 @@ fn scan_local_sessions_inner(
                     continue;
                 }
             };
-            session_files.insert(
-                entry.path().to_path_buf(),
-                SessionFileSnapshot {
-                    modified_unix: metadata.modified().ok().and_then(system_time_unix),
-                    len: metadata.len(),
-                },
-            );
+            errors.extend(snapshot.parse_errors.iter().cloned());
             parsed_by_runtime
                 .entry(runtime)
                 .or_default()
                 .push(ParsedFile {
                     path: entry.path().to_path_buf(),
-                    records,
+                    records: snapshot.records.clone(),
                 });
+            session_files.insert(entry.path().to_path_buf(), snapshot);
         }
     }
 
@@ -360,51 +367,165 @@ struct ParsedFile {
     records: Vec<Value>,
 }
 
-fn parse_session_file(path: &Path, errors: &mut Vec<String>) -> Result<Vec<Value>, std::io::Error> {
+#[derive(Debug)]
+struct ParsedChunk {
+    records: Vec<Value>,
+    cursor: u64,
+    complete_lines: u64,
+    errors: Vec<String>,
+}
+
+fn load_session_snapshot(
+    path: &Path,
+    metadata: &fs::Metadata,
+    previous: Option<&SessionFileSnapshot>,
+) -> Result<SessionFileSnapshot, std::io::Error> {
+    let modified = metadata.modified().ok();
+    let len = metadata.len();
+    if let Some(previous) = previous {
+        if previous.len == len && previous.modified == modified && modified.is_some() {
+            return Ok(previous.clone());
+        }
+    }
+
+    if path.extension().and_then(OsStr::to_str) == Some("json") {
+        return parse_json_snapshot(path, modified, len);
+    }
+
+    if let Some(previous) = previous {
+        if len > previous.len && append_checkpoint_matches(path, previous)? {
+            let mut parsed = parse_jsonl_from(path, previous.cursor, previous.complete_lines)?;
+            let mut records = previous.records.clone();
+            records.append(&mut parsed.records);
+            let mut parse_errors = previous.parse_errors.clone();
+            parse_errors.append(&mut parsed.errors);
+            return Ok(SessionFileSnapshot {
+                modified,
+                len,
+                cursor: parsed.cursor,
+                complete_lines: parsed.complete_lines,
+                checkpoint: read_checkpoint(path, parsed.cursor)?,
+                records,
+                parse_errors,
+            });
+        }
+    }
+
+    let parsed = parse_jsonl_from(path, 0, 0)?;
+    Ok(SessionFileSnapshot {
+        modified,
+        len,
+        cursor: parsed.cursor,
+        complete_lines: parsed.complete_lines,
+        checkpoint: read_checkpoint(path, parsed.cursor)?,
+        records: parsed.records,
+        parse_errors: parsed.errors,
+    })
+}
+
+fn parse_json_snapshot(
+    path: &Path,
+    modified: Option<SystemTime>,
+    len: u64,
+) -> Result<SessionFileSnapshot, std::io::Error> {
+    #[cfg(test)]
+    record_session_file_parse(path, 0);
     let file = fs::File::open(path)?;
     let reader = BufReader::new(file);
-    if path.extension().and_then(OsStr::to_str) == Some("json") {
-        return Ok(match serde_json::from_reader(reader) {
-            Ok(value) => project_record(value).into_iter().collect(),
-            Err(err) => {
-                errors.push(format!(
-                    "malformed session record {}: {err}",
-                    path.display()
-                ));
-                Vec::new()
-            }
-        });
-    }
-    Ok(reader
-        .lines()
-        .enumerate()
-        .filter_map(|(line_number, line)| match line {
-            Ok(line) => {
-                if line.trim().is_empty() {
-                    return None;
+    let (records, parse_errors) = match serde_json::from_reader(reader) {
+        Ok(value) => (project_record(value).into_iter().collect(), Vec::new()),
+        Err(err) => (
+            Vec::new(),
+            vec![format!(
+                "malformed session record {}: {err}",
+                path.display()
+            )],
+        ),
+    };
+    Ok(SessionFileSnapshot {
+        modified,
+        len,
+        cursor: len,
+        complete_lines: 0,
+        checkpoint: read_checkpoint(path, len)?,
+        records,
+        parse_errors,
+    })
+}
+
+fn parse_jsonl_from(
+    path: &Path,
+    start: u64,
+    starting_line: u64,
+) -> Result<ParsedChunk, std::io::Error> {
+    #[cfg(test)]
+    record_session_file_parse(path, start);
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut reader = BufReader::new(file);
+    let mut records = Vec::new();
+    let mut errors = Vec::new();
+    let mut cursor = start;
+    let mut complete_lines = starting_line;
+    loop {
+        let mut line = Vec::new();
+        let read = reader.read_until(b'\n', &mut line)?;
+        if read == 0 {
+            break;
+        }
+        let terminated = line.last() == Some(&b'\n');
+        if line.iter().all(u8::is_ascii_whitespace) {
+            cursor += read as u64;
+            continue;
+        }
+        match serde_json::from_slice(&line) {
+            Ok(value) => {
+                cursor += read as u64;
+                complete_lines += 1;
+                if let Some(projected) = project_record(value) {
+                    records.push(projected);
                 }
-                match serde_json::from_str(&line) {
-                    Ok(value) => project_record(value),
-                    Err(err) => {
-                        errors.push(format!(
-                            "malformed session record {}:{}: {err}",
-                            path.display(),
-                            line_number + 1
-                        ));
-                        None
-                    }
-                }
             }
+            Err(_) if !terminated => break,
             Err(err) => {
+                cursor += read as u64;
+                complete_lines += 1;
                 errors.push(format!(
-                    "session record read failed {}:{}: {err}",
+                    "malformed session record {}:{}: {err}",
                     path.display(),
-                    line_number + 1
+                    complete_lines
                 ));
-                None
             }
-        })
-        .collect())
+        }
+    }
+    Ok(ParsedChunk {
+        records,
+        cursor,
+        complete_lines,
+        errors,
+    })
+}
+
+fn append_checkpoint_matches(
+    path: &Path,
+    previous: &SessionFileSnapshot,
+) -> Result<bool, std::io::Error> {
+    if previous.cursor == 0 || previous.checkpoint.is_empty() {
+        return Ok(false);
+    }
+    Ok(read_checkpoint(path, previous.cursor)? == previous.checkpoint)
+}
+
+fn read_checkpoint(path: &Path, cursor: u64) -> Result<Vec<u8>, std::io::Error> {
+    if cursor == 0 {
+        return Ok(Vec::new());
+    }
+    let start = cursor.saturating_sub(CHECKPOINT_BYTES);
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut checkpoint = vec![0; (cursor - start) as usize];
+    file.read_exact(&mut checkpoint)?;
+    Ok(checkpoint)
 }
 
 fn project_record(record: Value) -> Option<Value> {
@@ -565,10 +686,13 @@ fn project_tool_input(name: &str, raw: Value) -> Value {
         .as_str()
         .and_then(|text| serde_json::from_str(text).ok())
         .unwrap_or(raw);
-    if name == "exec" || name == "Bash" {
+    if name == "exec" {
+        return json!({ "commands": code_mode_exec_commands(&parsed) });
+    }
+    if name == "Bash" {
         return command_text(&parsed)
-            .map(|command| json!({ "cmd": command }))
-            .unwrap_or(Value::Null);
+            .map(|command| json!({ "commands": [command] }))
+            .unwrap_or_else(|| json!({ "commands": [] }));
     }
     if name.ends_with("spawn_agent") || name == "Agent" {
         return json!({
@@ -601,6 +725,82 @@ fn command_text(value: &Value) -> Option<String> {
     ["cmd", "command", "input"]
         .iter()
         .find_map(|key| value.get(*key).and_then(command_text))
+}
+
+fn code_mode_exec_commands(value: &Value) -> Vec<String> {
+    if let Some(module) = value.as_str() {
+        return nested_exec_commands(module);
+    }
+    if let Some(command) = value
+        .get("cmd")
+        .or_else(|| value.get("command"))
+        .and_then(command_text)
+    {
+        return vec![command];
+    }
+    ["input", "arguments"]
+        .iter()
+        .find_map(|key| value.get(*key))
+        .map(code_mode_exec_commands)
+        .unwrap_or_default()
+}
+
+fn nested_exec_commands(module: &str) -> Vec<String> {
+    const CALL: &str = "tools.exec_command";
+
+    let mut commands = Vec::new();
+    let mut offset = 0;
+    while let Some(relative_start) = module[offset..].find(CALL) {
+        let call_start = offset + relative_start + CALL.len();
+        let after_name = &module[call_start..];
+        let whitespace = after_name.len() - after_name.trim_start().len();
+        let argument_start = call_start + whitespace;
+        if module.as_bytes().get(argument_start) != Some(&b'(') {
+            offset = call_start;
+            continue;
+        }
+        let source = &module[argument_start + 1..];
+        let Some((argument, consumed)) = balanced_call_argument(source) else {
+            break;
+        };
+        if let Ok(value) = serde_json::from_str::<Value>(argument.trim()) {
+            if let Some(command) = command_text(&value) {
+                commands.push(command);
+            }
+        }
+        offset = argument_start + 1 + consumed;
+    }
+    commands
+}
+
+fn balanced_call_argument(source: &str) -> Option<(&str, usize)> {
+    let mut depth = 1_u32;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, character) in source.char_indices() {
+        if let Some(expected) = quote {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == expected {
+                quote = None;
+            }
+            continue;
+        }
+        match character {
+            '\'' | '"' | '`' => quote = Some(character),
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&source[..index], index + character.len_utf8()));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn project_questions(value: Option<&Value>) -> Vec<Value> {
@@ -705,9 +905,24 @@ fn collect_codex_events(
                     ],
                 )
             });
+            let parent_thread_id = file.records.iter().find_map(|record| {
+                string_at(
+                    record,
+                    &[
+                        "payload",
+                        "source",
+                        "subagent",
+                        "thread_spawn",
+                        "parent_thread_id",
+                    ],
+                )
+            });
             let child_matches = agent_path
                 .as_deref()
                 .is_some_and(|path| canonical_codex_name(path, &slug))
+                && parent_thread_id
+                    .as_deref()
+                    .is_some_and(|parent| !parent.is_empty())
                 && file.records.iter().any(|record| {
                     codex_assignment_text(record)
                         .is_some_and(|text| contains_dispatch(&text, &slug))
@@ -1201,9 +1416,16 @@ fn call_scopes_entity(
     }
 
     if matches!(tool_name, "exec" | "Bash") {
-        return command_text(arguments).is_some_and(|command| {
-            command_contains_exact_path(&command, &entity.path) || contains_dispatch(&command, slug)
-        });
+        return arguments
+            .get("commands")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .any(|command| {
+                command_contains_exact_path(command, &entity.path)
+                    || contains_dispatch(command, slug)
+            });
     }
 
     let keys: &[&str] = match tool_name {
@@ -1451,6 +1673,35 @@ fn system_time_unix(time: SystemTime) -> Option<i64> {
 }
 
 #[cfg(test)]
+static SESSION_FILE_PARSE_STARTS: LazyLock<Mutex<HashMap<PathBuf, Vec<u64>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+#[cfg(test)]
+fn record_session_file_parse(path: &Path, start: u64) {
+    SESSION_FILE_PARSE_STARTS
+        .lock()
+        .expect("session parse count lock")
+        .entry(path.to_path_buf())
+        .or_default()
+        .push(start);
+}
+
+#[cfg(test)]
+fn session_file_parse_count(path: &Path) -> usize {
+    session_file_parse_starts(path).len()
+}
+
+#[cfg(test)]
+fn session_file_parse_starts(path: &Path) -> Vec<u64> {
+    SESSION_FILE_PARSE_STARTS
+        .lock()
+        .expect("session parse count lock")
+        .get(path)
+        .cloned()
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1614,6 +1865,16 @@ mod tests {
     }
 
     #[test]
+    fn codex_worker_fixture_requires_non_empty_parent_thread_linkage() {
+        let report = scan_fixture(AgentRuntime::Codex, "codex-worker-unlinked");
+        assert_eq!(
+            report.attributions[0].activity.status_label(),
+            "idle",
+            "a child-shaped session without its parent thread must fail closed"
+        );
+    }
+
+    #[test]
     fn codex_task_complete_closes_only_the_open_worker_turn() {
         let report = scan_fixture(AgentRuntime::Codex, "codex-worker-complete");
         assert_eq!(report.attributions[0].activity.status_label(), "idle");
@@ -1627,7 +1888,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_exec_custom_call_scopes_raw_and_nested_structured_inputs() {
+    fn codex_exec_custom_call_scopes_nested_executable_commands_only() {
         for fixture in ["codex-fo-exec", "codex-fo-exec-nested"] {
             let report = scan_fixture(AgentRuntime::Codex, fixture);
             assert_eq!(
@@ -1636,6 +1897,12 @@ mod tests {
                 "fixture {fixture} must recognize exact entity scope"
             );
         }
+        let text_only = scan_fixture(AgentRuntime::Codex, "codex-fo-exec-text-only");
+        assert_eq!(
+            text_only.attributions[0].activity.status_label(),
+            "idle",
+            "a non-executing text(path) mention in the module must fail closed"
+        );
     }
 
     #[test]
@@ -1896,6 +2163,8 @@ mod tests {
             first.report.attributions[0].activity.status_label(),
             "running · worker"
         );
+        let first_cursor = first.session_files[&path].cursor;
+        assert_eq!(session_file_parse_starts(&path), vec![0]);
 
         let mut append = fs::OpenOptions::new()
             .append(true)
@@ -1919,6 +2188,11 @@ mod tests {
             appended.report.attributions[0].activity.status_label(),
             "idle"
         );
+        assert_eq!(
+            session_file_parse_starts(&path),
+            vec![0, first_cursor],
+            "append scanning must resume at the saved byte cursor"
+        );
 
         fs::write(&path, &fixture).expect("truncate to open worker");
         let truncated = scan_local_sessions_with_snapshots(
@@ -1933,6 +2207,11 @@ mod tests {
         assert_eq!(
             truncated.report.attributions[0].activity.status_label(),
             "running · worker"
+        );
+        assert_eq!(
+            session_file_parse_starts(&path),
+            vec![0, first_cursor, 0],
+            "truncation must invalidate the cursor and rebuild the summary"
         );
 
         fs::remove_file(&path).expect("delete fixture");
@@ -1950,6 +2229,59 @@ mod tests {
             "idle"
         );
         assert!(deleted.session_files.is_empty());
+        assert_eq!(
+            session_file_parse_starts(&path),
+            vec![0, first_cursor, 0],
+            "deletion must drop the snapshot without reading a missing file"
+        );
+    }
+
+    #[test]
+    fn unchanged_scan_reuses_projected_summary_without_rereading_file() {
+        let temp = tempfile::tempdir().expect("temp");
+        let path = temp.path().join("rollout.jsonl");
+        fs::copy(fixture_root("codex-worker-open/rollout.jsonl"), &path).expect("fixture");
+        let base_request = SessionScanRequest {
+            workflow_dir: PathBuf::from("/repo/docs"),
+            repo_root: PathBuf::from("/repo"),
+            entities: vec![SessionScanEntity {
+                id: "069".to_string(),
+                path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+                worktree: None,
+                worktree_source: None,
+            }],
+            roots: SessionRoots {
+                codex: vec![temp.path().to_path_buf()],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let first = scan_local_sessions_with_snapshots(&base_request, &StdProcessProbe, UNIX_EPOCH)
+            .expect("first scan");
+        assert_eq!(session_file_parse_count(&path), 1);
+        assert_eq!(
+            first.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+
+        let second = scan_local_sessions_with_snapshots(
+            &SessionScanRequest {
+                previous_session_files: first.session_files,
+                ..base_request
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("unchanged scan");
+        assert_eq!(
+            session_file_parse_count(&path),
+            1,
+            "unchanged metadata must reuse the safe projected summary"
+        );
+        assert_eq!(
+            second.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
     }
 
     #[test]

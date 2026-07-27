@@ -125,8 +125,11 @@ Keep module boundaries clear and testable:
   requires canonical dispatch/session correlation and structured start, stop,
   FO-action, or approve/reject gate records. Process presence, mtimes, generic
   path mentions, and filesystem writes alone must remain idle. JSONL scanning
-  must not drop large artifacts, and Claude worker lifecycle evidence must stay
-  scoped to its exact parent session and dispatch call.
+  must retain projected summaries behind per-file byte cursors rather than drop
+  or reread large unchanged artifacts. Codex child evidence requires a non-empty
+  parent thread, code-mode activity uses only nested executable commands, and
+  Claude worker lifecycle evidence stays scoped to its exact parent session and
+  dispatch call.
 - `crates/spacetop-core/src/editor.rs` owns opening selected files in an
   external editor/viewer path; it must not become a workflow-state writer
   without explicit policy change.
