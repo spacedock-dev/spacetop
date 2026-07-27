@@ -12,7 +12,7 @@ verdict:
 score: 0.84
 worktree: .worktrees/spacedock-ensign-detect-entity-activity-state
 issue:
-pr: "#76"
+pr: pr-merge:76
 id: 069
 mod-block: merge:pr-merge
 ---
