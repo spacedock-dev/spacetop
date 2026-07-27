@@ -35,7 +35,9 @@ Detection parses structured JSON fields and fails closed:
   dispatch assignment, and `task_started`; matching `task_complete` stops it.
 - A Claude Code worker needs a canonical parent `Agent` call, correlated
   teammate metadata and sidechain acceptance; the matched
-  `idle_notification` stops it.
+  `idle_notification` stops it. Correlation is scoped to the exact parent
+  session directory and tool-use call; reusable worker names never link
+  activity across parent sessions.
 - FO activity starts only after an exact entity/dispatch-scoped structured tool
   call. The corresponding turn/end-turn closes it.
 - A human gate requires an outstanding `request_user_input` or
@@ -52,4 +54,8 @@ usable. A whole-scan failure preserves the last successful activity snapshot.
 The existing filesystem watcher and periodic session scan trigger rescans.
 Session logs and workflow files remain read-only. Fixtures contain only
 sanitized structural records needed to pin the Codex and Claude Code schemas;
-prompt and transcript bodies are not exposed in the UI.
+prompt and transcript bodies are not exposed in the UI. JSONL artifacts are
+streamed record by record without a size cutoff, and each record is projected
+to the structural fields needed by the reducer before it is retained. Appends,
+truncations, and deletions are reparsed so a large or changed artifact cannot
+silently clear real activity.

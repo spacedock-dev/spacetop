@@ -124,7 +124,9 @@ Keep module boundaries clear and testable:
   typed `Worker`/`FirstOfficer` handler carried only by `Running`. Detection
   requires canonical dispatch/session correlation and structured start, stop,
   FO-action, or approve/reject gate records. Process presence, mtimes, generic
-  path mentions, and filesystem writes alone must remain idle.
+  path mentions, and filesystem writes alone must remain idle. JSONL scanning
+  must not drop large artifacts, and Claude worker lifecycle evidence must stay
+  scoped to its exact parent session and dispatch call.
 - `crates/spacetop-core/src/editor.rs` owns opening selected files in an
   external editor/viewer path; it must not become a workflow-state writer
   without explicit policy change.

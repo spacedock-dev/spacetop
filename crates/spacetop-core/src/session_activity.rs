@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use walkdir::WalkDir;
 
 use crate::domain::{
@@ -13,7 +14,6 @@ use crate::domain::{
 };
 use crate::entity_identity::entity_slug;
 
-const MAX_SCAN_FILE_BYTES: u64 = 4_000_000;
 const DISPATCH_PREFIX: &str = "/tmp/spacedock-dispatch/spacedock-ensign-";
 const STAGES: &[&str] = &["shape", "plan", "implement", "verify", "done", "pr-merge"];
 
@@ -286,11 +286,8 @@ fn scan_local_sessions_inner(
                     continue;
                 }
             };
-            if metadata.len() > MAX_SCAN_FILE_BYTES {
-                continue;
-            }
-            let content = match fs::read_to_string(entry.path()) {
-                Ok(content) => content,
+            let records = match parse_session_file(entry.path(), &mut errors) {
+                Ok(records) => records,
                 Err(err) => {
                     errors.push(format!(
                         "{} scan could not read {}: {err}",
@@ -307,7 +304,6 @@ fn scan_local_sessions_inner(
                     len: metadata.len(),
                 },
             );
-            let records = parse_records(entry.path(), &content, &mut errors);
             parsed_by_runtime
                 .entry(runtime)
                 .or_default()
@@ -364,10 +360,12 @@ struct ParsedFile {
     records: Vec<Value>,
 }
 
-fn parse_records(path: &Path, content: &str, errors: &mut Vec<String>) -> Vec<Value> {
+fn parse_session_file(path: &Path, errors: &mut Vec<String>) -> Result<Vec<Value>, std::io::Error> {
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
     if path.extension().and_then(OsStr::to_str) == Some("json") {
-        return match serde_json::from_str(content) {
-            Ok(value) => vec![value],
+        return Ok(match serde_json::from_reader(reader) {
+            Ok(value) => project_record(value).into_iter().collect(),
             Err(err) => {
                 errors.push(format!(
                     "malformed session record {}: {err}",
@@ -375,28 +373,303 @@ fn parse_records(path: &Path, content: &str, errors: &mut Vec<String>) -> Vec<Va
                 ));
                 Vec::new()
             }
-        };
+        });
     }
-    content
+    Ok(reader
         .lines()
         .enumerate()
-        .filter_map(|(line_number, line)| {
-            if line.trim().is_empty() {
-                return None;
-            }
-            match serde_json::from_str(line) {
-                Ok(value) => Some(value),
-                Err(err) => {
-                    errors.push(format!(
-                        "malformed session record {}:{}: {err}",
-                        path.display(),
-                        line_number + 1
-                    ));
-                    None
+        .filter_map(|(line_number, line)| match line {
+            Ok(line) => {
+                if line.trim().is_empty() {
+                    return None;
+                }
+                match serde_json::from_str(&line) {
+                    Ok(value) => project_record(value),
+                    Err(err) => {
+                        errors.push(format!(
+                            "malformed session record {}:{}: {err}",
+                            path.display(),
+                            line_number + 1
+                        ));
+                        None
+                    }
                 }
             }
+            Err(err) => {
+                errors.push(format!(
+                    "session record read failed {}:{}: {err}",
+                    path.display(),
+                    line_number + 1
+                ));
+                None
+            }
+        })
+        .collect())
+}
+
+fn project_record(record: Value) -> Option<Value> {
+    if record.get("taskKind").is_some() {
+        return Some(project_claude_meta(&record));
+    }
+
+    let record_type = record.get("type").and_then(Value::as_str)?;
+    let timestamp = record.get("timestamp").cloned().unwrap_or(Value::Null);
+    match record_type {
+        "session_meta" => Some(json!({
+            "type": record_type,
+            "timestamp": timestamp,
+            "payload": {
+                "id": record.pointer("/payload/id").cloned().unwrap_or(Value::Null),
+                "source": {
+                    "subagent": {
+                        "thread_spawn": {
+                            "agent_path": record.pointer("/payload/source/subagent/thread_spawn/agent_path").cloned().unwrap_or(Value::Null),
+                            "parent_thread_id": record.pointer("/payload/source/subagent/thread_spawn/parent_thread_id").cloned().unwrap_or(Value::Null),
+                        }
+                    }
+                }
+            }
+        })),
+        "event_msg" => Some(json!({
+            "type": record_type,
+            "timestamp": timestamp,
+            "payload": {
+                "type": record.pointer("/payload/type").cloned().unwrap_or(Value::Null),
+                "turn_id": record.pointer("/payload/turn_id").cloned().unwrap_or(Value::Null),
+                "kind": record.pointer("/payload/kind").cloned().unwrap_or(Value::Null),
+                "agent_thread_id": record.pointer("/payload/agent_thread_id").cloned().unwrap_or(Value::Null),
+                "agent_path": record.pointer("/payload/agent_path").cloned().unwrap_or(Value::Null),
+            }
+        })),
+        "response_item" => project_codex_response_item(&record, timestamp),
+        "assistant" | "user" => project_claude_record(&record, timestamp),
+        _ => None,
+    }
+}
+
+fn project_claude_meta(record: &Value) -> Value {
+    json!({
+        "taskKind": record.get("taskKind").cloned().unwrap_or(Value::Null),
+        "name": record.get("name").cloned().unwrap_or(Value::Null),
+        "agentId": record.get("agentId").cloned().unwrap_or(Value::Null),
+        "parentSessionId": first_value(record, &["parentSessionId", "parentSessionID", "parent_session_id"]),
+        "parentToolUseId": first_value(record, &["parentToolUseId", "parentToolUseID", "parent_tool_use_id"]),
+    })
+}
+
+fn project_codex_response_item(record: &Value, timestamp: Value) -> Option<Value> {
+    let payload = record.get("payload")?;
+    let payload_type = payload.get("type").and_then(Value::as_str)?;
+    match payload_type {
+        "message" if payload.get("role").and_then(Value::as_str) == Some("user") => {
+            let dispatches: Vec<Value> = payload
+                .get("content")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|item| {
+                    item.get("text")
+                        .or_else(|| item.get("input_text"))
+                        .and_then(Value::as_str)
+                })
+                .flat_map(dispatch_markers)
+                .map(|text| json!({ "type": "input_text", "text": text }))
+                .collect();
+            (!dispatches.is_empty()).then(|| {
+                json!({
+                    "type": "response_item",
+                    "timestamp": timestamp,
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": dispatches,
+                    }
+                })
+            })
+        }
+        "function_call" | "custom_tool_call" => {
+            let name = payload.get("name").and_then(Value::as_str)?;
+            let raw = payload
+                .get("arguments")
+                .or_else(|| payload.get("input"))
+                .cloned()
+                .unwrap_or(Value::Null);
+            Some(json!({
+                "type": "response_item",
+                "timestamp": timestamp,
+                "payload": {
+                    "type": payload_type,
+                    "name": name,
+                    "call_id": payload.get("call_id").or_else(|| payload.get("id")).cloned().unwrap_or(Value::Null),
+                    "arguments": project_tool_input(name, raw),
+                }
+            }))
+        }
+        "function_call_output" => Some(json!({
+            "type": "response_item",
+            "timestamp": timestamp,
+            "payload": {
+                "type": payload_type,
+                "call_id": payload.get("call_id").cloned().unwrap_or(Value::Null),
+            }
+        })),
+        _ => None,
+    }
+}
+
+fn project_claude_record(record: &Value, timestamp: Value) -> Option<Value> {
+    let record_type = record.get("type").and_then(Value::as_str)?;
+    let projected_content: Vec<Value> = record
+        .pointer("/message/content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|block| match block.get("type").and_then(Value::as_str) {
+            Some("tool_use") => {
+                let name = block.get("name").and_then(Value::as_str)?;
+                Some(json!({
+                    "type": "tool_use",
+                    "id": block.get("id").cloned().unwrap_or(Value::Null),
+                    "name": name,
+                    "input": project_tool_input(name, block.get("input").cloned().unwrap_or(Value::Null)),
+                }))
+            }
+            Some("tool_result") => Some(json!({
+                "type": "tool_result",
+                "tool_use_id": block.get("tool_use_id").cloned().unwrap_or(Value::Null),
+            })),
+            _ => None,
+        })
+        .collect();
+    let teammate_content = record
+        .pointer("/message/content")
+        .and_then(Value::as_str)
+        .and_then(project_teammate_envelope);
+
+    Some(json!({
+        "type": record_type,
+        "timestamp": timestamp,
+        "sessionId": record.get("sessionId").cloned().unwrap_or(Value::Null),
+        "isSidechain": record.get("isSidechain").cloned().unwrap_or(Value::Bool(false)),
+        "agentId": record.get("agentId").cloned().unwrap_or(Value::Null),
+        "parentSessionId": first_value(record, &["parentSessionId", "parentSessionID", "parent_session_id"]),
+        "message": {
+            "content": teammate_content.unwrap_or(Value::Array(projected_content)),
+            "stop_reason": record.pointer("/message/stop_reason").cloned().unwrap_or(Value::Null),
+        }
+    }))
+}
+
+fn project_tool_input(name: &str, raw: Value) -> Value {
+    let parsed = raw
+        .as_str()
+        .and_then(|text| serde_json::from_str(text).ok())
+        .unwrap_or(raw);
+    if name == "exec" || name == "Bash" {
+        return command_text(&parsed)
+            .map(|command| json!({ "cmd": command }))
+            .unwrap_or(Value::Null);
+    }
+    if name.ends_with("spawn_agent") || name == "Agent" {
+        return json!({
+            "task_name": parsed.get("task_name").or_else(|| parsed.get("name")).cloned().unwrap_or(Value::Null),
+            "message": parsed
+                .get("message")
+                .or_else(|| parsed.get("prompt"))
+                .and_then(Value::as_str)
+                .map(dispatch_markers)
+                .unwrap_or_default()
+                .join("\n"),
+        });
+    }
+    if matches!(name, "request_user_input" | "AskUserQuestion") {
+        return json!({ "questions": project_questions(parsed.get("questions")) });
+    }
+    json!({
+        "file_path": parsed.get("file_path").cloned().unwrap_or(Value::Null),
+        "path": parsed.get("path").cloned().unwrap_or(Value::Null),
+        "cmd": parsed.get("cmd").cloned().unwrap_or(Value::Null),
+        "command": parsed.get("command").cloned().unwrap_or(Value::Null),
+        "uri": parsed.get("uri").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn command_text(value: &Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+    ["cmd", "command", "input"]
+        .iter()
+        .find_map(|key| value.get(*key).and_then(command_text))
+}
+
+fn project_questions(value: Option<&Value>) -> Vec<Value> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|question| {
+            let options: Vec<Value> = question
+                .get("options")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|option| option.get("label").and_then(Value::as_str))
+                .map(|label| json!({ "label": label }))
+                .collect();
+            json!({
+                "id": question.get("id").cloned().unwrap_or(Value::Null),
+                "header": question.get("header").cloned().unwrap_or(Value::Null),
+                "options": options,
+            })
         })
         .collect()
+}
+
+fn project_teammate_envelope(content: &str) -> Option<Value> {
+    let start = content.find("<teammate-message>")? + "<teammate-message>".len();
+    let end = content[start..].find("</teammate-message>")? + start;
+    let envelope: Value = serde_json::from_str(content[start..end].trim()).ok()?;
+    let projected = json!({
+        "type": envelope.get("type").cloned().unwrap_or(Value::Null),
+        "from": envelope.get("from").cloned().unwrap_or(Value::Null),
+        "idleReason": envelope.get("idleReason").cloned().unwrap_or(Value::Null),
+    });
+    Some(Value::String(format!(
+        "<teammate-message>{projected}</teammate-message>"
+    )))
+}
+
+fn dispatch_markers(text: &str) -> Vec<String> {
+    let mut markers = Vec::new();
+    let mut remainder = text;
+    while let Some(start) = remainder.find(DISPATCH_PREFIX) {
+        let candidate = &remainder[start..];
+        let Some(end) = candidate.find(".md") else {
+            break;
+        };
+        let marker = &candidate[..end + 3];
+        let stem = &candidate[DISPATCH_PREFIX.len()..end];
+        if marker.len() <= 512
+            && stem
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '-')
+            && STAGES
+                .iter()
+                .any(|stage| stem.ends_with(&format!("-{stage}")))
+        {
+            markers.push(marker.to_string());
+        }
+        remainder = &candidate[end + 3..];
+    }
+    markers
+}
+
+fn first_value(value: &Value, keys: &[&str]) -> Value {
+    keys.iter()
+        .find_map(|key| value.get(*key))
+        .cloned()
+        .unwrap_or(Value::Null)
 }
 
 fn collect_codex_events(
@@ -595,31 +868,35 @@ fn collect_codex_first_officer(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClaudeDispatch {
+    parent_session_id: String,
+    call_id: String,
+    worker_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClaudeTeammateMeta {
+    parent_session_id: String,
+    parent_call_id: Option<String>,
+    worker_name: String,
+    agent_id: String,
+}
+
 fn collect_claude_events(
     files: &[ParsedFile],
     entities: &[SessionScanEntity],
     fallback_time: i64,
     per_entity: &mut HashMap<String, Vec<ActivityEvent>>,
 ) {
-    let mut teammate_meta: HashMap<String, (String, String)> = HashMap::new();
-    for file in files {
-        for record in &file.records {
-            if string_at(record, &["taskKind"]).as_deref() == Some("in_process_teammate") {
-                if let (Some(agent_id), Some(name)) = (
-                    string_at(record, &["agentId"]),
-                    string_at(record, &["name"]),
-                ) {
-                    teammate_meta.insert(name, (agent_id, file_id(&file.path)));
-                }
-            }
-        }
-    }
+    let teammate_meta: Vec<ClaudeTeammateMeta> =
+        files.iter().filter_map(claude_teammate_meta).collect();
 
     for entity in entities {
         let Some(slug) = entity_slug(&entity.path) else {
             continue;
         };
-        let mut dispatched_names = HashSet::new();
+        let mut dispatches = Vec::new();
         for file in files {
             if file.records.iter().any(is_claude_sidechain) {
                 continue;
@@ -632,21 +909,47 @@ fn collect_claude_events(
                 entity,
                 &slug,
                 fallback_time,
-                &mut dispatched_names,
+                &mut dispatches,
             );
         }
 
-        for name in dispatched_names {
-            let Some((expected_agent_id, _)) = teammate_meta.get(&name) else {
+        for dispatch in &dispatches {
+            let matching_meta: Vec<_> = teammate_meta
+                .iter()
+                .filter(|meta| {
+                    meta.parent_session_id == dispatch.parent_session_id
+                        && meta.worker_name == dispatch.worker_name
+                        && meta
+                            .parent_call_id
+                            .as_deref()
+                            .is_none_or(|call_id| call_id == dispatch.call_id)
+                })
+                .collect();
+            let same_name_dispatches = dispatches
+                .iter()
+                .filter(|candidate| {
+                    candidate.parent_session_id == dispatch.parent_session_id
+                        && candidate.worker_name == dispatch.worker_name
+                })
+                .count();
+            if matching_meta.len() != 1
+                || (matching_meta[0].parent_call_id.is_none() && same_name_dispatches != 1)
+            {
                 continue;
-            };
+            }
+            let meta = matching_meta[0];
             for file in files {
+                if claude_parent_session_from_path(&file.path).as_deref()
+                    != Some(dispatch.parent_session_id.as_str())
+                {
+                    continue;
+                }
                 let agent_id = file.records.iter().find_map(|record| {
                     is_claude_sidechain(record)
                         .then(|| string_at(record, &["agentId"]))
                         .flatten()
                 });
-                if agent_id.as_deref() != Some(expected_agent_id.as_str()) {
+                if agent_id.as_deref() != Some(meta.agent_id.as_str()) {
                     continue;
                 }
                 if let Some(start) = file.records.iter().find(|record| {
@@ -656,26 +959,32 @@ fn collect_claude_events(
                     push_event(
                         per_entity.entry(entity.id.clone()).or_default(),
                         AgentRuntime::ClaudeCode,
-                        expected_agent_id,
+                        &meta.agent_id,
                         record_timestamp(start, fallback_time),
                         ActivityEventKind::WorkerStarted,
                     );
                 }
             }
-            for file in files {
-                if file.records.iter().any(is_claude_sidechain) {
-                    continue;
-                }
-                if let Some(stop) = file.records.iter().find(|record| {
-                    teammate_idle_notification(record).is_some_and(|from| from == name)
-                }) {
-                    push_event(
-                        per_entity.entry(entity.id.clone()).or_default(),
-                        AgentRuntime::ClaudeCode,
-                        expected_agent_id,
-                        record_timestamp(stop, fallback_time),
-                        ActivityEventKind::WorkerStopped,
-                    );
+            if same_name_dispatches == 1 {
+                for file in files {
+                    if file.records.iter().any(is_claude_sidechain) {
+                        continue;
+                    }
+                    if claude_session_id(file) != dispatch.parent_session_id {
+                        continue;
+                    }
+                    if let Some(stop) = file.records.iter().find(|record| {
+                        teammate_idle_notification(record)
+                            .is_some_and(|from| from == dispatch.worker_name)
+                    }) {
+                        push_event(
+                            per_entity.entry(entity.id.clone()).or_default(),
+                            AgentRuntime::ClaudeCode,
+                            &meta.agent_id,
+                            record_timestamp(stop, fallback_time),
+                            ActivityEventKind::WorkerStopped,
+                        );
+                    }
                 }
             }
         }
@@ -690,10 +999,11 @@ fn collect_claude_first_officer(
     entity: &SessionScanEntity,
     slug: &str,
     fallback_time: i64,
-    dispatched_names: &mut HashSet<String>,
+    dispatches: &mut Vec<ClaudeDispatch>,
 ) {
     let mut scoped = false;
     let mut handoff_pending = false;
+    let mut dispatched_names = HashSet::new();
     for record in records {
         let is_assistant = string_at(record, &["type"]).as_deref() == Some("assistant");
         if handoff_pending && is_assistant {
@@ -735,8 +1045,17 @@ fn collect_claude_first_officer(
                         );
                     }
                     if name == "Agent" && call_scopes_entity(name, &input, entity, slug) {
-                        if let Some(worker_name) = input.get("name").and_then(Value::as_str) {
+                        if let Some(worker_name) = input
+                            .get("task_name")
+                            .or_else(|| input.get("name"))
+                            .and_then(Value::as_str)
+                        {
                             dispatched_names.insert(worker_name.to_string());
+                            dispatches.push(ClaudeDispatch {
+                                parent_session_id: session_id.to_string(),
+                                call_id: call_id.clone(),
+                                worker_name: worker_name.to_string(),
+                            });
                         }
                     }
                     if scoped && name == "AskUserQuestion" && is_gate_question(&input) {
@@ -789,6 +1108,34 @@ fn collect_claude_first_officer(
             handoff_pending = true;
         }
     }
+}
+
+fn claude_teammate_meta(file: &ParsedFile) -> Option<ClaudeTeammateMeta> {
+    let record = file.records.iter().find(|record| {
+        string_at(record, &["taskKind"]).as_deref() == Some("in_process_teammate")
+    })?;
+    let meta = ClaudeTeammateMeta {
+        parent_session_id: string_at(record, &["parentSessionId"])
+            .or_else(|| claude_parent_session_from_path(&file.path))?,
+        parent_call_id: string_at(record, &["parentToolUseId"]),
+        worker_name: string_at(record, &["name"])?,
+        agent_id: string_at(record, &["agentId"])?,
+    };
+    claude_parent_session_from_path(&file.path)
+        .as_deref()
+        .is_some_and(|parent| parent == meta.parent_session_id)
+        .then_some(meta)
+}
+
+fn claude_parent_session_from_path(path: &Path) -> Option<String> {
+    let subagents = path
+        .ancestors()
+        .find(|ancestor| ancestor.file_name().and_then(OsStr::to_str) == Some("subagents"))?;
+    subagents
+        .parent()?
+        .file_name()
+        .and_then(OsStr::to_str)
+        .map(str::to_string)
 }
 
 struct ParsedCall {
@@ -847,31 +1194,49 @@ fn call_scopes_entity(
     if tool_name.ends_with("spawn_agent") || tool_name == "Agent" {
         let expected_name = format!("spacedock-ensign-{slug}-");
         let expected_codex_name = format!("spacedock_ensign_{}_", slug.replace('-', "_"));
-        let name = arguments
-            .get("task_name")
-            .or_else(|| arguments.get("name"))
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let prompt = arguments
-            .get("message")
-            .or_else(|| arguments.get("prompt"))
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        let name = first_string(arguments, &["task_name", "name"]).unwrap_or_default();
+        let prompt = first_string(arguments, &["message", "prompt"]).unwrap_or_default();
         return (name.starts_with(&expected_name) || name.starts_with(&expected_codex_name))
             && contains_dispatch(prompt, slug);
     }
 
-    let known_value = match tool_name {
-        "Read" | "Edit" | "Write" => arguments.get("file_path").or_else(|| arguments.get("path")),
-        "Bash" => arguments.get("command"),
-        _ => arguments
-            .get("path")
-            .or_else(|| arguments.get("cmd"))
-            .or_else(|| arguments.get("uri")),
+    if matches!(tool_name, "exec" | "Bash") {
+        return command_text(arguments).is_some_and(|command| {
+            command_contains_exact_path(&command, &entity.path) || contains_dispatch(&command, slug)
+        });
+    }
+
+    let keys: &[&str] = match tool_name {
+        "Read" | "Edit" | "Write" => &["file_path", "path"],
+        _ => &["path", "uri"],
     };
-    known_value.and_then(Value::as_str).is_some_and(|value| {
+    first_string(arguments, keys).is_some_and(|value| {
         value == entity.path.to_string_lossy() || contains_dispatch(value, slug)
     })
+}
+
+fn first_string<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(Value::as_str))
+}
+
+fn command_contains_exact_path(command: &str, path: &Path) -> bool {
+    let path = path.to_string_lossy();
+    command
+        .match_indices(path.as_ref())
+        .any(|(start, matched)| {
+            let before = command[..start].chars().next_back();
+            let after = command[start + matched.len()..].chars().next();
+            before.is_none_or(is_command_boundary) && after.is_none_or(is_command_boundary)
+        })
+}
+
+fn is_command_boundary(character: char) -> bool {
+    character.is_whitespace()
+        || matches!(
+            character,
+            '\'' | '"' | '`' | '=' | ':' | ';' | '|' | '&' | '(' | ')' | '[' | ']' | '{' | '}'
+        )
 }
 
 fn is_gate_question(input: &Value) -> bool {
@@ -1262,6 +1627,18 @@ mod tests {
     }
 
     #[test]
+    fn codex_exec_custom_call_scopes_raw_and_nested_structured_inputs() {
+        for fixture in ["codex-fo-exec", "codex-fo-exec-nested"] {
+            let report = scan_fixture(AgentRuntime::Codex, fixture);
+            assert_eq!(
+                report.attributions[0].activity.status_label(),
+                "running · FO",
+                "fixture {fixture} must recognize exact entity scope"
+            );
+        }
+    }
+
+    #[test]
     fn claude_worker_fixture_correlates_agent_call_meta_and_sidechain() {
         let report = scan_fixture(AgentRuntime::ClaudeCode, "claude-worker-open");
         assert_eq!(report.errors, Vec::<String>::new());
@@ -1280,6 +1657,123 @@ mod tests {
         let report = scan_fixture(AgentRuntime::ClaudeCode, "claude-worker-idle");
         assert_eq!(report.attributions[0].activity.status_label(), "idle");
         assert!(report.attributions[0].activity.updated_unix().is_some());
+    }
+
+    #[test]
+    fn claude_same_name_activity_stays_linked_to_exact_parent_and_call() {
+        let report = scan_fixture(AgentRuntime::ClaudeCode, "claude-two-parent-same-name");
+        assert_eq!(
+            report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+        assert_eq!(
+            report.attributions[0].activity.session_id(),
+            Some("worker-a"),
+            "parent B metadata and idle notification must not start or stop parent A's worker"
+        );
+    }
+
+    #[test]
+    fn claude_ambiguous_same_parent_calls_without_call_metadata_fail_closed() {
+        let temp = tempfile::tempdir().expect("temp");
+        let subagents = temp.path().join("parent/subagents");
+        fs::create_dir_all(&subagents).expect("subagents");
+        let dispatch = "Read /tmp/spacedock-dispatch/spacedock-ensign-detect-entity-activity-state-implement.md and treat its content as your assignment.";
+        fs::write(
+            temp.path().join("parent.jsonl"),
+            format!(
+                r#"{{"timestamp":1,"type":"assistant","sessionId":"parent","isSidechain":false,"message":{{"content":[{{"type":"tool_use","id":"call-a","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}},{{"type":"tool_use","id":"call-b","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}}],"stop_reason":"end_turn"}}}}"#
+            ),
+        )
+        .expect("parent");
+        fs::write(
+            subagents.join("worker.meta.json"),
+            r#"{"taskKind":"in_process_teammate","name":"spacedock-ensign-detect-entity-activity-state-implement","agentId":"worker"}"#,
+        )
+        .expect("meta");
+        fs::write(
+            subagents.join("worker.jsonl"),
+            r#"{"timestamp":2,"type":"assistant","sessionId":"child","isSidechain":true,"agentId":"worker","message":{"content":[{"type":"text","text":"accepted"}],"stop_reason":null}}"#,
+        )
+        .expect("child");
+
+        let report = scan_local_sessions_with(
+            &SessionScanRequest {
+                workflow_dir: PathBuf::from("/repo/docs"),
+                repo_root: PathBuf::from("/repo"),
+                entities: vec![SessionScanEntity {
+                    id: "069".to_string(),
+                    path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+                    worktree: None,
+                    worktree_source: None,
+                }],
+                roots: SessionRoots {
+                    codex: Vec::new(),
+                    claude_code: vec![temp.path().to_path_buf()],
+                },
+                previous_session_files: HashMap::new(),
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("scan");
+        assert_eq!(
+            report.attributions[0].activity.status_label(),
+            "idle",
+            "metadata without a call id must not choose between same-parent duplicate names"
+        );
+    }
+
+    #[test]
+    fn claude_ambiguous_same_parent_idle_name_does_not_stop_exact_call() {
+        let temp = tempfile::tempdir().expect("temp");
+        let subagents = temp.path().join("parent/subagents");
+        fs::create_dir_all(&subagents).expect("subagents");
+        let dispatch = "Read /tmp/spacedock-dispatch/spacedock-ensign-detect-entity-activity-state-implement.md and treat its content as your assignment.";
+        fs::write(
+            temp.path().join("parent.jsonl"),
+            format!(
+                r#"{{"timestamp":1,"type":"assistant","sessionId":"parent","isSidechain":false,"message":{{"content":[{{"type":"tool_use","id":"call-a","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}},{{"type":"tool_use","id":"call-b","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}}],"stop_reason":"end_turn"}}}}
+{{"timestamp":3,"type":"user","sessionId":"parent","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"idle_notification\",\"from\":\"spacedock-ensign-detect-entity-activity-state-implement\",\"idleReason\":\"available\"}}</teammate-message>"}}}}"#
+            ),
+        )
+        .expect("parent");
+        fs::write(
+            subagents.join("worker.meta.json"),
+            r#"{"taskKind":"in_process_teammate","name":"spacedock-ensign-detect-entity-activity-state-implement","agentId":"worker","parentSessionId":"parent","parentToolUseId":"call-a"}"#,
+        )
+        .expect("meta");
+        fs::write(
+            subagents.join("worker.jsonl"),
+            r#"{"timestamp":2,"type":"assistant","sessionId":"child","isSidechain":true,"agentId":"worker","message":{"content":[{"type":"text","text":"accepted"}],"stop_reason":null}}"#,
+        )
+        .expect("child");
+
+        let report = scan_local_sessions_with(
+            &SessionScanRequest {
+                workflow_dir: PathBuf::from("/repo/docs"),
+                repo_root: PathBuf::from("/repo"),
+                entities: vec![SessionScanEntity {
+                    id: "069".to_string(),
+                    path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+                    worktree: None,
+                    worktree_source: None,
+                }],
+                roots: SessionRoots {
+                    codex: Vec::new(),
+                    claude_code: vec![temp.path().to_path_buf()],
+                },
+                previous_session_files: HashMap::new(),
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("scan");
+        assert_eq!(
+            report.attributions[0].activity.status_label(),
+            "running · worker",
+            "name-only idle evidence must not choose between same-parent duplicate dispatches"
+        );
     }
 
     #[test]
@@ -1360,6 +1854,122 @@ mod tests {
             "running · worker"
         );
         assert_eq!(report.errors.len(), 1);
+    }
+
+    #[test]
+    fn large_append_truncation_and_deletion_never_create_false_idle() {
+        use std::io::Write;
+
+        let temp = tempfile::tempdir().expect("temp");
+        let path = temp.path().join("rollout.jsonl");
+        let fixture = fs::read_to_string(fixture_root("codex-worker-open/rollout.jsonl"))
+            .expect("source fixture");
+        let mut file = fs::File::create(&path).expect("large fixture");
+        for _ in 0..90_000 {
+            writeln!(file, r#"{{"type":"noise","padding":"{}"}}"#, "x".repeat(32)).expect("noise");
+        }
+        file.write_all(fixture.as_bytes()).expect("worker records");
+        drop(file);
+        assert!(
+            fs::metadata(&path).expect("metadata").len() > 4_000_000,
+            "regression fixture must exceed the removed cutoff"
+        );
+
+        let base_request = SessionScanRequest {
+            workflow_dir: PathBuf::from("/repo/docs"),
+            repo_root: PathBuf::from("/repo"),
+            entities: vec![SessionScanEntity {
+                id: "069".to_string(),
+                path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+                worktree: None,
+                worktree_source: None,
+            }],
+            roots: SessionRoots {
+                codex: vec![temp.path().to_path_buf()],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
+        };
+        let first = scan_local_sessions_with_snapshots(&base_request, &StdProcessProbe, UNIX_EPOCH)
+            .expect("large scan");
+        assert_eq!(
+            first.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+
+        let mut append = fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("append");
+        writeln!(
+            append,
+            r#"{{"timestamp":"2026-07-27T10:00:03Z","type":"event_msg","payload":{{"type":"task_complete","turn_id":"worker-turn-redacted"}}}}"#
+        )
+        .expect("terminal event");
+        let appended = scan_local_sessions_with_snapshots(
+            &SessionScanRequest {
+                previous_session_files: first.session_files,
+                ..base_request.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("append scan");
+        assert_eq!(
+            appended.report.attributions[0].activity.status_label(),
+            "idle"
+        );
+
+        fs::write(&path, &fixture).expect("truncate to open worker");
+        let truncated = scan_local_sessions_with_snapshots(
+            &SessionScanRequest {
+                previous_session_files: appended.session_files,
+                ..base_request.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("truncation scan");
+        assert_eq!(
+            truncated.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+
+        fs::remove_file(&path).expect("delete fixture");
+        let deleted = scan_local_sessions_with_snapshots(
+            &SessionScanRequest {
+                previous_session_files: truncated.session_files,
+                ..base_request
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("deletion scan");
+        assert_eq!(
+            deleted.report.attributions[0].activity.status_label(),
+            "idle"
+        );
+        assert!(deleted.session_files.is_empty());
+    }
+
+    #[test]
+    fn record_projection_drops_transcript_text() {
+        let projected = project_record(json!({
+            "timestamp": 1,
+            "type": "assistant",
+            "sessionId": "session",
+            "isSidechain": false,
+            "message": {
+                "content": [
+                    {"type": "text", "text": "private transcript"},
+                    {"type": "tool_use", "id": "call", "name": "Read", "input": {"file_path": "/repo/entity.md"}}
+                ],
+                "stop_reason": null
+            }
+        }))
+        .expect("projection");
+        assert!(!projected.to_string().contains("private transcript"));
+        assert!(projected.to_string().contains("/repo/entity.md"));
     }
 
     #[test]
