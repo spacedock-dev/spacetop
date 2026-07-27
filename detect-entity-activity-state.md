@@ -519,6 +519,7 @@ fail-closed or complete for representative runtime artifacts.
 
 - Cycle 1: REJECTED — verify; surface 3 blocking scanner defects vs estimate not declared (n/a%); AC unchanged
 - Cycle 2: REJECTED — verify; surface 3 blocking Codex linkage/action-extraction and scan-cursor defects vs estimate not declared (n/a%); AC unchanged
+- Cycle 3: REJECTED — verify; surface 2 blocking live-exec parsing and same-size rewrite-proof defects vs estimate not declared (n/a%); AC unchanged
 
 ## Stage Report: implement (cycle 2)
 
