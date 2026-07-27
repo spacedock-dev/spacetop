@@ -136,7 +136,12 @@ fn task_row_renders_active_session_marker_from_typed_attribution() {
             item("065", "Active task", "Body"),
         ],
         "065",
-        spacetop_core::domain::AgentSessionState::Running,
+        spacetop_core::domain::EntityActivity::Running {
+            handler: spacetop_core::domain::ActivityHandler::Worker,
+            runtime: spacetop_core::domain::AgentRuntime::Codex,
+            session_id: "session-065".to_string(),
+            updated_unix: 1_718_000_000,
+        },
     );
     let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
     terminal.draw(|frame| render(frame, &app)).expect("render");
@@ -149,6 +154,41 @@ fn task_row_renders_active_session_marker_from_typed_attribution() {
     assert!(
         !rendered.contains("\u{25CF}   Inactive task"),
         "inactive row must not render the active marker"
+    );
+    assert!(
+        rendered.contains("running · worker"),
+        "running handler must render inside the activity status"
+    );
+}
+
+#[test]
+fn task_row_renders_human_gate_with_high_salience_marker() {
+    let app = app_with_session_attribution(
+        vec![item("069", "Awaiting captain", "Body")],
+        "069",
+        spacetop_core::domain::EntityActivity::HumanGate {
+            runtime: spacetop_core::domain::AgentRuntime::ClaudeCode,
+            session_id: "fo-session".to_string(),
+            updated_unix: 1_718_000_000,
+        },
+    );
+    let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let buffer = terminal.backend().buffer();
+
+    assert!(
+        find_styled_text(buffer, "\u{25C6}", |style| {
+            style.fg == Some(Color::Red)
+                && style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+        }),
+        "human-gate rows must use a bold red diamond"
+    );
+    assert!(
+        find_styled_text(buffer, "human-gate", |style| {
+            style.fg == Some(Color::Red)
+                && style.add_modifier.contains(ratatui::style::Modifier::BOLD)
+        }),
+        "human-gate status text must be high-salience"
     );
 }
 

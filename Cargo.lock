@@ -2610,6 +2610,7 @@ dependencies = [
  "anyhow",
  "notify",
  "serde",
+ "serde_json",
  "serde_yaml",
  "sha1",
  "tempfile",

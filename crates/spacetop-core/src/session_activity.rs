@@ -1,21 +1,24 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+#[cfg(test)]
+use std::sync::{LazyLock, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde_json::{json, Value};
 use walkdir::WalkDir;
 
 use crate::domain::{
-    AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, DispatchAnchor,
-    Entity, EntitySessionAttribution, SessionScanReport,
+    ActivityHandler, AgentRuntime, Entity, EntityActivity, EntityActivityAttribution,
+    SessionScanReport,
 };
 use crate::entity_identity::entity_slug;
 
-const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(30 * 60);
-const OBSERVED_RUNNING_WINDOW: Duration = Duration::from_secs(2 * 60);
-const MAX_SCAN_FILE_BYTES: u64 = 1_000_000;
+const DISPATCH_PREFIX: &str = "/tmp/spacedock-dispatch/spacedock-ensign-";
+const CHECKPOINT_BYTES: u64 = 128;
+const STAGES: &[&str] = &["shape", "plan", "implement", "verify", "done", "pr-merge"];
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionScanRequest {
@@ -26,11 +29,15 @@ pub struct SessionScanRequest {
     pub previous_session_files: HashMap<PathBuf, SessionFileSnapshot>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionFileSnapshot {
-    modified_unix: Option<i64>,
+    modified: Option<SystemTime>,
     len: u64,
-    observed_running_until_unix: Option<i64>,
+    cursor: u64,
+    complete_lines: u64,
+    checkpoint: Vec<u8>,
+    records: Vec<Value>,
+    parse_errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,18 +80,15 @@ impl SessionRoots {
             .unwrap_or_default()
     }
 
-    fn all_roots(&self) -> Vec<(AgentKind, PathBuf)> {
+    fn all_roots(&self) -> impl Iterator<Item = (AgentRuntime, &PathBuf)> {
         self.codex
             .iter()
-            .cloned()
-            .map(|path| (AgentKind::Codex, path))
+            .map(|path| (AgentRuntime::Codex, path))
             .chain(
                 self.claude_code
                     .iter()
-                    .cloned()
-                    .map(|path| (AgentKind::ClaudeCode, path)),
+                    .map(|path| (AgentRuntime::ClaudeCode, path)),
             )
-            .collect()
     }
 }
 
@@ -101,8 +105,12 @@ impl std::fmt::Display for SessionScanError {
 
 impl std::error::Error for SessionScanError {}
 
+/// Kept as an injectable boundary for callers. Structured activity detection
+/// deliberately does not use process presence as evidence.
 pub trait ProcessProbe {
-    fn is_running(&self, pid: u32) -> bool;
+    fn is_running(&self, _pid: u32) -> bool {
+        false
+    }
 
     fn command_lines(&self) -> Vec<String> {
         Vec::new()
@@ -112,46 +120,7 @@ pub trait ProcessProbe {
 #[derive(Debug, Clone, Copy)]
 pub struct StdProcessProbe;
 
-impl ProcessProbe for StdProcessProbe {
-    fn is_running(&self, pid: u32) -> bool {
-        if pid == 0 {
-            return false;
-        }
-        Command::new("ps")
-            .arg("-p")
-            .arg(pid.to_string())
-            .arg("-o")
-            .arg("pid=")
-            .output()
-            .map(|output| output.status.success() && !output.stdout.is_empty())
-            .unwrap_or(false)
-    }
-
-    fn command_lines(&self) -> Vec<String> {
-        Command::new("ps")
-            .arg("-axo")
-            .arg("command=")
-            .output()
-            .ok()
-            .filter(|output| output.status.success())
-            .map(|output| {
-                String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .map(str::to_string)
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-}
-
-pub fn scan_local_sessions(
-    request: SessionScanRequest,
-) -> Result<SessionScanReport, SessionScanError> {
-    scan_local_sessions_with_snapshots(&request, &StdProcessProbe, SystemTime::now())
-        .map(|result| result.report)
-}
+impl ProcessProbe for StdProcessProbe {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionActivityScan {
@@ -159,41 +128,146 @@ pub struct SessionActivityScan {
     pub session_files: HashMap<PathBuf, SessionFileSnapshot>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActivityEvent {
+    pub runtime: AgentRuntime,
+    pub session_id: String,
+    pub updated_unix: i64,
+    pub kind: ActivityEventKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActivityEventKind {
+    WorkerStarted,
+    WorkerStopped,
+    FirstOfficerStarted,
+    FirstOfficerStopped,
+    HumanGateOpened { call_id: String },
+    HumanGateResolved { call_id: String },
+}
+
+pub fn reduce_activity(events: &[ActivityEvent]) -> EntityActivity {
+    let mut ordered: Vec<(usize, &ActivityEvent)> = events.iter().enumerate().collect();
+    ordered.sort_by_key(|(index, event)| (event.updated_unix, *index));
+
+    let mut workers = HashMap::new();
+    let mut first_officers = HashMap::new();
+    let mut gates = HashMap::new();
+    let mut latest = None;
+
+    for (_, event) in ordered {
+        latest = Some(latest.unwrap_or(i64::MIN).max(event.updated_unix));
+        let session_key = (event.runtime, event.session_id.clone());
+        match &event.kind {
+            ActivityEventKind::WorkerStarted => {
+                workers.insert(session_key, event.updated_unix);
+            }
+            ActivityEventKind::WorkerStopped => {
+                workers.remove(&session_key);
+            }
+            ActivityEventKind::FirstOfficerStarted => {
+                first_officers.insert(session_key, event.updated_unix);
+            }
+            ActivityEventKind::FirstOfficerStopped => {
+                first_officers.remove(&session_key);
+            }
+            ActivityEventKind::HumanGateOpened { call_id } => {
+                gates.insert(
+                    (event.runtime, event.session_id.clone(), call_id.clone()),
+                    event.updated_unix,
+                );
+            }
+            ActivityEventKind::HumanGateResolved { call_id } => {
+                gates.remove(&(event.runtime, event.session_id.clone(), call_id.clone()));
+            }
+        }
+    }
+
+    if let Some(((runtime, session_id, _), updated_unix)) = gates
+        .into_iter()
+        .max_by_key(|((runtime, session, _), at)| (*at, *runtime, session.clone()))
+    {
+        return EntityActivity::HumanGate {
+            runtime,
+            session_id,
+            updated_unix,
+        };
+    }
+    if let Some(((runtime, session_id), updated_unix)) = workers
+        .into_iter()
+        .max_by_key(|((runtime, session), at)| (*at, *runtime, session.clone()))
+    {
+        return EntityActivity::Running {
+            handler: ActivityHandler::Worker,
+            runtime,
+            session_id,
+            updated_unix,
+        };
+    }
+    if let Some(((runtime, session_id), updated_unix)) = first_officers
+        .into_iter()
+        .max_by_key(|((runtime, session), at)| (*at, *runtime, session.clone()))
+    {
+        return EntityActivity::Running {
+            handler: ActivityHandler::FirstOfficer,
+            runtime,
+            session_id,
+            updated_unix,
+        };
+    }
+    EntityActivity::Idle {
+        updated_unix: latest,
+    }
+}
+
+pub fn scan_local_sessions(
+    request: SessionScanRequest,
+) -> Result<SessionScanReport, SessionScanError> {
+    scan_local_sessions_with_snapshots(&request, &StdProcessProbe, SystemTime::now())
+        .map(|scan| scan.report)
+}
+
 pub fn scan_local_sessions_with_snapshots<P: ProcessProbe>(
     request: &SessionScanRequest,
-    process_probe: &P,
+    _process_probe: &P,
     now: SystemTime,
 ) -> Result<SessionActivityScan, SessionScanError> {
-    scan_local_sessions_inner(request, process_probe, now)
+    scan_local_sessions_inner(request, now)
 }
 
 pub fn scan_local_sessions_with<P: ProcessProbe>(
     request: &SessionScanRequest,
-    process_probe: &P,
+    _process_probe: &P,
     now: SystemTime,
 ) -> Result<SessionScanReport, SessionScanError> {
-    scan_local_sessions_inner(request, process_probe, now).map(|result| result.report)
+    scan_local_sessions_inner(request, now).map(|scan| scan.report)
 }
 
-fn scan_local_sessions_inner<P: ProcessProbe>(
+fn scan_local_sessions_inner(
     request: &SessionScanRequest,
-    process_probe: &P,
     now: SystemTime,
 ) -> Result<SessionActivityScan, SessionScanError> {
     let mut errors = Vec::new();
-    let mut per_entity: HashMap<String, Vec<AgentSessionEvidence>> = HashMap::new();
     let mut session_files = HashMap::new();
-    let mut run_state_classifier = RunStateClassifier {
-        process_probe,
-        command_lines: None,
-        pid_cache: HashMap::new(),
-        session_cache: HashMap::new(),
-    };
-    let root_pairs = request.roots.all_roots();
+    let mut parsed_by_runtime: HashMap<AgentRuntime, Vec<ParsedFile>> = HashMap::new();
+    let scanned_roots: Vec<PathBuf> = request
+        .roots
+        .all_roots()
+        .map(|(_, root)| root.clone())
+        .collect();
 
-    for (agent, root) in &root_pairs {
+    for (runtime, root) in request.roots.all_roots() {
         if !root.exists() {
             continue;
+        }
+        if let Err(err) = fs::read_dir(root) {
+            return Err(SessionScanError {
+                message: format!(
+                    "{} session root {} is unreadable: {err}",
+                    runtime.label(),
+                    root.display()
+                ),
+            });
         }
         for entry in WalkDir::new(root)
             .into_iter()
@@ -202,7 +276,7 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(err) => {
-                    errors.push(format!("{} scan skipped entry: {err}", agent.label()));
+                    errors.push(format!("{} scan skipped entry: {err}", runtime.label()));
                     continue;
                 }
             };
@@ -214,119 +288,72 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
                 Err(err) => {
                     errors.push(format!(
                         "{} scan could not read metadata for {}: {err}",
-                        agent.label(),
+                        runtime.label(),
                         entry.path().display()
                     ));
                     continue;
                 }
             };
-            if metadata.len() > MAX_SCAN_FILE_BYTES {
-                continue;
-            }
-            let previous_snapshot = request.previous_session_files.get(entry.path());
-            let mut snapshot = SessionFileSnapshot::from_metadata(&metadata);
-            let changed_since_last_scan =
-                previous_snapshot.is_some_and(|previous| previous.has_different_metadata(snapshot));
-            if changed_since_last_scan {
-                snapshot.observed_running_until_unix =
-                    Some(system_time_unix(now + OBSERVED_RUNNING_WINDOW).unwrap_or(i64::MAX));
-            } else {
-                snapshot.observed_running_until_unix =
-                    previous_snapshot.and_then(|previous| previous.observed_running_until_unix);
-            }
-            let content = match fs::read_to_string(entry.path()) {
-                Ok(content) => content,
+            let snapshot = match load_session_snapshot(
+                entry.path(),
+                &metadata,
+                request.previous_session_files.get(entry.path()),
+            ) {
+                Ok(snapshot) => snapshot,
                 Err(err) => {
                     errors.push(format!(
                         "{} scan could not read {}: {err}",
-                        agent.label(),
+                        runtime.label(),
                         entry.path().display()
                     ));
                     continue;
                 }
             };
+            errors.extend(snapshot.parse_errors.iter().cloned());
+            parsed_by_runtime
+                .entry(runtime)
+                .or_default()
+                .push(ParsedFile {
+                    path: entry.path().to_path_buf(),
+                    records: snapshot.records.clone(),
+                });
             session_files.insert(entry.path().to_path_buf(), snapshot);
-            let activity_time = metadata.modified().ok();
-            let pid = extract_pid(&content);
-            let live_session_key = live_session_key(*agent, entry.path(), &content);
-            let matches: Vec<_> = request
-                .entities
-                .iter()
-                .filter_map(|entity| {
-                    match_entity(entity, &request.workflow_dir, &request.repo_root, &content).map(
-                        |entity_match| {
-                            let dispatch_anchor = if entity_match.worktree_anchored {
-                                DispatchAnchor::OwnedWorktree
-                            } else if has_matching_dispatch_assignment(entity, &content) {
-                                DispatchAnchor::DispatchedForEntity
-                            } else {
-                                DispatchAnchor::None
-                            };
-                            (
-                                entity.id.clone(),
-                                entity_match.confidence,
-                                entity_match.matched_worktree,
-                                dispatch_anchor,
-                            )
-                        },
-                    )
-                })
-                .collect();
-            if matches.is_empty() {
-                continue;
-            }
-            let observed_file_activity_is_running = snapshot
-                .observed_running_until_unix
-                .is_some_and(|until| system_time_unix(now).is_some_and(|now| now <= until));
-            let liveness = run_state_classifier.classify(SessionLivenessInput {
-                agent: *agent,
-                live_session_key: live_session_key.as_deref(),
-                pid,
-                observed_file_activity_is_running,
-                observed_running_until_unix: snapshot.observed_running_until_unix,
-                activity_time,
-                now,
-            });
-            for (entity_id, confidence, matched_worktree, dispatch_anchor) in matches {
-                let evidence = AgentSessionEvidence {
-                    agent: *agent,
-                    session_id: session_id(entry.path()),
-                    display_name: display_name(*agent, entry.path(), &content),
-                    confidence,
-                    liveness: liveness.clone(),
-                    latest_activity_unix: activity_time.and_then(system_time_unix),
-                    matched_worktree,
-                    dispatch_anchor,
-                };
-                per_entity.entry(entity_id).or_default().push(evidence);
-            }
         }
     }
 
-    let mut attributions: Vec<EntitySessionAttribution> = per_entity
-        .into_iter()
-        .map(|(entity_id, mut evidence)| {
-            evidence.sort_by_key(|evidence| {
-                (
-                    std::cmp::Reverse(evidence.run_state()),
-                    std::cmp::Reverse(evidence.confidence),
-                    std::cmp::Reverse(evidence.latest_activity_unix),
-                )
-            });
-            evidence.truncate(3);
-            EntitySessionAttribution {
-                entity_id,
-                evidence,
-            }
+    let fallback_time = system_time_unix(now).unwrap_or_default();
+    let mut per_entity: HashMap<String, Vec<ActivityEvent>> = request
+        .entities
+        .iter()
+        .map(|entity| (entity.id.clone(), Vec::new()))
+        .collect();
+    if let Some(files) = parsed_by_runtime.get(&AgentRuntime::Codex) {
+        collect_codex_events(files, &request.entities, fallback_time, &mut per_entity);
+    }
+    if let Some(files) = parsed_by_runtime.get(&AgentRuntime::ClaudeCode) {
+        collect_claude_events(files, &request.entities, fallback_time, &mut per_entity);
+    }
+
+    let mut attributions: Vec<_> = request
+        .entities
+        .iter()
+        .map(|entity| EntityActivityAttribution {
+            entity_id: entity.id.clone(),
+            activity: reduce_activity(
+                per_entity
+                    .get(&entity.id)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default(),
+            ),
         })
         .collect();
-    attributions.sort_by(|a, b| a.entity_id.cmp(&b.entity_id));
+    attributions.sort_by(|left, right| left.entity_id.cmp(&right.entity_id));
 
     Ok(SessionActivityScan {
         report: SessionScanReport {
             workflow_dir: request.workflow_dir.clone(),
             repo_root: request.repo_root.clone(),
-            scanned_roots: root_pairs.into_iter().map(|(_, root)| root).collect(),
+            scanned_roots,
             attributions,
             errors,
         },
@@ -334,18 +361,1296 @@ fn scan_local_sessions_inner<P: ProcessProbe>(
     })
 }
 
-impl SessionFileSnapshot {
-    fn from_metadata(metadata: &fs::Metadata) -> Self {
-        Self {
-            modified_unix: metadata.modified().ok().and_then(system_time_unix),
-            len: metadata.len(),
-            observed_running_until_unix: None,
+#[derive(Debug)]
+struct ParsedFile {
+    path: PathBuf,
+    records: Vec<Value>,
+}
+
+#[derive(Debug)]
+struct ParsedChunk {
+    records: Vec<Value>,
+    cursor: u64,
+    complete_lines: u64,
+    errors: Vec<String>,
+}
+
+fn load_session_snapshot(
+    path: &Path,
+    metadata: &fs::Metadata,
+    previous: Option<&SessionFileSnapshot>,
+) -> Result<SessionFileSnapshot, std::io::Error> {
+    let modified = metadata.modified().ok();
+    let len = metadata.len();
+    if let Some(previous) = previous {
+        if previous.len == len && previous.modified == modified && modified.is_some() {
+            return Ok(previous.clone());
         }
     }
 
-    fn has_different_metadata(self, other: Self) -> bool {
-        self.modified_unix != other.modified_unix || self.len != other.len
+    if path.extension().and_then(OsStr::to_str) == Some("json") {
+        return parse_json_snapshot(path, modified, len);
     }
+
+    if let Some(previous) = previous {
+        if len > previous.len && append_checkpoint_matches(path, previous)? {
+            let mut parsed = parse_jsonl_from(path, previous.cursor, previous.complete_lines)?;
+            let mut records = previous.records.clone();
+            records.append(&mut parsed.records);
+            let mut parse_errors = previous.parse_errors.clone();
+            parse_errors.append(&mut parsed.errors);
+            return Ok(SessionFileSnapshot {
+                modified,
+                len,
+                cursor: parsed.cursor,
+                complete_lines: parsed.complete_lines,
+                checkpoint: read_checkpoint(path, parsed.cursor)?,
+                records,
+                parse_errors,
+            });
+        }
+    }
+
+    let parsed = parse_jsonl_from(path, 0, 0)?;
+    Ok(SessionFileSnapshot {
+        modified,
+        len,
+        cursor: parsed.cursor,
+        complete_lines: parsed.complete_lines,
+        checkpoint: read_checkpoint(path, parsed.cursor)?,
+        records: parsed.records,
+        parse_errors: parsed.errors,
+    })
+}
+
+fn parse_json_snapshot(
+    path: &Path,
+    modified: Option<SystemTime>,
+    len: u64,
+) -> Result<SessionFileSnapshot, std::io::Error> {
+    #[cfg(test)]
+    record_session_file_parse(path, 0);
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
+    let (records, parse_errors) = match serde_json::from_reader(reader) {
+        Ok(value) => (project_record(value).into_iter().collect(), Vec::new()),
+        Err(err) => (
+            Vec::new(),
+            vec![format!(
+                "malformed session record {}: {err}",
+                path.display()
+            )],
+        ),
+    };
+    Ok(SessionFileSnapshot {
+        modified,
+        len,
+        cursor: len,
+        complete_lines: 0,
+        checkpoint: read_checkpoint(path, len)?,
+        records,
+        parse_errors,
+    })
+}
+
+fn parse_jsonl_from(
+    path: &Path,
+    start: u64,
+    starting_line: u64,
+) -> Result<ParsedChunk, std::io::Error> {
+    #[cfg(test)]
+    record_session_file_parse(path, start);
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut reader = BufReader::new(file);
+    let mut records = Vec::new();
+    let mut errors = Vec::new();
+    let mut cursor = start;
+    let mut complete_lines = starting_line;
+    loop {
+        let mut line = Vec::new();
+        let read = reader.read_until(b'\n', &mut line)?;
+        if read == 0 {
+            break;
+        }
+        let terminated = line.last() == Some(&b'\n');
+        if line.iter().all(u8::is_ascii_whitespace) {
+            cursor += read as u64;
+            continue;
+        }
+        match serde_json::from_slice(&line) {
+            Ok(value) => {
+                cursor += read as u64;
+                complete_lines += 1;
+                if let Some(projected) = project_record(value) {
+                    records.push(projected);
+                }
+            }
+            Err(_) if !terminated => break,
+            Err(err) => {
+                cursor += read as u64;
+                complete_lines += 1;
+                errors.push(format!(
+                    "malformed session record {}:{}: {err}",
+                    path.display(),
+                    complete_lines
+                ));
+            }
+        }
+    }
+    Ok(ParsedChunk {
+        records,
+        cursor,
+        complete_lines,
+        errors,
+    })
+}
+
+fn append_checkpoint_matches(
+    path: &Path,
+    previous: &SessionFileSnapshot,
+) -> Result<bool, std::io::Error> {
+    if previous.cursor == 0 || previous.checkpoint.is_empty() {
+        return Ok(false);
+    }
+    Ok(read_checkpoint(path, previous.cursor)? == previous.checkpoint)
+}
+
+fn read_checkpoint(path: &Path, cursor: u64) -> Result<Vec<u8>, std::io::Error> {
+    if cursor == 0 {
+        return Ok(Vec::new());
+    }
+    let start = cursor.saturating_sub(CHECKPOINT_BYTES);
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(start))?;
+    let mut checkpoint = vec![0; (cursor - start) as usize];
+    file.read_exact(&mut checkpoint)?;
+    Ok(checkpoint)
+}
+
+fn project_record(record: Value) -> Option<Value> {
+    if record.get("taskKind").is_some() {
+        return Some(project_claude_meta(&record));
+    }
+
+    let record_type = record.get("type").and_then(Value::as_str)?;
+    let timestamp = record.get("timestamp").cloned().unwrap_or(Value::Null);
+    match record_type {
+        "session_meta" => Some(json!({
+            "type": record_type,
+            "timestamp": timestamp,
+            "payload": {
+                "id": record.pointer("/payload/id").cloned().unwrap_or(Value::Null),
+                "source": {
+                    "subagent": {
+                        "thread_spawn": {
+                            "agent_path": record.pointer("/payload/source/subagent/thread_spawn/agent_path").cloned().unwrap_or(Value::Null),
+                            "parent_thread_id": record.pointer("/payload/source/subagent/thread_spawn/parent_thread_id").cloned().unwrap_or(Value::Null),
+                        }
+                    }
+                }
+            }
+        })),
+        "event_msg" => Some(json!({
+            "type": record_type,
+            "timestamp": timestamp,
+            "payload": {
+                "type": record.pointer("/payload/type").cloned().unwrap_or(Value::Null),
+                "turn_id": record.pointer("/payload/turn_id").cloned().unwrap_or(Value::Null),
+                "kind": record.pointer("/payload/kind").cloned().unwrap_or(Value::Null),
+                "agent_thread_id": record.pointer("/payload/agent_thread_id").cloned().unwrap_or(Value::Null),
+                "agent_path": record.pointer("/payload/agent_path").cloned().unwrap_or(Value::Null),
+            }
+        })),
+        "response_item" => project_codex_response_item(&record, timestamp),
+        "assistant" | "user" => project_claude_record(&record, timestamp),
+        _ => None,
+    }
+}
+
+fn project_claude_meta(record: &Value) -> Value {
+    json!({
+        "taskKind": record.get("taskKind").cloned().unwrap_or(Value::Null),
+        "name": record.get("name").cloned().unwrap_or(Value::Null),
+        "agentId": record.get("agentId").cloned().unwrap_or(Value::Null),
+        "parentSessionId": first_value(record, &["parentSessionId", "parentSessionID", "parent_session_id"]),
+        "parentToolUseId": first_value(record, &["parentToolUseId", "parentToolUseID", "parent_tool_use_id"]),
+    })
+}
+
+fn project_codex_response_item(record: &Value, timestamp: Value) -> Option<Value> {
+    let payload = record.get("payload")?;
+    let payload_type = payload.get("type").and_then(Value::as_str)?;
+    match payload_type {
+        "message" if payload.get("role").and_then(Value::as_str) == Some("user") => {
+            let dispatches: Vec<Value> = payload
+                .get("content")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|item| {
+                    item.get("text")
+                        .or_else(|| item.get("input_text"))
+                        .and_then(Value::as_str)
+                })
+                .flat_map(dispatch_markers)
+                .map(|text| json!({ "type": "input_text", "text": text }))
+                .collect();
+            (!dispatches.is_empty()).then(|| {
+                json!({
+                    "type": "response_item",
+                    "timestamp": timestamp,
+                    "payload": {
+                        "type": "message",
+                        "role": "user",
+                        "content": dispatches,
+                    }
+                })
+            })
+        }
+        "function_call" | "custom_tool_call" => {
+            let name = payload.get("name").and_then(Value::as_str)?;
+            let raw = payload
+                .get("arguments")
+                .or_else(|| payload.get("input"))
+                .cloned()
+                .unwrap_or(Value::Null);
+            Some(json!({
+                "type": "response_item",
+                "timestamp": timestamp,
+                "payload": {
+                    "type": payload_type,
+                    "name": name,
+                    "call_id": payload.get("call_id").or_else(|| payload.get("id")).cloned().unwrap_or(Value::Null),
+                    "arguments": project_tool_input(name, raw),
+                }
+            }))
+        }
+        "function_call_output" => Some(json!({
+            "type": "response_item",
+            "timestamp": timestamp,
+            "payload": {
+                "type": payload_type,
+                "call_id": payload.get("call_id").cloned().unwrap_or(Value::Null),
+            }
+        })),
+        _ => None,
+    }
+}
+
+fn project_claude_record(record: &Value, timestamp: Value) -> Option<Value> {
+    let record_type = record.get("type").and_then(Value::as_str)?;
+    let projected_content: Vec<Value> = record
+        .pointer("/message/content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|block| match block.get("type").and_then(Value::as_str) {
+            Some("tool_use") => {
+                let name = block.get("name").and_then(Value::as_str)?;
+                Some(json!({
+                    "type": "tool_use",
+                    "id": block.get("id").cloned().unwrap_or(Value::Null),
+                    "name": name,
+                    "input": project_tool_input(name, block.get("input").cloned().unwrap_or(Value::Null)),
+                }))
+            }
+            Some("tool_result") => Some(json!({
+                "type": "tool_result",
+                "tool_use_id": block.get("tool_use_id").cloned().unwrap_or(Value::Null),
+            })),
+            _ => None,
+        })
+        .collect();
+    let teammate_content = record
+        .pointer("/message/content")
+        .and_then(Value::as_str)
+        .and_then(project_teammate_envelope);
+
+    Some(json!({
+        "type": record_type,
+        "timestamp": timestamp,
+        "sessionId": record.get("sessionId").cloned().unwrap_or(Value::Null),
+        "isSidechain": record.get("isSidechain").cloned().unwrap_or(Value::Bool(false)),
+        "agentId": record.get("agentId").cloned().unwrap_or(Value::Null),
+        "parentSessionId": first_value(record, &["parentSessionId", "parentSessionID", "parent_session_id"]),
+        "message": {
+            "content": teammate_content.unwrap_or(Value::Array(projected_content)),
+            "stop_reason": record.pointer("/message/stop_reason").cloned().unwrap_or(Value::Null),
+        }
+    }))
+}
+
+fn project_tool_input(name: &str, raw: Value) -> Value {
+    let parsed = raw
+        .as_str()
+        .and_then(|text| serde_json::from_str(text).ok())
+        .unwrap_or(raw);
+    if name == "exec" {
+        return json!({ "commands": code_mode_exec_commands(&parsed) });
+    }
+    if name == "Bash" {
+        return command_text(&parsed)
+            .map(|command| json!({ "commands": [command] }))
+            .unwrap_or_else(|| json!({ "commands": [] }));
+    }
+    if name.ends_with("spawn_agent") || name == "Agent" {
+        return json!({
+            "task_name": parsed.get("task_name").or_else(|| parsed.get("name")).cloned().unwrap_or(Value::Null),
+            "message": parsed
+                .get("message")
+                .or_else(|| parsed.get("prompt"))
+                .and_then(Value::as_str)
+                .map(dispatch_markers)
+                .unwrap_or_default()
+                .join("\n"),
+        });
+    }
+    if matches!(name, "request_user_input" | "AskUserQuestion") {
+        return json!({ "questions": project_questions(parsed.get("questions")) });
+    }
+    json!({
+        "file_path": parsed.get("file_path").cloned().unwrap_or(Value::Null),
+        "path": parsed.get("path").cloned().unwrap_or(Value::Null),
+        "cmd": parsed.get("cmd").cloned().unwrap_or(Value::Null),
+        "command": parsed.get("command").cloned().unwrap_or(Value::Null),
+        "uri": parsed.get("uri").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn command_text(value: &Value) -> Option<String> {
+    if let Some(text) = value.as_str() {
+        return Some(text.to_string());
+    }
+    ["cmd", "command", "input"]
+        .iter()
+        .find_map(|key| value.get(*key).and_then(command_text))
+}
+
+fn code_mode_exec_commands(value: &Value) -> Vec<String> {
+    if let Some(module) = value.as_str() {
+        return nested_exec_commands(module);
+    }
+    if let Some(command) = value
+        .get("cmd")
+        .or_else(|| value.get("command"))
+        .and_then(command_text)
+    {
+        return vec![command];
+    }
+    ["input", "arguments"]
+        .iter()
+        .find_map(|key| value.get(*key))
+        .map(code_mode_exec_commands)
+        .unwrap_or_default()
+}
+
+fn nested_exec_commands(module: &str) -> Vec<String> {
+    const CALL: &str = "tools.exec_command";
+
+    let mut commands = Vec::new();
+    let mut offset = 0;
+    while let Some(relative_start) = module[offset..].find(CALL) {
+        let call_start = offset + relative_start + CALL.len();
+        let after_name = &module[call_start..];
+        let whitespace = after_name.len() - after_name.trim_start().len();
+        let argument_start = call_start + whitespace;
+        if module.as_bytes().get(argument_start) != Some(&b'(') {
+            offset = call_start;
+            continue;
+        }
+        let source = &module[argument_start + 1..];
+        let Some((argument, consumed)) = balanced_call_argument(source) else {
+            break;
+        };
+        if let Ok(value) = serde_json::from_str::<Value>(argument.trim()) {
+            if let Some(command) = command_text(&value) {
+                commands.push(command);
+            }
+        }
+        offset = argument_start + 1 + consumed;
+    }
+    commands
+}
+
+fn balanced_call_argument(source: &str) -> Option<(&str, usize)> {
+    let mut depth = 1_u32;
+    let mut quote = None;
+    let mut escaped = false;
+    for (index, character) in source.char_indices() {
+        if let Some(expected) = quote {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == expected {
+                quote = None;
+            }
+            continue;
+        }
+        match character {
+            '\'' | '"' | '`' => quote = Some(character),
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&source[..index], index + character.len_utf8()));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn project_questions(value: Option<&Value>) -> Vec<Value> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|question| {
+            let options: Vec<Value> = question
+                .get("options")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|option| option.get("label").and_then(Value::as_str))
+                .map(|label| json!({ "label": label }))
+                .collect();
+            json!({
+                "id": question.get("id").cloned().unwrap_or(Value::Null),
+                "header": question.get("header").cloned().unwrap_or(Value::Null),
+                "options": options,
+            })
+        })
+        .collect()
+}
+
+fn project_teammate_envelope(content: &str) -> Option<Value> {
+    let start = content.find("<teammate-message>")? + "<teammate-message>".len();
+    let end = content[start..].find("</teammate-message>")? + start;
+    let envelope: Value = serde_json::from_str(content[start..end].trim()).ok()?;
+    let projected = json!({
+        "type": envelope.get("type").cloned().unwrap_or(Value::Null),
+        "from": envelope.get("from").cloned().unwrap_or(Value::Null),
+        "idleReason": envelope.get("idleReason").cloned().unwrap_or(Value::Null),
+    });
+    Some(Value::String(format!(
+        "<teammate-message>{projected}</teammate-message>"
+    )))
+}
+
+fn dispatch_markers(text: &str) -> Vec<String> {
+    let mut markers = Vec::new();
+    let mut remainder = text;
+    while let Some(start) = remainder.find(DISPATCH_PREFIX) {
+        let candidate = &remainder[start..];
+        let Some(end) = candidate.find(".md") else {
+            break;
+        };
+        let marker = &candidate[..end + 3];
+        let stem = &candidate[DISPATCH_PREFIX.len()..end];
+        if marker.len() <= 512
+            && stem
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '-')
+            && STAGES
+                .iter()
+                .any(|stage| stem.ends_with(&format!("-{stage}")))
+        {
+            markers.push(marker.to_string());
+        }
+        remainder = &candidate[end + 3..];
+    }
+    markers
+}
+
+fn first_value(value: &Value, keys: &[&str]) -> Value {
+    keys.iter()
+        .find_map(|key| value.get(*key))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+fn collect_codex_events(
+    files: &[ParsedFile],
+    entities: &[SessionScanEntity],
+    fallback_time: i64,
+    per_entity: &mut HashMap<String, Vec<ActivityEvent>>,
+) {
+    for entity in entities {
+        let Some(slug) = entity_slug(&entity.path) else {
+            continue;
+        };
+        let mut matched_children = Vec::new();
+        for file in files {
+            let session_id = file
+                .records
+                .iter()
+                .find_map(|record| {
+                    (record_type(record) == Some("session_meta"))
+                        .then(|| string_at(record, &["payload", "id"]))
+                        .flatten()
+                })
+                .unwrap_or_else(|| file_id(&file.path));
+            let agent_path = file.records.iter().find_map(|record| {
+                string_at(
+                    record,
+                    &[
+                        "payload",
+                        "source",
+                        "subagent",
+                        "thread_spawn",
+                        "agent_path",
+                    ],
+                )
+            });
+            let parent_thread_id = file.records.iter().find_map(|record| {
+                string_at(
+                    record,
+                    &[
+                        "payload",
+                        "source",
+                        "subagent",
+                        "thread_spawn",
+                        "parent_thread_id",
+                    ],
+                )
+            });
+            let child_matches = agent_path
+                .as_deref()
+                .is_some_and(|path| canonical_codex_name(path, &slug))
+                && parent_thread_id
+                    .as_deref()
+                    .is_some_and(|parent| !parent.is_empty())
+                && file.records.iter().any(|record| {
+                    codex_assignment_text(record)
+                        .is_some_and(|text| contains_dispatch(&text, &slug))
+                });
+            if child_matches {
+                matched_children.push((session_id.clone(), agent_path.unwrap_or_default()));
+                collect_codex_worker(
+                    &file.records,
+                    per_entity.entry(entity.id.clone()).or_default(),
+                    &session_id,
+                    fallback_time,
+                );
+            } else {
+                collect_codex_first_officer(
+                    &file.records,
+                    per_entity.entry(entity.id.clone()).or_default(),
+                    &session_id,
+                    entity,
+                    &slug,
+                    fallback_time,
+                );
+            }
+        }
+        for file in files {
+            for record in &file.records {
+                if event_type(record) != Some("sub_agent_activity")
+                    || string_at(record, &["payload", "kind"]).as_deref() != Some("interrupted")
+                {
+                    continue;
+                }
+                let thread_id = string_at(record, &["payload", "agent_thread_id"]);
+                let agent_path = string_at(record, &["payload", "agent_path"]);
+                if let Some((session_id, _)) = matched_children.iter().find(|(session, path)| {
+                    thread_id.as_deref() == Some(session.as_str())
+                        && agent_path.as_deref() == Some(path.as_str())
+                }) {
+                    push_event(
+                        per_entity.entry(entity.id.clone()).or_default(),
+                        AgentRuntime::Codex,
+                        session_id,
+                        record_timestamp(record, fallback_time),
+                        ActivityEventKind::WorkerStopped,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn collect_codex_worker(
+    records: &[Value],
+    events: &mut Vec<ActivityEvent>,
+    session_id: &str,
+    fallback_time: i64,
+) {
+    let mut open_turn = None;
+    for record in records {
+        match event_type(record) {
+            Some("task_started") => {
+                open_turn = string_at(record, &["payload", "turn_id"]);
+                if open_turn.is_none() {
+                    continue;
+                }
+                push_event(
+                    events,
+                    AgentRuntime::Codex,
+                    session_id,
+                    record_timestamp(record, fallback_time),
+                    ActivityEventKind::WorkerStarted,
+                );
+            }
+            Some("task_complete")
+                if open_turn.as_deref()
+                    == string_at(record, &["payload", "turn_id"]).as_deref() =>
+            {
+                push_event(
+                    events,
+                    AgentRuntime::Codex,
+                    session_id,
+                    record_timestamp(record, fallback_time),
+                    ActivityEventKind::WorkerStopped,
+                );
+                open_turn = None;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_codex_first_officer(
+    records: &[Value],
+    events: &mut Vec<ActivityEvent>,
+    session_id: &str,
+    entity: &SessionScanEntity,
+    slug: &str,
+    fallback_time: i64,
+) {
+    let mut open_turn = None;
+    let mut scoped_turns = HashSet::new();
+    for record in records {
+        if event_type(record) == Some("task_started") {
+            open_turn = string_at(record, &["payload", "turn_id"]);
+            continue;
+        }
+        if let Some(call) = codex_call(record) {
+            let Some(turn) = open_turn.clone() else {
+                continue;
+            };
+            if call_scopes_entity(&call.name, &call.arguments, entity, slug) {
+                scoped_turns.insert(turn.clone());
+                push_event(
+                    events,
+                    AgentRuntime::Codex,
+                    session_id,
+                    record_timestamp(record, fallback_time),
+                    ActivityEventKind::FirstOfficerStarted,
+                );
+            }
+            if scoped_turns.contains(&turn)
+                && call.name == "request_user_input"
+                && is_gate_question(&call.arguments)
+            {
+                push_event(
+                    events,
+                    AgentRuntime::Codex,
+                    session_id,
+                    record_timestamp(record, fallback_time),
+                    ActivityEventKind::HumanGateOpened {
+                        call_id: call.call_id,
+                    },
+                );
+            }
+        }
+        if let Some(call_id) = codex_call_output_id(record) {
+            push_event(
+                events,
+                AgentRuntime::Codex,
+                session_id,
+                record_timestamp(record, fallback_time),
+                ActivityEventKind::HumanGateResolved { call_id },
+            );
+        }
+        if event_type(record) == Some("task_complete") {
+            let completed = string_at(record, &["payload", "turn_id"]).unwrap_or_default();
+            if scoped_turns.remove(&completed) {
+                push_event(
+                    events,
+                    AgentRuntime::Codex,
+                    session_id,
+                    record_timestamp(record, fallback_time),
+                    ActivityEventKind::FirstOfficerStopped,
+                );
+            }
+            if open_turn.as_deref() == Some(completed.as_str()) {
+                open_turn = None;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClaudeDispatch {
+    parent_session_id: String,
+    call_id: String,
+    worker_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClaudeTeammateMeta {
+    parent_session_id: String,
+    parent_call_id: Option<String>,
+    worker_name: String,
+    agent_id: String,
+}
+
+fn collect_claude_events(
+    files: &[ParsedFile],
+    entities: &[SessionScanEntity],
+    fallback_time: i64,
+    per_entity: &mut HashMap<String, Vec<ActivityEvent>>,
+) {
+    let teammate_meta: Vec<ClaudeTeammateMeta> =
+        files.iter().filter_map(claude_teammate_meta).collect();
+
+    for entity in entities {
+        let Some(slug) = entity_slug(&entity.path) else {
+            continue;
+        };
+        let mut dispatches = Vec::new();
+        for file in files {
+            if file.records.iter().any(is_claude_sidechain) {
+                continue;
+            }
+            let session_id = claude_session_id(file);
+            collect_claude_first_officer(
+                &file.records,
+                per_entity.entry(entity.id.clone()).or_default(),
+                &session_id,
+                entity,
+                &slug,
+                fallback_time,
+                &mut dispatches,
+            );
+        }
+
+        for dispatch in &dispatches {
+            let matching_meta: Vec<_> = teammate_meta
+                .iter()
+                .filter(|meta| {
+                    meta.parent_session_id == dispatch.parent_session_id
+                        && meta.worker_name == dispatch.worker_name
+                        && meta
+                            .parent_call_id
+                            .as_deref()
+                            .is_none_or(|call_id| call_id == dispatch.call_id)
+                })
+                .collect();
+            let same_name_dispatches = dispatches
+                .iter()
+                .filter(|candidate| {
+                    candidate.parent_session_id == dispatch.parent_session_id
+                        && candidate.worker_name == dispatch.worker_name
+                })
+                .count();
+            if matching_meta.len() != 1
+                || (matching_meta[0].parent_call_id.is_none() && same_name_dispatches != 1)
+            {
+                continue;
+            }
+            let meta = matching_meta[0];
+            for file in files {
+                if claude_parent_session_from_path(&file.path).as_deref()
+                    != Some(dispatch.parent_session_id.as_str())
+                {
+                    continue;
+                }
+                let agent_id = file.records.iter().find_map(|record| {
+                    is_claude_sidechain(record)
+                        .then(|| string_at(record, &["agentId"]))
+                        .flatten()
+                });
+                if agent_id.as_deref() != Some(meta.agent_id.as_str()) {
+                    continue;
+                }
+                if let Some(start) = file.records.iter().find(|record| {
+                    is_claude_sidechain(record)
+                        && string_at(record, &["type"]).as_deref() == Some("assistant")
+                }) {
+                    push_event(
+                        per_entity.entry(entity.id.clone()).or_default(),
+                        AgentRuntime::ClaudeCode,
+                        &meta.agent_id,
+                        record_timestamp(start, fallback_time),
+                        ActivityEventKind::WorkerStarted,
+                    );
+                }
+            }
+            if same_name_dispatches == 1 {
+                for file in files {
+                    if file.records.iter().any(is_claude_sidechain) {
+                        continue;
+                    }
+                    if claude_session_id(file) != dispatch.parent_session_id {
+                        continue;
+                    }
+                    if let Some(stop) = file.records.iter().find(|record| {
+                        teammate_idle_notification(record)
+                            .is_some_and(|from| from == dispatch.worker_name)
+                    }) {
+                        push_event(
+                            per_entity.entry(entity.id.clone()).or_default(),
+                            AgentRuntime::ClaudeCode,
+                            &meta.agent_id,
+                            record_timestamp(stop, fallback_time),
+                            ActivityEventKind::WorkerStopped,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_claude_first_officer(
+    records: &[Value],
+    events: &mut Vec<ActivityEvent>,
+    session_id: &str,
+    entity: &SessionScanEntity,
+    slug: &str,
+    fallback_time: i64,
+    dispatches: &mut Vec<ClaudeDispatch>,
+) {
+    let mut scoped = false;
+    let mut handoff_pending = false;
+    let mut dispatched_names = HashSet::new();
+    for record in records {
+        let is_assistant = string_at(record, &["type"]).as_deref() == Some("assistant");
+        if handoff_pending && is_assistant {
+            scoped = true;
+            handoff_pending = false;
+            push_event(
+                events,
+                AgentRuntime::ClaudeCode,
+                session_id,
+                record_timestamp(record, fallback_time),
+                ActivityEventKind::FirstOfficerStarted,
+            );
+        }
+        if let Some(blocks) = record
+            .get("message")
+            .and_then(|message| message.get("content"))
+            .and_then(Value::as_array)
+        {
+            for block in blocks {
+                if block.get("type").and_then(Value::as_str) == Some("tool_use") {
+                    let name = block
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let input = block.get("input").cloned().unwrap_or(Value::Null);
+                    let call_id = block
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    if call_scopes_entity(name, &input, entity, slug) {
+                        scoped = true;
+                        push_event(
+                            events,
+                            AgentRuntime::ClaudeCode,
+                            session_id,
+                            record_timestamp(record, fallback_time),
+                            ActivityEventKind::FirstOfficerStarted,
+                        );
+                    }
+                    if name == "Agent" && call_scopes_entity(name, &input, entity, slug) {
+                        if let Some(worker_name) = input
+                            .get("task_name")
+                            .or_else(|| input.get("name"))
+                            .and_then(Value::as_str)
+                        {
+                            dispatched_names.insert(worker_name.to_string());
+                            dispatches.push(ClaudeDispatch {
+                                parent_session_id: session_id.to_string(),
+                                call_id: call_id.clone(),
+                                worker_name: worker_name.to_string(),
+                            });
+                        }
+                    }
+                    if scoped && name == "AskUserQuestion" && is_gate_question(&input) {
+                        push_event(
+                            events,
+                            AgentRuntime::ClaudeCode,
+                            session_id,
+                            record_timestamp(record, fallback_time),
+                            ActivityEventKind::HumanGateOpened { call_id },
+                        );
+                    }
+                }
+            }
+        }
+        if let Some(blocks) = record
+            .get("message")
+            .and_then(|message| message.get("content"))
+            .and_then(Value::as_array)
+        {
+            for block in blocks {
+                if block.get("type").and_then(Value::as_str) == Some("tool_result") {
+                    if let Some(call_id) = block.get("tool_use_id").and_then(Value::as_str) {
+                        push_event(
+                            events,
+                            AgentRuntime::ClaudeCode,
+                            session_id,
+                            record_timestamp(record, fallback_time),
+                            ActivityEventKind::HumanGateResolved {
+                                call_id: call_id.to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        if scoped && string_at(record, &["message", "stop_reason"]).as_deref() == Some("end_turn") {
+            push_event(
+                events,
+                AgentRuntime::ClaudeCode,
+                session_id,
+                record_timestamp(record, fallback_time),
+                ActivityEventKind::FirstOfficerStopped,
+            );
+            scoped = false;
+        }
+        if teammate_idle_notification(record).is_some_and(|from| dispatched_names.contains(&from)) {
+            // The linked envelope scopes the handoff, but the next observable
+            // assistant record is what makes FO work visible.
+            scoped = false;
+            handoff_pending = true;
+        }
+    }
+}
+
+fn claude_teammate_meta(file: &ParsedFile) -> Option<ClaudeTeammateMeta> {
+    let record = file.records.iter().find(|record| {
+        string_at(record, &["taskKind"]).as_deref() == Some("in_process_teammate")
+    })?;
+    let meta = ClaudeTeammateMeta {
+        parent_session_id: string_at(record, &["parentSessionId"])
+            .or_else(|| claude_parent_session_from_path(&file.path))?,
+        parent_call_id: string_at(record, &["parentToolUseId"]),
+        worker_name: string_at(record, &["name"])?,
+        agent_id: string_at(record, &["agentId"])?,
+    };
+    claude_parent_session_from_path(&file.path)
+        .as_deref()
+        .is_some_and(|parent| parent == meta.parent_session_id)
+        .then_some(meta)
+}
+
+fn claude_parent_session_from_path(path: &Path) -> Option<String> {
+    let subagents = path
+        .ancestors()
+        .find(|ancestor| ancestor.file_name().and_then(OsStr::to_str) == Some("subagents"))?;
+    subagents
+        .parent()?
+        .file_name()
+        .and_then(OsStr::to_str)
+        .map(str::to_string)
+}
+
+struct ParsedCall {
+    name: String,
+    call_id: String,
+    arguments: Value,
+}
+
+fn codex_call(record: &Value) -> Option<ParsedCall> {
+    let payload = record.get("payload")?;
+    let payload_type = payload.get("type").and_then(Value::as_str)?;
+    if !matches!(payload_type, "function_call" | "custom_tool_call") {
+        return None;
+    }
+    let name = payload.get("name").and_then(Value::as_str)?.to_string();
+    let call_id = payload
+        .get("call_id")
+        .or_else(|| payload.get("id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let raw = payload
+        .get("arguments")
+        .or_else(|| payload.get("input"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let arguments = raw
+        .as_str()
+        .and_then(|text| serde_json::from_str(text).ok())
+        .unwrap_or(raw);
+    Some(ParsedCall {
+        name,
+        call_id,
+        arguments,
+    })
+}
+
+fn codex_call_output_id(record: &Value) -> Option<String> {
+    let payload = record.get("payload")?;
+    (payload.get("type").and_then(Value::as_str) == Some("function_call_output"))
+        .then(|| {
+            payload
+                .get("call_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .flatten()
+}
+
+fn call_scopes_entity(
+    tool_name: &str,
+    arguments: &Value,
+    entity: &SessionScanEntity,
+    slug: &str,
+) -> bool {
+    if tool_name.ends_with("spawn_agent") || tool_name == "Agent" {
+        let expected_name = format!("spacedock-ensign-{slug}-");
+        let expected_codex_name = format!("spacedock_ensign_{}_", slug.replace('-', "_"));
+        let name = first_string(arguments, &["task_name", "name"]).unwrap_or_default();
+        let prompt = first_string(arguments, &["message", "prompt"]).unwrap_or_default();
+        return (name.starts_with(&expected_name) || name.starts_with(&expected_codex_name))
+            && contains_dispatch(prompt, slug);
+    }
+
+    if matches!(tool_name, "exec" | "Bash") {
+        return arguments
+            .get("commands")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .any(|command| {
+                command_contains_exact_path(command, &entity.path)
+                    || contains_dispatch(command, slug)
+            });
+    }
+
+    let keys: &[&str] = match tool_name {
+        "Read" | "Edit" | "Write" => &["file_path", "path"],
+        _ => &["path", "uri"],
+    };
+    first_string(arguments, keys).is_some_and(|value| {
+        value == entity.path.to_string_lossy() || contains_dispatch(value, slug)
+    })
+}
+
+fn first_string<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(Value::as_str))
+}
+
+fn command_contains_exact_path(command: &str, path: &Path) -> bool {
+    let path = path.to_string_lossy();
+    command
+        .match_indices(path.as_ref())
+        .any(|(start, matched)| {
+            let before = command[..start].chars().next_back();
+            let after = command[start + matched.len()..].chars().next();
+            before.is_none_or(is_command_boundary) && after.is_none_or(is_command_boundary)
+        })
+}
+
+fn is_command_boundary(character: char) -> bool {
+    character.is_whitespace()
+        || matches!(
+            character,
+            '\'' | '"' | '`' | '=' | ':' | ';' | '|' | '&' | '(' | ')' | '[' | ']' | '{' | '}'
+        )
+}
+
+fn is_gate_question(input: &Value) -> bool {
+    let Some(questions) = input.get("questions").and_then(Value::as_array) else {
+        return false;
+    };
+    questions.iter().any(|question| {
+        let gate_named = ["id", "header"]
+            .iter()
+            .filter_map(|field| question.get(*field).and_then(Value::as_str))
+            .any(|value| value.to_ascii_lowercase().contains("gate"));
+        let labels: Vec<String> = question
+            .get("options")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|option| option.get("label").and_then(Value::as_str))
+            .map(|label| label.to_ascii_lowercase())
+            .collect();
+        let accepts = labels.iter().any(|label| {
+            ["approve", "pass", "accept"]
+                .iter()
+                .any(|term| label.contains(term))
+        });
+        let rejects = labels.iter().any(|label| {
+            ["reject", "bounce back"]
+                .iter()
+                .any(|term| label.contains(term))
+        });
+        gate_named && accepts && rejects
+    })
+}
+
+fn codex_assignment_text(record: &Value) -> Option<String> {
+    let payload = record.get("payload")?;
+    if payload.get("role").and_then(Value::as_str) != Some("user") {
+        return None;
+    }
+    payload
+        .get("content")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(|item| {
+            item.get("text")
+                .or_else(|| item.get("input_text"))
+                .and_then(Value::as_str)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        .into()
+}
+
+fn canonical_codex_name(path: &str, slug: &str) -> bool {
+    STAGES.iter().any(|stage| {
+        path.rsplit('/').next()
+            == Some(format!("spacedock_ensign_{}_{}", slug.replace('-', "_"), stage).as_str())
+            || path.rsplit('/').next() == Some(format!("spacedock_ensign_{slug}_{stage}").as_str())
+    })
+}
+
+fn contains_dispatch(text: &str, slug: &str) -> bool {
+    STAGES
+        .iter()
+        .any(|stage| text.contains(&format!("{DISPATCH_PREFIX}{slug}-{stage}.md")))
+}
+
+fn is_claude_sidechain(record: &Value) -> bool {
+    record
+        .get("isSidechain")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn claude_session_id(file: &ParsedFile) -> String {
+    file.records
+        .iter()
+        .find_map(|record| string_at(record, &["sessionId"]))
+        .unwrap_or_else(|| file_id(&file.path))
+}
+
+fn teammate_idle_notification(record: &Value) -> Option<String> {
+    if string_at(record, &["type"]).as_deref() != Some("user") {
+        return None;
+    }
+    let content = record
+        .get("message")
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)?;
+    let start = content.find("<teammate-message>")? + "<teammate-message>".len();
+    let end = content[start..].find("</teammate-message>")? + start;
+    let envelope: Value = serde_json::from_str(content[start..end].trim()).ok()?;
+    (envelope.get("type").and_then(Value::as_str) == Some("idle_notification")
+        && envelope.get("idleReason").and_then(Value::as_str) == Some("available"))
+    .then(|| {
+        envelope
+            .get("from")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    })
+    .flatten()
+}
+
+fn push_event(
+    events: &mut Vec<ActivityEvent>,
+    runtime: AgentRuntime,
+    session_id: &str,
+    updated_unix: i64,
+    kind: ActivityEventKind,
+) {
+    events.push(ActivityEvent {
+        runtime,
+        session_id: session_id.to_string(),
+        updated_unix,
+        kind,
+    });
+}
+
+fn record_type(record: &Value) -> Option<&str> {
+    record.get("type").and_then(Value::as_str)
+}
+
+fn event_type(record: &Value) -> Option<&str> {
+    (record_type(record) == Some("event_msg"))
+        .then(|| {
+            record
+                .get("payload")
+                .and_then(|payload| payload.get("type"))
+                .and_then(Value::as_str)
+        })
+        .flatten()
+}
+
+fn string_at(value: &Value, path: &[&str]) -> Option<String> {
+    path.iter()
+        .try_fold(value, |current, key| current.get(*key))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn record_timestamp(record: &Value, fallback: i64) -> i64 {
+    record
+        .get("timestamp")
+        .and_then(|timestamp| {
+            timestamp
+                .as_i64()
+                .or_else(|| timestamp.as_str().and_then(parse_rfc3339_unix))
+        })
+        .unwrap_or(fallback)
+}
+
+fn parse_rfc3339_unix(value: &str) -> Option<i64> {
+    let (date, rest) = value.split_once('T')?;
+    let mut date_parts = date.split('-');
+    let year = date_parts.next()?.parse::<i32>().ok()?;
+    let month = date_parts.next()?.parse::<u32>().ok()?;
+    let day = date_parts.next()?.parse::<u32>().ok()?;
+
+    let timezone_index = rest
+        .char_indices()
+        .find_map(|(index, ch)| (ch == 'Z' || ch == '+' || ch == '-').then_some(index))?;
+    let (clock, zone) = rest.split_at(timezone_index);
+    let mut clock_parts = clock.split(':');
+    let hour = clock_parts.next()?.parse::<i64>().ok()?;
+    let minute = clock_parts.next()?.parse::<i64>().ok()?;
+    let second = clock_parts.next()?.split('.').next()?.parse::<i64>().ok()?;
+    let offset = if zone == "Z" {
+        0
+    } else {
+        let sign = if zone.starts_with('-') { -1 } else { 1 };
+        let mut parts = zone[1..].split(':');
+        let hours = parts.next()?.parse::<i64>().ok()?;
+        let minutes = parts.next().unwrap_or("0").parse::<i64>().ok()?;
+        sign * (hours * 3600 + minutes * 60)
+    };
+    Some(days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second - offset)
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    let year = year - i32::from(month <= 2);
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let year_of_era = year - era * 400;
+    let shifted_month = month as i32 + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + day as i32 - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    (era * 146_097 + day_of_era - 719_468) as i64
+}
+
+fn file_id(path: &Path) -> String {
+    path.file_stem()
+        .and_then(OsStr::to_str)
+        .unwrap_or("unknown-session")
+        .to_string()
 }
 
 fn is_pruned_dir(path: &Path) -> bool {
@@ -357,358 +1662,8 @@ fn is_pruned_dir(path: &Path) -> bool {
 fn is_session_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(OsStr::to_str),
-        Some("jsonl" | "json" | "log" | "md")
+        Some("jsonl" | "json")
     )
-}
-
-struct RunStateClassifier<'a, P: ProcessProbe> {
-    process_probe: &'a P,
-    command_lines: Option<Vec<String>>,
-    pid_cache: HashMap<u32, bool>,
-    session_cache: HashMap<(AgentKind, String), bool>,
-}
-
-struct SessionLivenessInput<'a> {
-    agent: AgentKind,
-    live_session_key: Option<&'a str>,
-    pid: Option<u32>,
-    observed_file_activity_is_running: bool,
-    observed_running_until_unix: Option<i64>,
-    activity_time: Option<SystemTime>,
-    now: SystemTime,
-}
-
-impl<'a, P: ProcessProbe> RunStateClassifier<'a, P> {
-    fn classify(&mut self, input: SessionLivenessInput<'_>) -> AgentSessionLiveness {
-        if let Some(pid) = input.pid.filter(|pid| {
-            *self
-                .pid_cache
-                .entry(*pid)
-                .or_insert_with(|| self.process_probe.is_running(*pid))
-        }) {
-            return AgentSessionLiveness::LivePid { pid };
-        }
-        if let Some(session_key) = input.live_session_key.filter(|key| {
-            let command_lines = self
-                .command_lines
-                .get_or_insert_with(|| self.process_probe.command_lines());
-            *self
-                .session_cache
-                .entry((input.agent, (*key).to_string()))
-                .or_insert_with(|| has_live_session_command(input.agent, key, command_lines))
-        }) {
-            return AgentSessionLiveness::LiveResumeCommand {
-                session_key: session_key.to_string(),
-            };
-        }
-        if input.observed_file_activity_is_running {
-            return AgentSessionLiveness::ObservedSessionWrite {
-                until_unix: input.observed_running_until_unix.unwrap_or_default(),
-            };
-        }
-        if input.activity_time.is_some_and(|time| {
-            input
-                .now
-                .duration_since(time)
-                .map(|age| age <= RECENT_ACTIVITY_WINDOW)
-                .unwrap_or(false)
-        }) {
-            return AgentSessionLiveness::RecentMtime;
-        }
-        AgentSessionLiveness::Stale
-    }
-}
-
-/// Outcome of matching one session against one entity. `worktree_anchored`
-/// records whether the match came via the entity's own worktree path, which is
-/// an ownership-anchored signal that may drive the active marker.
-struct EntityMatch {
-    confidence: AttributionConfidence,
-    matched_worktree: Option<PathBuf>,
-    worktree_anchored: bool,
-}
-
-fn match_entity(
-    entity: &SessionScanEntity,
-    workflow_dir: &Path,
-    repo_root: &Path,
-    content: &str,
-) -> Option<EntityMatch> {
-    if has_conflicting_dispatch_assignment(entity, content) {
-        return None;
-    }
-
-    let worktree = entity
-        .worktree
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let worktree_paths = worktree
-        .map(|value| candidate_paths(repo_root, value))
-        .unwrap_or_default();
-    for path in &worktree_paths {
-        if content_mentions_path(content, path) {
-            return Some(EntityMatch {
-                confidence: AttributionConfidence::High,
-                matched_worktree: Some(path.clone()),
-                worktree_anchored: true,
-            });
-        }
-    }
-    if entity
-        .worktree_source
-        .as_ref()
-        .is_some_and(|path| content_mentions_path(content, path))
-    {
-        return Some(EntityMatch {
-            confidence: AttributionConfidence::High,
-            matched_worktree: entity.worktree_source.clone(),
-            worktree_anchored: true,
-        });
-    }
-
-    explicit_entity_reference_paths(entity, workflow_dir, repo_root)
-        .into_iter()
-        .any(|path| content_mentions_path(content, &path))
-        .then_some(EntityMatch {
-            confidence: AttributionConfidence::Medium,
-            matched_worktree: None,
-            worktree_anchored: false,
-        })
-}
-
-/// True when the session carries a positive dispatch marker for this entity's
-/// own slug — explicit evidence that a worker was dispatched to work it.
-fn has_matching_dispatch_assignment(entity: &SessionScanEntity, content: &str) -> bool {
-    let Some(target_slug) = entity_slug(&entity.path) else {
-        return false;
-    };
-    dispatch_assignment_slugs(content).any(|assigned_slug| assigned_slug == target_slug)
-}
-
-fn content_mentions_path(content: &str, path: &Path) -> bool {
-    let path_text = path.to_string_lossy();
-    content.contains(path_text.as_ref())
-}
-
-fn has_conflicting_dispatch_assignment(entity: &SessionScanEntity, content: &str) -> bool {
-    let Some(entity_slug) = entity_slug(&entity.path) else {
-        return false;
-    };
-    dispatch_assignment_slugs(content).any(|assigned_slug| assigned_slug != entity_slug)
-}
-
-fn dispatch_assignment_slugs(content: &str) -> impl Iterator<Item = String> + '_ {
-    const PREFIX: &str = "/tmp/spacedock-dispatch/spacedock-ensign-";
-
-    content.match_indices(PREFIX).filter_map(|(start, _)| {
-        let after_prefix = &content[start + PREFIX.len()..];
-        let end = after_prefix.find(".md")?;
-        let stem = &after_prefix[..end];
-        dispatch_slug_from_stem(stem).map(str::to_string)
-    })
-}
-
-fn dispatch_slug_from_stem(stem: &str) -> Option<&str> {
-    const STAGES: &[&str] = &["shape", "plan", "implement", "verify", "done", "pr-merge"];
-
-    STAGES
-        .iter()
-        .find_map(|stage| stem.strip_suffix(&format!("-{stage}")))
-        .filter(|slug| !slug.is_empty())
-}
-
-#[cfg(test)]
-fn contains_entity_id(content: &str, id: &str) -> bool {
-    let id = id.trim();
-    !id.is_empty()
-        && content.match_indices(id).any(|(start, _)| {
-            let before = content[..start].chars().next_back();
-            let after = content[start + id.len()..].chars().next();
-            !before.is_some_and(|ch| ch.is_ascii_alphanumeric())
-                && !after.is_some_and(|ch| ch.is_ascii_alphanumeric())
-        })
-}
-
-fn explicit_entity_reference_paths(
-    entity: &SessionScanEntity,
-    workflow_dir: &Path,
-    repo_root: &Path,
-) -> Vec<PathBuf> {
-    let path = &entity.path;
-    let absolute = if path.is_absolute() {
-        path.clone()
-    } else {
-        repo_root.join(path)
-    };
-    let repo_relative = absolute.strip_prefix(repo_root).ok().map(Path::to_path_buf);
-    let workflow_relative = absolute
-        .strip_prefix(workflow_dir)
-        .ok()
-        .map(Path::to_path_buf);
-    let file_name = path
-        .file_name()
-        .filter(|name| *name != "index.md")
-        .map(PathBuf::from);
-
-    let mut seen = HashSet::new();
-    [
-        Some(path.clone()),
-        Some(absolute),
-        repo_relative,
-        workflow_relative,
-        file_name,
-    ]
-    .into_iter()
-    .flatten()
-    .filter(|path| !path.as_os_str().is_empty())
-    .filter(|path| seen.insert(path.clone()))
-    .collect()
-}
-
-fn candidate_paths(repo_root: &Path, raw: &str) -> Vec<PathBuf> {
-    let path = PathBuf::from(raw);
-    let absolute = if path.is_absolute() {
-        path.clone()
-    } else {
-        repo_root.join(&path)
-    };
-    let mut seen = HashSet::new();
-    [path, absolute]
-        .into_iter()
-        .filter(|path| seen.insert(path.clone()))
-        .collect()
-}
-
-fn extract_pid(content: &str) -> Option<u32> {
-    let key = "\"pid\"";
-    let start = content.find(key)? + key.len();
-    let after_key = &content[start..];
-    let after_colon = after_key.trim_start().strip_prefix(':')?.trim_start();
-    let digits: String = after_colon
-        .chars()
-        .take_while(|ch| ch.is_ascii_digit())
-        .collect();
-    digits.parse().ok()
-}
-
-fn live_session_key(agent: AgentKind, path: &Path, content: &str) -> Option<String> {
-    match agent {
-        AgentKind::Codex => uuid_in_value(&session_id(path)).map(str::to_string),
-        AgentKind::ClaudeCode => extract_json_string(content, "sessionId")
-            .and_then(|value| is_uuid_like(&value).then_some(value))
-            .or_else(|| is_uuid_like(&session_id(path)).then(|| session_id(path))),
-    }
-}
-
-fn has_live_session_command(agent: AgentKind, session_key: &str, command_lines: &[String]) -> bool {
-    command_lines
-        .iter()
-        .any(|line| command_matches_live_session(agent, session_key, line))
-}
-
-fn command_matches_live_session(agent: AgentKind, session_key: &str, command: &str) -> bool {
-    let tokens = command_tokens(command);
-    let Some(binary) = tokens.first() else {
-        return false;
-    };
-    match agent {
-        AgentKind::Codex => {
-            command_basename(binary) == "codex"
-                && (has_arg_pair(&tokens, "resume", session_key)
-                    || has_arg_pair(&tokens, "--resume", session_key)
-                    || has_arg_value(&tokens, "--resume", session_key))
-        }
-        AgentKind::ClaudeCode => {
-            command_basename(binary) == "claude"
-                && (has_arg_pair(&tokens, "--resume", session_key)
-                    || has_arg_value(&tokens, "--resume", session_key))
-        }
-    }
-}
-
-fn command_tokens(command: &str) -> Vec<String> {
-    command
-        .split_whitespace()
-        .map(|token| {
-            token
-                .trim_matches(|ch| matches!(ch, '"' | '\''))
-                .to_string()
-        })
-        .collect()
-}
-
-fn command_basename(command: &str) -> &str {
-    Path::new(command)
-        .file_name()
-        .and_then(OsStr::to_str)
-        .unwrap_or(command)
-}
-
-fn has_arg_pair(tokens: &[String], flag: &str, value: &str) -> bool {
-    tokens
-        .windows(2)
-        .any(|pair| pair[0] == flag && pair[1] == value)
-}
-
-fn has_arg_value(tokens: &[String], flag: &str, value: &str) -> bool {
-    let prefix = format!("{flag}=");
-    tokens
-        .iter()
-        .any(|token| token.strip_prefix(&prefix) == Some(value))
-}
-
-fn uuid_in_value(value: &str) -> Option<&str> {
-    if is_uuid_like(value) {
-        return Some(value);
-    }
-    value
-        .as_bytes()
-        .windows(36)
-        .position(is_uuid_like_bytes)
-        .map(|start| &value[start..start + 36])
-}
-
-fn is_uuid_like(value: &str) -> bool {
-    value.len() == 36 && is_uuid_like_bytes(value.as_bytes())
-}
-
-fn is_uuid_like_bytes(bytes: &[u8]) -> bool {
-    bytes.len() == 36
-        && bytes.iter().enumerate().all(|(index, byte)| match index {
-            8 | 13 | 18 | 23 => *byte == b'-',
-            _ => byte.is_ascii_hexdigit(),
-        })
-}
-
-fn display_name(agent: AgentKind, path: &Path, content: &str) -> Option<String> {
-    match agent {
-        AgentKind::Codex => extract_json_string(content, "agent_nickname")
-            .or_else(|| extract_json_string(content, "model")),
-        AgentKind::ClaudeCode => path
-            .parent()
-            .and_then(Path::file_name)
-            .and_then(OsStr::to_str)
-            .map(str::to_string),
-    }
-}
-
-fn extract_json_string(content: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{key}\"");
-    let start = content.find(&needle)? + needle.len();
-    let after_key = &content[start..];
-    let quote_start = after_key.find('"')? + 1;
-    let value = &after_key[quote_start..];
-    let quote_end = value.find('"')?;
-    let value = value[..quote_end].trim();
-    (!value.is_empty()).then(|| value.to_string())
-}
-
-fn session_id(path: &Path) -> String {
-    path.file_stem()
-        .and_then(OsStr::to_str)
-        .map(str::to_string)
-        .unwrap_or_else(|| path.display().to_string())
 }
 
 fn system_time_unix(time: SystemTime) -> Option<i64> {
@@ -718,954 +1673,664 @@ fn system_time_unix(time: SystemTime) -> Option<i64> {
 }
 
 #[cfg(test)]
+static SESSION_FILE_PARSE_STARTS: LazyLock<Mutex<HashMap<PathBuf, Vec<u64>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+#[cfg(test)]
+fn record_session_file_parse(path: &Path, start: u64) {
+    SESSION_FILE_PARSE_STARTS
+        .lock()
+        .expect("session parse count lock")
+        .entry(path.to_path_buf())
+        .or_default()
+        .push(start);
+}
+
+#[cfg(test)]
+fn session_file_parse_count(path: &Path) -> usize {
+    session_file_parse_starts(path).len()
+}
+
+#[cfg(test)]
+fn session_file_parse_starts(path: &Path) -> Vec<u64> {
+    SESSION_FILE_PARSE_STARTS
+        .lock()
+        .expect("session parse count lock")
+        .get(path)
+        .cloned()
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::AgentSessionState;
-    use std::fs;
 
-    struct FixtureProbe {
-        running: HashSet<u32>,
-    }
-
-    impl ProcessProbe for FixtureProbe {
-        fn is_running(&self, pid: u32) -> bool {
-            self.running.contains(&pid)
+    fn event(
+        at: i64,
+        runtime: AgentRuntime,
+        session: &str,
+        kind: ActivityEventKind,
+    ) -> ActivityEvent {
+        ActivityEvent {
+            runtime,
+            session_id: session.to_string(),
+            updated_unix: at,
+            kind,
         }
     }
 
-    struct CountingProbe {
-        running: HashSet<u32>,
-        calls: std::cell::Cell<usize>,
+    #[test]
+    fn reducer_covers_handoff_next_worker_gate_and_precedence() {
+        let events = vec![
+            event(
+                1,
+                AgentRuntime::Codex,
+                "fo",
+                ActivityEventKind::FirstOfficerStarted,
+            ),
+            event(
+                2,
+                AgentRuntime::Codex,
+                "worker-1",
+                ActivityEventKind::WorkerStarted,
+            ),
+            event(
+                3,
+                AgentRuntime::Codex,
+                "worker-1",
+                ActivityEventKind::WorkerStopped,
+            ),
+        ];
+        assert_eq!(
+            reduce_activity(&events).status_label(),
+            "running · FO",
+            "worker completion must reveal the still-open FO handoff"
+        );
+
+        let mut next_worker = events.clone();
+        next_worker.push(event(
+            4,
+            AgentRuntime::ClaudeCode,
+            "worker-2",
+            ActivityEventKind::WorkerStarted,
+        ));
+        assert_eq!(
+            reduce_activity(&next_worker).status_label(),
+            "running · worker"
+        );
+
+        next_worker.push(event(
+            5,
+            AgentRuntime::Codex,
+            "fo",
+            ActivityEventKind::HumanGateOpened {
+                call_id: "gate-1".to_string(),
+            },
+        ));
+        assert_eq!(reduce_activity(&next_worker).status_label(), "human-gate");
+        next_worker.push(event(
+            6,
+            AgentRuntime::Codex,
+            "fo",
+            ActivityEventKind::HumanGateResolved {
+                call_id: "gate-1".to_string(),
+            },
+        ));
+        assert_eq!(
+            reduce_activity(&next_worker).status_label(),
+            "running · worker"
+        );
     }
 
-    impl ProcessProbe for CountingProbe {
-        fn is_running(&self, pid: u32) -> bool {
-            self.calls.set(self.calls.get() + 1);
-            self.running.contains(&pid)
-        }
+    #[test]
+    fn reducer_returns_idle_with_terminal_timestamp() {
+        let activity = reduce_activity(&[
+            event(
+                10,
+                AgentRuntime::Codex,
+                "worker",
+                ActivityEventKind::WorkerStarted,
+            ),
+            event(
+                12,
+                AgentRuntime::Codex,
+                "worker",
+                ActivityEventKind::WorkerStopped,
+            ),
+        ]);
+        assert_eq!(
+            activity,
+            EntityActivity::Idle {
+                updated_unix: Some(12)
+            }
+        );
     }
 
-    struct CommandProbe {
-        running: HashSet<u32>,
-        command_lines: Vec<String>,
+    #[test]
+    fn rfc3339_parser_handles_utc_and_offsets() {
+        assert_eq!(parse_rfc3339_unix("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(parse_rfc3339_unix("1970-01-01T08:00:00+08:00"), Some(0));
     }
 
-    impl ProcessProbe for CommandProbe {
-        fn is_running(&self, pid: u32) -> bool {
-            self.running.contains(&pid)
-        }
-
-        fn command_lines(&self) -> Vec<String> {
-            self.command_lines.clone()
-        }
+    fn fixture_root(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/session-activity")
+            .join(name)
     }
 
-    struct CountingCommandProbe {
-        command_line_calls: std::cell::Cell<usize>,
-    }
-
-    impl ProcessProbe for CountingCommandProbe {
-        fn is_running(&self, _pid: u32) -> bool {
-            false
-        }
-
-        fn command_lines(&self) -> Vec<String> {
-            self.command_line_calls
-                .set(self.command_line_calls.get() + 1);
-            Vec::new()
-        }
-    }
-
-    fn entity(id: &str, worktree: Option<&str>) -> SessionScanEntity {
-        SessionScanEntity::from(&Entity {
-            path: PathBuf::from(format!("{id}-task.md")),
-            id: id.to_string(),
-            title: format!("task {id}"),
-            status: "implement".to_string(),
-            source: None,
-            started: None,
-            completed: None,
-            verdict: None,
-            score: None,
-            worktree: worktree.map(str::to_string),
-            issue: None,
-            pr: None,
-            body: "body".to_string(),
+    fn scan_fixture(runtime: AgentRuntime, fixture: &str) -> SessionScanReport {
+        let entity = SessionScanEntity {
+            id: "069".to_string(),
+            path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+            worktree: None,
             worktree_source: None,
-            main_body: None,
-        })
-    }
-
-    fn entity_with_path(id: &str, path: impl Into<PathBuf>) -> SessionScanEntity {
-        let mut entity = entity(id, None);
-        entity.path = path.into();
-        entity
-    }
-
-    fn write_session(path: &Path, body: &str) {
-        fs::create_dir_all(path.parent().expect("parent")).expect("create parent");
-        fs::write(path, body).expect("write session");
-    }
-
-    #[test]
-    fn running_codex_worktree_match_is_high_confidence_active() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        let worktree = repo.join(".worktrees/task-065");
-        write_session(
-            &root.join("2026/06/session-1.jsonl"),
-            &format!(
-                r#"{{"pid":4242,"agent_nickname":"Mendel","workdir":"{}"}}"#,
-                worktree.display()
-            ),
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
+        };
+        let root = fixture_root(fixture);
+        let roots = match runtime {
+            AgentRuntime::Codex => SessionRoots {
                 codex: vec![root],
                 claude_code: Vec::new(),
             },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = FixtureProbe {
-            running: HashSet::from([4242]),
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        let attribution = &report.attributions[0];
-        assert_eq!(attribution.entity_id, "065");
-        assert!(attribution.has_active_marker());
-        assert_eq!(attribution.evidence[0].agent, AgentKind::Codex);
-        assert_eq!(
-            attribution.evidence[0].display_name.as_deref(),
-            Some("Mendel")
-        );
-    }
-
-    #[test]
-    fn running_claude_code_worktree_match_is_high_confidence_active() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("claude/projects/project-a");
-        let worktree = repo.join(".worktrees/task-065");
-        write_session(
-            &root.join("session.jsonl"),
-            &format!(r#"{{"pid":5150,"cwd":"{}"}}"#, worktree.display()),
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
+            AgentRuntime::ClaudeCode => SessionRoots {
                 codex: Vec::new(),
                 claude_code: vec![root],
             },
-            previous_session_files: HashMap::new(),
         };
-        let probe = FixtureProbe {
-            running: HashSet::from([5150]),
-        };
+        scan_local_sessions_with(
+            &SessionScanRequest {
+                workflow_dir: PathBuf::from("/repo/docs"),
+                repo_root: PathBuf::from("/repo"),
+                entities: vec![entity],
+                roots,
+                previous_session_files: HashMap::new(),
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("fixture scan")
+    }
 
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert!(report.attributions[0].has_active_marker());
+    #[test]
+    fn codex_worker_fixture_requires_canonical_child_and_exact_assignment() {
+        let report = scan_fixture(AgentRuntime::Codex, "codex-worker-open");
+        assert_eq!(report.errors, Vec::<String>::new());
         assert_eq!(
-            report.attributions[0].evidence[0].agent,
-            AgentKind::ClaudeCode
+            report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+        assert_eq!(
+            report.attributions[0].activity.session_id(),
+            Some("codex-worker-redacted")
         );
     }
 
     #[test]
-    fn running_medium_confidence_match_without_dispatch_marker_is_not_active() {
-        // AC-2 regression: a single live session (real running pid) that merely
-        // references an undispatched task's file path — no dispatch marker, not
-        // anchored to the entity's worktree — must NOT light up as active. This
-        // is the orchestrator false positive the fix removes. The session stays
-        // alive (Running) and matched (Medium), but earns no active marker.
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        write_session(
-            &root.join("repo-session.jsonl"),
-            &format!(
-                r#"{{"pid":4242,"agent_nickname":"Mendel","workdir":"{}","note":"docs/spacetop-dev/agent-status-false-positives.md"}}"#,
-                repo.display()
+    fn codex_worker_fixture_requires_non_empty_parent_thread_linkage() {
+        let report = scan_fixture(AgentRuntime::Codex, "codex-worker-unlinked");
+        assert_eq!(
+            report.attributions[0].activity.status_label(),
+            "idle",
+            "a child-shaped session without its parent thread must fail closed"
+        );
+    }
+
+    #[test]
+    fn codex_task_complete_closes_only_the_open_worker_turn() {
+        let report = scan_fixture(AgentRuntime::Codex, "codex-worker-complete");
+        assert_eq!(report.attributions[0].activity.status_label(), "idle");
+        assert!(report.attributions[0].activity.updated_unix().is_some());
+    }
+
+    #[test]
+    fn codex_gate_fixture_requires_scoped_fo_turn_and_balanced_options() {
+        let report = scan_fixture(AgentRuntime::Codex, "codex-fo-gate");
+        assert_eq!(report.attributions[0].activity.status_label(), "human-gate");
+    }
+
+    #[test]
+    fn codex_exec_custom_call_scopes_nested_executable_commands_only() {
+        for fixture in ["codex-fo-exec", "codex-fo-exec-nested"] {
+            let report = scan_fixture(AgentRuntime::Codex, fixture);
+            assert_eq!(
+                report.attributions[0].activity.status_label(),
+                "running · FO",
+                "fixture {fixture} must recognize exact entity scope"
+            );
+        }
+        let text_only = scan_fixture(AgentRuntime::Codex, "codex-fo-exec-text-only");
+        assert_eq!(
+            text_only.attributions[0].activity.status_label(),
+            "idle",
+            "a non-executing text(path) mention in the module must fail closed"
+        );
+    }
+
+    #[test]
+    fn claude_worker_fixture_correlates_agent_call_meta_and_sidechain() {
+        let report = scan_fixture(AgentRuntime::ClaudeCode, "claude-worker-open");
+        assert_eq!(report.errors, Vec::<String>::new());
+        assert_eq!(
+            report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+        assert_eq!(
+            report.attributions[0].activity.session_id(),
+            Some("claude-worker-redacted")
+        );
+    }
+
+    #[test]
+    fn claude_idle_notification_closes_the_correlated_worker() {
+        let report = scan_fixture(AgentRuntime::ClaudeCode, "claude-worker-idle");
+        assert_eq!(report.attributions[0].activity.status_label(), "idle");
+        assert!(report.attributions[0].activity.updated_unix().is_some());
+    }
+
+    #[test]
+    fn claude_same_name_activity_stays_linked_to_exact_parent_and_call() {
+        let report = scan_fixture(AgentRuntime::ClaudeCode, "claude-two-parent-same-name");
+        assert_eq!(
+            report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+        assert_eq!(
+            report.attributions[0].activity.session_id(),
+            Some("worker-a"),
+            "parent B metadata and idle notification must not start or stop parent A's worker"
+        );
+    }
+
+    #[test]
+    fn claude_ambiguous_same_parent_calls_without_call_metadata_fail_closed() {
+        let temp = tempfile::tempdir().expect("temp");
+        let subagents = temp.path().join("parent/subagents");
+        fs::create_dir_all(&subagents).expect("subagents");
+        let dispatch = "Read /tmp/spacedock-dispatch/spacedock-ensign-detect-entity-activity-state-implement.md and treat its content as your assignment.";
+        fs::write(
+            temp.path().join("parent.jsonl"),
+            format!(
+                r#"{{"timestamp":1,"type":"assistant","sessionId":"parent","isSidechain":false,"message":{{"content":[{{"type":"tool_use","id":"call-a","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}},{{"type":"tool_use","id":"call-b","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}}],"stop_reason":"end_turn"}}}}"#
             ),
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow.clone(),
-            repo_root: repo,
-            entities: vec![entity_with_path(
-                "072",
-                workflow.join("agent-status-false-positives.md"),
-            )],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = FixtureProbe {
-            running: HashSet::from([4242]),
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert_eq!(
-            report.attributions[0].evidence[0].confidence,
-            AttributionConfidence::Medium
-        );
-        assert_eq!(
-            report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Running
-        );
-        assert!(!report.attributions[0].has_active_marker());
-    }
-
-    #[test]
-    fn running_session_with_matching_dispatch_marker_is_active() {
-        // New positive case: a live session carrying a positive dispatch marker
-        // for this entity's own slug qualifies as active even though it only
-        // matched at Medium confidence (no worktree on the entity).
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        write_session(
-            &root.join("dispatched-session.jsonl"),
-            r#"{"pid":4242,"agent_nickname":"Mendel","body":"Read /tmp/spacedock-dispatch/spacedock-ensign-agent-status-false-positives-implement.md and review docs/spacetop-dev/agent-status-false-positives.md"}"#,
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow.clone(),
-            repo_root: repo,
-            entities: vec![entity_with_path(
-                "072",
-                workflow.join("agent-status-false-positives.md"),
-            )],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = FixtureProbe {
-            running: HashSet::from([4242]),
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert_eq!(
-            report.attributions[0].evidence[0].confidence,
-            AttributionConfidence::Medium
-        );
-        assert_eq!(
-            report.attributions[0].evidence[0].dispatch_anchor,
-            DispatchAnchor::DispatchedForEntity
-        );
-        assert!(report.attributions[0].has_active_marker());
-    }
-
-    #[test]
-    fn pidless_codex_resume_command_marks_session_running() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        let session_uuid = "019ed968-6e77-7d71-9386-aae754c6c8be";
-        let session_stem = format!("rollout-2026-06-18T14-26-00-{session_uuid}");
-        let worktree = repo.join(".worktrees/task-065");
-        write_session(
-            &root.join(format!("{session_stem}.jsonl")),
-            &format!(r#"{{"workdir":"{}"}}"#, worktree.display()),
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = CommandProbe {
-            running: HashSet::new(),
-            command_lines: vec![format!("/opt/homebrew/bin/codex resume {session_uuid}")],
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert_eq!(
-            report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Running
-        );
-        assert!(report.attributions[0].has_active_marker());
-    }
-
-    #[test]
-    fn pidless_claude_resume_command_marks_session_running() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("claude/projects/project-a");
-        let session_uuid = "f0d61fc8-8903-43c0-b916-4b02c45bf441";
-        let worktree = repo.join(".worktrees/task-065");
-        write_session(
-            &root.join("session.jsonl"),
-            &format!(
-                r#"{{"sessionId":"{session_uuid}","cwd":"{}"}}"#,
-                worktree.display()
-            ),
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
-                codex: Vec::new(),
-                claude_code: vec![root],
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = CommandProbe {
-            running: HashSet::new(),
-            command_lines: vec![format!("claude --resume {session_uuid}")],
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert_eq!(
-            report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Running
-        );
-        assert!(report.attributions[0].has_active_marker());
-    }
-
-    #[test]
-    fn pidless_match_without_live_session_command_falls_back_to_stale() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        let worktree = repo.join(".worktrees/task-065");
-        write_session(
-            &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
-            &format!(r#"{{"workdir":"{}"}}"#, worktree.display()),
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = CommandProbe {
-            running: HashSet::new(),
-            command_lines: Vec::new(),
-        };
+        )
+        .expect("parent");
+        fs::write(
+            subagents.join("worker.meta.json"),
+            r#"{"taskKind":"in_process_teammate","name":"spacedock-ensign-detect-entity-activity-state-implement","agentId":"worker"}"#,
+        )
+        .expect("meta");
+        fs::write(
+            subagents.join("worker.jsonl"),
+            r#"{"timestamp":2,"type":"assistant","sessionId":"child","isSidechain":true,"agentId":"worker","message":{"content":[{"type":"text","text":"accepted"}],"stop_reason":null}}"#,
+        )
+        .expect("child");
 
         let report = scan_local_sessions_with(
-            &request,
-            &probe,
-            SystemTime::now() + Duration::from_secs(RECENT_ACTIVITY_WINDOW.as_secs() + 60),
+            &SessionScanRequest {
+                workflow_dir: PathBuf::from("/repo/docs"),
+                repo_root: PathBuf::from("/repo"),
+                entities: vec![SessionScanEntity {
+                    id: "069".to_string(),
+                    path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+                    worktree: None,
+                    worktree_source: None,
+                }],
+                roots: SessionRoots {
+                    codex: Vec::new(),
+                    claude_code: vec![temp.path().to_path_buf()],
+                },
+                previous_session_files: HashMap::new(),
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
         )
-        .expect("scan succeeds");
-
+        .expect("scan");
         assert_eq!(
-            report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Stale
+            report.attributions[0].activity.status_label(),
+            "idle",
+            "metadata without a call id must not choose between same-parent duplicate names"
         );
-        assert!(!report.attributions[0].has_active_marker());
     }
 
     #[test]
-    fn unrelated_sessions_do_not_trigger_resume_command_scan() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        write_session(
-            &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
-            r#"{"workdir":"/tmp/other-repo","note":"no task match"}"#,
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = CountingCommandProbe {
-            command_line_calls: std::cell::Cell::new(0),
-        };
-
-        let scan =
-            scan_local_sessions_with_snapshots(&request, &probe, SystemTime::now()).expect("scan");
-
-        assert!(scan.report.attributions.is_empty());
-        assert_eq!(probe.command_line_calls.get(), 0);
-    }
-
-    #[test]
-    fn mtime_only_recent_match_does_not_mark_active() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        let worktree = repo.join(".worktrees/task-065");
-        write_session(
-            &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
-            &format!(r#"{{"workdir":"{}"}}"#, worktree.display()),
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = CommandProbe {
-            running: HashSet::new(),
-            command_lines: Vec::new(),
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert_eq!(
-            report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Recent
-        );
-        assert!(!report.attributions[0].has_active_marker());
-    }
-
-    #[test]
-    fn observed_session_file_change_marks_matched_session_running_temporarily() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        let session =
-            root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl");
-        let worktree = repo.join(".worktrees/task-065");
-        write_session(
-            &session,
-            &format!(r#"{{"workdir":"{}"}}"#, worktree.display()),
-        );
-        let now = SystemTime::now();
-        let mut request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = CommandProbe {
-            running: HashSet::new(),
-            command_lines: Vec::new(),
-        };
-
-        let first =
-            scan_local_sessions_with_snapshots(&request, &probe, now).expect("scan succeeds");
-        assert_eq!(
-            first.report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Recent
-        );
-        assert!(!first.report.attributions[0].has_active_marker());
-
+    fn claude_ambiguous_same_parent_idle_name_does_not_stop_exact_call() {
+        let temp = tempfile::tempdir().expect("temp");
+        let subagents = temp.path().join("parent/subagents");
+        fs::create_dir_all(&subagents).expect("subagents");
+        let dispatch = "Read /tmp/spacedock-dispatch/spacedock-ensign-detect-entity-activity-state-implement.md and treat its content as your assignment.";
         fs::write(
-            &session,
-            format!(r#"{{"workdir":"{}","event":"next"}}"#, worktree.display()),
-        )
-        .expect("update session");
-        request.previous_session_files = first.session_files;
-        let second =
-            scan_local_sessions_with_snapshots(&request, &probe, now + Duration::from_secs(2))
-                .expect("scan succeeds");
-
-        assert_eq!(
-            second.report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Running
-        );
-        assert!(second.report.attributions[0].has_active_marker());
-
-        request.previous_session_files = second.session_files;
-        let third = scan_local_sessions_with_snapshots(
-            &request,
-            &probe,
-            now + Duration::from_secs(2) + OBSERVED_RUNNING_WINDOW - Duration::from_secs(1),
-        )
-        .expect("scan succeeds");
-        assert_eq!(
-            third.report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Running
-        );
-
-        request.previous_session_files = third.session_files;
-        let fourth = scan_local_sessions_with_snapshots(
-            &request,
-            &probe,
-            now + Duration::from_secs(2) + OBSERVED_RUNNING_WINDOW + Duration::from_secs(1),
-        )
-        .expect("scan succeeds");
-        assert_eq!(
-            fourth.report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Recent
-        );
-    }
-
-    #[test]
-    fn previously_unmatched_session_write_marks_running_until_grace_window_expires() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        let session =
-            root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl");
-        write_session(
-            &session,
-            r#"{"workdir":"/tmp/other-repo","note":"not this workflow"}"#,
-        );
-        let now = SystemTime::now();
-        let mut request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = CommandProbe {
-            running: HashSet::new(),
-            command_lines: Vec::new(),
-        };
-
-        let first =
-            scan_local_sessions_with_snapshots(&request, &probe, now).expect("scan succeeds");
-        assert!(first.report.attributions.is_empty());
-
-        fs::write(
-            &session,
+            temp.path().join("parent.jsonl"),
             format!(
-                r#"{{"workdir":"{}","note":"065-task.md"}}"#,
-                request.repo_root.display()
+                r#"{{"timestamp":1,"type":"assistant","sessionId":"parent","isSidechain":false,"message":{{"content":[{{"type":"tool_use","id":"call-a","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}},{{"type":"tool_use","id":"call-b","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}}],"stop_reason":"end_turn"}}}}
+{{"timestamp":3,"type":"user","sessionId":"parent","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"idle_notification\",\"from\":\"spacedock-ensign-detect-entity-activity-state-implement\",\"idleReason\":\"available\"}}</teammate-message>"}}}}"#
             ),
         )
-        .expect("update session");
-        request.previous_session_files = first.session_files;
-        let second =
-            scan_local_sessions_with_snapshots(&request, &probe, now + Duration::from_secs(2))
-                .expect("scan succeeds");
-        assert_eq!(
-            second.report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Running
-        );
-
-        request.previous_session_files = second.session_files;
-        let third = scan_local_sessions_with_snapshots(
-            &request,
-            &probe,
-            now + Duration::from_secs(2) + OBSERVED_RUNNING_WINDOW - Duration::from_secs(1),
+        .expect("parent");
+        fs::write(
+            subagents.join("worker.meta.json"),
+            r#"{"taskKind":"in_process_teammate","name":"spacedock-ensign-detect-entity-activity-state-implement","agentId":"worker","parentSessionId":"parent","parentToolUseId":"call-a"}"#,
         )
-        .expect("scan succeeds");
-        assert_eq!(
-            third.report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Running
-        );
-
-        request.previous_session_files = third.session_files;
-        let fourth = scan_local_sessions_with_snapshots(
-            &request,
-            &probe,
-            now + Duration::from_secs(2) + OBSERVED_RUNNING_WINDOW + Duration::from_secs(1),
+        .expect("meta");
+        fs::write(
+            subagents.join("worker.jsonl"),
+            r#"{"timestamp":2,"type":"assistant","sessionId":"child","isSidechain":true,"agentId":"worker","message":{"content":[{"type":"text","text":"accepted"}],"stop_reason":null}}"#,
         )
-        .expect("scan succeeds");
+        .expect("child");
+
+        let report = scan_local_sessions_with(
+            &SessionScanRequest {
+                workflow_dir: PathBuf::from("/repo/docs"),
+                repo_root: PathBuf::from("/repo"),
+                entities: vec![SessionScanEntity {
+                    id: "069".to_string(),
+                    path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+                    worktree: None,
+                    worktree_source: None,
+                }],
+                roots: SessionRoots {
+                    codex: Vec::new(),
+                    claude_code: vec![temp.path().to_path_buf()],
+                },
+                previous_session_files: HashMap::new(),
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("scan");
         assert_eq!(
-            fourth.report.attributions[0].evidence[0].run_state(),
-            AgentSessionState::Recent
+            report.attributions[0].activity.status_label(),
+            "running · worker",
+            "name-only idle evidence must not choose between same-parent duplicate dispatches"
         );
     }
 
     #[test]
-    fn id_only_evidence_does_not_match_entity() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        write_session(&root.join("weak.jsonl"), r#"{"pid":9999,"note":"065"}"#);
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = FixtureProbe {
-            running: HashSet::new(),
-        };
+    fn claude_gate_and_end_turn_records_drive_exact_fo_transitions() {
+        let gate = scan_fixture(AgentRuntime::ClaudeCode, "claude-fo-gate");
+        assert_eq!(gate.attributions[0].activity.status_label(), "human-gate");
 
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert!(report.attributions.is_empty());
+        let complete = scan_fixture(AgentRuntime::ClaudeCode, "claude-fo-complete");
+        assert_eq!(complete.attributions[0].activity.status_label(), "idle");
+        assert!(complete.attributions[0].activity.updated_unix().is_some());
     }
 
     #[test]
-    fn live_unrelated_workspace_session_with_entity_id_does_not_match_entity() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("spacetop");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        write_session(
-            &root.join("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
-            r#"{"pid":4242,"agent_nickname":"Mendel","workdir":"/Users/kent/Dev/InfuseAI/GitHub/dataagentbench","note":"created task 068"}"#,
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("068", None)],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
+    fn ordinary_path_mentions_do_not_create_activity() {
+        let temp = tempfile::tempdir().expect("temp");
+        fs::write(
+            temp.path().join("mention.jsonl"),
+            r#"{"timestamp":1,"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"/repo/docs/state/detect-entity-activity-state.md approve"}]}}"#,
+        )
+        .expect("fixture");
+        let entity = SessionScanEntity {
+            id: "069".to_string(),
+            path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+            worktree: None,
+            worktree_source: None,
+        };
+        let report = scan_local_sessions_with(
+            &SessionScanRequest {
+                workflow_dir: PathBuf::from("/repo/docs"),
+                repo_root: PathBuf::from("/repo"),
+                entities: vec![entity],
+                roots: SessionRoots {
+                    codex: vec![temp.path().to_path_buf()],
+                    claude_code: Vec::new(),
+                },
+                previous_session_files: HashMap::new(),
             },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = FixtureProbe {
-            running: HashSet::from([4242]),
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert!(report.attributions.is_empty());
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("scan");
+        assert_eq!(report.attributions[0].activity, EntityActivity::default());
     }
 
     #[test]
-    fn same_repo_session_with_incidental_entity_id_does_not_match_entity() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("spacetop");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        write_session(
-            &root.join("hegel-070.jsonl"),
-            &format!(
-                r#"{{"agent_nickname":"Hegel","workdir":"{}","body":"verifying task 070; task 068 was mentioned in the task body under {}"}}"#,
-                repo.display(),
-                workflow.display()
-            ),
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow.clone(),
-            repo_root: repo.clone(),
-            entities: vec![entity_with_path(
-                "068",
-                workflow.join("refine-session-preview-wording.md"),
-            )],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
+    fn malformed_lines_are_reported_without_discarding_valid_transitions() {
+        let temp = tempfile::tempdir().expect("temp");
+        let fixture = fs::read_to_string(fixture_root("codex-worker-open/rollout.jsonl"))
+            .expect("source fixture");
+        fs::write(
+            temp.path().join("rollout.jsonl"),
+            format!("{fixture}\nnot-json\n"),
+        )
+        .expect("fixture");
+        let entity = SessionScanEntity {
+            id: "069".to_string(),
+            path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+            worktree: None,
+            worktree_source: None,
+        };
+        let report = scan_local_sessions_with(
+            &SessionScanRequest {
+                workflow_dir: PathBuf::from("/repo/docs"),
+                repo_root: PathBuf::from("/repo"),
+                entities: vec![entity],
+                roots: SessionRoots {
+                    codex: vec![temp.path().to_path_buf()],
+                    claude_code: Vec::new(),
+                },
+                previous_session_files: HashMap::new(),
             },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = FixtureProbe {
-            running: HashSet::new(),
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert!(report.attributions.is_empty());
-    }
-
-    #[test]
-    fn explicit_task_file_reference_matches_non_worktree_entity() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("spacetop");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        write_session(
-            &root.join("task-068.jsonl"),
-            r#"{"agent_nickname":"Hegel","body":"review docs/spacetop-dev/refine-session-preview-wording.md"}"#,
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow.clone(),
-            repo_root: repo.clone(),
-            entities: vec![entity_with_path(
-                "068",
-                workflow.join("refine-session-preview-wording.md"),
-            )],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = FixtureProbe {
-            running: HashSet::new(),
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert_eq!(report.attributions[0].entity_id, "068");
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("scan");
         assert_eq!(
-            report.attributions[0].evidence[0].confidence,
-            AttributionConfidence::Medium
+            report.attributions[0].activity.status_label(),
+            "running · worker"
         );
+        assert_eq!(report.errors.len(), 1);
     }
 
     #[test]
-    fn conflicting_dispatch_assignment_blocks_task_file_test_data_match() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("spacetop");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        write_session(
-            &root.join("heisenberg-070-verify.jsonl"),
-            r#"{"agent_nickname":"Heisenberg","body":"Read /tmp/spacedock-dispatch/spacedock-ensign-fix-unrelated-session-running-attribution-verify.md. Regression mentions docs/spacetop-dev/refine-session-preview-wording.md as test data."}"#,
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow.clone(),
-            repo_root: repo.clone(),
-            entities: vec![entity_with_path(
-                "068",
-                workflow.join("refine-session-preview-wording.md"),
-            )],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = FixtureProbe {
-            running: HashSet::new(),
-        };
+    fn large_append_truncation_and_deletion_never_create_false_idle() {
+        use std::io::Write;
 
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert!(report.attributions.is_empty());
-    }
-
-    #[test]
-    fn folder_entity_index_filename_alone_does_not_match_entity() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("spacetop");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        write_session(
-            &root.join("unrelated-index.jsonl"),
-            r#"{"agent_nickname":"Hegel","body":"inspect index.md in another folder"}"#,
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow.clone(),
-            repo_root: repo.clone(),
-            entities: vec![entity_with_path(
-                "071",
-                workflow.join("folder-form-task/index.md"),
-            )],
-            roots: SessionRoots {
-                codex: vec![root],
-                claude_code: Vec::new(),
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = FixtureProbe {
-            running: HashSet::new(),
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert!(report.attributions.is_empty());
-    }
-
-    #[test]
-    fn extract_pid_ignores_unquoted_substrings() {
-        assert_eq!(extract_pid(r#"{"pid":4242}"#), Some(4242));
-        assert_eq!(extract_pid(r#"rapid123 mentions 065"#), None);
-        assert_eq!(extract_pid(r#"pid: 4242"#), None);
-    }
-
-    #[test]
-    fn entity_id_match_rejects_uuid_substrings() {
-        assert!(!contains_entity_id("uuid dfbf9616-b067-4cd4-8a65", "067"));
-        assert!(!contains_entity_id("uuid 09d0dbf9-0672-49ed", "067"));
-        assert!(contains_entity_id("task 067 is ready", "067"));
-        assert!(contains_entity_id("task-067.md", "067"));
-    }
-
-    #[test]
-    fn live_session_with_id_only_inside_uuid_does_not_match_entity() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp
-            .path()
-            .join("claude/projects/-Users-kent-Dev-InfuseAI-GitHub-recce");
-        let session_id = "2a301c1d-2d0c-4fe0-81d6-55b61507cdc0";
-        write_session(
-            &root.join(format!("{session_id}.jsonl")),
-            r#"{"uuid":"dfbf9616-b067-4cd4-8a65-59b90007284f","cwd":"/Users/kent/Dev/InfuseAI/GitHub/recce"}"#,
-        );
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("067", Some(".worktrees/task-067"))],
-            roots: SessionRoots {
-                codex: Vec::new(),
-                claude_code: vec![root],
-            },
-            previous_session_files: HashMap::new(),
-        };
-        let probe = CommandProbe {
-            running: HashSet::new(),
-            command_lines: vec![format!("claude --resume {session_id}")],
-        };
-
-        let report =
-            scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
-
-        assert!(report.attributions.is_empty());
-    }
-
-    #[test]
-    fn live_session_key_extracts_agent_specific_uuid() {
-        assert_eq!(
-            live_session_key(
-                AgentKind::Codex,
-                Path::new("rollout-2026-06-18T14-26-00-019ed968-6e77-7d71-9386-aae754c6c8be.jsonl"),
-                "{}"
-            )
-            .as_deref(),
-            Some("019ed968-6e77-7d71-9386-aae754c6c8be")
-        );
-        assert_eq!(
-            live_session_key(
-                AgentKind::ClaudeCode,
-                Path::new("session.jsonl"),
-                r#"{"sessionId":"f0d61fc8-8903-43c0-b916-4b02c45bf441"}"#
-            )
-            .as_deref(),
-            Some("f0d61fc8-8903-43c0-b916-4b02c45bf441")
-        );
-        assert_eq!(
-            live_session_key(
-                AgentKind::ClaudeCode,
-                Path::new("f0d61fc8-8903-43c0-b916-4b02c45bf441.jsonl"),
-                "{}"
-            )
-            .as_deref(),
-            Some("f0d61fc8-8903-43c0-b916-4b02c45bf441")
-        );
-        assert_eq!(
-            live_session_key(AgentKind::Codex, Path::new("session.jsonl"), "{}"),
-            None
-        );
-    }
-
-    #[test]
-    fn live_session_command_matching_requires_exact_resume_argv() {
-        let key = "019ed968-6e77-7d71-9386-aae754c6c8be";
-        assert!(command_matches_live_session(
-            AgentKind::Codex,
-            key,
-            &format!("codex resume {key}")
-        ));
-        assert!(command_matches_live_session(
-            AgentKind::Codex,
-            key,
-            &format!("codex --resume={key}")
-        ));
-        assert!(command_matches_live_session(
-            AgentKind::ClaudeCode,
-            key,
-            &format!("/usr/local/bin/claude --resume {key}")
-        ));
-
-        for command in [
-            "codex",
-            "claude",
-            "Codex.app/Contents/MacOS/helper",
-            "claude-helper --resume 019ed968-6e77-7d71-9386-aae754c6c8be",
-            "codex-helper resume 019ed968-6e77-7d71-9386-aae754c6c8be",
-            "codex --workdir /repo/.worktrees/task-065",
-            "claude --cwd /repo/.worktrees/task-065",
-            "sh -lc 'codex resume 019ed968-6e77-7d71-9386-aae754c6c8be'",
-            "codex resume 019ed968-6e77-7d71-9386-aae754c6c8be-extra",
-            "claude --resume 019ed968-6e77-7d71-9386-aae754c6c8be-extra",
-        ] {
-            assert!(
-                !command_matches_live_session(AgentKind::Codex, key, command),
-                "Codex false positive: {command}"
-            );
-            assert!(
-                !command_matches_live_session(AgentKind::ClaudeCode, key, command),
-                "Claude false positive: {command}"
-            );
+        let temp = tempfile::tempdir().expect("temp");
+        let path = temp.path().join("rollout.jsonl");
+        let fixture = fs::read_to_string(fixture_root("codex-worker-open/rollout.jsonl"))
+            .expect("source fixture");
+        let mut file = fs::File::create(&path).expect("large fixture");
+        for _ in 0..90_000 {
+            writeln!(file, r#"{{"type":"noise","padding":"{}"}}"#, "x".repeat(32)).expect("noise");
         }
-    }
+        file.write_all(fixture.as_bytes()).expect("worker records");
+        drop(file);
+        assert!(
+            fs::metadata(&path).expect("metadata").len() > 4_000_000,
+            "regression fixture must exceed the removed cutoff"
+        );
 
-    #[test]
-    fn repeated_pid_probe_is_cached_per_scan() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let repo = tmp.path().join("repo");
-        let workflow = repo.join("docs/spacetop-dev");
-        let root = tmp.path().join("codex");
-        let worktree = repo.join(".worktrees/task-065");
-        for idx in 0..2 {
-            write_session(
-                &root.join(format!("session-{idx}.jsonl")),
-                &format!(r#"{{"pid":4242,"workdir":"{}"}}"#, worktree.display()),
-            );
-        }
-        let request = SessionScanRequest {
-            workflow_dir: workflow,
-            repo_root: repo,
-            entities: vec![entity("065", Some(".worktrees/task-065"))],
+        let base_request = SessionScanRequest {
+            workflow_dir: PathBuf::from("/repo/docs"),
+            repo_root: PathBuf::from("/repo"),
+            entities: vec![SessionScanEntity {
+                id: "069".to_string(),
+                path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+                worktree: None,
+                worktree_source: None,
+            }],
             roots: SessionRoots {
-                codex: vec![root],
+                codex: vec![temp.path().to_path_buf()],
                 claude_code: Vec::new(),
             },
             previous_session_files: HashMap::new(),
         };
-        let probe = CountingProbe {
-            running: HashSet::from([4242]),
-            calls: std::cell::Cell::new(0),
+        let first = scan_local_sessions_with_snapshots(&base_request, &StdProcessProbe, UNIX_EPOCH)
+            .expect("large scan");
+        assert_eq!(
+            first.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+        let first_cursor = first.session_files[&path].cursor;
+        assert_eq!(session_file_parse_starts(&path), vec![0]);
+
+        let mut append = fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("append");
+        writeln!(
+            append,
+            r#"{{"timestamp":"2026-07-27T10:00:03Z","type":"event_msg","payload":{{"type":"task_complete","turn_id":"worker-turn-redacted"}}}}"#
+        )
+        .expect("terminal event");
+        let appended = scan_local_sessions_with_snapshots(
+            &SessionScanRequest {
+                previous_session_files: first.session_files,
+                ..base_request.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("append scan");
+        assert_eq!(
+            appended.report.attributions[0].activity.status_label(),
+            "idle"
+        );
+        assert_eq!(
+            session_file_parse_starts(&path),
+            vec![0, first_cursor],
+            "append scanning must resume at the saved byte cursor"
+        );
+
+        fs::write(&path, &fixture).expect("truncate to open worker");
+        let truncated = scan_local_sessions_with_snapshots(
+            &SessionScanRequest {
+                previous_session_files: appended.session_files,
+                ..base_request.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("truncation scan");
+        assert_eq!(
+            truncated.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+        assert_eq!(
+            session_file_parse_starts(&path),
+            vec![0, first_cursor, 0],
+            "truncation must invalidate the cursor and rebuild the summary"
+        );
+
+        fs::remove_file(&path).expect("delete fixture");
+        let deleted = scan_local_sessions_with_snapshots(
+            &SessionScanRequest {
+                previous_session_files: truncated.session_files,
+                ..base_request
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("deletion scan");
+        assert_eq!(
+            deleted.report.attributions[0].activity.status_label(),
+            "idle"
+        );
+        assert!(deleted.session_files.is_empty());
+        assert_eq!(
+            session_file_parse_starts(&path),
+            vec![0, first_cursor, 0],
+            "deletion must drop the snapshot without reading a missing file"
+        );
+    }
+
+    #[test]
+    fn unchanged_scan_reuses_projected_summary_without_rereading_file() {
+        let temp = tempfile::tempdir().expect("temp");
+        let path = temp.path().join("rollout.jsonl");
+        fs::copy(fixture_root("codex-worker-open/rollout.jsonl"), &path).expect("fixture");
+        let base_request = SessionScanRequest {
+            workflow_dir: PathBuf::from("/repo/docs"),
+            repo_root: PathBuf::from("/repo"),
+            entities: vec![SessionScanEntity {
+                id: "069".to_string(),
+                path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+                worktree: None,
+                worktree_source: None,
+            }],
+            roots: SessionRoots {
+                codex: vec![temp.path().to_path_buf()],
+                claude_code: Vec::new(),
+            },
+            previous_session_files: HashMap::new(),
         };
+        let first = scan_local_sessions_with_snapshots(&base_request, &StdProcessProbe, UNIX_EPOCH)
+            .expect("first scan");
+        assert_eq!(session_file_parse_count(&path), 1);
+        assert_eq!(
+            first.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
 
-        scan_local_sessions_with(&request, &probe, SystemTime::now()).expect("scan succeeds");
+        let second = scan_local_sessions_with_snapshots(
+            &SessionScanRequest {
+                previous_session_files: first.session_files,
+                ..base_request
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("unchanged scan");
+        assert_eq!(
+            session_file_parse_count(&path),
+            1,
+            "unchanged metadata must reuse the safe projected summary"
+        );
+        assert_eq!(
+            second.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+    }
 
-        assert_eq!(probe.calls.get(), 1, "pid should be probed once per scan");
+    #[test]
+    fn record_projection_drops_transcript_text() {
+        let projected = project_record(json!({
+            "timestamp": 1,
+            "type": "assistant",
+            "sessionId": "session",
+            "isSidechain": false,
+            "message": {
+                "content": [
+                    {"type": "text", "text": "private transcript"},
+                    {"type": "tool_use", "id": "call", "name": "Read", "input": {"file_path": "/repo/entity.md"}}
+                ],
+                "stop_reason": null
+            }
+        }))
+        .expect("projection");
+        assert!(!projected.to_string().contains("private transcript"));
+        assert!(projected.to_string().contains("/repo/entity.md"));
+    }
+
+    #[test]
+    fn unreadable_root_is_a_scan_failure_instead_of_false_idle() {
+        let temp = tempfile::tempdir().expect("temp");
+        let not_a_directory = temp.path().join("session-root");
+        fs::write(&not_a_directory, "not a directory").expect("fixture");
+        let result = scan_local_sessions_with(
+            &SessionScanRequest {
+                workflow_dir: PathBuf::from("/repo/docs"),
+                repo_root: PathBuf::from("/repo"),
+                entities: vec![SessionScanEntity {
+                    id: "069".to_string(),
+                    path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+                    worktree: None,
+                    worktree_source: None,
+                }],
+                roots: SessionRoots {
+                    codex: vec![not_a_directory],
+                    claude_code: Vec::new(),
+                },
+                previous_session_files: HashMap::new(),
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        );
+        assert!(
+            result.is_err(),
+            "root IO failure must preserve prior app state"
+        );
     }
 }

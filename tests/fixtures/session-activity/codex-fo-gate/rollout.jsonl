@@ -1,0 +1,4 @@
+{"timestamp":"2026-07-27T10:00:00Z","type":"session_meta","payload":{"id":"codex-fo-redacted","source":"cli"}}
+{"timestamp":"2026-07-27T10:00:01Z","type":"event_msg","payload":{"type":"task_started","turn_id":"fo-turn-redacted"}}
+{"timestamp":"2026-07-27T10:00:02Z","type":"response_item","payload":{"type":"function_call","name":"Read","call_id":"read-redacted","arguments":"{\"path\":\"/repo/docs/state/detect-entity-activity-state.md\"}"}}
+{"timestamp":"2026-07-27T10:00:03Z","type":"response_item","payload":{"type":"function_call","name":"request_user_input","call_id":"gate-redacted","arguments":"{\"questions\":[{\"id\":\"verify_gate\",\"header\":\"Verify gate\",\"question\":\"Decision?\",\"options\":[{\"label\":\"Approve\"},{\"label\":\"Bounce back\"}]}]}"}}

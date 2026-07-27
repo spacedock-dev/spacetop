@@ -454,42 +454,29 @@ fn session_attribution_line<'a>(
     state: &OverviewState,
     dim: Style,
 ) -> Option<Line<'a>> {
-    let attribution = state.index().session_attribution_for_entity_id(&item.id)?;
-    let best = attribution.best_evidence()?;
-    let agent_label = agent_label(attribution);
-    let session_label = best
-        .display_name
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(best.session_id.as_str());
-    let latest = best
-        .latest_activity_unix
+    let activity = state.index().entity_activity_for_entity_id(&item.id)?;
+    let runtime = activity
+        .runtime()
+        .map(spacetop_core::domain::AgentRuntime::label)
+        .unwrap_or("\u{2014}");
+    let session = activity.session_id().unwrap_or("\u{2014}");
+    let updated = activity
+        .updated_unix()
         .map(format_latest_activity)
-        .unwrap_or_else(|| "n/a".to_string());
+        .unwrap_or_else(|| "\u{2014}".to_string());
     Some(Line::from(vec![
-        Span::styled("agent: ", dim),
-        Span::raw(agent_label),
+        Span::styled("Runtime: ", dim),
+        Span::raw(runtime),
         Span::raw("  \u{00B7}  "),
-        Span::styled("session: ", dim),
-        Span::raw(session_label.to_string()),
+        Span::styled("Session: ", dim),
+        Span::raw(session.to_string()),
         Span::raw("  \u{00B7}  "),
-        Span::styled("confidence: ", dim),
-        Span::raw(best.confidence.label()),
+        Span::styled("Status: ", dim),
+        Span::raw(activity.status_label()),
         Span::raw("  \u{00B7}  "),
-        Span::styled("state: ", dim),
-        Span::raw(session_state_label(best.run_state())),
-        Span::raw("  \u{00B7}  "),
-        Span::styled("latest: ", dim),
-        Span::raw(latest),
+        Span::styled("Updated: ", dim),
+        Span::raw(updated),
     ]))
-}
-
-fn session_state_label(state: spacetop_core::domain::AgentSessionState) -> &'static str {
-    match state {
-        spacetop_core::domain::AgentSessionState::Stale => "stale",
-        spacetop_core::domain::AgentSessionState::Recent => "recent",
-        spacetop_core::domain::AgentSessionState::Running => state.label(),
-    }
 }
 
 fn format_latest_activity(timestamp: i64) -> String {
@@ -507,18 +494,6 @@ fn format_latest_activity(timestamp: i64) -> String {
         MINUTE..HOUR => format!("{}m ago", age / MINUTE),
         HOUR..DAY => format!("{}h ago", age / HOUR),
         _ => format!("{}d ago", age / DAY),
-    }
-}
-
-fn agent_label(attribution: &spacetop_core::domain::EntitySessionAttribution) -> &'static str {
-    let mut kinds = attribution.evidence.iter().map(|evidence| evidence.agent);
-    let Some(first) = kinds.next() else {
-        return "unknown";
-    };
-    if kinds.any(|kind| kind != first) {
-        "multi-agent"
-    } else {
-        first.label()
     }
 }
 

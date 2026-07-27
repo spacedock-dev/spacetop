@@ -119,14 +119,17 @@ Keep module boundaries clear and testable:
 - `crates/spacetop-core/src/git_sync.rs` owns the explicit read-refresh sync
   path and must remain limited to audited fast-forward pulls.
 - `crates/spacetop-core/src/session_activity.rs` scans local agent session logs
-  and attributes them to entities, and `domain/mod.rs`
-  (`AgentSessionLiveness`/`AgentSessionEvidence`/`EntitySessionAttribution`) holds
-  the typed result. The active-session marker requires a dispatched-worker or
-  own-worktree anchor (typed `DispatchAnchor`), not a bare task-file-path mention:
-  `is_active_marker()` is `run_state == Running && dispatch_anchor != DispatchAnchor::None`. A live
-  orchestrator session that merely references an undispatched task classifies as
-  not-active. `run_state`/`confidence` reporting for recent/stale and preview text
-  is unchanged.
+  and reduces exact structured events into `EntityActivity`; `domain/mod.rs`
+  owns the three visible states (`Idle`, `Running`, and `HumanGate`) plus the
+  typed `Worker`/`FirstOfficer` handler carried only by `Running`. Detection
+  requires canonical dispatch/session correlation and structured start, stop,
+  FO-action, or approve/reject gate records. Process presence, mtimes, generic
+  path mentions, and filesystem writes alone must remain idle. JSONL scanning
+  must retain projected summaries behind per-file byte cursors rather than drop
+  or reread large unchanged artifacts. Codex child evidence requires a non-empty
+  parent thread, code-mode activity uses only nested executable commands, and
+  Claude worker lifecycle evidence stays scoped to its exact parent session and
+  dispatch call.
 - `crates/spacetop-core/src/editor.rs` owns opening selected files in an
   external editor/viewer path; it must not become a workflow-state writer
   without explicit policy change.

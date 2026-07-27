@@ -274,7 +274,7 @@ impl OverviewState {
             .and_then(|entity| entity_slug(&entity.path));
 
         self.index = index;
-        self.index.clear_session_attributions();
+        self.index.clear_entity_activities();
         // Invalidate archive view — a watcher-driven reload may have touched
         // `_archive/` too. Dropping the cached list forces a rescan the next
         // time the user toggles to archived scope.
@@ -379,7 +379,6 @@ impl OverviewState {
                 self.index.replace_session_scan_report(report);
             }
             Err(err) => {
-                self.index.clear_session_attributions();
                 self.index.set_session_scan_error(err.to_string());
             }
         }
