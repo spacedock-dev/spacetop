@@ -1,6 +1,6 @@
 ---
 title: Detect entity activity and human-gated sessions
-status: verify
+status: implement
 source: "Follow-up from task 067 and the 2026-07-27 three-state activity design refinement"
 kind: feature
 risk: medium
@@ -514,3 +514,7 @@ support the observed Codex FO call schema, and keep Claude worker lifecycle
 events linked to their exact parent dispatch. Domain/UI rendering and all
 required test/lint gates pass, but the current evidence reducer is not yet
 fail-closed or complete for representative runtime artifacts.
+
+### Feedback Cycles
+
+- Cycle 1: REJECTED — verify; surface 3 blocking scanner defects vs estimate not declared (n/a%); AC unchanged
