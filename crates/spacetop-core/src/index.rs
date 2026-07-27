@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{
-    Entity, EntityParseError, EntitySessionAttribution, SessionScanReport, WorkflowDefinition,
+    Entity, EntityActivity, EntityParseError, SessionScanReport, WorkflowDefinition,
 };
 use crate::entity_identity::entity_slug;
 pub use crate::metrics::Metrics;
@@ -27,7 +27,7 @@ pub struct WorkflowIndex {
     by_slug: HashMap<String, Entity>,
     history_events: Vec<StageEvent>,
     history_unavailable: Option<HistoryUnavailable>,
-    session_attributions: HashMap<String, EntitySessionAttribution>,
+    entity_activities: HashMap<String, EntityActivity>,
     session_scan_error: Option<String>,
 }
 
@@ -80,7 +80,7 @@ impl WorkflowIndex {
             by_slug: HashMap::new(),
             history_events: Vec::new(),
             history_unavailable: Some(HistoryUnavailable::NotImplemented),
-            session_attributions: HashMap::new(),
+            entity_activities: HashMap::new(),
             session_scan_error: None,
         };
         index.rebuild_lookup_maps();
@@ -149,20 +149,19 @@ impl WorkflowIndex {
         } else {
             Some(report.errors.join("; "))
         };
-        self.session_attributions = report
+        self.entity_activities = report
             .attributions
             .into_iter()
-            .map(|attribution| (attribution.entity_id.clone(), attribution))
+            .map(|attribution| (attribution.entity_id, attribution.activity))
             .collect();
     }
 
-    pub fn clear_session_attributions(&mut self) {
-        self.session_attributions.clear();
+    pub fn clear_entity_activities(&mut self) {
+        self.entity_activities.clear();
         self.session_scan_error = None;
     }
 
     pub fn set_session_scan_error(&mut self, message: String) {
-        self.session_attributions.clear();
         self.session_scan_error = Some(message);
     }
 
@@ -341,16 +340,13 @@ impl WorkflowIndex {
         })
     }
 
-    pub fn session_attribution_for_entity_id(
-        &self,
-        entity_id: &str,
-    ) -> Option<&EntitySessionAttribution> {
-        self.session_attributions.get(entity_id)
+    pub fn entity_activity_for_entity_id(&self, entity_id: &str) -> Option<&EntityActivity> {
+        self.entity_activities.get(entity_id)
     }
 
-    pub fn entity_has_active_session_marker(&self, entity_id: &str) -> bool {
-        self.session_attribution_for_entity_id(entity_id)
-            .is_some_and(EntitySessionAttribution::has_active_marker)
+    pub fn entity_has_current_activity(&self, entity_id: &str) -> bool {
+        self.entity_activity_for_entity_id(entity_id)
+            .is_some_and(|activity| !matches!(activity, EntityActivity::Idle { .. }))
     }
 
     pub fn session_scan_entities(&self) -> Vec<SessionScanEntity> {
@@ -636,35 +632,30 @@ mod tests {
     }
 
     #[test]
-    fn session_scan_report_indexes_active_marker_by_entity_id() {
+    fn session_scan_report_indexes_activity_by_entity_id() {
         let mut index = index();
         index.replace_session_scan_report(crate::domain::SessionScanReport {
             workflow_dir: PathBuf::from("/tmp/workflow"),
             repo_root: PathBuf::from("/tmp"),
             scanned_roots: Vec::new(),
             errors: Vec::new(),
-            attributions: vec![crate::domain::EntitySessionAttribution {
+            attributions: vec![crate::domain::EntityActivityAttribution {
                 entity_id: "010".to_string(),
-                evidence: vec![crate::domain::AgentSessionEvidence {
-                    agent: crate::domain::AgentKind::Codex,
+                activity: crate::domain::EntityActivity::Running {
+                    handler: crate::domain::ActivityHandler::Worker,
+                    runtime: crate::domain::AgentRuntime::Codex,
                     session_id: "session-010".to_string(),
-                    display_name: Some("Mendel".to_string()),
-                    confidence: crate::domain::AttributionConfidence::High,
-                    liveness: crate::domain::AgentSessionLiveness::LivePid { pid: 4242 },
-                    latest_activity_unix: Some(1_718_000_000),
-                    matched_worktree: Some(PathBuf::from(".worktrees/010")),
-                    dispatch_anchor: crate::domain::DispatchAnchor::OwnedWorktree,
-                }],
+                    updated_unix: 1_718_000_000,
+                },
             }],
         });
 
-        assert!(index.entity_has_active_session_marker("010"));
-        assert!(!index.entity_has_active_session_marker("002"));
+        assert!(index.entity_has_current_activity("010"));
+        assert!(!index.entity_has_current_activity("002"));
         assert_eq!(
             index
-                .session_attribution_for_entity_id("010")
-                .and_then(|attr| attr.best_evidence())
-                .map(|evidence| evidence.session_id.as_str()),
+                .entity_activity_for_entity_id("010")
+                .and_then(crate::domain::EntityActivity::session_id),
             Some("session-010")
         );
     }

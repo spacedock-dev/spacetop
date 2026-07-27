@@ -175,17 +175,21 @@ fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListIte
             } else {
                 ("  ", Style::default())
             };
-            let (active_marker, active_marker_style) = if scope == ViewScope::Active
-                && state.index().entity_has_active_session_marker(&item.id)
-            {
-                (
+            let activity = (scope == ViewScope::Active)
+                .then(|| state.index().entity_activity_for_entity_id(&item.id))
+                .flatten();
+            let (active_marker, active_marker_style) = match activity {
+                Some(spacetop_core::domain::EntityActivity::HumanGate { .. }) => (
+                    "\u{25C6} ",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                Some(spacetop_core::domain::EntityActivity::Running { .. }) => (
                     "\u{25CF} ",
                     Style::default()
                         .fg(Color::Green)
                         .add_modifier(Modifier::BOLD),
-                )
-            } else {
-                ("  ", Style::default())
+                ),
+                _ => ("  ", Style::default()),
             };
 
             let mut spans: Vec<Span<'_>> = vec![
@@ -198,6 +202,20 @@ fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListIte
                 Span::styled(wt_marker, wt_marker_style),
                 Span::styled(item.title.clone(), title_style),
             ];
+
+            if let Some(activity) = activity {
+                let activity_style = match activity {
+                    spacetop_core::domain::EntityActivity::HumanGate { .. } => {
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+                    }
+                    spacetop_core::domain::EntityActivity::Running { .. } => {
+                        Style::default().fg(Color::Green)
+                    }
+                    spacetop_core::domain::EntityActivity::Idle { .. } => dim_style,
+                };
+                spans.push(Span::raw("  "));
+                spans.push(Span::styled(activity.status_label(), activity_style));
+            }
 
             if scope == ViewScope::Archived {
                 let glyph = match item.verdict.as_deref() {

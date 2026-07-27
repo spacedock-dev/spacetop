@@ -204,13 +204,13 @@ pub struct Entity {
     pub main_body: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum AgentKind {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum AgentRuntime {
     Codex,
     ClaudeCode,
 }
 
-impl AgentKind {
+impl AgentRuntime {
     pub fn label(self) -> &'static str {
         match self {
             Self::Codex => "Codex",
@@ -219,135 +219,116 @@ impl AgentKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum AttributionConfidence {
-    Low,
-    Medium,
-    High,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum ActivityHandler {
+    Worker,
+    FirstOfficer,
 }
 
-impl AttributionConfidence {
+impl ActivityHandler {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Low => "low",
-            Self::Medium => "medium",
-            Self::High => "high",
+            Self::Worker => "worker",
+            Self::FirstOfficer => "FO",
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum AgentSessionState {
-    Stale,
-    Recent,
+pub enum EntityActivityStatus {
+    Idle,
     Running,
+    HumanGate,
 }
 
-impl AgentSessionState {
+impl EntityActivityStatus {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Stale => "stale",
-            Self::Recent => "recent",
+            Self::Idle => "idle",
             Self::Running => "running",
+            Self::HumanGate => "human-gate",
         }
     }
 }
 
-/// Whether a matched session is anchored to a *dispatched worker* for this
-/// entity, as opposed to merely mentioning the entity in passing. Only an
-/// anchored session may drive the active marker: a live orchestrator session
-/// that references an undispatched task's file path is `None` and must not
-/// light up as running.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum DispatchAnchor {
-    /// The session matched via the entity's own worktree path (High-confidence
-    /// ownership): a worker running in the entity's isolated worktree.
-    OwnedWorktree,
-    /// The session carries a positive
-    /// `/tmp/spacedock-dispatch/spacedock-ensign-<slug>-<stage>.md` marker for
-    /// this entity's slug: explicit dispatch evidence.
-    DispatchedForEntity,
-    /// No dispatch/ownership evidence — a bare path/id mention. Not eligible to
-    /// drive the active marker on its own.
-    None,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentSessionEvidence {
-    pub agent: AgentKind,
-    pub session_id: String,
-    pub display_name: Option<String>,
-    pub confidence: AttributionConfidence,
-    pub liveness: AgentSessionLiveness,
-    pub latest_activity_unix: Option<i64>,
-    pub matched_worktree: Option<PathBuf>,
-    pub dispatch_anchor: DispatchAnchor,
+pub enum EntityActivity {
+    Idle {
+        updated_unix: Option<i64>,
+    },
+    Running {
+        handler: ActivityHandler,
+        runtime: AgentRuntime,
+        session_id: String,
+        updated_unix: i64,
+    },
+    HumanGate {
+        runtime: AgentRuntime,
+        session_id: String,
+        updated_unix: i64,
+    },
 }
 
-impl AgentSessionEvidence {
-    pub fn run_state(&self) -> AgentSessionState {
-        self.liveness.run_state()
-    }
-
-    pub fn is_active_marker(&self) -> bool {
-        self.run_state() == AgentSessionState::Running
-            && self.dispatch_anchor != DispatchAnchor::None
+impl Default for EntityActivity {
+    fn default() -> Self {
+        Self::Idle { updated_unix: None }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum AgentSessionLiveness {
-    LivePid { pid: u32 },
-    LiveResumeCommand { session_key: String },
-    ObservedSessionWrite { until_unix: i64 },
-    RecentMtime,
-    Stale,
-}
-
-impl AgentSessionLiveness {
-    pub fn run_state(&self) -> AgentSessionState {
+impl EntityActivity {
+    pub fn status(&self) -> EntityActivityStatus {
         match self {
-            Self::LivePid { .. }
-            | Self::LiveResumeCommand { .. }
-            | Self::ObservedSessionWrite { .. } => AgentSessionState::Running,
-            Self::RecentMtime => AgentSessionState::Recent,
-            Self::Stale => AgentSessionState::Stale,
+            Self::Idle { .. } => EntityActivityStatus::Idle,
+            Self::Running { .. } => EntityActivityStatus::Running,
+            Self::HumanGate { .. } => EntityActivityStatus::HumanGate,
         }
     }
 
-    pub fn label(&self) -> &'static str {
+    pub fn status_label(&self) -> &'static str {
         match self {
-            Self::LivePid { .. } => "pid",
-            Self::LiveResumeCommand { .. } => "resume",
-            Self::ObservedSessionWrite { .. } => "write",
-            Self::RecentMtime => "mtime",
-            Self::Stale => "stale",
+            Self::Idle { .. } => "idle",
+            Self::Running {
+                handler: ActivityHandler::Worker,
+                ..
+            } => "running · worker",
+            Self::Running {
+                handler: ActivityHandler::FirstOfficer,
+                ..
+            } => "running · FO",
+            Self::HumanGate { .. } => "human-gate",
+        }
+    }
+
+    pub fn runtime(&self) -> Option<AgentRuntime> {
+        match self {
+            Self::Running { runtime, .. } | Self::HumanGate { runtime, .. } => Some(*runtime),
+            Self::Idle { .. } => None,
+        }
+    }
+
+    pub fn session_id(&self) -> Option<&str> {
+        match self {
+            Self::Running { session_id, .. } | Self::HumanGate { session_id, .. } => {
+                Some(session_id)
+            }
+            Self::Idle { .. } => None,
+        }
+    }
+
+    pub fn updated_unix(&self) -> Option<i64> {
+        match self {
+            Self::Idle { updated_unix } => *updated_unix,
+            Self::Running { updated_unix, .. } | Self::HumanGate { updated_unix, .. } => {
+                Some(*updated_unix)
+            }
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EntitySessionAttribution {
+pub struct EntityActivityAttribution {
     pub entity_id: String,
-    pub evidence: Vec<AgentSessionEvidence>,
-}
-
-impl EntitySessionAttribution {
-    pub fn best_evidence(&self) -> Option<&AgentSessionEvidence> {
-        self.evidence.iter().max_by_key(|evidence| {
-            (
-                evidence.run_state(),
-                evidence.confidence,
-                evidence.latest_activity_unix,
-            )
-        })
-    }
-
-    pub fn has_active_marker(&self) -> bool {
-        self.evidence
-            .iter()
-            .any(AgentSessionEvidence::is_active_marker)
-    }
+    pub activity: EntityActivity,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -355,7 +336,7 @@ pub struct SessionScanReport {
     pub workflow_dir: PathBuf,
     pub repo_root: PathBuf,
     pub scanned_roots: Vec<PathBuf>,
-    pub attributions: Vec<EntitySessionAttribution>,
+    pub attributions: Vec<EntityActivityAttribution>,
     pub errors: Vec<String>,
 }
 

@@ -1,6 +1,6 @@
 # Spacetop Agent Session Detection - Proposal
 
-**Status:** Proposed design
+**Status:** Superseded by `2026-07-27-spacetop-entity-activity-design.md`
 **Date:** 2026-06-11
 **Author:** brainstorming session (captain: Kent)
 

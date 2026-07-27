@@ -6,9 +6,8 @@ use std::path::{Path, PathBuf};
 
 use spacetop_core::discovery::DiscoveredWorkflow;
 use spacetop_core::domain::{
-    AgentKind, AgentSessionEvidence, AgentSessionLiveness, AttributionConfidence, DispatchAnchor,
-    Entity, EntitySessionAttribution, SessionScanReport, StageDefinition, WorkflowDefinition,
-    WorkflowSnapshot,
+    ActivityHandler, AgentRuntime, Entity, EntityActivity, EntityActivityAttribution,
+    SessionScanReport, StageDefinition, WorkflowDefinition, WorkflowSnapshot,
 };
 use spacetop_core::session_activity::SessionScanError;
 use spacetop_core::sources::ArchiveSnapshot;
@@ -2447,7 +2446,7 @@ fn matching_session_activity_result_applies_to_active_workflow() {
         app.as_overview()
             .expect("overview")
             .index()
-            .entity_has_active_session_marker("000"),
+            .entity_has_current_activity("000"),
         "matching scan report should mark entity 000 active"
     );
 }
@@ -2469,13 +2468,13 @@ fn stale_session_activity_result_for_other_workflow_is_ignored() {
         !app.as_overview()
             .expect("overview")
             .index()
-            .entity_has_active_session_marker("000"),
+            .entity_has_current_activity("000"),
         "stale scan report must not apply after workflow changes"
     );
 }
 
 #[test]
-fn session_activity_scan_failure_is_non_fatal_and_clears_stale_marker() {
+fn session_activity_scan_failure_is_non_fatal_and_preserves_last_snapshot() {
     let workflow_dir = PathBuf::from("/tmp/spacetop-session-activity/workflow");
     let mut app = App::from_snapshot(workflow_dir.clone(), snapshot_with_items(1));
     let repo_root = app.repo_root().expect("repo root").to_path_buf();
@@ -2498,8 +2497,8 @@ fn session_activity_scan_failure_is_non_fatal_and_clears_stale_marker() {
     let overview = app.as_overview().expect("overview");
     assert_eq!(overview.visible_items().len(), 1);
     assert!(
-        !overview.index().entity_has_active_session_marker("000"),
-        "failed scans should clear stale attribution without dropping workflow rows"
+        overview.index().entity_has_current_activity("000"),
+        "failed scans should preserve the last successful activity snapshot"
     );
 }
 
@@ -2509,18 +2508,14 @@ fn session_report(workflow_dir: &Path, repo_root: &Path, entity_id: &str) -> Ses
         repo_root: repo_root.to_path_buf(),
         scanned_roots: Vec::new(),
         errors: Vec::new(),
-        attributions: vec![EntitySessionAttribution {
+        attributions: vec![EntityActivityAttribution {
             entity_id: entity_id.to_string(),
-            evidence: vec![AgentSessionEvidence {
-                agent: AgentKind::Codex,
+            activity: EntityActivity::Running {
+                handler: ActivityHandler::Worker,
+                runtime: AgentRuntime::Codex,
                 session_id: "session-000".to_string(),
-                display_name: Some("Mendel".to_string()),
-                confidence: AttributionConfidence::High,
-                liveness: AgentSessionLiveness::LivePid { pid: 4242 },
-                latest_activity_unix: Some(1_718_000_000),
-                matched_worktree: Some(PathBuf::from(".worktrees/task-000")),
-                dispatch_anchor: DispatchAnchor::OwnedWorktree,
-            }],
+                updated_unix: 1_718_000_000,
+            },
         }],
     }
 }

@@ -60,7 +60,7 @@ fn app_with_items(items: Vec<Entity>) -> App {
 fn app_with_session_attribution(
     mut items: Vec<Entity>,
     entity_id: &str,
-    run_state: spacetop_core::domain::AgentSessionState,
+    activity: spacetop_core::domain::EntityActivity,
 ) -> App {
     let root = PathBuf::from("/tmp/spacetop-test");
     for item in &mut items {
@@ -95,17 +95,6 @@ fn app_with_session_attribution(
     };
     let mut state = OverviewState::from_snapshot(root.clone(), snapshot);
     let repo_root = state.repo_root.clone();
-    let liveness = match run_state {
-        spacetop_core::domain::AgentSessionState::Running => {
-            spacetop_core::domain::AgentSessionLiveness::LivePid { pid: 4242 }
-        }
-        spacetop_core::domain::AgentSessionState::Recent => {
-            spacetop_core::domain::AgentSessionLiveness::RecentMtime
-        }
-        spacetop_core::domain::AgentSessionState::Stale => {
-            spacetop_core::domain::AgentSessionLiveness::Stale
-        }
-    };
     state.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
         workflow_dir: root.clone(),
         repo_root: repo_root.clone(),
@@ -115,18 +104,9 @@ fn app_with_session_attribution(
             repo_root,
             scanned_roots: Vec::new(),
             errors: Vec::new(),
-            attributions: vec![spacetop_core::domain::EntitySessionAttribution {
+            attributions: vec![spacetop_core::domain::EntityActivityAttribution {
                 entity_id: entity_id.to_string(),
-                evidence: vec![spacetop_core::domain::AgentSessionEvidence {
-                    agent: spacetop_core::domain::AgentKind::Codex,
-                    session_id: "session-065".to_string(),
-                    display_name: Some("Mendel".to_string()),
-                    confidence: spacetop_core::domain::AttributionConfidence::High,
-                    liveness,
-                    latest_activity_unix: Some(1_718_000_000),
-                    matched_worktree: Some(PathBuf::from(format!(".worktrees/task-{entity_id}"))),
-                    dispatch_anchor: spacetop_core::domain::DispatchAnchor::OwnedWorktree,
-                }],
+                activity,
             }],
         }),
     });

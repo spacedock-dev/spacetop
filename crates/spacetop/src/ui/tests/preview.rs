@@ -202,35 +202,36 @@ fn preview_renders_session_metadata_without_transcript_content() {
             "Visible markdown body, not a transcript leak.",
         )],
         "065",
-        spacetop_core::domain::AgentSessionState::Recent,
+        spacetop_core::domain::EntityActivity::Running {
+            handler: spacetop_core::domain::ActivityHandler::Worker,
+            runtime: spacetop_core::domain::AgentRuntime::Codex,
+            session_id: "session-065".to_string(),
+            updated_unix: 1_718_000_000,
+        },
     );
     let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
     terminal.draw(|frame| render(frame, &app)).expect("render");
     let rendered = buffer_text(terminal.backend().buffer());
 
     assert!(
-        rendered.contains("agent: Codex"),
-        "preview should name the matched agent; rendered: {rendered:?}"
+        rendered.contains("Runtime: Codex"),
+        "preview should name the matched runtime; rendered: {rendered:?}"
     );
-    assert!(rendered.contains("status:"));
-    assert!(rendered.contains("session: Mendel"));
-    assert!(rendered.contains("confidence: high"));
-    assert!(!rendered.contains("session: Mendel high"));
-    assert!(rendered.contains("state: recent"));
-    assert!(!rendered.contains("via:"));
-    assert!(!rendered.contains("state: recent activity"));
-    assert!(!rendered.contains("state: active recently"));
+    assert!(rendered.contains("Session: session-065"));
+    assert!(rendered.contains("Status: running · worker"));
+    assert!(!rendered.contains("Confidence:"));
+    assert!(!rendered.contains("Handler:"));
     assert!(
         rendered.contains(" ago"),
-        "latest activity should be human-readable; rendered: {rendered:?}"
+        "updated activity should be human-readable; rendered: {rendered:?}"
     );
-    assert!(!rendered.contains("latest: 1718000000"));
+    assert!(!rendered.contains("Updated: 1718000000"));
     let status_index = rendered.find("status:").expect("status line");
-    let agent_index = rendered.find("agent: Codex").expect("agent line");
+    let activity_index = rendered.find("Runtime: Codex").expect("activity line");
     let source_index = rendered.find("source:").expect("source line");
     assert!(
-        status_index < agent_index && agent_index < source_index,
-        "agent line should sit between status/score and source; rendered: {rendered:?}"
+        status_index < activity_index && activity_index < source_index,
+        "activity line should sit between status/score and source; rendered: {rendered:?}"
     );
     assert!(
         !rendered.contains("prompt:") && !rendered.contains("response:"),
@@ -240,16 +241,17 @@ fn preview_renders_session_metadata_without_transcript_content() {
     let app = app_with_session_attribution(
         vec![item("066", "Stale task", "Visible markdown body.")],
         "066",
-        spacetop_core::domain::AgentSessionState::Stale,
+        spacetop_core::domain::EntityActivity::Idle {
+            updated_unix: Some(1_718_000_000),
+        },
     );
     let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
     terminal.draw(|frame| render(frame, &app)).expect("render");
     let rendered = buffer_text(terminal.backend().buffer());
 
-    assert!(rendered.contains("state: stale"));
-    assert!(!rendered.contains("via:"));
-    assert!(!rendered.contains("state: stale activity"));
-    assert!(!rendered.contains("state: no recent activity"));
+    assert!(rendered.contains("Runtime: —"));
+    assert!(rendered.contains("Session: —"));
+    assert!(rendered.contains("Status: idle"));
 }
 
 #[test]
@@ -349,9 +351,9 @@ fn preview_omits_session_metadata_for_unrelated_running_session() {
     let rendered = buffer_text(terminal.backend().buffer());
 
     assert!(!rendered.contains("\u{25CF}   New task"));
-    assert!(!rendered.contains("agent: Codex"));
-    assert!(!rendered.contains("state: running"));
-    assert!(!rendered.contains("session: Mendel"));
+    assert!(!rendered.contains("Runtime: Codex"));
+    assert!(rendered.contains("Status: idle"));
+    assert!(!rendered.contains("Session: Mendel"));
 }
 
 #[test]
