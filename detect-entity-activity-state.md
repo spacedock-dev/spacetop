@@ -565,3 +565,27 @@ semantics: large structured logs are streamed without a false-idle cutoff,
 observed Codex `exec` calls are recognized with bounded structural projection,
 and Claude lifecycle evidence is correlated by parent session and dispatch call
 with ambiguous name-only cases rejected.
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Independently challenge all eleven acceptance criteria, especially exact structured event linkage, fail-closed false positives, FO/worker handoff, and human-gate precedence without plugin changes.
+  Verdict: REJECTED. AC-1/2/3/5/8/9 pass and AC-11 gates pass; AC-4/6/7/10 still fail on missing Codex parent linkage, whole-program `exec` attribution, and the unimplemented scan cursor.
+- DONE: Re-review implementation commit d31c169 against the three blocking findings from the prior verify pass.
+  The 4 MiB cutoff is removed, current `exec` inputs now produce FO activity, and Claude same-name workers are parent/call scoped; the new focused regressions for those cases pass.
+- FAILED: Require Codex worker evidence to carry its structured parent-thread linkage.
+  `session_activity.rs:418-428` projects `parent_thread_id`, but `session_activity.rs:696-714` never reads it; a child-shaped file with canonical path, assignment, and `task_started` claims `running · worker` even when the parent link is absent. Require the non-empty parent id and add a negative fixture.
+- FAILED: Parse the live Codex code-mode `exec` shape without treating a general path mention as an action.
+  Live projection is a JavaScript module with nested `tools.exec_command` and `text(...)` calls, while `session_activity.rs:563-571,1203-1206` retains and searches the whole module string. An exact entity path in non-executing `text(path)` therefore starts `running · FO`; extract only nested command arguments and test this false-positive shape.
+- FAILED: Use the specified per-file cursor and safe summary for periodic large-log scans.
+  `session_activity.rs:363-407` reparses and collects every record on every scan, and `previous_session_files` is never read despite a two-second poll. The configured roots here contain 1,595 artifacts / 617.9 MiB, so the current implementation repeatedly parses the whole corpus; cache byte offsets/projected summaries and prove unchanged scans avoid rereads while append/truncate/delete stay correct.
+- DONE: Review the implementation diff for typed domain/parser/index/app/UI ownership, read-only boundaries, and exact Runtime/Session/Status/Updated rendering with no visible Confidence or Handler field.
+  Cycle 2 preserves the previously accepted typed domain, index/app integration, read-only boundaries, exact labels, and high-salience human-gate rendering.
+- DONE: Run the required focused and full test/lint gates, report reproducible evidence, and issue an explicit PASSED or REJECTED verdict with actionable defects.
+  `cargo fmt --check`, 18 focused core tests, 32 task-list tests, 71 preview tests, full `cargo test` (374 app, 186 core plus integration/doc tests), `git diff --check`, and `make lint` all passed; coverage does not exercise the three failures above.
+
+### Summary
+
+REJECTED again: commit `d31c169` closes the three original test cases, but the
+scanner still accepts unlinked Codex workers and non-action `exec` path mentions,
+and it ignores the required cursor while reparsing a large local corpus every
+two seconds. Domain/UI behavior and all required gates remain sound.
