@@ -474,3 +474,20 @@ Runtime/Session/Status/Updated facts without transcript content. The proof path
 starts with a redacted live linkage spike, then freezes sanitized fixtures and
 tests parser, reducer, incremental scan, app, and Ratatui behavior before full
 `cargo test` and `make lint`.
+
+## Stage Report: implement
+
+- DONE: Implement the typed three-state reducer and structured Codex/Claude event parsing so exact worker, FO, handoff, and human-gate transitions fail closed without plugin changes.
+  Commit `efcb0ef` replaces liveness inference with `EntityActivity` and a precedence reducer; 12 focused core tests would fail if canonical dispatch/session correlation, terminal events, handoff, gate balance, malformed-record handling, or false-positive rejection regressed.
+- DONE: Integrate current activity through index/app/UI and render only Runtime, Session, Status, and Updated with exact running · worker / running · FO labels and precedence.
+  Index/app preserve the last successful snapshot on scan failure; Ratatui tests would fail if handler text moved outside Status, the four compact fields changed, or human-gate lost its bold red marker and label.
+- DONE: Add sanitized fixtures and lowest-layer parser/reducer/scanner/app/Ratatui coverage, update current docs, and finish with cargo test plus make lint evidence.
+  Sanitized Codex and Claude start/stop/FO/gate fixtures contain structural records only; final `cargo test` passed 374 spacetop and 180 core unit tests plus integration/doc tests, and `make lint` passed with warnings denied.
+
+### Summary
+
+Implemented structured, read-only entity activity detection with exact three-state
+domain semantics and deterministic precedence across worker, first-officer, and
+human-gate evidence. Updated the list, preview, app failure behavior, fixtures,
+and current product/design docs without changing the Spacedock plugin or workflow
+write boundary.
