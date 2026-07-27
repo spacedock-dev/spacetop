@@ -1,6 +1,6 @@
 ---
 title: Detect entity activity and human-gated sessions
-status: implement
+status: verify
 source: "Follow-up from task 067 and the 2026-07-27 three-state activity design refinement"
 kind: feature
 risk: medium
