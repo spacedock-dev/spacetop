@@ -1,12 +1,12 @@
 ---
 title: Detect entity activity and human-gated sessions
-status: shape
+status: plan
 source: "Follow-up from task 067 and the 2026-07-27 three-state activity design refinement"
 kind: feature
 risk: medium
 milestone: v1-maintenance
 proof: Core activity-state tests with representative Codex and Claude session logs plus task-list rendering tests for status and handler
-started:
+started: 2026-07-27T13:20:01Z
 completed:
 verdict:
 score: 0.84
