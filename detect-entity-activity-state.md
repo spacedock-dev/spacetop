@@ -1,6 +1,6 @@
 ---
 title: Detect entity activity and human-gated sessions
-status: plan
+status: implement
 source: "Follow-up from task 067 and the 2026-07-27 three-state activity design refinement"
 kind: feature
 risk: medium
@@ -10,7 +10,7 @@ started: 2026-07-27T13:20:01Z
 completed:
 verdict:
 score: 0.84
-worktree:
+worktree: .worktrees/spacedock-ensign-detect-entity-activity-state
 issue:
 pr:
 id: 069
