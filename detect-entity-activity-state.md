@@ -518,3 +518,50 @@ fail-closed or complete for representative runtime artifacts.
 ### Feedback Cycles
 
 - Cycle 1: REJECTED — verify; surface 3 blocking scanner defects vs estimate not declared (n/a%); AC unchanged
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Remove the 4 MB false-idle cutoff by streaming or preserving safe parsed state, with large append/truncation/deletion regression coverage.
+  Commit `d31c169` removes the size skip and reads JSONL incrementally through
+  `BufReader`, projects only reducer fields, and discards transcript text.
+  A greater-than-4-MB regression observes a running worker, appends its terminal
+  event, truncates it to an open worker, then deletes it.
+  This test would fail if large files were skipped, appended terminal records
+  were missed, a truncated file reused stale state, or deletion preserved stale
+  activity.
+
+- DONE: Parse the observed Codex custom_tool_call exec string/nested shape for exact entity-scoped FO activity without retaining transcript content.
+  The Codex projection now accepts `custom_tool_call` records named `exec` (and
+  the equivalent Claude `Bash` shape), extracts raw, JSON-string, and nested
+  command inputs, and scopes only an exact entity path or validated Spacedock
+  dispatch marker.
+  Two sanitized fixtures pin raw-string and nested-object `exec` inputs; a
+  projection test proves unrelated transcript text is not retained.
+  These tests would fail if the observed call shape stopped opening
+  `running · FO`, if substring path collisions became accepted, or if transcript
+  bodies leaked into the parsed record set.
+
+- DONE: Scope Claude worker start and idle events to the exact parent dispatch, including a two-parent same-name false-positive test.
+  Claude teammate metadata now carries parent session and optional parent call
+  identity, child evidence must live under that parent's `subagents` directory,
+  and idle notifications are accepted only from the exact parent session.
+  Missing call identity falls back only for a unique parent/name dispatch, while
+  ambiguous same-parent names fail closed for start and name-only idle evidence.
+  The two-parent fixture would fail if parent B's reused worker name or idle
+  notification affected parent A; two same-parent tests reject ambiguous calls.
+
+### Verification
+
+`cargo test -p spacetop-core session_activity` passed all 18 focused tests.
+Final `cargo test` passed 374 app and 186 core unit tests plus all integration
+and doc tests; the three real watcher-backend tests remain intentionally
+ignored. `make lint` passed with all warnings denied, and `git diff --check`
+passed before commit.
+
+### Summary
+
+Cycle 2 closes all three verifier blockers without changing domain or UI
+semantics: large structured logs are streamed without a false-idle cutoff,
+observed Codex `exec` calls are recognized with bounded structural projection,
+and Claude lifecycle evidence is correlated by parent session and dispatch call
+with ambiguous name-only cases rejected.
