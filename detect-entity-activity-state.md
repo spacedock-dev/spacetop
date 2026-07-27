@@ -590,3 +590,50 @@ REJECTED again: commit `d31c169` closes the three original test cases, but the
 scanner still accepts unlinked Codex workers and non-action `exec` path mentions,
 and it ignores the required cursor while reparsing a large local corpus every
 two seconds. Domain/UI behavior and all required gates remain sound.
+
+## Stage Report: implement (cycle 3)
+
+- DONE: Require non-empty Codex parent_thread_id linkage for worker evidence and add a negative unlinked-child fixture.
+  Commit `ff6dfb8` now reads the projected `parent_thread_id` and requires it to
+  be non-empty alongside the canonical agent path, exact dispatch assignment,
+  and structured `task_started`.
+  The new `codex-worker-unlinked` fixture has every worker-shaped field except a
+  parent id and must remain idle. It would fail if detached child-shaped logs
+  could again claim `running · worker`.
+
+- DONE: Extract only executable nested command arguments from current Codex code-mode exec modules so non-action text(path) mentions fail closed.
+  Code-mode projection retains only `cmd`/`command` arguments parsed from
+  balanced `tools.exec_command(...)` calls, including the observed nested input
+  envelope; it does not retain or search the JavaScript module body.
+  Positive raw and nested fixtures execute an entity-scoped command. The
+  negative fixture executes only `pwd` while sending the entity path to
+  `text(...)`, and must remain idle.
+  These cases would fail if current code-mode calls stopped opening FO activity
+  or any non-executing module text could scope the entity.
+
+- DONE: Implement and test per-file byte cursors with safe projected summaries so unchanged scans avoid full rereads while append, truncate, and delete stay correct.
+  Each session snapshot now carries exact modification metadata, file length,
+  safe byte cursor, line count, a small cursor checkpoint, projected records,
+  and parse errors.
+  Unchanged files reuse that summary with no parse. Appends verify the checkpoint
+  and resume at the cursor; same-size rewrites and truncations rebuild from byte
+  zero; deletions discard the snapshot.
+  Instrumented tests prove read starts of `0 → prior cursor → 0` for the large
+  append/truncate sequence, no read for the unchanged scan, and no stale state
+  after deletion. They would fail if the two-second poll reparsed unchanged
+  files or cursor invalidation missed a rewrite.
+
+- DONE: Preserve accepted domain/UI behavior and complete focused tests, full cargo test, cargo fmt check, git diff check, and make lint.
+  No domain, index, app, or UI semantics changed. Exact
+  Runtime/Session/Status/Updated rendering and human-gate precedence remain
+  covered by the repository suite.
+  `cargo fmt --all -- --check`, all 20 focused session-activity tests, final
+  `cargo test` (374 app and 188 core unit tests plus integration/doc tests),
+  `git diff --check`, and `make lint` with warnings denied all passed.
+
+### Summary
+
+Cycle 3 closes the remaining scanner gaps: Codex workers require their parent
+link, code-mode FO attribution comes only from nested executable command
+arguments, and periodic scans reuse privacy-safe projected summaries through
+validated per-file byte cursors.
