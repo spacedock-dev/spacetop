@@ -36,11 +36,10 @@ impl SessionEvidenceStore {
             .unwrap_or_else(|| SessionEvidenceKey::Source(runtime, source.to_path_buf()));
         let retained = self.records.entry(key.clone()).or_default();
         for record in records {
-            if !retained.contains(&record) {
-                retained.push(record);
+            if let Err(index) = retained.binary_search(&record) {
+                retained.insert(index, record);
             }
         }
-        retained.sort();
         key
     }
 
@@ -194,6 +193,7 @@ fn load_file(
         if previous.len == entry.len
             && previous.modified == entry.modified
             && entry.modified.is_some()
+            && append_checkpoint_matches(path, previous)?
         {
             return Ok(previous.clone());
         }
@@ -401,7 +401,112 @@ fn is_session_file(path: &Path) -> bool {
 mod tests {
     use std::io::Write;
 
+    use serde_json::json;
+
     use super::*;
+
+    #[test]
+    fn merge_keeps_evidence_sorted_and_deduplicated() {
+        let source = Path::new("/sessions/worker.jsonl");
+        let first = project_record(
+            json!({
+                "timestamp": 1,
+                "type": "event_msg",
+                "payload": {"type": "task_started", "turn_id": "turn-1"}
+            }),
+            source,
+            0,
+        )
+        .expect("first");
+        let second = project_record(
+            json!({
+                "timestamp": 2,
+                "type": "event_msg",
+                "payload": {"type": "task_complete", "turn_id": "turn-1"}
+            }),
+            source,
+            100,
+        )
+        .expect("second");
+        let third = project_record(
+            json!({
+                "timestamp": 3,
+                "type": "event_msg",
+                "payload": {"type": "task_started", "turn_id": "turn-2"}
+            }),
+            source,
+            200,
+        )
+        .expect("third");
+        let mut store = SessionEvidenceStore::default();
+
+        let key = store.merge(
+            AgentRuntime::Codex,
+            source,
+            None,
+            vec![third.clone(), first.clone(), second.clone(), first],
+        );
+        store.merge(AgentRuntime::Codex, source, Some(&key), vec![second, third]);
+
+        let retained = &store.records[&key];
+        assert_eq!(retained.len(), 3, "replayed evidence must be deduplicated");
+        assert!(
+            retained.windows(2).all(|pair| pair[0] < pair[1]),
+            "each evidence vector must remain strictly sorted"
+        );
+    }
+
+    #[test]
+    fn same_metadata_rewrite_reparses_when_checkpoint_changes() {
+        let temp = tempfile::tempdir().expect("temp");
+        let path = temp.path().join("session.jsonl");
+        let started = concat!(
+            "{\"timestamp\":1,\"type\":\"event_msg\",\"payload\":",
+            "{\"type\":\"task_started\",\"turn_id\":\"turn\"}} \n"
+        );
+        let completed = concat!(
+            "{\"timestamp\":1,\"type\":\"event_msg\",\"payload\":",
+            "{\"type\":\"task_complete\",\"turn_id\":\"turn\"}}\n"
+        );
+        assert_eq!(
+            started.len(),
+            completed.len(),
+            "fixture must preserve file length"
+        );
+        fs::write(&path, started).expect("started fixture");
+        let roots = SessionRoots {
+            codex: vec![temp.path().to_path_buf()],
+            claude_code: Vec::new(),
+        };
+        let first =
+            load_generation(&roots, &SessionScanState::default()).expect("initial generation");
+        let original_modified = first.state.files[&path].modified.expect("fixture mtime");
+
+        fs::write(&path, completed).expect("same-length terminal rewrite");
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("rewritten fixture")
+            .set_modified(original_modified)
+            .expect("restore coarse mtime");
+        let second = load_generation(&roots, &first.state).expect("rewritten generation");
+
+        assert!(
+            second.state.evidence.all_records().iter().any(|record| {
+                matches!(
+                    &record.kind,
+                    ProjectedRecordKind::CodexEvent { event_type, .. }
+                        if event_type == "task_complete"
+                )
+            }),
+            "a changed checkpoint must expose the replacement lifecycle fact"
+        );
+        assert_eq!(
+            super::super::session_file_parse_starts(&path),
+            vec![0, 0],
+            "same metadata with changed bytes must force a full reparse"
+        );
+    }
 
     #[test]
     fn changed_inventory_rejects_the_generation_for_immediate_retry() {
