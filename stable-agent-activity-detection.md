@@ -14,6 +14,7 @@ worktree: .worktrees/spacedock-ensign-stable-agent-activity-detection
 issue:
 pr:
 id: 075
+mod-block: merge:pr-merge
 ---
 
 Spacetop does not reliably detect active task handling from Codex and Claude Code session logs. The same dispatched worker can appear as `running · worker` in one scan and `idle` in another, or remain `idle` while it is actively processing the task.
