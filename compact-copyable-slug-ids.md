@@ -1,6 +1,6 @@
 ---
 title: Keep long slug IDs compact and copyable
-status: implement
+status: verify
 source: "UI feedback from task-list screenshot on 2026-07-28"
 kind: feature
 risk: medium
