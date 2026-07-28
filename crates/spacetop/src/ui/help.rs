@@ -81,6 +81,7 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Style::default().add_modifier(Modifier::BOLD),
     )));
     lines.push(key_line("Click", "select row + open preview"));
+    lines.push(key_line("Double-click ID", "copy full ID"));
     lines.push(key_line("Wheel", "scroll panel under cursor"));
     lines.push(key_line("Drag divider", "resize list/preview split"));
     lines.push(key_line("Shift+drag", "native terminal text selection"));

@@ -8,6 +8,17 @@ use ratatui::{
 use crate::app::{OverviewState, ViewScope};
 use spacetop_core::config::SpacetopConfig;
 use spacetop_core::domain::{Entity, EntityParseError};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+pub(crate) const ID_COL_MIN: usize = 4;
+pub(crate) const ID_COL_MAX: usize = 20;
+pub(crate) const TITLE_COL_MIN: usize = 16;
+
+const GUTTER_WIDTH: usize = 2;
+const PHASE_ID_GAP: usize = 1;
+const ID_TITLE_GAP: usize = 2;
+const ACTIVITY_MARKER_WIDTH: usize = 2;
+const WORKTREE_MARKER_WIDTH: usize = 2;
 
 /// Format a phase name into a fixed `width`-character column, preserving the
 /// user's original casing exactly. Names longer than `width` chars are
@@ -45,7 +56,10 @@ pub(super) fn render_task_list(
 
     let visible_items = state.visible_items();
     let item_count = visible_items.len();
-    let items = build_task_list_items(state, &visible_items);
+    let phase_width = phase_col_width(&visible_items);
+    let id_width = id_col_width(&visible_items, inner.width, phase_width);
+    let items = build_task_list_items(state, &visible_items, phase_width, id_width);
+    state.id_column_rect.set(Rect::default());
 
     // Section header: "Tasks  ·  N" (or "Archived  ·  N") above the list.
     let section_header_text = format!("{}  \u{00B7}  {}", title, item_count);
@@ -75,6 +89,7 @@ pub(super) fn render_task_list(
         // No rows drawn this frame: reset the hit-test facts so mouse
         // events cannot target rows from a previous, larger layout.
         state.list_rows_rect.set(Rect::default());
+        state.id_column_rect.set(Rect::default());
         state.list_offset.set(0);
         return;
     };
@@ -98,10 +113,81 @@ pub(super) fn render_task_list(
     // the scroll offset the List widget settled on (only observable after
     // the stateful render). Same Cell pattern as `task_page_size` above.
     state.list_rows_rect.set(list_area);
-    state.list_offset.set(list_state.offset());
+    let list_offset = list_state.offset();
+    state.list_offset.set(list_offset);
+
+    let visible_entity_rows = visible_items
+        .len()
+        .saturating_sub(list_offset)
+        .min(usize::from(list_area.height));
+    if visible_entity_rows > 0 {
+        state.id_column_rect.set(Rect {
+            x: list_area
+                .x
+                .saturating_add((GUTTER_WIDTH + phase_width + PHASE_ID_GAP) as u16),
+            y: list_area.y,
+            width: id_width as u16,
+            height: visible_entity_rows as u16,
+        });
+    }
 }
 
-fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListItem<'static>> {
+fn phase_col_width(items: &[Entity]) -> usize {
+    items
+        .iter()
+        .map(|item| item.status.chars().count())
+        .max()
+        .unwrap_or(4)
+        .clamp(4, 12)
+}
+
+pub(crate) fn id_col_width(items: &[Entity], pane_width: u16, phase_width: usize) -> usize {
+    let natural_width = items
+        .iter()
+        .map(|item| UnicodeWidthStr::width(item.id.as_str()))
+        .max()
+        .unwrap_or(ID_COL_MIN)
+        .clamp(ID_COL_MIN, ID_COL_MAX);
+    let fixed_width = GUTTER_WIDTH
+        + phase_width
+        + PHASE_ID_GAP
+        + ID_TITLE_GAP
+        + ACTIVITY_MARKER_WIDTH
+        + WORKTREE_MARKER_WIDTH;
+    let responsive_ceiling = usize::from(pane_width)
+        .saturating_sub(fixed_width + TITLE_COL_MIN)
+        .max(ID_COL_MIN);
+    natural_width.min(responsive_ceiling)
+}
+
+fn id_col(id: &str, width: usize) -> String {
+    let display_width = UnicodeWidthStr::width(id);
+    if display_width > width {
+        let content_width = width.saturating_sub(1);
+        let mut prefix_end = 0;
+        let mut prefix_width = 0;
+        for (index, ch) in id.char_indices() {
+            let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+            if prefix_width + char_width > content_width {
+                break;
+            }
+            prefix_width += char_width;
+            prefix_end = index + ch.len_utf8();
+        }
+        let prefix = &id[..prefix_end];
+        let padding = content_width.saturating_sub(prefix_width);
+        format!("{prefix}{}\u{2026}", " ".repeat(padding))
+    } else {
+        format!("{}{id}", " ".repeat(width - display_width))
+    }
+}
+
+fn build_task_list_items(
+    state: &OverviewState,
+    items: &[Entity],
+    phase_width: usize,
+    id_width: usize,
+) -> Vec<ListItem<'static>> {
     let scope = state.view_scope();
     let broken = state.parse_errors();
     if items.is_empty() && broken.is_empty() {
@@ -114,33 +200,14 @@ fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListIte
     }
     let selected_index = state.selected_index();
 
-    // Compute the phase column width from the longest visible status name,
-    // clamped to [4, 12]. This is done once per render pass over all items.
-    let pcw = items
-        .iter()
-        .map(|item| item.status.chars().count())
-        .max()
-        .unwrap_or(4)
-        .clamp(4, 12);
-
-    // ID column width: widest visible ID, floored at 4 so numeric-ID
-    // workflows (047, 048) are visually unchanged. No upper clamp — slug IDs
-    // may be long and the Title simply starts further right.
-    let icw = items
-        .iter()
-        .map(|item| item.id.chars().count())
-        .max()
-        .unwrap_or(4)
-        .max(4);
-
     let mut rendered: Vec<ListItem<'_>> = items
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            // Row format: "{gutter} {phase:<pcw} {id:>icw}  {title}"
+            // Row format: "{gutter} {phase:<phase_width} {id:>id_width}  {title}"
             // Gutter: "▸ " for selected row, "  " otherwise (2 chars).
-            // Phase column: user casing, pcw-char auto-sized width, ellipsized with "…" if longer.
-            // ID: icw-char right-aligned, icw = max(4, longest visible ID).
+            // Phase column: user casing, auto-sized width, ellipsized with "…" if longer.
+            // ID: responsive 4..=20-char column; over-width values use a trailing "…".
             // Title: fills remaining width.
             let is_selected = index == selected_index && !items.is_empty();
 
@@ -151,8 +218,8 @@ fn build_task_list_items(state: &OverviewState, items: &[Entity]) -> Vec<ListIte
                 Style::default()
             };
 
-            let id_str = format!("{:>width$}", item.id, width = icw);
-            let phase = phase_col(&item.status, pcw);
+            let id_str = id_col(&item.id, id_width);
+            let phase = phase_col(&item.status, phase_width);
 
             let id_style = Style::default().add_modifier(Modifier::DIM);
             let stage_color =

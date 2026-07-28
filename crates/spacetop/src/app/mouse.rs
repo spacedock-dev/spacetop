@@ -6,6 +6,9 @@
 //! cannot drift from drawn rows by construction. Freshness rides the
 //! event-loop invariant that `run_terminal` draws before it polls input.
 
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
 
@@ -15,6 +18,15 @@ use super::{OverviewSession, PickerState};
 
 /// Rows moved per wheel notch over scrollable body panels.
 pub(crate) const WHEEL_SCROLL_ROWS: isize = 3;
+const ID_DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(500);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct IdClickCandidate {
+    workflow_dir: PathBuf,
+    entity_id: String,
+    position: Position,
+    pressed_at: Instant,
+}
 
 /// What an overview cell coordinate falls on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,14 +62,80 @@ pub(crate) fn overview_hit(state: &OverviewState, column: u16, row: u16) -> Over
     OverviewHit::Chrome
 }
 
+fn entity_id_at(state: &OverviewState, column: u16, row: u16) -> Option<String> {
+    let position = Position::new(column, row);
+    if !state.id_column_rect.get().contains(position) {
+        return None;
+    }
+    entity_id_at_row(state, row)
+}
+
+fn entity_id_at_row(state: &OverviewState, row: u16) -> Option<String> {
+    let rows = state.list_rows_rect.get();
+    if row < rows.y || row >= rows.y.saturating_add(rows.height) {
+        return None;
+    }
+    let index = state.list_offset.get() + usize::from(row - rows.y);
+    state
+        .visible_items()
+        .get(index)
+        .map(|entity| entity.id.clone())
+}
+
+fn track_id_click(
+    state: &OverviewState,
+    mouse: MouseEvent,
+    now: Instant,
+    candidate: &mut Option<IdClickCandidate>,
+) -> Option<String> {
+    if candidate.as_ref().is_some_and(|prior| {
+        now.saturating_duration_since(prior.pressed_at) > ID_DOUBLE_CLICK_WINDOW
+    }) {
+        *candidate = None;
+    }
+
+    match mouse.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            let position = Position::new(mouse.column, mouse.row);
+            if candidate.as_ref().is_some_and(|prior| {
+                prior.workflow_dir == state.workflow_dir
+                    && prior.position == position
+                    && entity_id_at_row(state, mouse.row).as_deref()
+                        == Some(prior.entity_id.as_str())
+                    && now.saturating_duration_since(prior.pressed_at) <= ID_DOUBLE_CLICK_WINDOW
+            }) {
+                return candidate.take().map(|prior| prior.entity_id);
+            }
+
+            *candidate =
+                entity_id_at(state, mouse.column, mouse.row).map(|entity_id| IdClickCandidate {
+                    workflow_dir: state.workflow_dir.clone(),
+                    entity_id,
+                    position,
+                    pressed_at: now,
+                });
+        }
+        MouseEventKind::Up(_) => {}
+        MouseEventKind::Down(_)
+        | MouseEventKind::Drag(_)
+        | MouseEventKind::ScrollDown
+        | MouseEventKind::ScrollUp => *candidate = None,
+        _ => {}
+    }
+    None
+}
+
 /// Mouse-event peer to `handle_overview_key_with_keymap`, sharing the
 /// [`OverviewKeyAction`] application path (every current arm returns
 /// `None`; the enum keeps future mouse actions on the keyboard plumbing).
 pub(crate) fn handle_overview_mouse(
     session: &mut OverviewSession,
     mouse: MouseEvent,
+    now: Instant,
+    id_click_candidate: &mut Option<IdClickCandidate>,
 ) -> OverviewKeyAction {
     let state = session.active_state_mut();
+    let copied_id = track_id_click(state, mouse, now, id_click_candidate);
     match mouse.kind {
         MouseEventKind::Down(MouseButton::Left) => {
             match overview_hit(state, mouse.column, mouse.row) {
@@ -89,7 +167,9 @@ pub(crate) fn handle_overview_mouse(
         },
         _ => {}
     }
-    OverviewKeyAction::None
+    copied_id
+        .map(OverviewKeyAction::CopyId)
+        .unwrap_or(OverviewKeyAction::None)
 }
 
 /// Workflow index under a (column, row) cell in the picker list, mapping
@@ -173,7 +253,9 @@ mod tests {
 
     use super::*;
     use crate::app::{App, PreviewPlacement};
-    use spacetop_core::domain::{Entity, StageDefinition, WorkflowDefinition, WorkflowSnapshot};
+    use spacetop_core::domain::{
+        Entity, EntityParseError, StageDefinition, WorkflowDefinition, WorkflowSnapshot,
+    };
 
     fn entity(id: &str, title: &str, body: &str) -> Entity {
         Entity {
@@ -197,9 +279,15 @@ mod tests {
 
     /// App with `n` items; preview initially closed.
     fn fixture_app(n: usize, body: &str) -> App {
+        let ids: Vec<String> = (0..n).map(|i| format!("{i:03}")).collect();
+        fixture_app_with_ids(&ids, body)
+    }
+
+    fn fixture_app_with_ids(ids: &[String], body: &str) -> App {
         let root = PathBuf::from("/tmp/mouse-test");
-        let items = (0..n)
-            .map(|i| entity(&format!("{i:03}"), &format!("Task number {i:03}"), body))
+        let items = ids
+            .iter()
+            .map(|id| entity(id, &format!("Task {id}"), body))
             .collect();
         let snapshot = WorkflowSnapshot {
             definition: WorkflowDefinition {
@@ -679,5 +767,301 @@ mod tests {
         assert_eq!(state.selected_index(), 0);
         assert!(!state.preview_open());
         assert!(app.help_open());
+    }
+
+    #[test]
+    fn double_click_copies_full_id_after_first_click_reflows_the_list() {
+        let full_id = "compact-copyable-slug-ids".to_string();
+        let mut app = fixture_app_with_ids(std::slice::from_ref(&full_id), "body");
+        draw(&app, 100, 30);
+        let first_rect = app.as_overview().expect("overview").id_column_rect.get();
+        assert_eq!(first_rect.width, 20);
+        let position = Position::new(first_rect.x + first_rect.width - 1, first_rect.y);
+        let start = Instant::now();
+
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                position.x,
+                position.y,
+            ),
+            start,
+        );
+        assert!(app.as_overview().expect("overview").preview_open());
+        assert_eq!(app.take_pending_copy_id(), None);
+
+        // The preview halves the list pane and shrinks the responsive ID
+        // column, so the original last ID cell is no longer in the new rect.
+        draw(&app, 100, 30);
+        let reflowed = app.as_overview().expect("overview").id_column_rect.get();
+        assert_eq!(reflowed.width, 19);
+        assert!(!reflowed.contains(position));
+
+        // Button-up between presses must not cancel the candidate.
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Up(MouseButton::Left),
+                position.x,
+                position.y,
+            ),
+            start + Duration::from_millis(20),
+        );
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                position.x,
+                position.y,
+            ),
+            start + Duration::from_millis(100),
+        );
+
+        assert_eq!(app.take_pending_copy_id(), Some(full_id));
+    }
+
+    #[test]
+    fn double_click_rejects_a_stale_id_after_row_mapping_changes() {
+        let ids = vec!["first-slug".to_string(), "second-slug".to_string()];
+        let app = fixture_app_with_ids(&ids, "body");
+        draw(&app, 100, 30);
+        let state = app.as_overview().expect("overview");
+        let id_rect = state.id_column_rect.get();
+        let position = Position::new(id_rect.x, id_rect.y);
+        let start = Instant::now();
+        let mut candidate = None;
+
+        assert_eq!(
+            track_id_click(
+                state,
+                mouse_at(
+                    MouseEventKind::Down(MouseButton::Left),
+                    position.x,
+                    position.y,
+                ),
+                start,
+                &mut candidate,
+            ),
+            None
+        );
+        assert_eq!(
+            candidate.as_ref().map(|click| click.entity_id.as_str()),
+            Some("first-slug")
+        );
+
+        // A keyboard selection or refresh can move the list between mouse
+        // events. The same screen row now identifies a different entity.
+        state.list_offset.set(1);
+        assert_eq!(
+            track_id_click(
+                state,
+                mouse_at(
+                    MouseEventKind::Down(MouseButton::Left),
+                    position.x,
+                    position.y,
+                ),
+                start + Duration::from_millis(100),
+                &mut candidate,
+            ),
+            None,
+            "the prior row mapping must not produce a stale copy"
+        );
+        assert_eq!(
+            candidate.as_ref().map(|click| click.entity_id.as_str()),
+            Some("second-slug"),
+            "the second press may begin a fresh gesture for the current row"
+        );
+    }
+
+    #[test]
+    fn double_click_on_wide_unicode_rendered_tail_copies_full_id() {
+        let full_id = "資料資料資料資料資料".to_string();
+        let mut app = fixture_app_with_ids(std::slice::from_ref(&full_id), "body");
+        draw(&app, 100, 30);
+        let id_rect = app.as_overview().expect("overview").id_column_rect.get();
+        assert_eq!(
+            id_rect.width, 20,
+            "ten wide scalars occupy the full 20-cell cap"
+        );
+        let rendered_width = unicode_width::UnicodeWidthStr::width(full_id.as_str()) as u16;
+        let rendered_tail = Position::new(id_rect.x + rendered_width - 1, id_rect.y);
+        assert!(
+            id_rect.contains(rendered_tail),
+            "the render-derived hit rectangle must include the visible Unicode tail"
+        );
+        let start = Instant::now();
+
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                rendered_tail.x,
+                rendered_tail.y,
+            ),
+            start,
+        );
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Up(MouseButton::Left),
+                rendered_tail.x,
+                rendered_tail.y,
+            ),
+            start + Duration::from_millis(10),
+        );
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                rendered_tail.x,
+                rendered_tail.y,
+            ),
+            start + Duration::from_millis(100),
+        );
+
+        assert_eq!(app.take_pending_copy_id(), Some(full_id));
+    }
+
+    #[test]
+    fn outside_id_cell_and_timeout_do_not_copy() {
+        let full_id = "compact-copyable-slug-ids".to_string();
+        let mut outside = fixture_app_with_ids(std::slice::from_ref(&full_id), "body");
+        draw(&outside, 100, 30);
+        let rows = outside
+            .as_overview()
+            .expect("overview")
+            .list_rows_rect
+            .get();
+        let start = Instant::now();
+        let gutter = Position::new(rows.x, rows.y);
+        outside.handle_mouse_at(
+            mouse_at(MouseEventKind::Down(MouseButton::Left), gutter.x, gutter.y),
+            start,
+        );
+        draw(&outside, 100, 30);
+        outside.handle_mouse_at(
+            mouse_at(MouseEventKind::Down(MouseButton::Left), gutter.x, gutter.y),
+            start + Duration::from_millis(100),
+        );
+        assert_eq!(outside.take_pending_copy_id(), None);
+
+        let mut timed_out = fixture_app_with_ids(std::slice::from_ref(&full_id), "body");
+        draw(&timed_out, 100, 30);
+        let id_rect = timed_out
+            .as_overview()
+            .expect("overview")
+            .id_column_rect
+            .get();
+        timed_out.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                id_rect.x,
+                id_rect.y,
+            ),
+            start,
+        );
+        timed_out.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                id_rect.x,
+                id_rect.y,
+            ),
+            start + Duration::from_millis(501),
+        );
+        assert_eq!(timed_out.take_pending_copy_id(), None);
+    }
+
+    #[test]
+    fn double_click_maps_through_scroll_offset_and_wheel_cancels_candidate() {
+        let ids: Vec<String> = (0..40).map(|i| format!("long-slug-{i:03}")).collect();
+        let mut app = fixture_app_with_ids(&ids, "body");
+        for _ in 0..35 {
+            app.handle_key(key(KeyCode::Down));
+        }
+        draw(&app, 100, 30);
+        let state = app.as_overview().expect("overview");
+        let id_rect = state.id_column_rect.get();
+        let offset = state.list_offset.get();
+        assert!(offset > 0);
+        let expected = state.visible_items()[offset].id.clone();
+        let start = Instant::now();
+
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                id_rect.x,
+                id_rect.y,
+            ),
+            start,
+        );
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                id_rect.x,
+                id_rect.y,
+            ),
+            start + Duration::from_millis(100),
+        );
+        assert_eq!(app.take_pending_copy_id(), Some(expected));
+
+        draw(&app, 100, 30);
+        let state = app.as_overview().expect("overview");
+        let id_rect = state.id_column_rect.get();
+        let rows = state.list_rows_rect.get();
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                id_rect.x,
+                id_rect.y,
+            ),
+            start + Duration::from_secs(1),
+        );
+        app.handle_mouse_at(
+            mouse_at(MouseEventKind::ScrollDown, rows.x, rows.y),
+            start + Duration::from_millis(1_050),
+        );
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                id_rect.x,
+                id_rect.y,
+            ),
+            start + Duration::from_millis(1_100),
+        );
+        assert_eq!(app.take_pending_copy_id(), None);
+    }
+
+    #[test]
+    fn synthetic_broken_rows_never_produce_id_copy_intents() {
+        let mut app = fixture_app(1, "body");
+        let mut snapshot = app.snapshot();
+        snapshot.parse_errors.push(EntityParseError {
+            path: PathBuf::from("/tmp/mouse-test/broken.md"),
+            message: "broken.md: malformed frontmatter".to_string(),
+            line: None,
+            column: None,
+        });
+        app.reload_from_snapshot(snapshot);
+        draw(&app, 100, 30);
+        let state = app.as_overview().expect("overview");
+        let id_rect = state.id_column_rect.get();
+        let broken_row = id_rect.y + 1;
+        assert!(!id_rect.contains(Position::new(id_rect.x, broken_row)));
+        let start = Instant::now();
+
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                id_rect.x,
+                broken_row,
+            ),
+            start,
+        );
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                id_rect.x,
+                broken_row,
+            ),
+            start + Duration::from_millis(100),
+        );
+
+        assert_eq!(app.take_pending_copy_id(), None);
+        assert_eq!(app.as_overview().expect("overview").selected_index(), 1);
     }
 }

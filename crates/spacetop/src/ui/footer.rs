@@ -6,7 +6,7 @@ use ratatui::{
 };
 use spacetop_core::config::SpacetopConfig;
 
-use crate::app::{OverviewSession, ResolvedKeymap, SyncStatus};
+use crate::app::{CopyFeedback, OverviewSession, ResolvedKeymap, SyncStatus};
 
 /// Marker glyph prefixed to the sync-failed pill label, mirroring the
 /// `SUCCESS_MARKER` on success so failure and success read symmetrically.
@@ -28,8 +28,9 @@ pub(super) fn render_status_footer(
     keymap: &ResolvedKeymap,
     warnings: &[String],
     session: &OverviewSession,
+    copy_feedback: Option<CopyFeedback>,
 ) {
-    let hints = status_footer_hints_with_keymap(session, keymap, warnings);
+    let hints = status_footer_hints_with_keymap_and_copy(session, keymap, warnings, copy_feedback);
     let pill_bg = crate::ui::color::footer_bg(config);
     let sep_style = Style::default();
     let mut spans: Vec<Span<'_>> = Vec::new();
@@ -61,8 +62,26 @@ pub(crate) fn status_footer_hints_with_keymap(
     keymap: &ResolvedKeymap,
     warnings: &[String],
 ) -> Vec<(String, Color)> {
+    status_footer_hints_with_keymap_and_copy(session, keymap, warnings, None)
+}
+
+fn status_footer_hints_with_keymap_and_copy(
+    session: &OverviewSession,
+    keymap: &ResolvedKeymap,
+    warnings: &[String],
+    copy_feedback: Option<CopyFeedback>,
+) -> Vec<(String, Color)> {
     let preview_open = session.active_state().preview_open();
     let mut hints: Vec<(String, Color)> = Vec::new();
+    match copy_feedback {
+        Some(CopyFeedback::Succeeded) => {
+            hints.push(("\u{2713} ID copied".to_string(), Color::Green));
+        }
+        Some(CopyFeedback::Failed) => {
+            hints.push(("\u{26A0} ID copy failed".to_string(), Color::Red));
+        }
+        None => {}
+    }
     for warning in warnings {
         hints.push((format!("\u{26A0} {warning}"), Color::Yellow));
     }

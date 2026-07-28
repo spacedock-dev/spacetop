@@ -27,7 +27,7 @@ use ratatui::{
 };
 use spacetop_core::config::SpacetopConfig;
 
-use crate::app::{App, AppMode, OverviewSession, ResolvedKeymap};
+use crate::app::{App, AppMode, CopyFeedback, OverviewSession, ResolvedKeymap};
 use graph::render_stage_graph;
 use layout::{picker_centered, preview_placement, split_content};
 
@@ -47,6 +47,7 @@ pub fn render_placeholder(frame: &mut Frame<'_>) {
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
     let warning_messages = app.warning_messages();
+    let copy_feedback = app.copy_feedback();
     match app.mode() {
         AppMode::Picker(state) => {
             // Picker overlays a centered dialog; the dashboard responsive-
@@ -62,6 +63,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
                 app.keymap(),
                 &warning_messages,
                 session,
+                copy_feedback,
             );
         }
         AppMode::PickerOverlay { underlying, picker } => {
@@ -74,6 +76,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
                 app.keymap(),
                 &warning_messages,
                 underlying,
+                copy_feedback,
             );
             let inner = picker_centered(frame.area(), picker);
             frame.render_widget(Clear, inner);
@@ -95,6 +98,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
                 app.keymap(),
                 &warning_messages,
                 underlying,
+                copy_feedback,
             );
             search::render_overlay(frame, frame.area(), underlying, state);
         }
@@ -151,6 +155,7 @@ fn render_overview(
     keymap: &ResolvedKeymap,
     warnings: &[String],
     session: &OverviewSession,
+    copy_feedback: Option<CopyFeedback>,
 ) {
     let state = session.active_state();
     let show_tabs = session.is_multi();
@@ -197,7 +202,15 @@ fn render_overview(
         list::render_task_list(frame, content_area, config, state);
     }
 
-    footer::render_status_footer(frame, footer_area, config, keymap, warnings, session);
+    footer::render_status_footer(
+        frame,
+        footer_area,
+        config,
+        keymap,
+        warnings,
+        session,
+        copy_feedback,
+    );
 }
 
 #[cfg(test)]

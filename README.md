@@ -97,6 +97,9 @@ terminal never keeps swallowing clicks.
 
 - **Click** an entity row to select it and open the preview in one action.
   In the workflow picker, clicking a row opens that workflow.
+- **Double-click an entity ID** to copy its full value, even when a long
+  slug is visually shortened with an ellipsis. This uses OSC 52 and requires
+  clipboard support from the terminal (or its multiplexer).
 - **Scroll wheel** scrolls the panel under the cursor: the preview body
   when hovering the preview, the list selection when hovering the list.
 - **Drag the divider** between the list and the preview to resize the
