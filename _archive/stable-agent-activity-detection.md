@@ -1,20 +1,21 @@
 ---
 title: Fix intermittent Codex and Claude activity detection
-status: verify
+status: done
 source: "Live false-idle observation while dispatching task 074 on 2026-07-28"
 kind: bugfix
 risk: high
 milestone: v1-maintenance
 proof: Reproducing Codex and Claude session fixtures plus repeated scanner and task-list activity tests
 started: 2026-07-28T06:55:46Z
-completed:
-verdict:
+completed: 2026-07-28T08:24:24Z
+verdict: passed
 score: 0.92
 worktree: .worktrees/spacedock-ensign-stable-agent-activity-detection
 issue:
 pr: pr-merge:79
 id: 075
-mod-block: merge:pr-merge
+mod-block:
+archived: 2026-07-28T08:24:24Z
 ---
 
 Spacetop does not reliably detect active task handling from Codex and Claude Code session logs. The same dispatched worker can appear as `running · worker` in one scan and `idle` in another, or remain `idle` while it is actively processing the task.
