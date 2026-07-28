@@ -32,17 +32,28 @@ Confidence and a separate handler field are not part of the activity display.
 Detection parses structured JSON fields and fails closed:
 
 - A Codex worker needs canonical child `thread_spawn` metadata with a non-empty
-  `parent_thread_id`, the exact dispatch assignment, and `task_started`;
-  matching `task_complete` stops it.
+  `parent_thread_id`, matching repo/worktree `cwd`, and `task_started`. The
+  dispatch join may be the legacy exact child assignment or the parent
+  session's exact `sub_agent_activity(kind=started)` record with matching child
+  rollout id and agent path; encrypted v2 assignment prose is not evidence.
+  Matching `task_complete` or an exact parent interruption stops it.
 - A Claude Code worker needs a canonical parent `Agent` call, correlated
-  teammate metadata and sidechain acceptance; the matched
-  `idle_notification` stops it. Correlation is scoped to the exact parent
-  session directory and tool-use call; reusable worker names never link
-  activity across parent sessions.
+  teammate metadata and sidechain acceptance with matching repo/worktree
+  `cwd`; the matched `idle_notification` stops it. The dispatch basename may
+  carry the exact parent-session prefix. Current teammate metadata may omit
+  `agentId`; in that case the sibling sidechain supplies the non-empty id and
+  its directory supplies the parent session. Correlation remains scoped to the
+  exact parent directory and tool-use call, with the existing unique
+  parent/name fail-closed rule when the call id is absent.
+- Reusable Claude workers can reopen after an idle transition only when the
+  correlated parent observes a later teammate-message boundary and the same
+  sidechain `agentId` emits a subsequent assistant record. Every matching idle
+  envelope is retained, so repeated handoffs reduce in timestamp order.
 - FO activity starts only after an exact entity/dispatch-scoped structured tool
   call. For Codex code-mode `exec`, only command arguments inside nested
-  `tools.exec_command(...)` calls count; module text and `text(path)` output do
-  not. The corresponding turn/end-turn closes it.
+  `tools.exec_command(...)` calls count; direct structured `exec_command`
+  calls are also executable evidence. Module text and `text(path)` output do
+  not count. The corresponding turn/end-turn closes it.
 - A human gate requires an outstanding `request_user_input` or
   `AskUserQuestion` call scoped to that FO turn, a gate id/header, and both
   accept and reject option classes.
@@ -58,10 +69,20 @@ The existing filesystem watcher and periodic session scan trigger rescans.
 Session logs and workflow files remain read-only. Fixtures contain only
 sanitized structural records needed to pin the Codex and Claude Code schemas;
 prompt and transcript bodies are not exposed in the UI. JSONL artifacts are
-streamed record by record without a size cutoff, and each record is projected
-to the structural fields needed by the reducer before it is retained. Each
-file snapshot carries its safe byte cursor and projected summary: unchanged
-files reuse the summary, appends resume at the cursor, truncations rebuild it,
-and deletions drop it. A small checkpoint guards cursor reuse when bytes
-immediately before the cursor changed, so a large or changed artifact cannot
-silently clear real activity.
+streamed record by record without a size cutoff and projected directly into
+typed, privacy-safe facts.
+
+`SessionScanState` crosses the background/app boundary. It contains
+`SessionFileCursor` values and a `SessionEvidenceStore` keyed by stable runtime
+session identity (falling back to a typed source identity until a session id is
+available). Unchanged files reuse their cursors, appends resume at the saved
+byte offset, and a checkpoint rejects stale cursor reuse. Truncation, rotation,
+deletion, or a transient malformed metadata rewrite never deletes previously
+observed facts and never synthesizes a stop; only an exact structured terminal
+or idle fact closes open activity.
+
+Each scan inventories `(path, length, modified)` before and after reading. If
+the inventory changes, that generation is rejected, the last published report
+and scan state remain in place, and the background worker requests an immediate
+rescan. This prevents visit order from publishing a parent stop without a
+concurrent child restart.

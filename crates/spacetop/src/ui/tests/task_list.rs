@@ -143,7 +143,7 @@ fn task_row_renders_active_session_marker_from_typed_attribution() {
             updated_unix: 1_718_000_000,
         },
     );
-    let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
+    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
     terminal.draw(|frame| render(frame, &app)).expect("render");
     let rendered = buffer_text(terminal.backend().buffer());
 
@@ -159,6 +159,98 @@ fn task_row_renders_active_session_marker_from_typed_attribution() {
         rendered.contains("running · worker"),
         "running handler must render inside the activity status"
     );
+}
+
+#[test]
+fn task_row_renders_scanner_replay_then_clears_on_terminal_report() {
+    use std::fs;
+    use std::io::Write;
+    use std::path::Path;
+    use std::time::SystemTime;
+
+    use spacetop_core::session_activity::{
+        scan_local_sessions_with_state, SessionRoots, SessionScanEntity, SessionScanRequest,
+        StdProcessProbe,
+    };
+
+    let mut active = item(
+        "stable-agent-activity-detection",
+        "Stable activity task",
+        "Body",
+    );
+    active.worktree = Some(".worktrees/stable-agent-activity-detection".to_string());
+    let mut app = app_with_items(vec![active.clone()]);
+    let workflow_dir = PathBuf::from("/tmp/spacetop-test");
+    let repo_root = app.repo_root().expect("repo root").to_path_buf();
+    let temp = tempfile::tempdir().expect("temp");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/session-activity/codex-v2-worker-open");
+    let parent = fs::read_to_string(fixture.join("parent.jsonl"))
+        .expect("parent")
+        .replace("/repo", &repo_root.to_string_lossy());
+    let child = fs::read_to_string(fixture.join("child.jsonl"))
+        .expect("child")
+        .replace("/repo", &repo_root.to_string_lossy());
+    fs::write(temp.path().join("parent.jsonl"), parent).expect("parent fixture");
+    let child_path = temp.path().join("child.jsonl");
+    fs::write(&child_path, child).expect("child fixture");
+    let request = SessionScanRequest {
+        workflow_dir: workflow_dir.clone(),
+        repo_root: repo_root.clone(),
+        entities: vec![SessionScanEntity::from(&active)],
+        roots: SessionRoots {
+            codex: vec![temp.path().to_path_buf()],
+            claude_code: Vec::new(),
+        },
+        previous_state: Default::default(),
+    };
+    let running = scan_local_sessions_with_state(&request, &StdProcessProbe, SystemTime::now())
+        .expect("running scan");
+    app.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
+        workflow_dir: workflow_dir.clone(),
+        repo_root: repo_root.clone(),
+        result: Ok(running.report),
+        state: running.state.clone(),
+        retry_immediately: false,
+    });
+
+    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let running_buffer = terminal.backend().buffer();
+    assert!(find_styled_text(running_buffer, "\u{25CF}", |style| {
+        style.fg == Some(Color::Green)
+    }));
+    assert!(buffer_text(running_buffer).contains("running · worker"));
+
+    let mut append = fs::OpenOptions::new()
+        .append(true)
+        .open(&child_path)
+        .expect("append");
+    writeln!(
+        append,
+        r#"{{"timestamp":4,"type":"event_msg","payload":{{"type":"task_complete","turn_id":"turn"}}}}"#
+    )
+    .expect("terminal");
+    let stopped = scan_local_sessions_with_state(
+        &SessionScanRequest {
+            previous_state: running.state,
+            ..request
+        },
+        &StdProcessProbe,
+        SystemTime::now(),
+    )
+    .expect("terminal scan");
+    app.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
+        workflow_dir,
+        repo_root,
+        result: Ok(stopped.report),
+        state: stopped.state,
+        retry_immediately: false,
+    });
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let stopped_text = buffer_text(terminal.backend().buffer());
+    assert!(!stopped_text.contains("running · worker"));
+    assert!(!stopped_text.contains("\u{25CF}   Stable activity task"));
 }
 
 #[test]

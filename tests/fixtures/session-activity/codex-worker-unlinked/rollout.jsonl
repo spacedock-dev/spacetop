@@ -1,3 +1,3 @@
-{"timestamp":"2026-07-27T10:00:00Z","type":"session_meta","payload":{"id":"codex-worker-unlinked-redacted","source":{"subagent":{"thread_spawn":{"agent_path":"/root/spacedock_ensign_detect_entity_activity_state_implement","parent_thread_id":""}}}}}
+{"timestamp":"2026-07-27T10:00:00Z","type":"session_meta","payload":{"id":"codex-worker-unlinked-redacted","cwd":"/repo","source":{"subagent":{"thread_spawn":{"agent_path":"/root/spacedock_ensign_detect_entity_activity_state_implement","parent_thread_id":""}}}}}
 {"timestamp":"2026-07-27T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Read /tmp/spacedock-dispatch/spacedock-ensign-detect-entity-activity-state-implement.md and treat its content as your assignment."}]}}
 {"timestamp":"2026-07-27T10:00:02Z","type":"event_msg","payload":{"type":"task_started","turn_id":"worker-turn-redacted"}}

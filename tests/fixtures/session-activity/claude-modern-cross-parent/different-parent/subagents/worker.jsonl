@@ -1,0 +1,1 @@
+{"timestamp":2,"type":"assistant","sessionId":"claude-child","cwd":"/repo/.worktrees/stable-agent-activity-detection","isSidechain":true,"agentId":"claude-worker","message":{"content":[{"type":"text","text":"accepted"}],"stop_reason":null}}
