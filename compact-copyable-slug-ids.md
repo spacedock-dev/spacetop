@@ -72,3 +72,16 @@ The plan-stage protocol spike used the current `ratatui 0.30`, `crossterm 0.28`,
 ### Summary
 
 The implementation path keeps long IDs within a responsive 4–20-cell column while reserving 16 cells for titles whenever the pane can satisfy the minimums. Full IDs are copied through OSC 52 after a render-fact-backed double-click, with existing mouse navigation preserved and a brief footer confirmation.
+
+## Stage Report: implement
+
+- DONE: Implement the planned responsive 4–20-cell ID column, 16-cell title reserve, ellipsis behavior, and render facts needed for exact ID-cell hit testing.
+  Commit `356411d`; the 34 task-list tests fail if 80/160-column panes stop yielding 9/20-cell ID widths, numeric IDs lose right alignment, ellipsis text changes, title reserve shrinks, or the recorded ID rect drifts from pixels.
+- DONE: Implement 500 ms double-click copying of the full untruncated ID through OSC 52 with transient confirmation, while preserving single-click selection, scrolling, and outside-cell behavior.
+  The 15 mouse tests fail if reflow loses the first-hit anchor, timeout/outside/broken rows copy, scroll offsets map incorrectly, wheel fails to cancel, or existing selection/scroll behavior changes; OSC 52 and footer tests pin exact bytes, capture ordering, outcomes, and expiry.
+- DONE: Add focused Ratatui/input/terminal tests and user-facing documentation, then pass formatting, targeted tests, full cargo test, git diff checks, and make lint.
+  `cargo fmt --all -- --check`, all targeted commands, final `cargo test` (383 Spacetop library tests, 188 core tests, integration and guardrail suites), `git diff --check`, and `make lint` passed; README and help document full-ID copying and OSC 52 support.
+
+### Summary
+
+Long IDs now use a responsive 4–20-cell column with trailing ellipsis and a 16-cell title reserve whenever geometry permits. Double-clicking a rendered ID cell queues the full underlying ID for OSC 52 output without disabling mouse capture, then shows a two-second success or failure pill while all existing mouse interactions remain intact.
