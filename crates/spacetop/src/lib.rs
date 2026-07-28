@@ -10,7 +10,10 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
-use app::{App, AppMode, HistoryWorkerResult, SessionActivityWorkerResult, SyncStatus};
+use app::{
+    App, AppMode, CopyFeedback, HistoryWorkerResult, SessionActivityWorkerResult, SyncStatus,
+};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use cli::Cli;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
@@ -288,7 +291,22 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
             session_activity_worker_state.request_scan(&app);
         }
 
-        // 6. Drain pending "open file in $EDITOR" intent: suspend the TUI,
+        // 6. Drain pending full-ID copy intent through the active terminal
+        // backend. Mouse capture stays enabled around the OSC 52 write.
+        if let Some(id) = app.take_pending_copy_id() {
+            let outcome = emit_osc52(terminal.backend_mut(), &id)
+                .and_then(|_| terminal.backend_mut().flush());
+            app.set_copy_feedback_at(
+                if outcome.is_ok() {
+                    CopyFeedback::Succeeded
+                } else {
+                    CopyFeedback::Failed
+                },
+                Instant::now(),
+            );
+        }
+
+        // 7. Drain pending "open file in $EDITOR" intent: suspend the TUI,
         // block on the editor process, resume, force a redraw next iter.
         // Errors are intentionally swallowed — they would otherwise tear
         // down the TUI for an issue (e.g. editor not installed) that the
@@ -599,6 +617,14 @@ fn emit_osc7<W: Write>(w: &mut W, is_tty: bool, cwd: &Path) -> io::Result<()> {
     write_percent_encoded_path(w, cwd)?;
     w.write_all(b"\x1b\\")?;
     Ok(())
+}
+
+/// Copy `value` to the terminal clipboard using OSC 52. The caller owns the
+/// flush so it can report write and flush failures through one outcome.
+fn emit_osc52<W: Write>(w: &mut W, value: &str) -> io::Result<()> {
+    w.write_all(b"\x1b]52;c;")?;
+    w.write_all(BASE64_STANDARD.encode(value.as_bytes()).as_bytes())?;
+    w.write_all(b"\x07")
 }
 
 /// Percent-encode `path` per the OSC 7 contract documented on
@@ -946,5 +972,39 @@ mod tests {
         let mut buf: Vec<u8> = Vec::new();
         emit_osc7(&mut buf, false, Path::new("/some/path")).expect("write ok");
         assert!(buf.is_empty(), "expected no OSC 7 bytes when not a TTY");
+    }
+
+    #[test]
+    fn osc52_writes_exact_full_id_bytes() {
+        let mut bytes = Vec::new();
+        emit_osc52(&mut bytes, "compact-copyable-slug-ids").expect("OSC 52 write");
+        assert_eq!(bytes, b"\x1b]52;c;Y29tcGFjdC1jb3B5YWJsZS1zbHVnLWlkcw==\x07");
+    }
+
+    #[test]
+    fn osc52_writes_through_backend_while_mouse_capture_stays_enabled() {
+        let mut bytes = Vec::new();
+        {
+            let mut backend = CrosstermBackend::new(&mut bytes);
+            execute!(&mut backend, EnableMouseCapture).expect("enable capture");
+            emit_osc52(&mut backend, "compact-copyable-slug-ids").expect("OSC 52 write");
+            backend.flush().expect("flush backend");
+            execute!(&mut backend, DisableMouseCapture).expect("disable capture");
+        }
+
+        let osc52 = b"\x1b]52;c;Y29tcGFjdC1jb3B5YWJsZS1zbHVnLWlkcw==\x07";
+        let osc52_start = bytes
+            .windows(osc52.len())
+            .position(|window| window == osc52)
+            .expect("OSC 52 payload");
+        let enable_start = bytes
+            .windows(8)
+            .position(|window| window == b"\x1b[?1000h")
+            .expect("mouse enable sequence");
+        let disable_start = bytes
+            .windows(8)
+            .position(|window| window == b"\x1b[?1000l")
+            .expect("mouse disable sequence");
+        assert!(enable_start < osc52_start && osc52_start < disable_start);
     }
 }

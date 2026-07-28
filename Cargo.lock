@@ -2589,6 +2589,7 @@ name = "spacetop"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "crossterm 0.28.1",
  "ratatui",

@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 
@@ -35,6 +36,20 @@ pub use session_activity_worker::{
 
 pub(crate) use keys::ResolvedKeymap;
 use keys::{handle_overview_key_with_keymap, OverviewKeyAction};
+
+const COPY_FEEDBACK_DURATION: Duration = Duration::from_secs(2);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CopyFeedback {
+    Succeeded,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TimedCopyFeedback {
+    outcome: CopyFeedback,
+    expires_at: Instant,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::large_enum_variant)]
@@ -213,6 +228,9 @@ pub struct App {
     pending_overlay_open: bool,
     pending_open_file: Option<PathBuf>,
     pending_sync: bool,
+    pending_copy_id: Option<String>,
+    id_click_candidate: Option<mouse::IdClickCandidate>,
+    copy_feedback: Option<TimedCopyFeedback>,
 }
 
 impl App {
@@ -355,6 +373,9 @@ impl App {
             pending_overlay_open: false,
             pending_open_file: None,
             pending_sync: false,
+            pending_copy_id: None,
+            id_click_candidate: None,
+            copy_feedback: None,
         }
     }
 
@@ -478,6 +499,30 @@ impl App {
     /// resumes — the actual I/O lives in `run_terminal`, not on `App`.
     pub fn take_pending_open_file(&mut self) -> Option<PathBuf> {
         self.pending_open_file.take()
+    }
+
+    /// Drain the full entity ID queued by a mouse double-click. OSC 52 output
+    /// remains in the terminal event loop rather than app/input state.
+    pub fn take_pending_copy_id(&mut self) -> Option<String> {
+        self.pending_copy_id.take()
+    }
+
+    pub(crate) fn set_copy_feedback_at(&mut self, outcome: CopyFeedback, now: Instant) {
+        self.copy_feedback = Some(TimedCopyFeedback {
+            outcome,
+            expires_at: now + COPY_FEEDBACK_DURATION,
+        });
+    }
+
+    pub(crate) fn copy_feedback(&self) -> Option<CopyFeedback> {
+        self.copy_feedback_at(Instant::now())
+    }
+
+    pub(crate) fn copy_feedback_at(&self, now: Instant) -> Option<CopyFeedback> {
+        self.copy_feedback
+            .as_ref()
+            .filter(|feedback| now < feedback.expires_at)
+            .map(|feedback| feedback.outcome)
     }
 
     /// Record a `Y` keypress intent. The event loop calls
@@ -948,13 +993,28 @@ impl App {
     /// the full-pane Definition view handles only wheel scrolling, while
     /// Search, Timeline, Metrics, Activity, and Relations remain inert.
     pub fn handle_mouse(&mut self, mouse: MouseEvent) {
+        self.handle_mouse_at(mouse, Instant::now());
+    }
+
+    pub(crate) fn handle_mouse_at(&mut self, mouse: MouseEvent, now: Instant) {
         if self.help_open {
+            return;
+        }
+        if matches!(
+            self.mode,
+            AppMode::Picker(_) | AppMode::PickerOverlay { .. }
+        ) {
+            self.id_click_candidate = None;
+            self.handle_picker_mouse(mouse);
             return;
         }
         let definition_max_scroll = self.definition_max_scroll.get();
         let action = match &mut self.mode {
-            AppMode::Overview(session) => mouse::handle_overview_mouse(session, mouse),
+            AppMode::Overview(session) => {
+                mouse::handle_overview_mouse(session, mouse, now, &mut self.id_click_candidate)
+            }
             AppMode::Definition { scroll, .. } => {
+                self.id_click_candidate = None;
                 match mouse.kind {
                     crossterm::event::MouseEventKind::ScrollDown => {
                         definition_scroll_down(
@@ -974,11 +1034,10 @@ impl App {
                 }
                 return;
             }
-            AppMode::Picker(_) | AppMode::PickerOverlay { .. } => {
-                self.handle_picker_mouse(mouse);
+            _ => {
+                self.id_click_candidate = None;
                 return;
             }
-            _ => return,
         };
         self.apply_overview_key_action(action);
     }
@@ -1031,9 +1090,11 @@ impl App {
             OverviewKeyAction::OpenHelp => self.help_open = true,
             OverviewKeyAction::Quit => self.should_quit = true,
             OverviewKeyAction::Switch(workflow_switch) => {
+                self.id_click_candidate = None;
                 self.pending_switch = Some(workflow_switch);
             }
             OverviewKeyAction::OpenPickerOverlay => {
+                self.id_click_candidate = None;
                 self.pending_overlay_open = true;
             }
             OverviewKeyAction::OpenSelectedFile(path) => {
@@ -1046,6 +1107,7 @@ impl App {
             OverviewKeyAction::OpenMetrics => self.open_metrics(),
             OverviewKeyAction::OpenActivity => self.open_activity(),
             OverviewKeyAction::OpenRelations => self.open_relations(),
+            OverviewKeyAction::CopyId(id) => self.pending_copy_id = Some(id),
             OverviewKeyAction::RequestSync => self.pending_sync = true,
         }
     }

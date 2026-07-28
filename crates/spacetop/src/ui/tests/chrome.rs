@@ -116,6 +116,7 @@ fn help_popup_documents_mouse_and_shift_drag_convention() {
     let rendered = buffer_text(terminal.backend().buffer());
     assert!(rendered.contains("Mouse"), "help popup needs a Mouse block");
     assert!(rendered.contains("Click          select row + open preview"));
+    assert!(rendered.contains("Double-click ID copy full ID"));
     assert!(rendered.contains("Wheel          scroll panel under cursor"));
     assert!(rendered.contains("Drag divider   resize list/preview split"));
     assert!(

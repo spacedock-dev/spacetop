@@ -711,9 +711,9 @@ fn task_row_title_aligns_with_slug_ids() {
          (TitleAlpha at x={alpha_x}, TitleBeta at x={beta_x})"
     );
 
-    // The long slug ID must render in full in the list pane — the column grew
-    // to fit it. Scoped to x < list_pane to avoid false-passing on the preview
-    // pane header, which also renders the ID.
+    // This slug fits below the responsive 20-cell cap and therefore renders in
+    // full. Scope to x < list_pane to avoid false-passing on the preview pane
+    // header, which also renders the ID.
     let slug_in_list = find_text(buffer, "adversarial-review")
         .into_iter()
         .any(|(x, _)| x < list_pane);
@@ -1121,4 +1121,135 @@ fn list_rows_rect_and_offset_facts_match_drawn_rows() {
         "preview rect must be recorded while open"
     );
     assert_eq!(preview.x, content.x + (content.width - preview.width));
+}
+
+fn buffer_cells(buffer: &ratatui::buffer::Buffer, rect: ratatui::layout::Rect) -> String {
+    (rect.x..rect.x + rect.width)
+        .map(|x| buffer[(x, rect.y)].symbol())
+        .collect()
+}
+
+#[test]
+fn long_slug_id_column_shrinks_responsively_and_caps_at_twenty_cells() {
+    let long_id = "compact-copyable-slug-ids";
+    let title = "Readable title stays visible";
+
+    let narrow_app = app_with_items(vec![item(long_id, title, "Body")]);
+    let mut narrow_terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+    narrow_terminal
+        .draw(|frame| render(frame, &narrow_app))
+        .expect("render narrow");
+    let narrow_buffer = narrow_terminal.backend().buffer();
+    let narrow_state = narrow_app.as_overview().expect("overview");
+    let narrow_id = narrow_state.id_column_rect.get();
+    let narrow_rows = narrow_state.list_rows_rect.get();
+    assert_eq!(narrow_id.width, 9, "40-cell pane leaves 9 cells for ID");
+    assert_eq!(buffer_cells(narrow_buffer, narrow_id), "compact-\u{2026}");
+    let title_x = narrow_id.x + narrow_id.width + 2 + 2 + 2;
+    assert!(
+        usize::from(
+            (narrow_rows.x + narrow_rows.width)
+                .checked_sub(title_x)
+                .expect("title begins inside list pane")
+        ) >= 16,
+        "responsive ID width must reserve at least 16 title cells"
+    );
+    assert_eq!(
+        buffer_cells(
+            narrow_buffer,
+            ratatui::layout::Rect::new(title_x, narrow_id.y, 14, 1)
+        ),
+        "Readable title"
+    );
+
+    let wide_app = app_with_items(vec![item(long_id, title, "Body")]);
+    let mut wide_terminal = Terminal::new(TestBackend::new(160, 24)).expect("terminal");
+    wide_terminal
+        .draw(|frame| render(frame, &wide_app))
+        .expect("render wide");
+    let wide_buffer = wide_terminal.backend().buffer();
+    let wide_id = wide_app
+        .as_overview()
+        .expect("overview")
+        .id_column_rect
+        .get();
+    assert_eq!(wide_id.width, 20, "wide panes must still cap the ID column");
+    assert_eq!(
+        buffer_cells(wide_buffer, wide_id),
+        "compact-copyable-sl\u{2026}"
+    );
+}
+
+#[test]
+fn short_and_numeric_ids_remain_complete_and_right_aligned() {
+    let short_app = app_with_items(vec![item("short-slug", "Short slug", "Body")]);
+    let mut short_terminal = Terminal::new(TestBackend::new(160, 24)).expect("terminal");
+    short_terminal
+        .draw(|frame| render(frame, &short_app))
+        .expect("render short slug");
+    let short_id = short_app
+        .as_overview()
+        .expect("overview")
+        .id_column_rect
+        .get();
+    assert_eq!(short_id.width, 10);
+    assert_eq!(
+        buffer_cells(short_terminal.backend().buffer(), short_id),
+        "short-slug"
+    );
+
+    let numeric_app = app_with_items(vec![item("074", "Numeric ID", "Body")]);
+    let mut numeric_terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+    numeric_terminal
+        .draw(|frame| render(frame, &numeric_app))
+        .expect("render numeric ID");
+    let numeric_id = numeric_app
+        .as_overview()
+        .expect("overview")
+        .id_column_rect
+        .get();
+    assert_eq!(numeric_id.width, 4);
+    assert_eq!(
+        buffer_cells(numeric_terminal.backend().buffer(), numeric_id),
+        " 074"
+    );
+}
+
+#[test]
+fn footer_shows_copy_success_and_failure_then_expires_feedback() {
+    let now = std::time::Instant::now();
+
+    let mut succeeded = app_with_items(vec![item("074", "Copy success", "Body")]);
+    succeeded.set_copy_feedback_at(crate::app::CopyFeedback::Succeeded, now);
+    let mut success_terminal = Terminal::new(TestBackend::new(160, 24)).expect("terminal");
+    success_terminal
+        .draw(|frame| render(frame, &succeeded))
+        .expect("render success");
+    assert!(find_styled_text(
+        success_terminal.backend().buffer(),
+        "\u{2713} ID copied",
+        |style| style.fg == Some(Color::Green)
+    ));
+
+    let mut failed = app_with_items(vec![item("074", "Copy failure", "Body")]);
+    failed.set_copy_feedback_at(crate::app::CopyFeedback::Failed, now);
+    let mut failed_terminal = Terminal::new(TestBackend::new(160, 24)).expect("terminal");
+    failed_terminal
+        .draw(|frame| render(frame, &failed))
+        .expect("render failure");
+    assert!(find_styled_text(
+        failed_terminal.backend().buffer(),
+        "\u{26A0} ID copy failed",
+        |style| style.fg == Some(Color::Red)
+    ));
+
+    assert_eq!(
+        succeeded.copy_feedback_at(now + std::time::Duration::from_millis(1_999)),
+        Some(crate::app::CopyFeedback::Succeeded)
+    );
+    assert_eq!(
+        succeeded.copy_feedback_at(now + std::time::Duration::from_secs(2)),
+        None,
+        "copy confirmation expires at the two-second boundary"
+    );
 }

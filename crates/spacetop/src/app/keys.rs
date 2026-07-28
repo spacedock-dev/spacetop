@@ -277,6 +277,9 @@ pub(crate) enum OverviewKeyAction {
     OpenMetrics,
     OpenActivity,
     OpenRelations,
+    /// A mouse double-click landed on a rendered entity-ID cell. The full
+    /// underlying ID is carried to the terminal boundary for OSC 52 output.
+    CopyId(String),
     /// `Y` from Overview: request a `git pull --ff-only` against the
     /// active workflow's repo root. Always emitted when the binding
     /// fires; the helper classifies availability and reports the result.

@@ -132,6 +132,10 @@ pub struct OverviewState {
     pub content_rect: Cell<Rect>,
     /// Render-fact: the list rows area (after the 1-row section header).
     pub list_rows_rect: Cell<Rect>,
+    /// Render-fact: the entity-ID cells drawn in the list rows. Its width is
+    /// the responsive ID-column width and its height covers only real entity
+    /// rows, never synthetic broken rows.
+    pub id_column_rect: Cell<Rect>,
     /// Render-fact: first visible list index, from `ListState::offset()`
     /// after the stateful render.
     pub list_offset: Cell<usize>,
@@ -190,6 +194,7 @@ impl OverviewState {
             divider_drag: false,
             content_rect: Cell::new(Rect::default()),
             list_rows_rect: Cell::new(Rect::default()),
+            id_column_rect: Cell::new(Rect::default()),
             list_offset: Cell::new(0),
             preview_rect: Cell::new(Rect::default()),
         }
@@ -250,6 +255,7 @@ impl OverviewState {
             divider_drag: false,
             content_rect: Cell::new(Rect::default()),
             list_rows_rect: Cell::new(Rect::default()),
+            id_column_rect: Cell::new(Rect::default()),
             list_offset: Cell::new(0),
             preview_rect: Cell::new(Rect::default()),
         }
