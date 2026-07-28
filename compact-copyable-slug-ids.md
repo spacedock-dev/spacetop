@@ -1,6 +1,6 @@
 ---
 title: Keep long slug IDs compact and copyable
-status: plan
+status: implement
 source: "UI feedback from task-list screenshot on 2026-07-28"
 kind: feature
 risk: medium
@@ -10,7 +10,7 @@ started: 2026-07-28T03:26:42Z
 completed:
 verdict:
 score: 0.78
-worktree:
+worktree: .worktrees/spacedock-ensign-compact-copyable-slug-ids
 issue:
 pr:
 id: 074
