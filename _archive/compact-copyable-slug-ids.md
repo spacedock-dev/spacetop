@@ -1,20 +1,21 @@
 ---
 title: Keep long slug IDs compact and copyable
-status: verify
+status: done
 source: "UI feedback from task-list screenshot on 2026-07-28"
 kind: feature
 risk: medium
 milestone: v1-maintenance
 proof: Ratatui task-list width tests plus mouse double-click copy tests
 started: 2026-07-28T03:26:42Z
-completed:
-verdict:
+completed: 2026-07-28T06:51:29Z
+verdict: passed
 score: 0.78
 worktree: .worktrees/spacedock-ensign-compact-copyable-slug-ids
 issue:
 pr: pr-merge:78
 id: 074
-mod-block: merge:pr-merge
+mod-block:
+archived: 2026-07-28T06:51:29Z
 ---
 
 Long slug-style IDs currently expand the task-list ID column without an upper bound, leaving too little room for the title. Keep the visible slug ID within a bounded, responsive width so task titles retain useful space.
