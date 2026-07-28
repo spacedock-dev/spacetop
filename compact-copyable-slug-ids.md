@@ -85,3 +85,28 @@ The implementation path keeps long IDs within a responsive 4–20-cell column wh
 ### Summary
 
 Long IDs now use a responsive 4–20-cell column with trailing ellipsis and a 16-cell title reserve whenever geometry permits. Double-clicking a rendered ID cell queues the full underlying ID for OSC 52 output without disabling mouse capture, then shows a two-second success or failure pill while all existing mouse interactions remain intact.
+
+## Stage Report: verify
+
+- FAILED: Independently challenge all six acceptance criteria with adversarial narrow/wide layout, exact full-ID copy, timeout/outside-cell, reflow, scrolling, and mouse-capture cases.
+  Verdict: REJECTED. ASCII paths, a 30-column minimum-conflict pane, reflow, scroll offsets, timeout, outside/broken rows, capture ordering, feedback, and expiry behaved as intended, but wide Unicode slug cells fail AC-1 through AC-3.
+- FAILED: AC-1: In an `id-style: slug` workflow, long IDs have a bounded visible width and cannot compress the title below the intended minimum title space.
+  `crates/spacetop/src/ui/list.rs:143-169` measures `chars()` instead of terminal-cell width; an exercised 10-character `資料資料資料資料資料` ID occupied 20 cells and moved the title from expected x=25 to x=35.
+- FAILED: AC-2: Long visible IDs are ellipsized while short slug IDs and numeric or sequential IDs remain readable without unnecessary truncation.
+  The same wide ID was treated as width 10 and left untruncated despite consuming 20 cells; ASCII long/short/numeric cases passed.
+- FAILED: AC-3: Double-clicking inside an entity ID cell copies the exact complete slug, not the displayed truncated value.
+  An exercised double-click at x=`id_rect.x + 18`, visibly within the 20-cell wide ID, produced no copy because `id_column_rect` recorded only 10 cells.
+- DONE: AC-4: Double-clicking outside the ID cell does not copy an ID, and existing single-click row selection and mouse scrolling continue to work.
+  The 15 mouse tests reject outside, timeout, wheel, and broken-row copies while pinning single-click selection, reflow anchoring, scroll offsets, picker behavior, and wheel behavior.
+- DONE: AC-5: The TUI provides brief, non-disruptive confirmation after copying an ID.
+  Footer tests pin green success, red failure, and expiry exactly at two seconds; terminal code maps OSC 52 write/flush outcomes without disrupting mouse capture.
+- FAILED: AC-6: Ratatui rendering tests cover long and short IDs at narrow and wide terminal sizes; app/input tests cover double-click detection, hit testing, and the exact copied value.
+  The committed tests cover the ASCII cases but omit terminal-cell-width IDs; temporary adversarial Ratatui and mouse probes reproduced the title/rect drift and uncopyable rendered tail.
+- DONE: Review commit 356411d for correct UI/app/terminal ownership, OSC 52 safety and portability, dependency justification, read-only boundaries, and regression risk.
+  UI render facts, app intent, and terminal emission are correctly separated; base64 makes OSC 52 payloads injection-safe, docs disclose terminal support, the direct dependency is justified, and no workflow-write path changed.
+- DONE: Run focused rendering/input/protocol tests plus full cargo test, formatting, diff checks, and make lint; issue an explicit PASSED or REJECTED verdict with evidence.
+  The 34 task-list, 15 mouse, and 2 OSC 52 tests passed; `cargo fmt --all -- --check`, full `cargo test`, `git diff --check`, clean worktree checks, and `make lint` passed, but the verdict is REJECTED on the reproduced Unicode regression.
+
+### Summary
+
+Commit `356411d` is healthy on its tested ASCII path and keeps the read-only and terminal ownership boundaries intact, but it confuses Unicode scalar count with terminal-cell width. Bounce back to size, truncate, and hit-test IDs by display-cell width, then add wide/combining-character rendering and rendered-tail double-click tests before re-verification.
