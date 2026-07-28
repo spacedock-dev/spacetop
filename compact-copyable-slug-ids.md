@@ -127,3 +127,28 @@ Commit `356411d` is healthy on its tested ASCII path and keeps the read-only and
 ### Summary
 
 The correction replaces scalar counting with `unicode-width` display-cell measurement for ID budgeting, truncation, padding, and hit-test geometry. CJK and combining IDs now stay inside the responsive column and preserve the title reserve, while double-clicking the rendered Unicode tail copies the complete underlying ID and all accepted ASCII behavior remains green.
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Independently challenge all six acceptance criteria with adversarial narrow/wide layout, exact full-ID copy, timeout/outside-cell, reflow, scrolling, and mouse-capture cases.
+  Verdict: PASSED. Wide and combining IDs, a 24-cell CJK slug truncated into a 20-cell column, the 30-column minimum-conflict pane, reflow, scroll offsets, timeout, outside/broken rows, capture ordering, feedback, and expiry all behaved as required.
+- DONE: AC-1: In an `id-style: slug` workflow, long IDs have a bounded visible width and cannot compress the title below the intended minimum title space.
+  `f9bee09` budgets natural width with `UnicodeWidthStr`; committed CJK/combining rendering assertions pin the 9-cell narrow rectangle and exact title start, while ASCII 80/160-column tests retain the 16-cell reserve and 20-cell cap.
+- DONE: AC-2: Long visible IDs are ellipsized while short slug IDs and numeric or sequential IDs remain readable without unnecessary truncation.
+  Display-cell-aware prefix selection and padding put the ellipsis in the final budgeted cell; long CJK/combining and ASCII cases truncate correctly, while short combining, short ASCII, and `074` remain complete and aligned.
+- DONE: AC-3: Double-clicking inside an entity ID cell copies the exact complete slug, not the displayed truncated value.
+  The committed Unicode-tail test copies the full underlying ID, and an independent 24-cell CJK probe double-clicked the rendered ellipsis cell in a 20-cell rectangle and returned the exact untruncated slug.
+- DONE: AC-4: Double-clicking outside the ID cell does not copy an ID, and existing single-click row selection and mouse scrolling continue to work.
+  The 16 mouse tests reject outside, timeout, wheel, and broken-row copies while pinning single-click selection, reflow anchoring, scroll offsets, picker behavior, and wheel behavior.
+- DONE: AC-5: The TUI provides brief, non-disruptive confirmation after copying an ID.
+  Footer tests pin green success, red failure, and expiry exactly at two seconds; OSC 52 tests pin exact bytes and emission between mouse-enable and mouse-disable sequences.
+- DONE: AC-6: Ratatui rendering tests cover long and short IDs at narrow and wide terminal sizes; app/input tests cover double-click detection, hit testing, and the exact copied value.
+  The 35 task-list and 16 mouse tests cover responsive ASCII, wide and combining display width, hit rectangles, full-value copy, reflow, scrolling, timeout, outside cells, and broken rows; the independent truncated-CJK composition probe also passed.
+- DONE: Review commit 356411d for correct UI/app/terminal ownership, OSC 52 safety and portability, dependency justification, read-only boundaries, and regression risk.
+  Correction `f9bee09` stays inside UI measurement/tests plus a direct already-locked `unicode-width` dependency; UI render facts, app intent, terminal OSC 52 emission, and read-only/no-write boundaries remain separated and guardrail-tested.
+- DONE: Run focused rendering/input/protocol tests plus full cargo test, formatting, diff checks, and make lint; issue an explicit PASSED or REJECTED verdict with evidence.
+  All 35 task-list, 16 mouse, and 2 OSC 52 tests passed; `cargo fmt --all -- --check`, full `cargo test` (385 Spacetop library and 188 core tests plus integration/guardrails), `git diff --check`, clean worktree checks, and `make lint` passed.
+
+### Summary
+
+PASSED: correction `f9bee09` resolves the prior Unicode display-width rejection without regressing the accepted ASCII, input, feedback, OSC 52, ownership, or read-only behavior. The full underlying slug remains copyable even when a wide Unicode ID is visibly truncated at the responsive column boundary.
