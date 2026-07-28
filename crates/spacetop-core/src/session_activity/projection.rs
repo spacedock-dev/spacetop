@@ -2,17 +2,24 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{parse_rfc3339_unix, STAGES};
+use super::{parse_rfc3339_timestamp, EvidenceTimestamp, STAGES};
 
 const DISPATCH_DIR: &str = "/tmp/spacedock-dispatch/";
 const DISPATCH_BASENAME_PREFIX: &str = "spacedock-ensign-";
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct EvidenceOrder {
-    pub(crate) updated_unix: Option<i64>,
+    pub(crate) timestamp: Option<EvidenceTimestamp>,
     pub(crate) source: PathBuf,
     pub(crate) byte_offset: u64,
     pub(crate) kind_rank: u8,
+}
+
+impl EvidenceOrder {
+    pub(crate) fn effective_timestamp(&self, fallback_time: i64) -> EvidenceTimestamp {
+        self.timestamp
+            .unwrap_or_else(|| EvidenceTimestamp::whole_seconds(fallback_time))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -108,10 +115,11 @@ pub(crate) fn project_record(
     source: &Path,
     byte_offset: u64,
 ) -> Option<ProjectedRecord> {
-    let updated_unix = record.get("timestamp").and_then(|timestamp| {
+    let timestamp = record.get("timestamp").and_then(|timestamp| {
         timestamp
             .as_i64()
-            .or_else(|| timestamp.as_str().and_then(parse_rfc3339_unix))
+            .map(EvidenceTimestamp::whole_seconds)
+            .or_else(|| timestamp.as_str().and_then(parse_rfc3339_timestamp))
     });
     let kind = if record.get("taskKind").is_some() {
         project_claude_meta(&record)?
@@ -126,7 +134,7 @@ pub(crate) fn project_record(
     };
     Some(ProjectedRecord {
         order: EvidenceOrder {
-            updated_unix,
+            timestamp,
             source: source.to_path_buf(),
             byte_offset,
             kind_rank: kind.rank(),

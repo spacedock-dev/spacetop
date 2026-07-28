@@ -206,16 +206,16 @@ fn collect_worker_lifecycle(
         .collect();
     boundaries.sort();
     for boundary in boundaries {
-        let boundary_at = boundary.order.updated_unix.unwrap_or(fallback_time);
+        let boundary_at = boundary.order.effective_timestamp(fallback_time);
         let stopped_before = idle_records
             .iter()
-            .any(|idle| idle.order.updated_unix.unwrap_or(fallback_time) < boundary_at);
+            .any(|idle| idle.order.effective_timestamp(fallback_time) < boundary_at);
         if !stopped_before {
             continue;
         }
         if let Some(reopened) = assistants
             .iter()
-            .find(|assistant| assistant.order.updated_unix.unwrap_or(fallback_time) > boundary_at)
+            .find(|assistant| assistant.order.effective_timestamp(fallback_time) > boundary_at)
         {
             push_event(
                 events,

@@ -19,6 +19,21 @@ pub use state::{SessionEvidenceStore, SessionFileCursor, SessionScanState};
 const STAGES: &[&str] = &["shape", "plan", "implement", "verify", "done", "pr-merge"];
 const UNSTABLE_GENERATION: &str = "session files changed during scan; retrying";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct EvidenceTimestamp {
+    unix_seconds: i64,
+    subsecond_nanos: u32,
+}
+
+impl EvidenceTimestamp {
+    fn whole_seconds(unix_seconds: i64) -> Self {
+        Self {
+            unix_seconds,
+            subsecond_nanos: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionScanRequest {
     pub workflow_dir: PathBuf,
@@ -317,7 +332,7 @@ fn is_gate_question(input: &ProjectedToolInput) -> bool {
     })
 }
 
-fn parse_rfc3339_unix(value: &str) -> Option<i64> {
+fn parse_rfc3339_timestamp(value: &str) -> Option<EvidenceTimestamp> {
     let (date, rest) = value.split_once('T')?;
     let mut date_parts = date.split('-');
     let year = date_parts.next()?.parse::<i32>().ok()?;
@@ -331,7 +346,16 @@ fn parse_rfc3339_unix(value: &str) -> Option<i64> {
     let mut clock_parts = clock.split(':');
     let hour = clock_parts.next()?.parse::<i64>().ok()?;
     let minute = clock_parts.next()?.parse::<i64>().ok()?;
-    let second = clock_parts.next()?.split('.').next()?.parse::<i64>().ok()?;
+    let second_and_fraction = clock_parts.next()?;
+    let (second, subsecond_nanos) =
+        if let Some((second, fraction)) = second_and_fraction.split_once('.') {
+            (
+                second.parse::<i64>().ok()?,
+                parse_fractional_nanos(fraction)?,
+            )
+        } else {
+            (second_and_fraction.parse::<i64>().ok()?, 0)
+        };
     let offset = if zone == "Z" {
         0
     } else {
@@ -341,7 +365,25 @@ fn parse_rfc3339_unix(value: &str) -> Option<i64> {
         let minutes = parts.next().unwrap_or("0").parse::<i64>().ok()?;
         sign * (hours * 3600 + minutes * 60)
     };
-    Some(days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second - offset)
+    Some(EvidenceTimestamp {
+        unix_seconds: days_from_civil(year, month, day) * 86_400
+            + hour * 3600
+            + minute * 60
+            + second
+            - offset,
+        subsecond_nanos,
+    })
+}
+
+fn parse_fractional_nanos(fraction: &str) -> Option<u32> {
+    if fraction.is_empty()
+        || fraction.len() > 9
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let parsed = fraction.parse::<u32>().ok()?;
+    Some(parsed * 10_u32.pow(9 - fraction.len() as u32))
 }
 
 fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
@@ -402,6 +444,7 @@ mod tests {
             runtime,
             session_id: session.to_string(),
             updated_unix: at,
+            updated_subsecond_nanos: 0,
             source: PathBuf::from("manual"),
             byte_offset: at as u64,
             evidence_kind_rank: 0,
@@ -775,11 +818,35 @@ mod tests {
             "running · worker",
             "truncation without a terminal fact must retain the proven start"
         );
-        fs::remove_file(&child).expect("delete");
-        fs::remove_file(&parent).expect("delete");
-        let deleted = scan_local_sessions_with_state(
+
+        let rotated_child = temp.path().join("child.jsonl.1");
+        fs::rename(&child, &rotated_child).expect("rotate old child");
+        fs::write(
+            &child,
+            "{\"timestamp\":4,\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-child\",\"cwd\":\"/repo/.worktrees/stable-agent-activity-detection\",\"source\":{\"subagent\":{\"thread_spawn\":{\"agent_path\":\"/root/spacedock_ensign_stable_agent_activity_detection_implement\",\"parent_thread_id\":\"codex-parent\"}}},\"replacement\":true}}\n",
+        )
+        .expect("replacement child");
+        let rotated = scan_local_sessions_with_state(
             &SessionScanRequest {
                 previous_state: truncated.state,
+                ..base.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("rotated");
+        assert_eq!(
+            rotated.report.attributions[0].activity.status_label(),
+            "running · worker",
+            "renaming the old log and replacing it without a terminal fact must retain the start"
+        );
+
+        fs::remove_file(&child).expect("delete");
+        fs::remove_file(&parent).expect("delete");
+        fs::remove_file(&rotated_child).expect("delete rotated");
+        let deleted = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: rotated.state,
                 ..base
             },
             &StdProcessProbe,
@@ -996,6 +1063,127 @@ mod tests {
             "idle"
         );
         println!("Claude replay: running, running, idle, running, idle");
+    }
+
+    #[test]
+    fn claude_reopens_when_lifecycle_records_share_one_second() {
+        let temp = tempfile::tempdir().expect("temp");
+        copy_fixture_tree(&fixture_root("claude-modern-worker-open"), temp.path());
+        let parent = temp.path().join("parent.jsonl");
+        let child = temp.path().join("claude-parent/subagents/worker.jsonl");
+        let base = SessionScanRequest {
+            roots: SessionRoots {
+                codex: Vec::new(),
+                claude_code: vec![temp.path().to_path_buf()],
+            },
+            ..fixture_request(AgentRuntime::ClaudeCode, "claude-modern-worker-open")
+        };
+        let first =
+            scan_local_sessions_with_state(&base, &StdProcessProbe, UNIX_EPOCH).expect("first");
+
+        let mut parent_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&parent)
+            .expect("parent append");
+        writeln!(
+            parent_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.100Z","type":"user","sessionId":"claude-parent","cwd":"/repo","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"idle_notification\",\"from\":\"spacedock-ensign-stable-agent-activity-detection-implement\",\"idleReason\":\"available\"}}</teammate-message>"}}}}"#
+        )
+        .expect("idle");
+        writeln!(
+            parent_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.200Z","type":"user","sessionId":"claude-parent","cwd":"/repo","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"teammate_message\",\"from\":\"spacedock-ensign-stable-agent-activity-detection-implement\"}}</teammate-message>"}}}}"#
+        )
+        .expect("follow-up");
+        drop(parent_append);
+        let mut child_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&child)
+            .expect("child append");
+        writeln!(
+            child_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.300Z","type":"assistant","sessionId":"claude-child","cwd":"/repo/.worktrees/stable-agent-activity-detection","isSidechain":true,"agentId":"claude-worker","message":{{"content":[{{"type":"text","text":"follow-up"}}],"stop_reason":null}}}}"#
+        )
+        .expect("assistant");
+        drop(child_append);
+
+        let reopened = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: first.state,
+                ..base
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("reopened");
+        assert_eq!(
+            reopened.report.attributions[0].activity.status_label(),
+            "running · worker",
+            "the fractional RFC3339 order idle -> boundary -> assistant must reopen the worker"
+        );
+        assert_eq!(
+            reopened.report.attributions[0].activity.updated_unix(),
+            Some(1_785_232_800),
+            "the display timestamp remains whole Unix seconds"
+        );
+    }
+
+    #[test]
+    fn codex_restart_after_parent_stop_in_same_second_remains_running() {
+        let temp = tempfile::tempdir().expect("temp");
+        copy_fixture_tree(&fixture_root("codex-v2-worker-open"), temp.path());
+        let parent = temp.path().join("parent.jsonl");
+        let child = temp.path().join("child.jsonl");
+        let base = SessionScanRequest {
+            roots: SessionRoots {
+                codex: vec![temp.path().to_path_buf()],
+                claude_code: Vec::new(),
+            },
+            ..fixture_request(AgentRuntime::Codex, "codex-v2-worker-open")
+        };
+        let first =
+            scan_local_sessions_with_state(&base, &StdProcessProbe, UNIX_EPOCH).expect("first");
+
+        let mut parent_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&parent)
+            .expect("parent append");
+        writeln!(
+            parent_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.100Z","type":"event_msg","payload":{{"type":"sub_agent_activity","kind":"interrupted","agent_thread_id":"codex-child","agent_path":"/root/spacedock_ensign_stable_agent_activity_detection_implement"}}}}"#
+        )
+        .expect("parent stop");
+        drop(parent_append);
+        let mut child_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&child)
+            .expect("child append");
+        writeln!(
+            child_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.200Z","type":"event_msg","payload":{{"type":"task_started","turn_id":"follow-up"}}}}"#
+        )
+        .expect("child restart");
+        drop(child_append);
+
+        let restarted = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: first.state,
+                ..base
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("restarted");
+        assert_eq!(
+            restarted.report.attributions[0].activity.status_label(),
+            "running · worker",
+            "the fractional RFC3339 order parent stop -> child restart must remain running"
+        );
+        assert_eq!(
+            restarted.report.attributions[0].activity.updated_unix(),
+            Some(1_785_232_800),
+            "the display timestamp remains whole Unix seconds"
+        );
     }
 
     fn copy_fixture_tree(source: &Path, destination: &Path) {
