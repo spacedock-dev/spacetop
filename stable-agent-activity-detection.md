@@ -1,6 +1,6 @@
 ---
 title: Fix intermittent Codex and Claude activity detection
-status: plan
+status: implement
 source: "Live false-idle observation while dispatching task 074 on 2026-07-28"
 kind: bugfix
 risk: high
@@ -10,7 +10,7 @@ started: 2026-07-28T06:55:46Z
 completed:
 verdict:
 score: 0.92
-worktree:
+worktree: .worktrees/spacedock-ensign-stable-agent-activity-detection
 issue:
 pr:
 id: 075
