@@ -2439,7 +2439,8 @@ fn matching_session_activity_result_applies_to_active_workflow() {
         workflow_dir: workflow_dir.clone(),
         repo_root: repo_root.clone(),
         result: Ok(session_report(&workflow_dir, &repo_root, "000")),
-        session_files: HashMap::new(),
+        state: Default::default(),
+        retry_immediately: false,
     });
 
     assert!(
@@ -2461,7 +2462,8 @@ fn stale_session_activity_result_for_other_workflow_is_ignored() {
         workflow_dir: PathBuf::from("/tmp/other-workflow"),
         repo_root: repo_root.clone(),
         result: Ok(session_report(&workflow_dir, &repo_root, "000")),
-        session_files: HashMap::new(),
+        state: Default::default(),
+        retry_immediately: false,
     });
 
     assert!(
@@ -2482,7 +2484,8 @@ fn session_activity_scan_failure_is_non_fatal_and_preserves_last_snapshot() {
         workflow_dir: workflow_dir.clone(),
         repo_root: repo_root.clone(),
         result: Ok(session_report(&workflow_dir, &repo_root, "000")),
-        session_files: HashMap::new(),
+        state: Default::default(),
+        retry_immediately: false,
     });
 
     app.apply_session_activity_result(SessionActivityWorkerResult {
@@ -2491,7 +2494,8 @@ fn session_activity_scan_failure_is_non_fatal_and_preserves_last_snapshot() {
         result: Err(SessionScanError {
             message: "fixture scanner failed".to_string(),
         }),
-        session_files: HashMap::new(),
+        state: Default::default(),
+        retry_immediately: false,
     });
 
     let overview = app.as_overview().expect("overview");

@@ -259,7 +259,7 @@ fn preview_omits_session_metadata_for_unrelated_running_session() {
     use spacetop_core::session_activity::{
         scan_local_sessions_with, ProcessProbe, SessionRoots, SessionScanEntity, SessionScanRequest,
     };
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
     use std::fs;
     use std::path::Path;
     use std::time::SystemTime;
@@ -327,7 +327,7 @@ fn preview_omits_session_metadata_for_unrelated_running_session() {
             codex: vec![root],
             claude_code: Vec::new(),
         },
-        previous_session_files: HashMap::new(),
+        previous_state: Default::default(),
     };
     let report = scan_local_sessions_with(
         &request,
@@ -340,7 +340,8 @@ fn preview_omits_session_metadata_for_unrelated_running_session() {
     state.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
         workflow_dir: workflow,
         repo_root: repo,
-        session_files: HashMap::new(),
+        state: Default::default(),
+        retry_immediately: false,
         result: Ok(report),
     });
     let mut app = App::from_session(OverviewSession::single(state, true));

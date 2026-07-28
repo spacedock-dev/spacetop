@@ -118,18 +118,23 @@ Keep module boundaries clear and testable:
   filtering, debounce, fallback backend selection, and refresh signaling.
 - `crates/spacetop-core/src/git_sync.rs` owns the explicit read-refresh sync
   path and must remain limited to audited fast-forward pulls.
-- `crates/spacetop-core/src/session_activity.rs` scans local agent session logs
-  and reduces exact structured events into `EntityActivity`; `domain/mod.rs`
+- `crates/spacetop-core/src/session_activity.rs` is the local agent-session
+  facade; its `session_activity/{projection,state,codex,claude,reducer}.rs`
+  modules project privacy-safe typed facts, retain coherent scan evidence,
+  correlate each runtime, and reduce exact structured events into
+  `EntityActivity`; `domain/mod.rs`
   owns the three visible states (`Idle`, `Running`, and `HumanGate`) plus the
   typed `Worker`/`FirstOfficer` handler carried only by `Running`. Detection
   requires canonical dispatch/session correlation and structured start, stop,
   FO-action, or approve/reject gate records. Process presence, mtimes, generic
   path mentions, and filesystem writes alone must remain idle. JSONL scanning
-  must retain projected summaries behind per-file byte cursors rather than drop
-  or reread large unchanged artifacts. Codex child evidence requires a non-empty
-  parent thread, code-mode activity uses only nested executable commands, and
-  Claude worker lifecycle evidence stays scoped to its exact parent session and
-  dispatch call.
+  must retain typed facts behind per-file byte cursors rather than drop or
+  reread large unchanged artifacts. Codex child evidence requires a non-empty
+  parent thread plus exact parent-start or legacy assignment correlation;
+  code-mode activity uses only nested executable commands or direct structured
+  `exec_command` calls. Claude worker lifecycle evidence stays scoped to its
+  exact parent session and dispatch call and reopens only after an attributed
+  teammate-message boundary plus a later same-agent assistant record.
 - `crates/spacetop-core/src/editor.rs` owns opening selected files in an
   external editor/viewer path; it must not become a workflow-state writer
   without explicit policy change.

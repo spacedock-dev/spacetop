@@ -3,7 +3,6 @@ pub mod cli;
 pub mod headless;
 pub mod ui;
 
-use std::collections::HashMap;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -25,7 +24,7 @@ use spacetop_core::config::{self, ConfigLoad, ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery;
 use spacetop_core::editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
 use spacetop_core::git_sync::{self, GitRunner, StdGitRunner, SyncOutcome};
-use spacetop_core::session_activity::SessionFileSnapshot;
+use spacetop_core::session_activity::SessionScanState;
 use spacetop_core::session_state;
 use spacetop_core::watcher::{self, WatcherBackend, WatcherConfig, WorkflowWatcher};
 
@@ -367,7 +366,7 @@ fn start_history_worker_for(app: &App) -> Option<std::sync::mpsc::Receiver<Histo
 struct SessionActivityWorkerState {
     receiver: Option<Receiver<SessionActivityWorkerResult>>,
     rescan_requested: bool,
-    session_files: HashMap<PathBuf, SessionFileSnapshot>,
+    scan_state: SessionScanState,
     last_request_at: Option<Instant>,
 }
 
@@ -387,7 +386,7 @@ impl SessionActivityWorkerState {
             return;
         }
         self.receiver = app.session_activity_worker_request().map(|mut request| {
-            request.previous_session_files = self.session_files.clone();
+            request.previous_state = self.scan_state.clone();
             app::spawn_session_activity_worker(request)
         });
         self.rescan_requested = false;
@@ -432,8 +431,9 @@ fn drain_session_activity_worker(app: &mut App, worker: &mut SessionActivityWork
         match rx.try_recv() {
             Ok(result) => {
                 if result.result.is_ok() {
-                    worker.session_files.clone_from(&result.session_files);
+                    worker.scan_state.clone_from(&result.state);
                 }
+                worker.rescan_requested |= result.retry_immediately;
                 app.apply_session_activity_result(result);
                 clear_worker = true;
             }

@@ -1,2 +1,2 @@
-{"timestamp":"2026-07-27T12:00:00Z","type":"assistant","sessionId":"claude-fo-redacted","isSidechain":false,"message":{"content":[{"type":"tool_use","id":"read-redacted","name":"Read","input":{"file_path":"/repo/docs/state/detect-entity-activity-state.md"}}],"stop_reason":null}}
-{"timestamp":"2026-07-27T12:00:01Z","type":"assistant","sessionId":"claude-fo-redacted","isSidechain":false,"message":{"content":[],"stop_reason":"end_turn"}}
+{"timestamp":"2026-07-27T12:00:00Z","type":"assistant","sessionId":"claude-fo-redacted","cwd":"/repo","isSidechain":false,"message":{"content":[{"type":"tool_use","id":"read-redacted","name":"Read","input":{"file_path":"/repo/docs/state/detect-entity-activity-state.md"}}],"stop_reason":null}}
+{"timestamp":"2026-07-27T12:00:01Z","type":"assistant","sessionId":"claude-fo-redacted","cwd":"/repo","isSidechain":false,"message":{"content":[],"stop_reason":"end_turn"}}

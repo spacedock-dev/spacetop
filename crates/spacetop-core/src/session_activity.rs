@@ -1,24 +1,38 @@
-use std::collections::{HashMap, HashSet};
-use std::ffi::OsStr;
-use std::fs;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+mod claude;
+mod codex;
+mod projection;
+mod reducer;
+mod state;
+
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::{json, Value};
-use walkdir::WalkDir;
+use crate::domain::{AgentRuntime, Entity, EntityActivityAttribution, SessionScanReport};
+use projection::{contains_dispatch, ProjectedToolInput};
 
-use crate::domain::{
-    ActivityHandler, AgentRuntime, Entity, EntityActivity, EntityActivityAttribution,
-    SessionScanReport,
-};
-use crate::entity_identity::entity_slug;
+pub use reducer::{reduce_activity, ActivityEvent, ActivityEventKind};
+pub use state::{SessionEvidenceStore, SessionFileCursor, SessionScanState};
 
-const DISPATCH_PREFIX: &str = "/tmp/spacedock-dispatch/spacedock-ensign-";
-const CHECKPOINT_BYTES: u64 = 128;
 const STAGES: &[&str] = &["shape", "plan", "implement", "verify", "done", "pr-merge"];
+const UNSTABLE_GENERATION: &str = "session files changed during scan; retrying";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct EvidenceTimestamp {
+    unix_seconds: i64,
+    subsecond_nanos: u32,
+}
+
+impl EvidenceTimestamp {
+    fn whole_seconds(unix_seconds: i64) -> Self {
+        Self {
+            unix_seconds,
+            subsecond_nanos: 0,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionScanRequest {
@@ -26,18 +40,7 @@ pub struct SessionScanRequest {
     pub repo_root: PathBuf,
     pub entities: Vec<SessionScanEntity>,
     pub roots: SessionRoots,
-    pub previous_session_files: HashMap<PathBuf, SessionFileSnapshot>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SessionFileSnapshot {
-    modified: Option<SystemTime>,
-    len: u64,
-    cursor: u64,
-    complete_lines: u64,
-    checkpoint: Vec<u8>,
-    records: Vec<Value>,
-    parse_errors: Vec<String>,
+    pub previous_state: SessionScanState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +100,12 @@ pub struct SessionScanError {
     pub message: String,
 }
 
+impl SessionScanError {
+    pub fn retry_immediately(&self) -> bool {
+        self.message == UNSTABLE_GENERATION
+    }
+}
+
 impl std::fmt::Display for SessionScanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.message)
@@ -125,109 +134,17 @@ impl ProcessProbe for StdProcessProbe {}
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionActivityScan {
     pub report: SessionScanReport,
-    pub session_files: HashMap<PathBuf, SessionFileSnapshot>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ActivityEvent {
-    pub runtime: AgentRuntime,
-    pub session_id: String,
-    pub updated_unix: i64,
-    pub kind: ActivityEventKind,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ActivityEventKind {
-    WorkerStarted,
-    WorkerStopped,
-    FirstOfficerStarted,
-    FirstOfficerStopped,
-    HumanGateOpened { call_id: String },
-    HumanGateResolved { call_id: String },
-}
-
-pub fn reduce_activity(events: &[ActivityEvent]) -> EntityActivity {
-    let mut ordered: Vec<(usize, &ActivityEvent)> = events.iter().enumerate().collect();
-    ordered.sort_by_key(|(index, event)| (event.updated_unix, *index));
-
-    let mut workers = HashMap::new();
-    let mut first_officers = HashMap::new();
-    let mut gates = HashMap::new();
-    let mut latest = None;
-
-    for (_, event) in ordered {
-        latest = Some(latest.unwrap_or(i64::MIN).max(event.updated_unix));
-        let session_key = (event.runtime, event.session_id.clone());
-        match &event.kind {
-            ActivityEventKind::WorkerStarted => {
-                workers.insert(session_key, event.updated_unix);
-            }
-            ActivityEventKind::WorkerStopped => {
-                workers.remove(&session_key);
-            }
-            ActivityEventKind::FirstOfficerStarted => {
-                first_officers.insert(session_key, event.updated_unix);
-            }
-            ActivityEventKind::FirstOfficerStopped => {
-                first_officers.remove(&session_key);
-            }
-            ActivityEventKind::HumanGateOpened { call_id } => {
-                gates.insert(
-                    (event.runtime, event.session_id.clone(), call_id.clone()),
-                    event.updated_unix,
-                );
-            }
-            ActivityEventKind::HumanGateResolved { call_id } => {
-                gates.remove(&(event.runtime, event.session_id.clone(), call_id.clone()));
-            }
-        }
-    }
-
-    if let Some(((runtime, session_id, _), updated_unix)) = gates
-        .into_iter()
-        .max_by_key(|((runtime, session, _), at)| (*at, *runtime, session.clone()))
-    {
-        return EntityActivity::HumanGate {
-            runtime,
-            session_id,
-            updated_unix,
-        };
-    }
-    if let Some(((runtime, session_id), updated_unix)) = workers
-        .into_iter()
-        .max_by_key(|((runtime, session), at)| (*at, *runtime, session.clone()))
-    {
-        return EntityActivity::Running {
-            handler: ActivityHandler::Worker,
-            runtime,
-            session_id,
-            updated_unix,
-        };
-    }
-    if let Some(((runtime, session_id), updated_unix)) = first_officers
-        .into_iter()
-        .max_by_key(|((runtime, session), at)| (*at, *runtime, session.clone()))
-    {
-        return EntityActivity::Running {
-            handler: ActivityHandler::FirstOfficer,
-            runtime,
-            session_id,
-            updated_unix,
-        };
-    }
-    EntityActivity::Idle {
-        updated_unix: latest,
-    }
+    pub state: SessionScanState,
 }
 
 pub fn scan_local_sessions(
     request: SessionScanRequest,
 ) -> Result<SessionScanReport, SessionScanError> {
-    scan_local_sessions_with_snapshots(&request, &StdProcessProbe, SystemTime::now())
+    scan_local_sessions_with_state(&request, &StdProcessProbe, SystemTime::now())
         .map(|scan| scan.report)
 }
 
-pub fn scan_local_sessions_with_snapshots<P: ProcessProbe>(
+pub fn scan_local_sessions_with_state<P: ProcessProbe>(
     request: &SessionScanRequest,
     _process_probe: &P,
     now: SystemTime,
@@ -247,92 +164,36 @@ fn scan_local_sessions_inner(
     request: &SessionScanRequest,
     now: SystemTime,
 ) -> Result<SessionActivityScan, SessionScanError> {
-    let mut errors = Vec::new();
-    let mut session_files = HashMap::new();
-    let mut parsed_by_runtime: HashMap<AgentRuntime, Vec<ParsedFile>> = HashMap::new();
-    let scanned_roots: Vec<PathBuf> = request
-        .roots
-        .all_roots()
-        .map(|(_, root)| root.clone())
-        .collect();
-
-    for (runtime, root) in request.roots.all_roots() {
-        if !root.exists() {
-            continue;
-        }
-        if let Err(err) = fs::read_dir(root) {
-            return Err(SessionScanError {
-                message: format!(
-                    "{} session root {} is unreadable: {err}",
-                    runtime.label(),
-                    root.display()
-                ),
-            });
-        }
-        for entry in WalkDir::new(root)
-            .into_iter()
-            .filter_entry(|entry| !is_pruned_dir(entry.path()))
-        {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(err) => {
-                    errors.push(format!("{} scan skipped entry: {err}", runtime.label()));
-                    continue;
-                }
-            };
-            if !entry.file_type().is_file() || !is_session_file(entry.path()) {
-                continue;
+    let loaded =
+        state::load_generation(&request.roots, &request.previous_state).map_err(|error| {
+            SessionScanError {
+                message: match error {
+                    state::LoadGenerationError::Root(message) => message,
+                    state::LoadGenerationError::Unstable => UNSTABLE_GENERATION.to_string(),
+                },
             }
-            let metadata = match entry.metadata() {
-                Ok(metadata) => metadata,
-                Err(err) => {
-                    errors.push(format!(
-                        "{} scan could not read metadata for {}: {err}",
-                        runtime.label(),
-                        entry.path().display()
-                    ));
-                    continue;
-                }
-            };
-            let snapshot = match load_session_snapshot(
-                entry.path(),
-                &metadata,
-                request.previous_session_files.get(entry.path()),
-            ) {
-                Ok(snapshot) => snapshot,
-                Err(err) => {
-                    errors.push(format!(
-                        "{} scan could not read {}: {err}",
-                        runtime.label(),
-                        entry.path().display()
-                    ));
-                    continue;
-                }
-            };
-            errors.extend(snapshot.parse_errors.iter().cloned());
-            parsed_by_runtime
-                .entry(runtime)
-                .or_default()
-                .push(ParsedFile {
-                    path: entry.path().to_path_buf(),
-                    records: snapshot.records.clone(),
-                });
-            session_files.insert(entry.path().to_path_buf(), snapshot);
-        }
-    }
-
+        })?;
     let fallback_time = system_time_unix(now).unwrap_or_default();
+    let records = loaded.state.evidence.all_records();
     let mut per_entity: HashMap<String, Vec<ActivityEvent>> = request
         .entities
         .iter()
         .map(|entity| (entity.id.clone(), Vec::new()))
         .collect();
-    if let Some(files) = parsed_by_runtime.get(&AgentRuntime::Codex) {
-        collect_codex_events(files, &request.entities, fallback_time, &mut per_entity);
-    }
-    if let Some(files) = parsed_by_runtime.get(&AgentRuntime::ClaudeCode) {
-        collect_claude_events(files, &request.entities, fallback_time, &mut per_entity);
-    }
+    codex::collect(
+        &records,
+        &request.entities,
+        &request.repo_root,
+        fallback_time,
+        &mut per_entity,
+    );
+    claude::collect(
+        &records,
+        &request.entities,
+        &request.repo_root,
+        fallback_time,
+        &mut per_entity,
+    );
 
     let mut attributions: Vec<_> = request
         .entities
@@ -348,6 +209,11 @@ fn scan_local_sessions_inner(
         })
         .collect();
     attributions.sort_by(|left, right| left.entity_id.cmp(&right.entity_id));
+    let scanned_roots = request
+        .roots
+        .all_roots()
+        .map(|(_, root)| root.clone())
+        .collect();
 
     Ok(SessionActivityScan {
         report: SessionScanReport {
@@ -355,1091 +221,71 @@ fn scan_local_sessions_inner(
             repo_root: request.repo_root.clone(),
             scanned_roots,
             attributions,
-            errors,
+            errors: loaded.errors,
         },
-        session_files,
+        state: loaded.state,
     })
 }
 
-#[derive(Debug)]
-struct ParsedFile {
-    path: PathBuf,
-    records: Vec<Value>,
-}
-
-#[derive(Debug)]
-struct ParsedChunk {
-    records: Vec<Value>,
-    cursor: u64,
-    complete_lines: u64,
-    errors: Vec<String>,
-}
-
-fn load_session_snapshot(
-    path: &Path,
-    metadata: &fs::Metadata,
-    previous: Option<&SessionFileSnapshot>,
-) -> Result<SessionFileSnapshot, std::io::Error> {
-    let modified = metadata.modified().ok();
-    let len = metadata.len();
-    if let Some(previous) = previous {
-        if previous.len == len && previous.modified == modified && modified.is_some() {
-            return Ok(previous.clone());
-        }
-    }
-
-    if path.extension().and_then(OsStr::to_str) == Some("json") {
-        return parse_json_snapshot(path, modified, len);
-    }
-
-    if let Some(previous) = previous {
-        if len > previous.len && append_checkpoint_matches(path, previous)? {
-            let mut parsed = parse_jsonl_from(path, previous.cursor, previous.complete_lines)?;
-            let mut records = previous.records.clone();
-            records.append(&mut parsed.records);
-            let mut parse_errors = previous.parse_errors.clone();
-            parse_errors.append(&mut parsed.errors);
-            return Ok(SessionFileSnapshot {
-                modified,
-                len,
-                cursor: parsed.cursor,
-                complete_lines: parsed.complete_lines,
-                checkpoint: read_checkpoint(path, parsed.cursor)?,
-                records,
-                parse_errors,
-            });
-        }
-    }
-
-    let parsed = parse_jsonl_from(path, 0, 0)?;
-    Ok(SessionFileSnapshot {
-        modified,
-        len,
-        cursor: parsed.cursor,
-        complete_lines: parsed.complete_lines,
-        checkpoint: read_checkpoint(path, parsed.cursor)?,
-        records: parsed.records,
-        parse_errors: parsed.errors,
-    })
-}
-
-fn parse_json_snapshot(
-    path: &Path,
-    modified: Option<SystemTime>,
-    len: u64,
-) -> Result<SessionFileSnapshot, std::io::Error> {
-    #[cfg(test)]
-    record_session_file_parse(path, 0);
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    let (records, parse_errors) = match serde_json::from_reader(reader) {
-        Ok(value) => (project_record(value).into_iter().collect(), Vec::new()),
-        Err(err) => (
-            Vec::new(),
-            vec![format!(
-                "malformed session record {}: {err}",
-                path.display()
-            )],
-        ),
-    };
-    Ok(SessionFileSnapshot {
-        modified,
-        len,
-        cursor: len,
-        complete_lines: 0,
-        checkpoint: read_checkpoint(path, len)?,
-        records,
-        parse_errors,
-    })
-}
-
-fn parse_jsonl_from(
-    path: &Path,
-    start: u64,
-    starting_line: u64,
-) -> Result<ParsedChunk, std::io::Error> {
-    #[cfg(test)]
-    record_session_file_parse(path, start);
-    let mut file = fs::File::open(path)?;
-    file.seek(SeekFrom::Start(start))?;
-    let mut reader = BufReader::new(file);
-    let mut records = Vec::new();
-    let mut errors = Vec::new();
-    let mut cursor = start;
-    let mut complete_lines = starting_line;
-    loop {
-        let mut line = Vec::new();
-        let read = reader.read_until(b'\n', &mut line)?;
-        if read == 0 {
-            break;
-        }
-        let terminated = line.last() == Some(&b'\n');
-        if line.iter().all(u8::is_ascii_whitespace) {
-            cursor += read as u64;
-            continue;
-        }
-        match serde_json::from_slice(&line) {
-            Ok(value) => {
-                cursor += read as u64;
-                complete_lines += 1;
-                if let Some(projected) = project_record(value) {
-                    records.push(projected);
-                }
-            }
-            Err(_) if !terminated => break,
-            Err(err) => {
-                cursor += read as u64;
-                complete_lines += 1;
-                errors.push(format!(
-                    "malformed session record {}:{}: {err}",
-                    path.display(),
-                    complete_lines
-                ));
-            }
-        }
-    }
-    Ok(ParsedChunk {
-        records,
-        cursor,
-        complete_lines,
-        errors,
-    })
-}
-
-fn append_checkpoint_matches(
-    path: &Path,
-    previous: &SessionFileSnapshot,
-) -> Result<bool, std::io::Error> {
-    if previous.cursor == 0 || previous.checkpoint.is_empty() {
-        return Ok(false);
-    }
-    Ok(read_checkpoint(path, previous.cursor)? == previous.checkpoint)
-}
-
-fn read_checkpoint(path: &Path, cursor: u64) -> Result<Vec<u8>, std::io::Error> {
-    if cursor == 0 {
-        return Ok(Vec::new());
-    }
-    let start = cursor.saturating_sub(CHECKPOINT_BYTES);
-    let mut file = fs::File::open(path)?;
-    file.seek(SeekFrom::Start(start))?;
-    let mut checkpoint = vec![0; (cursor - start) as usize];
-    file.read_exact(&mut checkpoint)?;
-    Ok(checkpoint)
-}
-
-fn project_record(record: Value) -> Option<Value> {
-    if record.get("taskKind").is_some() {
-        return Some(project_claude_meta(&record));
-    }
-
-    let record_type = record.get("type").and_then(Value::as_str)?;
-    let timestamp = record.get("timestamp").cloned().unwrap_or(Value::Null);
-    match record_type {
-        "session_meta" => Some(json!({
-            "type": record_type,
-            "timestamp": timestamp,
-            "payload": {
-                "id": record.pointer("/payload/id").cloned().unwrap_or(Value::Null),
-                "source": {
-                    "subagent": {
-                        "thread_spawn": {
-                            "agent_path": record.pointer("/payload/source/subagent/thread_spawn/agent_path").cloned().unwrap_or(Value::Null),
-                            "parent_thread_id": record.pointer("/payload/source/subagent/thread_spawn/parent_thread_id").cloned().unwrap_or(Value::Null),
-                        }
-                    }
-                }
-            }
-        })),
-        "event_msg" => Some(json!({
-            "type": record_type,
-            "timestamp": timestamp,
-            "payload": {
-                "type": record.pointer("/payload/type").cloned().unwrap_or(Value::Null),
-                "turn_id": record.pointer("/payload/turn_id").cloned().unwrap_or(Value::Null),
-                "kind": record.pointer("/payload/kind").cloned().unwrap_or(Value::Null),
-                "agent_thread_id": record.pointer("/payload/agent_thread_id").cloned().unwrap_or(Value::Null),
-                "agent_path": record.pointer("/payload/agent_path").cloned().unwrap_or(Value::Null),
-            }
-        })),
-        "response_item" => project_codex_response_item(&record, timestamp),
-        "assistant" | "user" => project_claude_record(&record, timestamp),
-        _ => None,
-    }
-}
-
-fn project_claude_meta(record: &Value) -> Value {
-    json!({
-        "taskKind": record.get("taskKind").cloned().unwrap_or(Value::Null),
-        "name": record.get("name").cloned().unwrap_or(Value::Null),
-        "agentId": record.get("agentId").cloned().unwrap_or(Value::Null),
-        "parentSessionId": first_value(record, &["parentSessionId", "parentSessionID", "parent_session_id"]),
-        "parentToolUseId": first_value(record, &["parentToolUseId", "parentToolUseID", "parent_tool_use_id"]),
-    })
-}
-
-fn project_codex_response_item(record: &Value, timestamp: Value) -> Option<Value> {
-    let payload = record.get("payload")?;
-    let payload_type = payload.get("type").and_then(Value::as_str)?;
-    match payload_type {
-        "message" if payload.get("role").and_then(Value::as_str) == Some("user") => {
-            let dispatches: Vec<Value> = payload
-                .get("content")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(|item| {
-                    item.get("text")
-                        .or_else(|| item.get("input_text"))
-                        .and_then(Value::as_str)
-                })
-                .flat_map(dispatch_markers)
-                .map(|text| json!({ "type": "input_text", "text": text }))
-                .collect();
-            (!dispatches.is_empty()).then(|| {
-                json!({
-                    "type": "response_item",
-                    "timestamp": timestamp,
-                    "payload": {
-                        "type": "message",
-                        "role": "user",
-                        "content": dispatches,
-                    }
-                })
-            })
-        }
-        "function_call" | "custom_tool_call" => {
-            let name = payload.get("name").and_then(Value::as_str)?;
-            let raw = payload
-                .get("arguments")
-                .or_else(|| payload.get("input"))
-                .cloned()
-                .unwrap_or(Value::Null);
-            Some(json!({
-                "type": "response_item",
-                "timestamp": timestamp,
-                "payload": {
-                    "type": payload_type,
-                    "name": name,
-                    "call_id": payload.get("call_id").or_else(|| payload.get("id")).cloned().unwrap_or(Value::Null),
-                    "arguments": project_tool_input(name, raw),
-                }
-            }))
-        }
-        "function_call_output" => Some(json!({
-            "type": "response_item",
-            "timestamp": timestamp,
-            "payload": {
-                "type": payload_type,
-                "call_id": payload.get("call_id").cloned().unwrap_or(Value::Null),
-            }
-        })),
-        _ => None,
-    }
-}
-
-fn project_claude_record(record: &Value, timestamp: Value) -> Option<Value> {
-    let record_type = record.get("type").and_then(Value::as_str)?;
-    let projected_content: Vec<Value> = record
-        .pointer("/message/content")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|block| match block.get("type").and_then(Value::as_str) {
-            Some("tool_use") => {
-                let name = block.get("name").and_then(Value::as_str)?;
-                Some(json!({
-                    "type": "tool_use",
-                    "id": block.get("id").cloned().unwrap_or(Value::Null),
-                    "name": name,
-                    "input": project_tool_input(name, block.get("input").cloned().unwrap_or(Value::Null)),
-                }))
-            }
-            Some("tool_result") => Some(json!({
-                "type": "tool_result",
-                "tool_use_id": block.get("tool_use_id").cloned().unwrap_or(Value::Null),
-            })),
-            _ => None,
-        })
-        .collect();
-    let teammate_content = record
-        .pointer("/message/content")
-        .and_then(Value::as_str)
-        .and_then(project_teammate_envelope);
-
-    Some(json!({
-        "type": record_type,
-        "timestamp": timestamp,
-        "sessionId": record.get("sessionId").cloned().unwrap_or(Value::Null),
-        "isSidechain": record.get("isSidechain").cloned().unwrap_or(Value::Bool(false)),
-        "agentId": record.get("agentId").cloned().unwrap_or(Value::Null),
-        "parentSessionId": first_value(record, &["parentSessionId", "parentSessionID", "parent_session_id"]),
-        "message": {
-            "content": teammate_content.unwrap_or(Value::Array(projected_content)),
-            "stop_reason": record.pointer("/message/stop_reason").cloned().unwrap_or(Value::Null),
-        }
-    }))
-}
-
-fn project_tool_input(name: &str, raw: Value) -> Value {
-    let parsed = raw
-        .as_str()
-        .and_then(|text| serde_json::from_str(text).ok())
-        .unwrap_or(raw);
-    if name == "exec" {
-        return json!({ "commands": code_mode_exec_commands(&parsed) });
-    }
-    if name == "Bash" {
-        return command_text(&parsed)
-            .map(|command| json!({ "commands": [command] }))
-            .unwrap_or_else(|| json!({ "commands": [] }));
-    }
-    if name.ends_with("spawn_agent") || name == "Agent" {
-        return json!({
-            "task_name": parsed.get("task_name").or_else(|| parsed.get("name")).cloned().unwrap_or(Value::Null),
-            "message": parsed
-                .get("message")
-                .or_else(|| parsed.get("prompt"))
-                .and_then(Value::as_str)
-                .map(dispatch_markers)
-                .unwrap_or_default()
-                .join("\n"),
-        });
-    }
-    if matches!(name, "request_user_input" | "AskUserQuestion") {
-        return json!({ "questions": project_questions(parsed.get("questions")) });
-    }
-    json!({
-        "file_path": parsed.get("file_path").cloned().unwrap_or(Value::Null),
-        "path": parsed.get("path").cloned().unwrap_or(Value::Null),
-        "cmd": parsed.get("cmd").cloned().unwrap_or(Value::Null),
-        "command": parsed.get("command").cloned().unwrap_or(Value::Null),
-        "uri": parsed.get("uri").cloned().unwrap_or(Value::Null),
-    })
-}
-
-fn command_text(value: &Value) -> Option<String> {
-    if let Some(text) = value.as_str() {
-        return Some(text.to_string());
-    }
-    ["cmd", "command", "input"]
-        .iter()
-        .find_map(|key| value.get(*key).and_then(command_text))
-}
-
-fn code_mode_exec_commands(value: &Value) -> Vec<String> {
-    if let Some(module) = value.as_str() {
-        return nested_exec_commands(module);
-    }
-    if let Some(command) = value
-        .get("cmd")
-        .or_else(|| value.get("command"))
-        .and_then(command_text)
+fn cwd_matches_entity(cwd: &Path, repo_root: &Path, entity: &SessionScanEntity) -> bool {
+    if cwd == repo_root
+        || cwd.starts_with(repo_root) && !cwd.starts_with(repo_root.join(".worktrees"))
     {
-        return vec![command];
+        return true;
     }
-    ["input", "arguments"]
-        .iter()
-        .find_map(|key| value.get(*key))
-        .map(code_mode_exec_commands)
-        .unwrap_or_default()
-}
-
-fn nested_exec_commands(module: &str) -> Vec<String> {
-    const CALL: &str = "tools.exec_command";
-
-    let mut commands = Vec::new();
-    let mut offset = 0;
-    while let Some(relative_start) = module[offset..].find(CALL) {
-        let call_start = offset + relative_start + CALL.len();
-        let after_name = &module[call_start..];
-        let whitespace = after_name.len() - after_name.trim_start().len();
-        let argument_start = call_start + whitespace;
-        if module.as_bytes().get(argument_start) != Some(&b'(') {
-            offset = call_start;
-            continue;
-        }
-        let source = &module[argument_start + 1..];
-        let Some((argument, consumed)) = balanced_call_argument(source) else {
-            break;
-        };
-        if let Ok(value) = serde_json::from_str::<Value>(argument.trim()) {
-            if let Some(command) = command_text(&value) {
-                commands.push(command);
-            }
-        }
-        offset = argument_start + 1 + consumed;
-    }
-    commands
-}
-
-fn balanced_call_argument(source: &str) -> Option<(&str, usize)> {
-    let mut depth = 1_u32;
-    let mut quote = None;
-    let mut escaped = false;
-    for (index, character) in source.char_indices() {
-        if let Some(expected) = quote {
-            if escaped {
-                escaped = false;
-            } else if character == '\\' {
-                escaped = true;
-            } else if character == expected {
-                quote = None;
-            }
-            continue;
-        }
-        match character {
-            '\'' | '"' | '`' => quote = Some(character),
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some((&source[..index], index + character.len_utf8()));
-                }
-            }
-            _ => {}
+    if let Some(worktree) = entity.worktree.as_ref() {
+        let worktree_root = repo_root.join(worktree);
+        if cwd == worktree_root || cwd.starts_with(&worktree_root) {
+            return true;
         }
     }
-    None
-}
-
-fn project_questions(value: Option<&Value>) -> Vec<Value> {
-    value
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .map(|question| {
-            let options: Vec<Value> = question
-                .get("options")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(|option| option.get("label").and_then(Value::as_str))
-                .map(|label| json!({ "label": label }))
-                .collect();
-            json!({
-                "id": question.get("id").cloned().unwrap_or(Value::Null),
-                "header": question.get("header").cloned().unwrap_or(Value::Null),
-                "options": options,
-            })
-        })
-        .collect()
-}
-
-fn project_teammate_envelope(content: &str) -> Option<Value> {
-    let start = content.find("<teammate-message>")? + "<teammate-message>".len();
-    let end = content[start..].find("</teammate-message>")? + start;
-    let envelope: Value = serde_json::from_str(content[start..end].trim()).ok()?;
-    let projected = json!({
-        "type": envelope.get("type").cloned().unwrap_or(Value::Null),
-        "from": envelope.get("from").cloned().unwrap_or(Value::Null),
-        "idleReason": envelope.get("idleReason").cloned().unwrap_or(Value::Null),
-    });
-    Some(Value::String(format!(
-        "<teammate-message>{projected}</teammate-message>"
-    )))
-}
-
-fn dispatch_markers(text: &str) -> Vec<String> {
-    let mut markers = Vec::new();
-    let mut remainder = text;
-    while let Some(start) = remainder.find(DISPATCH_PREFIX) {
-        let candidate = &remainder[start..];
-        let Some(end) = candidate.find(".md") else {
-            break;
-        };
-        let marker = &candidate[..end + 3];
-        let stem = &candidate[DISPATCH_PREFIX.len()..end];
-        if marker.len() <= 512
-            && stem
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || character == '-')
-            && STAGES
-                .iter()
-                .any(|stage| stem.ends_with(&format!("-{stage}")))
-        {
-            markers.push(marker.to_string());
-        }
-        remainder = &candidate[end + 3..];
-    }
-    markers
-}
-
-fn first_value(value: &Value, keys: &[&str]) -> Value {
-    keys.iter()
-        .find_map(|key| value.get(*key))
-        .cloned()
-        .unwrap_or(Value::Null)
-}
-
-fn collect_codex_events(
-    files: &[ParsedFile],
-    entities: &[SessionScanEntity],
-    fallback_time: i64,
-    per_entity: &mut HashMap<String, Vec<ActivityEvent>>,
-) {
-    for entity in entities {
-        let Some(slug) = entity_slug(&entity.path) else {
-            continue;
-        };
-        let mut matched_children = Vec::new();
-        for file in files {
-            let session_id = file
-                .records
-                .iter()
-                .find_map(|record| {
-                    (record_type(record) == Some("session_meta"))
-                        .then(|| string_at(record, &["payload", "id"]))
-                        .flatten()
-                })
-                .unwrap_or_else(|| file_id(&file.path));
-            let agent_path = file.records.iter().find_map(|record| {
-                string_at(
-                    record,
-                    &[
-                        "payload",
-                        "source",
-                        "subagent",
-                        "thread_spawn",
-                        "agent_path",
-                    ],
-                )
-            });
-            let parent_thread_id = file.records.iter().find_map(|record| {
-                string_at(
-                    record,
-                    &[
-                        "payload",
-                        "source",
-                        "subagent",
-                        "thread_spawn",
-                        "parent_thread_id",
-                    ],
-                )
-            });
-            let child_matches = agent_path
-                .as_deref()
-                .is_some_and(|path| canonical_codex_name(path, &slug))
-                && parent_thread_id
-                    .as_deref()
-                    .is_some_and(|parent| !parent.is_empty())
-                && file.records.iter().any(|record| {
-                    codex_assignment_text(record)
-                        .is_some_and(|text| contains_dispatch(&text, &slug))
-                });
-            if child_matches {
-                matched_children.push((session_id.clone(), agent_path.unwrap_or_default()));
-                collect_codex_worker(
-                    &file.records,
-                    per_entity.entry(entity.id.clone()).or_default(),
-                    &session_id,
-                    fallback_time,
-                );
-            } else {
-                collect_codex_first_officer(
-                    &file.records,
-                    per_entity.entry(entity.id.clone()).or_default(),
-                    &session_id,
-                    entity,
-                    &slug,
-                    fallback_time,
-                );
-            }
-        }
-        for file in files {
-            for record in &file.records {
-                if event_type(record) != Some("sub_agent_activity")
-                    || string_at(record, &["payload", "kind"]).as_deref() != Some("interrupted")
-                {
-                    continue;
-                }
-                let thread_id = string_at(record, &["payload", "agent_thread_id"]);
-                let agent_path = string_at(record, &["payload", "agent_path"]);
-                if let Some((session_id, _)) = matched_children.iter().find(|(session, path)| {
-                    thread_id.as_deref() == Some(session.as_str())
-                        && agent_path.as_deref() == Some(path.as_str())
-                }) {
-                    push_event(
-                        per_entity.entry(entity.id.clone()).or_default(),
-                        AgentRuntime::Codex,
-                        session_id,
-                        record_timestamp(record, fallback_time),
-                        ActivityEventKind::WorkerStopped,
-                    );
-                }
-            }
-        }
-    }
-}
-
-fn collect_codex_worker(
-    records: &[Value],
-    events: &mut Vec<ActivityEvent>,
-    session_id: &str,
-    fallback_time: i64,
-) {
-    let mut open_turn = None;
-    for record in records {
-        match event_type(record) {
-            Some("task_started") => {
-                open_turn = string_at(record, &["payload", "turn_id"]);
-                if open_turn.is_none() {
-                    continue;
-                }
-                push_event(
-                    events,
-                    AgentRuntime::Codex,
-                    session_id,
-                    record_timestamp(record, fallback_time),
-                    ActivityEventKind::WorkerStarted,
-                );
-            }
-            Some("task_complete")
-                if open_turn.as_deref()
-                    == string_at(record, &["payload", "turn_id"]).as_deref() =>
-            {
-                push_event(
-                    events,
-                    AgentRuntime::Codex,
-                    session_id,
-                    record_timestamp(record, fallback_time),
-                    ActivityEventKind::WorkerStopped,
-                );
-                open_turn = None;
-            }
-            _ => {}
-        }
-    }
-}
-
-fn collect_codex_first_officer(
-    records: &[Value],
-    events: &mut Vec<ActivityEvent>,
-    session_id: &str,
-    entity: &SessionScanEntity,
-    slug: &str,
-    fallback_time: i64,
-) {
-    let mut open_turn = None;
-    let mut scoped_turns = HashSet::new();
-    for record in records {
-        if event_type(record) == Some("task_started") {
-            open_turn = string_at(record, &["payload", "turn_id"]);
-            continue;
-        }
-        if let Some(call) = codex_call(record) {
-            let Some(turn) = open_turn.clone() else {
-                continue;
-            };
-            if call_scopes_entity(&call.name, &call.arguments, entity, slug) {
-                scoped_turns.insert(turn.clone());
-                push_event(
-                    events,
-                    AgentRuntime::Codex,
-                    session_id,
-                    record_timestamp(record, fallback_time),
-                    ActivityEventKind::FirstOfficerStarted,
-                );
-            }
-            if scoped_turns.contains(&turn)
-                && call.name == "request_user_input"
-                && is_gate_question(&call.arguments)
-            {
-                push_event(
-                    events,
-                    AgentRuntime::Codex,
-                    session_id,
-                    record_timestamp(record, fallback_time),
-                    ActivityEventKind::HumanGateOpened {
-                        call_id: call.call_id,
-                    },
-                );
-            }
-        }
-        if let Some(call_id) = codex_call_output_id(record) {
-            push_event(
-                events,
-                AgentRuntime::Codex,
-                session_id,
-                record_timestamp(record, fallback_time),
-                ActivityEventKind::HumanGateResolved { call_id },
-            );
-        }
-        if event_type(record) == Some("task_complete") {
-            let completed = string_at(record, &["payload", "turn_id"]).unwrap_or_default();
-            if scoped_turns.remove(&completed) {
-                push_event(
-                    events,
-                    AgentRuntime::Codex,
-                    session_id,
-                    record_timestamp(record, fallback_time),
-                    ActivityEventKind::FirstOfficerStopped,
-                );
-            }
-            if open_turn.as_deref() == Some(completed.as_str()) {
-                open_turn = None;
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ClaudeDispatch {
-    parent_session_id: String,
-    call_id: String,
-    worker_name: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ClaudeTeammateMeta {
-    parent_session_id: String,
-    parent_call_id: Option<String>,
-    worker_name: String,
-    agent_id: String,
-}
-
-fn collect_claude_events(
-    files: &[ParsedFile],
-    entities: &[SessionScanEntity],
-    fallback_time: i64,
-    per_entity: &mut HashMap<String, Vec<ActivityEvent>>,
-) {
-    let teammate_meta: Vec<ClaudeTeammateMeta> =
-        files.iter().filter_map(claude_teammate_meta).collect();
-
-    for entity in entities {
-        let Some(slug) = entity_slug(&entity.path) else {
-            continue;
-        };
-        let mut dispatches = Vec::new();
-        for file in files {
-            if file.records.iter().any(is_claude_sidechain) {
-                continue;
-            }
-            let session_id = claude_session_id(file);
-            collect_claude_first_officer(
-                &file.records,
-                per_entity.entry(entity.id.clone()).or_default(),
-                &session_id,
-                entity,
-                &slug,
-                fallback_time,
-                &mut dispatches,
-            );
-        }
-
-        for dispatch in &dispatches {
-            let matching_meta: Vec<_> = teammate_meta
-                .iter()
-                .filter(|meta| {
-                    meta.parent_session_id == dispatch.parent_session_id
-                        && meta.worker_name == dispatch.worker_name
-                        && meta
-                            .parent_call_id
-                            .as_deref()
-                            .is_none_or(|call_id| call_id == dispatch.call_id)
-                })
-                .collect();
-            let same_name_dispatches = dispatches
-                .iter()
-                .filter(|candidate| {
-                    candidate.parent_session_id == dispatch.parent_session_id
-                        && candidate.worker_name == dispatch.worker_name
-                })
-                .count();
-            if matching_meta.len() != 1
-                || (matching_meta[0].parent_call_id.is_none() && same_name_dispatches != 1)
-            {
-                continue;
-            }
-            let meta = matching_meta[0];
-            for file in files {
-                if claude_parent_session_from_path(&file.path).as_deref()
-                    != Some(dispatch.parent_session_id.as_str())
-                {
-                    continue;
-                }
-                let agent_id = file.records.iter().find_map(|record| {
-                    is_claude_sidechain(record)
-                        .then(|| string_at(record, &["agentId"]))
-                        .flatten()
-                });
-                if agent_id.as_deref() != Some(meta.agent_id.as_str()) {
-                    continue;
-                }
-                if let Some(start) = file.records.iter().find(|record| {
-                    is_claude_sidechain(record)
-                        && string_at(record, &["type"]).as_deref() == Some("assistant")
-                }) {
-                    push_event(
-                        per_entity.entry(entity.id.clone()).or_default(),
-                        AgentRuntime::ClaudeCode,
-                        &meta.agent_id,
-                        record_timestamp(start, fallback_time),
-                        ActivityEventKind::WorkerStarted,
-                    );
-                }
-            }
-            if same_name_dispatches == 1 {
-                for file in files {
-                    if file.records.iter().any(is_claude_sidechain) {
-                        continue;
-                    }
-                    if claude_session_id(file) != dispatch.parent_session_id {
-                        continue;
-                    }
-                    if let Some(stop) = file.records.iter().find(|record| {
-                        teammate_idle_notification(record)
-                            .is_some_and(|from| from == dispatch.worker_name)
-                    }) {
-                        push_event(
-                            per_entity.entry(entity.id.clone()).or_default(),
-                            AgentRuntime::ClaudeCode,
-                            &meta.agent_id,
-                            record_timestamp(stop, fallback_time),
-                            ActivityEventKind::WorkerStopped,
-                        );
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn collect_claude_first_officer(
-    records: &[Value],
-    events: &mut Vec<ActivityEvent>,
-    session_id: &str,
-    entity: &SessionScanEntity,
-    slug: &str,
-    fallback_time: i64,
-    dispatches: &mut Vec<ClaudeDispatch>,
-) {
-    let mut scoped = false;
-    let mut handoff_pending = false;
-    let mut dispatched_names = HashSet::new();
-    for record in records {
-        let is_assistant = string_at(record, &["type"]).as_deref() == Some("assistant");
-        if handoff_pending && is_assistant {
-            scoped = true;
-            handoff_pending = false;
-            push_event(
-                events,
-                AgentRuntime::ClaudeCode,
-                session_id,
-                record_timestamp(record, fallback_time),
-                ActivityEventKind::FirstOfficerStarted,
-            );
-        }
-        if let Some(blocks) = record
-            .get("message")
-            .and_then(|message| message.get("content"))
-            .and_then(Value::as_array)
-        {
-            for block in blocks {
-                if block.get("type").and_then(Value::as_str) == Some("tool_use") {
-                    let name = block
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    let input = block.get("input").cloned().unwrap_or(Value::Null);
-                    let call_id = block
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_string();
-                    if call_scopes_entity(name, &input, entity, slug) {
-                        scoped = true;
-                        push_event(
-                            events,
-                            AgentRuntime::ClaudeCode,
-                            session_id,
-                            record_timestamp(record, fallback_time),
-                            ActivityEventKind::FirstOfficerStarted,
-                        );
-                    }
-                    if name == "Agent" && call_scopes_entity(name, &input, entity, slug) {
-                        if let Some(worker_name) = input
-                            .get("task_name")
-                            .or_else(|| input.get("name"))
-                            .and_then(Value::as_str)
-                        {
-                            dispatched_names.insert(worker_name.to_string());
-                            dispatches.push(ClaudeDispatch {
-                                parent_session_id: session_id.to_string(),
-                                call_id: call_id.clone(),
-                                worker_name: worker_name.to_string(),
-                            });
-                        }
-                    }
-                    if scoped && name == "AskUserQuestion" && is_gate_question(&input) {
-                        push_event(
-                            events,
-                            AgentRuntime::ClaudeCode,
-                            session_id,
-                            record_timestamp(record, fallback_time),
-                            ActivityEventKind::HumanGateOpened { call_id },
-                        );
-                    }
-                }
-            }
-        }
-        if let Some(blocks) = record
-            .get("message")
-            .and_then(|message| message.get("content"))
-            .and_then(Value::as_array)
-        {
-            for block in blocks {
-                if block.get("type").and_then(Value::as_str) == Some("tool_result") {
-                    if let Some(call_id) = block.get("tool_use_id").and_then(Value::as_str) {
-                        push_event(
-                            events,
-                            AgentRuntime::ClaudeCode,
-                            session_id,
-                            record_timestamp(record, fallback_time),
-                            ActivityEventKind::HumanGateResolved {
-                                call_id: call_id.to_string(),
-                            },
-                        );
-                    }
-                }
-            }
-        }
-        if scoped && string_at(record, &["message", "stop_reason"]).as_deref() == Some("end_turn") {
-            push_event(
-                events,
-                AgentRuntime::ClaudeCode,
-                session_id,
-                record_timestamp(record, fallback_time),
-                ActivityEventKind::FirstOfficerStopped,
-            );
-            scoped = false;
-        }
-        if teammate_idle_notification(record).is_some_and(|from| dispatched_names.contains(&from)) {
-            // The linked envelope scopes the handoff, but the next observable
-            // assistant record is what makes FO work visible.
-            scoped = false;
-            handoff_pending = true;
-        }
-    }
-}
-
-fn claude_teammate_meta(file: &ParsedFile) -> Option<ClaudeTeammateMeta> {
-    let record = file.records.iter().find(|record| {
-        string_at(record, &["taskKind"]).as_deref() == Some("in_process_teammate")
-    })?;
-    let meta = ClaudeTeammateMeta {
-        parent_session_id: string_at(record, &["parentSessionId"])
-            .or_else(|| claude_parent_session_from_path(&file.path))?,
-        parent_call_id: string_at(record, &["parentToolUseId"]),
-        worker_name: string_at(record, &["name"])?,
-        agent_id: string_at(record, &["agentId"])?,
-    };
-    claude_parent_session_from_path(&file.path)
-        .as_deref()
-        .is_some_and(|parent| parent == meta.parent_session_id)
-        .then_some(meta)
-}
-
-fn claude_parent_session_from_path(path: &Path) -> Option<String> {
-    let subagents = path
-        .ancestors()
-        .find(|ancestor| ancestor.file_name().and_then(OsStr::to_str) == Some("subagents"))?;
-    subagents
-        .parent()?
-        .file_name()
-        .and_then(OsStr::to_str)
-        .map(str::to_string)
-}
-
-struct ParsedCall {
-    name: String,
-    call_id: String,
-    arguments: Value,
-}
-
-fn codex_call(record: &Value) -> Option<ParsedCall> {
-    let payload = record.get("payload")?;
-    let payload_type = payload.get("type").and_then(Value::as_str)?;
-    if !matches!(payload_type, "function_call" | "custom_tool_call") {
-        return None;
-    }
-    let name = payload.get("name").and_then(Value::as_str)?.to_string();
-    let call_id = payload
-        .get("call_id")
-        .or_else(|| payload.get("id"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_string();
-    let raw = payload
-        .get("arguments")
-        .or_else(|| payload.get("input"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let arguments = raw
-        .as_str()
-        .and_then(|text| serde_json::from_str(text).ok())
-        .unwrap_or(raw);
-    Some(ParsedCall {
-        name,
-        call_id,
-        arguments,
-    })
-}
-
-fn codex_call_output_id(record: &Value) -> Option<String> {
-    let payload = record.get("payload")?;
-    (payload.get("type").and_then(Value::as_str) == Some("function_call_output"))
-        .then(|| {
-            payload
-                .get("call_id")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .flatten()
+    entity
+        .worktree_source
+        .as_ref()
+        .is_some_and(|source| source.starts_with(cwd))
 }
 
 fn call_scopes_entity(
     tool_name: &str,
-    arguments: &Value,
+    input: &ProjectedToolInput,
     entity: &SessionScanEntity,
     slug: &str,
+    parent_session_id: Option<&str>,
 ) -> bool {
     if tool_name.ends_with("spawn_agent") || tool_name == "Agent" {
-        let expected_name = format!("spacedock-ensign-{slug}-");
-        let expected_codex_name = format!("spacedock_ensign_{}_", slug.replace('-', "_"));
-        let name = first_string(arguments, &["task_name", "name"]).unwrap_or_default();
-        let prompt = first_string(arguments, &["message", "prompt"]).unwrap_or_default();
-        return (name.starts_with(&expected_name) || name.starts_with(&expected_codex_name))
-            && contains_dispatch(prompt, slug);
+        let expected_dash = format!("spacedock-ensign-{slug}-");
+        let expected_underscore = format!("spacedock_ensign_{}_", slug.replace('-', "_"));
+        return input.task_name.as_deref().is_some_and(|name| {
+            (name.starts_with(&expected_dash) || name.starts_with(&expected_underscore))
+                && STAGES.iter().any(|stage| name.ends_with(stage))
+        }) && contains_dispatch(&input.dispatches, slug, parent_session_id);
     }
 
-    if matches!(tool_name, "exec" | "Bash") {
-        return arguments
-            .get("commands")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .any(|command| {
-                command_contains_exact_path(command, &entity.path)
-                    || contains_dispatch(command, slug)
-            });
+    if matches!(tool_name, "exec" | "exec_command" | "Bash") {
+        return input.commands.iter().any(|command| {
+            command_contains_exact_path(command, &entity.path)
+                || contains_dispatch_markers(command, slug, parent_session_id)
+        });
     }
 
-    let keys: &[&str] = match tool_name {
-        "Read" | "Edit" | "Write" => &["file_path", "path"],
-        _ => &["path", "uri"],
-    };
-    first_string(arguments, keys).is_some_and(|value| {
-        value == entity.path.to_string_lossy() || contains_dispatch(value, slug)
-    })
+    [&input.file_path, &input.path, &input.uri]
+        .into_iter()
+        .flatten()
+        .any(|value| {
+            value == &entity.path.to_string_lossy()
+                || contains_dispatch_markers(value, slug, parent_session_id)
+        })
 }
 
-fn first_string<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
-    keys.iter()
-        .find_map(|key| value.get(*key).and_then(Value::as_str))
+fn contains_dispatch_markers(text: &str, slug: &str, parent_session_id: Option<&str>) -> bool {
+    let markers = STAGES.iter().flat_map(|stage| {
+        let canonical = format!("/tmp/spacedock-dispatch/spacedock-ensign-{slug}-{stage}.md");
+        let prefixed = parent_session_id.map(|parent| {
+            format!("/tmp/spacedock-dispatch/{parent}-spacedock-ensign-{slug}-{stage}.md")
+        });
+        std::iter::once(canonical).chain(prefixed)
+    });
+    markers.into_iter().any(|marker| text.contains(&marker))
 }
 
 fn command_contains_exact_path(command: &str, path: &Path) -> bool {
@@ -1461,21 +307,15 @@ fn is_command_boundary(character: char) -> bool {
         )
 }
 
-fn is_gate_question(input: &Value) -> bool {
-    let Some(questions) = input.get("questions").and_then(Value::as_array) else {
-        return false;
-    };
-    questions.iter().any(|question| {
-        let gate_named = ["id", "header"]
-            .iter()
-            .filter_map(|field| question.get(*field).and_then(Value::as_str))
-            .any(|value| value.to_ascii_lowercase().contains("gate"));
-        let labels: Vec<String> = question
-            .get("options")
-            .and_then(Value::as_array)
+fn is_gate_question(input: &ProjectedToolInput) -> bool {
+    input.questions.iter().any(|question| {
+        let gate_named = [&question.id, &question.header]
             .into_iter()
             .flatten()
-            .filter_map(|option| option.get("label").and_then(Value::as_str))
+            .any(|value| value.to_ascii_lowercase().contains("gate"));
+        let labels: Vec<_> = question
+            .labels
+            .iter()
             .map(|label| label.to_ascii_lowercase())
             .collect();
         let accepts = labels.iter().any(|label| {
@@ -1492,124 +332,7 @@ fn is_gate_question(input: &Value) -> bool {
     })
 }
 
-fn codex_assignment_text(record: &Value) -> Option<String> {
-    let payload = record.get("payload")?;
-    if payload.get("role").and_then(Value::as_str) != Some("user") {
-        return None;
-    }
-    payload
-        .get("content")
-        .and_then(Value::as_array)?
-        .iter()
-        .filter_map(|item| {
-            item.get("text")
-                .or_else(|| item.get("input_text"))
-                .and_then(Value::as_str)
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .into()
-}
-
-fn canonical_codex_name(path: &str, slug: &str) -> bool {
-    STAGES.iter().any(|stage| {
-        path.rsplit('/').next()
-            == Some(format!("spacedock_ensign_{}_{}", slug.replace('-', "_"), stage).as_str())
-            || path.rsplit('/').next() == Some(format!("spacedock_ensign_{slug}_{stage}").as_str())
-    })
-}
-
-fn contains_dispatch(text: &str, slug: &str) -> bool {
-    STAGES
-        .iter()
-        .any(|stage| text.contains(&format!("{DISPATCH_PREFIX}{slug}-{stage}.md")))
-}
-
-fn is_claude_sidechain(record: &Value) -> bool {
-    record
-        .get("isSidechain")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-}
-
-fn claude_session_id(file: &ParsedFile) -> String {
-    file.records
-        .iter()
-        .find_map(|record| string_at(record, &["sessionId"]))
-        .unwrap_or_else(|| file_id(&file.path))
-}
-
-fn teammate_idle_notification(record: &Value) -> Option<String> {
-    if string_at(record, &["type"]).as_deref() != Some("user") {
-        return None;
-    }
-    let content = record
-        .get("message")
-        .and_then(|message| message.get("content"))
-        .and_then(Value::as_str)?;
-    let start = content.find("<teammate-message>")? + "<teammate-message>".len();
-    let end = content[start..].find("</teammate-message>")? + start;
-    let envelope: Value = serde_json::from_str(content[start..end].trim()).ok()?;
-    (envelope.get("type").and_then(Value::as_str) == Some("idle_notification")
-        && envelope.get("idleReason").and_then(Value::as_str) == Some("available"))
-    .then(|| {
-        envelope
-            .get("from")
-            .and_then(Value::as_str)
-            .map(str::to_string)
-    })
-    .flatten()
-}
-
-fn push_event(
-    events: &mut Vec<ActivityEvent>,
-    runtime: AgentRuntime,
-    session_id: &str,
-    updated_unix: i64,
-    kind: ActivityEventKind,
-) {
-    events.push(ActivityEvent {
-        runtime,
-        session_id: session_id.to_string(),
-        updated_unix,
-        kind,
-    });
-}
-
-fn record_type(record: &Value) -> Option<&str> {
-    record.get("type").and_then(Value::as_str)
-}
-
-fn event_type(record: &Value) -> Option<&str> {
-    (record_type(record) == Some("event_msg"))
-        .then(|| {
-            record
-                .get("payload")
-                .and_then(|payload| payload.get("type"))
-                .and_then(Value::as_str)
-        })
-        .flatten()
-}
-
-fn string_at(value: &Value, path: &[&str]) -> Option<String> {
-    path.iter()
-        .try_fold(value, |current, key| current.get(*key))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-}
-
-fn record_timestamp(record: &Value, fallback: i64) -> i64 {
-    record
-        .get("timestamp")
-        .and_then(|timestamp| {
-            timestamp
-                .as_i64()
-                .or_else(|| timestamp.as_str().and_then(parse_rfc3339_unix))
-        })
-        .unwrap_or(fallback)
-}
-
-fn parse_rfc3339_unix(value: &str) -> Option<i64> {
+fn parse_rfc3339_timestamp(value: &str) -> Option<EvidenceTimestamp> {
     let (date, rest) = value.split_once('T')?;
     let mut date_parts = date.split('-');
     let year = date_parts.next()?.parse::<i32>().ok()?;
@@ -1623,7 +346,16 @@ fn parse_rfc3339_unix(value: &str) -> Option<i64> {
     let mut clock_parts = clock.split(':');
     let hour = clock_parts.next()?.parse::<i64>().ok()?;
     let minute = clock_parts.next()?.parse::<i64>().ok()?;
-    let second = clock_parts.next()?.split('.').next()?.parse::<i64>().ok()?;
+    let second_and_fraction = clock_parts.next()?;
+    let (second, subsecond_nanos) =
+        if let Some((second, fraction)) = second_and_fraction.split_once('.') {
+            (
+                second.parse::<i64>().ok()?,
+                parse_fractional_nanos(fraction)?,
+            )
+        } else {
+            (second_and_fraction.parse::<i64>().ok()?, 0)
+        };
     let offset = if zone == "Z" {
         0
     } else {
@@ -1633,7 +365,25 @@ fn parse_rfc3339_unix(value: &str) -> Option<i64> {
         let minutes = parts.next().unwrap_or("0").parse::<i64>().ok()?;
         sign * (hours * 3600 + minutes * 60)
     };
-    Some(days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second - offset)
+    Some(EvidenceTimestamp {
+        unix_seconds: days_from_civil(year, month, day) * 86_400
+            + hour * 3600
+            + minute * 60
+            + second
+            - offset,
+        subsecond_nanos,
+    })
+}
+
+fn parse_fractional_nanos(fraction: &str) -> Option<u32> {
+    if fraction.is_empty()
+        || fraction.len() > 9
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let parsed = fraction.parse::<u32>().ok()?;
+    Some(parsed * 10_u32.pow(9 - fraction.len() as u32))
 }
 
 fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
@@ -1644,26 +394,6 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
     let day_of_year = (153 * shifted_month + 2) / 5 + day as i32 - 1;
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     (era * 146_097 + day_of_era - 719_468) as i64
-}
-
-fn file_id(path: &Path) -> String {
-    path.file_stem()
-        .and_then(OsStr::to_str)
-        .unwrap_or("unknown-session")
-        .to_string()
-}
-
-fn is_pruned_dir(path: &Path) -> bool {
-    path.file_name()
-        .and_then(OsStr::to_str)
-        .is_some_and(|name| matches!(name, ".git" | "node_modules" | "target"))
-}
-
-fn is_session_file(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(OsStr::to_str),
-        Some("jsonl" | "json")
-    )
 }
 
 fn system_time_unix(time: SystemTime) -> Option<i64> {
@@ -1687,11 +417,6 @@ fn record_session_file_parse(path: &Path, start: u64) {
 }
 
 #[cfg(test)]
-fn session_file_parse_count(path: &Path) -> usize {
-    session_file_parse_starts(path).len()
-}
-
-#[cfg(test)]
 fn session_file_parse_starts(path: &Path) -> Vec<u64> {
     SESSION_FILE_PARSE_STARTS
         .lock()
@@ -1703,7 +428,11 @@ fn session_file_parse_starts(path: &Path) -> Vec<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use std::io::Write;
+
     use super::*;
+    use crate::domain::{ActivityHandler, EntityActivity};
 
     fn event(
         at: i64,
@@ -1715,12 +444,16 @@ mod tests {
             runtime,
             session_id: session.to_string(),
             updated_unix: at,
+            updated_subsecond_nanos: 0,
+            source: PathBuf::from("manual"),
+            byte_offset: at as u64,
+            evidence_kind_rank: 0,
             kind,
         }
     }
 
     #[test]
-    fn reducer_covers_handoff_next_worker_gate_and_precedence() {
+    fn reducer_is_deterministic_and_preserves_precedence_and_handoff() {
         let events = vec![
             event(
                 1,
@@ -1731,85 +464,54 @@ mod tests {
             event(
                 2,
                 AgentRuntime::Codex,
-                "worker-1",
+                "worker",
                 ActivityEventKind::WorkerStarted,
             ),
             event(
                 3,
                 AgentRuntime::Codex,
-                "worker-1",
+                "worker",
                 ActivityEventKind::WorkerStopped,
             ),
         ];
-        assert_eq!(
-            reduce_activity(&events).status_label(),
-            "running · FO",
-            "worker completion must reveal the still-open FO handoff"
-        );
-
-        let mut next_worker = events.clone();
-        next_worker.push(event(
+        assert_eq!(reduce_activity(&events).status_label(), "running · FO");
+        let mut shuffled = vec![events[2].clone(), events[0].clone(), events[1].clone()];
+        assert_eq!(reduce_activity(&shuffled), reduce_activity(&events));
+        shuffled.push(event(
             4,
             AgentRuntime::ClaudeCode,
             "worker-2",
             ActivityEventKind::WorkerStarted,
         ));
-        assert_eq!(
-            reduce_activity(&next_worker).status_label(),
-            "running · worker"
-        );
-
-        next_worker.push(event(
+        shuffled.push(event(
             5,
             AgentRuntime::Codex,
             "fo",
             ActivityEventKind::HumanGateOpened {
-                call_id: "gate-1".to_string(),
+                call_id: "gate".to_string(),
             },
         ));
-        assert_eq!(reduce_activity(&next_worker).status_label(), "human-gate");
-        next_worker.push(event(
-            6,
+        assert_eq!(reduce_activity(&shuffled).status_label(), "human-gate");
+
+        let mut same_time_start = event(
+            10,
             AgentRuntime::Codex,
-            "fo",
-            ActivityEventKind::HumanGateResolved {
-                call_id: "gate-1".to_string(),
-            },
-        ));
-        assert_eq!(
-            reduce_activity(&next_worker).status_label(),
-            "running · worker"
+            "same-time",
+            ActivityEventKind::WorkerStarted,
         );
-    }
-
-    #[test]
-    fn reducer_returns_idle_with_terminal_timestamp() {
-        let activity = reduce_activity(&[
-            event(
-                10,
-                AgentRuntime::Codex,
-                "worker",
-                ActivityEventKind::WorkerStarted,
-            ),
-            event(
-                12,
-                AgentRuntime::Codex,
-                "worker",
-                ActivityEventKind::WorkerStopped,
-            ),
-        ]);
-        assert_eq!(
-            activity,
-            EntityActivity::Idle {
-                updated_unix: Some(12)
-            }
+        same_time_start.byte_offset = 1;
+        let mut same_time_stop = event(
+            10,
+            AgentRuntime::Codex,
+            "same-time",
+            ActivityEventKind::WorkerStopped,
         );
-    }
-
-    #[test]
-    fn rfc3339_parser_handles_utc_and_offsets() {
-        assert_eq!(parse_rfc3339_unix("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(parse_rfc3339_unix("1970-01-01T08:00:00+08:00"), Some(0));
+        same_time_stop.byte_offset = 2;
+        assert_eq!(
+            reduce_activity(&[same_time_stop, same_time_start]).status_label(),
+            "idle",
+            "source byte order must settle equal-timestamp lifecycle records"
+        );
     }
 
     fn fixture_root(name: &str) -> PathBuf {
@@ -1818,490 +520,683 @@ mod tests {
             .join(name)
     }
 
-    fn scan_fixture(runtime: AgentRuntime, fixture: &str) -> SessionScanReport {
-        let entity = SessionScanEntity {
-            id: "069".to_string(),
-            path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
-            worktree: None,
+    fn entity() -> SessionScanEntity {
+        SessionScanEntity {
+            id: "075".to_string(),
+            path: PathBuf::from("/repo/docs/state/stable-agent-activity-detection.md"),
+            worktree: Some(".worktrees/stable-agent-activity-detection".to_string()),
             worktree_source: None,
-        };
-        let root = fixture_root(fixture);
+        }
+    }
+
+    fn fixture_request(runtime: AgentRuntime, fixture: &str) -> SessionScanRequest {
         let roots = match runtime {
             AgentRuntime::Codex => SessionRoots {
-                codex: vec![root],
+                codex: vec![fixture_root(fixture)],
                 claude_code: Vec::new(),
             },
             AgentRuntime::ClaudeCode => SessionRoots {
                 codex: Vec::new(),
-                claude_code: vec![root],
+                claude_code: vec![fixture_root(fixture)],
             },
         };
-        scan_local_sessions_with(
-            &SessionScanRequest {
-                workflow_dir: PathBuf::from("/repo/docs"),
-                repo_root: PathBuf::from("/repo"),
-                entities: vec![entity],
-                roots,
-                previous_session_files: HashMap::new(),
-            },
-            &StdProcessProbe,
-            UNIX_EPOCH,
-        )
-        .expect("fixture scan")
-    }
-
-    #[test]
-    fn codex_worker_fixture_requires_canonical_child_and_exact_assignment() {
-        let report = scan_fixture(AgentRuntime::Codex, "codex-worker-open");
-        assert_eq!(report.errors, Vec::<String>::new());
-        assert_eq!(
-            report.attributions[0].activity.status_label(),
-            "running · worker"
-        );
-        assert_eq!(
-            report.attributions[0].activity.session_id(),
-            Some("codex-worker-redacted")
-        );
-    }
-
-    #[test]
-    fn codex_worker_fixture_requires_non_empty_parent_thread_linkage() {
-        let report = scan_fixture(AgentRuntime::Codex, "codex-worker-unlinked");
-        assert_eq!(
-            report.attributions[0].activity.status_label(),
-            "idle",
-            "a child-shaped session without its parent thread must fail closed"
-        );
-    }
-
-    #[test]
-    fn codex_task_complete_closes_only_the_open_worker_turn() {
-        let report = scan_fixture(AgentRuntime::Codex, "codex-worker-complete");
-        assert_eq!(report.attributions[0].activity.status_label(), "idle");
-        assert!(report.attributions[0].activity.updated_unix().is_some());
-    }
-
-    #[test]
-    fn codex_gate_fixture_requires_scoped_fo_turn_and_balanced_options() {
-        let report = scan_fixture(AgentRuntime::Codex, "codex-fo-gate");
-        assert_eq!(report.attributions[0].activity.status_label(), "human-gate");
-    }
-
-    #[test]
-    fn codex_exec_custom_call_scopes_nested_executable_commands_only() {
-        for fixture in ["codex-fo-exec", "codex-fo-exec-nested"] {
-            let report = scan_fixture(AgentRuntime::Codex, fixture);
-            assert_eq!(
-                report.attributions[0].activity.status_label(),
-                "running · FO",
-                "fixture {fixture} must recognize exact entity scope"
-            );
-        }
-        let text_only = scan_fixture(AgentRuntime::Codex, "codex-fo-exec-text-only");
-        assert_eq!(
-            text_only.attributions[0].activity.status_label(),
-            "idle",
-            "a non-executing text(path) mention in the module must fail closed"
-        );
-    }
-
-    #[test]
-    fn claude_worker_fixture_correlates_agent_call_meta_and_sidechain() {
-        let report = scan_fixture(AgentRuntime::ClaudeCode, "claude-worker-open");
-        assert_eq!(report.errors, Vec::<String>::new());
-        assert_eq!(
-            report.attributions[0].activity.status_label(),
-            "running · worker"
-        );
-        assert_eq!(
-            report.attributions[0].activity.session_id(),
-            Some("claude-worker-redacted")
-        );
-    }
-
-    #[test]
-    fn claude_idle_notification_closes_the_correlated_worker() {
-        let report = scan_fixture(AgentRuntime::ClaudeCode, "claude-worker-idle");
-        assert_eq!(report.attributions[0].activity.status_label(), "idle");
-        assert!(report.attributions[0].activity.updated_unix().is_some());
-    }
-
-    #[test]
-    fn claude_same_name_activity_stays_linked_to_exact_parent_and_call() {
-        let report = scan_fixture(AgentRuntime::ClaudeCode, "claude-two-parent-same-name");
-        assert_eq!(
-            report.attributions[0].activity.status_label(),
-            "running · worker"
-        );
-        assert_eq!(
-            report.attributions[0].activity.session_id(),
-            Some("worker-a"),
-            "parent B metadata and idle notification must not start or stop parent A's worker"
-        );
-    }
-
-    #[test]
-    fn claude_ambiguous_same_parent_calls_without_call_metadata_fail_closed() {
-        let temp = tempfile::tempdir().expect("temp");
-        let subagents = temp.path().join("parent/subagents");
-        fs::create_dir_all(&subagents).expect("subagents");
-        let dispatch = "Read /tmp/spacedock-dispatch/spacedock-ensign-detect-entity-activity-state-implement.md and treat its content as your assignment.";
-        fs::write(
-            temp.path().join("parent.jsonl"),
-            format!(
-                r#"{{"timestamp":1,"type":"assistant","sessionId":"parent","isSidechain":false,"message":{{"content":[{{"type":"tool_use","id":"call-a","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}},{{"type":"tool_use","id":"call-b","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}}],"stop_reason":"end_turn"}}}}"#
-            ),
-        )
-        .expect("parent");
-        fs::write(
-            subagents.join("worker.meta.json"),
-            r#"{"taskKind":"in_process_teammate","name":"spacedock-ensign-detect-entity-activity-state-implement","agentId":"worker"}"#,
-        )
-        .expect("meta");
-        fs::write(
-            subagents.join("worker.jsonl"),
-            r#"{"timestamp":2,"type":"assistant","sessionId":"child","isSidechain":true,"agentId":"worker","message":{"content":[{"type":"text","text":"accepted"}],"stop_reason":null}}"#,
-        )
-        .expect("child");
-
-        let report = scan_local_sessions_with(
-            &SessionScanRequest {
-                workflow_dir: PathBuf::from("/repo/docs"),
-                repo_root: PathBuf::from("/repo"),
-                entities: vec![SessionScanEntity {
-                    id: "069".to_string(),
-                    path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
-                    worktree: None,
-                    worktree_source: None,
-                }],
-                roots: SessionRoots {
-                    codex: Vec::new(),
-                    claude_code: vec![temp.path().to_path_buf()],
-                },
-                previous_session_files: HashMap::new(),
-            },
-            &StdProcessProbe,
-            UNIX_EPOCH,
-        )
-        .expect("scan");
-        assert_eq!(
-            report.attributions[0].activity.status_label(),
-            "idle",
-            "metadata without a call id must not choose between same-parent duplicate names"
-        );
-    }
-
-    #[test]
-    fn claude_ambiguous_same_parent_idle_name_does_not_stop_exact_call() {
-        let temp = tempfile::tempdir().expect("temp");
-        let subagents = temp.path().join("parent/subagents");
-        fs::create_dir_all(&subagents).expect("subagents");
-        let dispatch = "Read /tmp/spacedock-dispatch/spacedock-ensign-detect-entity-activity-state-implement.md and treat its content as your assignment.";
-        fs::write(
-            temp.path().join("parent.jsonl"),
-            format!(
-                r#"{{"timestamp":1,"type":"assistant","sessionId":"parent","isSidechain":false,"message":{{"content":[{{"type":"tool_use","id":"call-a","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}},{{"type":"tool_use","id":"call-b","name":"Agent","input":{{"name":"spacedock-ensign-detect-entity-activity-state-implement","prompt":"{dispatch}"}}}}],"stop_reason":"end_turn"}}}}
-{{"timestamp":3,"type":"user","sessionId":"parent","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"idle_notification\",\"from\":\"spacedock-ensign-detect-entity-activity-state-implement\",\"idleReason\":\"available\"}}</teammate-message>"}}}}"#
-            ),
-        )
-        .expect("parent");
-        fs::write(
-            subagents.join("worker.meta.json"),
-            r#"{"taskKind":"in_process_teammate","name":"spacedock-ensign-detect-entity-activity-state-implement","agentId":"worker","parentSessionId":"parent","parentToolUseId":"call-a"}"#,
-        )
-        .expect("meta");
-        fs::write(
-            subagents.join("worker.jsonl"),
-            r#"{"timestamp":2,"type":"assistant","sessionId":"child","isSidechain":true,"agentId":"worker","message":{"content":[{"type":"text","text":"accepted"}],"stop_reason":null}}"#,
-        )
-        .expect("child");
-
-        let report = scan_local_sessions_with(
-            &SessionScanRequest {
-                workflow_dir: PathBuf::from("/repo/docs"),
-                repo_root: PathBuf::from("/repo"),
-                entities: vec![SessionScanEntity {
-                    id: "069".to_string(),
-                    path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
-                    worktree: None,
-                    worktree_source: None,
-                }],
-                roots: SessionRoots {
-                    codex: Vec::new(),
-                    claude_code: vec![temp.path().to_path_buf()],
-                },
-                previous_session_files: HashMap::new(),
-            },
-            &StdProcessProbe,
-            UNIX_EPOCH,
-        )
-        .expect("scan");
-        assert_eq!(
-            report.attributions[0].activity.status_label(),
-            "running · worker",
-            "name-only idle evidence must not choose between same-parent duplicate dispatches"
-        );
-    }
-
-    #[test]
-    fn claude_gate_and_end_turn_records_drive_exact_fo_transitions() {
-        let gate = scan_fixture(AgentRuntime::ClaudeCode, "claude-fo-gate");
-        assert_eq!(gate.attributions[0].activity.status_label(), "human-gate");
-
-        let complete = scan_fixture(AgentRuntime::ClaudeCode, "claude-fo-complete");
-        assert_eq!(complete.attributions[0].activity.status_label(), "idle");
-        assert!(complete.attributions[0].activity.updated_unix().is_some());
-    }
-
-    #[test]
-    fn ordinary_path_mentions_do_not_create_activity() {
-        let temp = tempfile::tempdir().expect("temp");
-        fs::write(
-            temp.path().join("mention.jsonl"),
-            r#"{"timestamp":1,"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"/repo/docs/state/detect-entity-activity-state.md approve"}]}}"#,
-        )
-        .expect("fixture");
-        let entity = SessionScanEntity {
-            id: "069".to_string(),
-            path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
-            worktree: None,
-            worktree_source: None,
-        };
-        let report = scan_local_sessions_with(
-            &SessionScanRequest {
-                workflow_dir: PathBuf::from("/repo/docs"),
-                repo_root: PathBuf::from("/repo"),
-                entities: vec![entity],
-                roots: SessionRoots {
-                    codex: vec![temp.path().to_path_buf()],
-                    claude_code: Vec::new(),
-                },
-                previous_session_files: HashMap::new(),
-            },
-            &StdProcessProbe,
-            UNIX_EPOCH,
-        )
-        .expect("scan");
-        assert_eq!(report.attributions[0].activity, EntityActivity::default());
-    }
-
-    #[test]
-    fn malformed_lines_are_reported_without_discarding_valid_transitions() {
-        let temp = tempfile::tempdir().expect("temp");
-        let fixture = fs::read_to_string(fixture_root("codex-worker-open/rollout.jsonl"))
-            .expect("source fixture");
-        fs::write(
-            temp.path().join("rollout.jsonl"),
-            format!("{fixture}\nnot-json\n"),
-        )
-        .expect("fixture");
-        let entity = SessionScanEntity {
-            id: "069".to_string(),
-            path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
-            worktree: None,
-            worktree_source: None,
-        };
-        let report = scan_local_sessions_with(
-            &SessionScanRequest {
-                workflow_dir: PathBuf::from("/repo/docs"),
-                repo_root: PathBuf::from("/repo"),
-                entities: vec![entity],
-                roots: SessionRoots {
-                    codex: vec![temp.path().to_path_buf()],
-                    claude_code: Vec::new(),
-                },
-                previous_session_files: HashMap::new(),
-            },
-            &StdProcessProbe,
-            UNIX_EPOCH,
-        )
-        .expect("scan");
-        assert_eq!(
-            report.attributions[0].activity.status_label(),
-            "running · worker"
-        );
-        assert_eq!(report.errors.len(), 1);
-    }
-
-    #[test]
-    fn large_append_truncation_and_deletion_never_create_false_idle() {
-        use std::io::Write;
-
-        let temp = tempfile::tempdir().expect("temp");
-        let path = temp.path().join("rollout.jsonl");
-        let fixture = fs::read_to_string(fixture_root("codex-worker-open/rollout.jsonl"))
-            .expect("source fixture");
-        let mut file = fs::File::create(&path).expect("large fixture");
-        for _ in 0..90_000 {
-            writeln!(file, r#"{{"type":"noise","padding":"{}"}}"#, "x".repeat(32)).expect("noise");
-        }
-        file.write_all(fixture.as_bytes()).expect("worker records");
-        drop(file);
-        assert!(
-            fs::metadata(&path).expect("metadata").len() > 4_000_000,
-            "regression fixture must exceed the removed cutoff"
-        );
-
-        let base_request = SessionScanRequest {
+        SessionScanRequest {
             workflow_dir: PathBuf::from("/repo/docs"),
             repo_root: PathBuf::from("/repo"),
-            entities: vec![SessionScanEntity {
-                id: "069".to_string(),
-                path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
-                worktree: None,
-                worktree_source: None,
-            }],
+            entities: vec![entity()],
+            roots,
+            previous_state: SessionScanState::default(),
+        }
+    }
+
+    fn legacy_fixture_request(runtime: AgentRuntime, fixture: &str) -> SessionScanRequest {
+        let mut request = fixture_request(runtime, fixture);
+        request.entities = vec![SessionScanEntity {
+            id: "069".to_string(),
+            path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
+            worktree: None,
+            worktree_source: None,
+        }];
+        request
+    }
+
+    #[test]
+    fn codex_v2_parent_start_fixture_runs_and_exact_mismatches_fail_closed() {
+        let report = scan_local_sessions_with(
+            &fixture_request(AgentRuntime::Codex, "codex-v2-worker-open"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("fixture");
+        assert_eq!(
+            report.attributions[0].activity,
+            EntityActivity::Running {
+                handler: ActivityHandler::Worker,
+                runtime: AgentRuntime::Codex,
+                session_id: "codex-child".to_string(),
+                updated_unix: 2,
+            }
+        );
+
+        for fixture in [
+            "codex-v2-wrong-parent",
+            "codex-v2-wrong-path",
+            "codex-v2-wrong-cwd",
+        ] {
+            let report = scan_local_sessions_with(
+                &fixture_request(AgentRuntime::Codex, fixture),
+                &StdProcessProbe,
+                UNIX_EPOCH,
+            )
+            .expect("negative fixture");
+            assert_eq!(
+                report.attributions[0].activity.status_label(),
+                "idle",
+                "{fixture} must fail closed"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_worker_correlations_and_terminals_remain_supported() {
+        let codex_open = scan_local_sessions_with(
+            &legacy_fixture_request(AgentRuntime::Codex, "codex-worker-open"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("legacy Codex");
+        assert_eq!(
+            codex_open.attributions[0].activity.session_id(),
+            Some("codex-worker-redacted")
+        );
+        let codex_complete = scan_local_sessions_with(
+            &legacy_fixture_request(AgentRuntime::Codex, "codex-worker-complete"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("legacy Codex complete");
+        assert_eq!(
+            codex_complete.attributions[0].activity.status_label(),
+            "idle"
+        );
+        let codex_unlinked = scan_local_sessions_with(
+            &legacy_fixture_request(AgentRuntime::Codex, "codex-worker-unlinked"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("legacy Codex unlinked");
+        assert_eq!(
+            codex_unlinked.attributions[0].activity.status_label(),
+            "idle"
+        );
+
+        let claude_open = scan_local_sessions_with(
+            &legacy_fixture_request(AgentRuntime::ClaudeCode, "claude-worker-open"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("legacy Claude");
+        assert_eq!(
+            claude_open.attributions[0].activity.session_id(),
+            Some("claude-worker-redacted")
+        );
+        let claude_idle = scan_local_sessions_with(
+            &legacy_fixture_request(AgentRuntime::ClaudeCode, "claude-worker-idle"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("legacy Claude idle");
+        assert_eq!(claude_idle.attributions[0].activity.status_label(), "idle");
+    }
+
+    #[test]
+    fn claude_modern_fixture_correlates_prefixed_dispatch_meta_and_sidechain() {
+        let report = scan_local_sessions_with(
+            &fixture_request(AgentRuntime::ClaudeCode, "claude-modern-worker-open"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("fixture");
+        assert_eq!(
+            report.attributions[0].activity.session_id(),
+            Some("claude-worker")
+        );
+        assert_eq!(
+            report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+    }
+
+    #[test]
+    fn claude_modern_correlation_fails_closed_across_cwd_parent_and_ambiguous_calls() {
+        for fixture in [
+            "claude-modern-wrong-cwd",
+            "claude-modern-cross-parent",
+            "claude-modern-duplicate-call",
+        ] {
+            let report = scan_local_sessions_with(
+                &fixture_request(AgentRuntime::ClaudeCode, fixture),
+                &StdProcessProbe,
+                UNIX_EPOCH,
+            )
+            .expect("negative fixture");
+            assert_eq!(
+                report.attributions[0].activity.status_label(),
+                "idle",
+                "{fixture} must fail closed"
+            );
+        }
+    }
+
+    #[test]
+    fn existing_first_officer_and_gate_evidence_keeps_exact_scope() {
+        for fixture in [
+            "codex-fo-exec",
+            "codex-fo-exec-nested",
+            "codex-fo-exec-command",
+        ] {
+            let report = scan_local_sessions_with(
+                &legacy_fixture_request(AgentRuntime::Codex, fixture),
+                &StdProcessProbe,
+                UNIX_EPOCH,
+            )
+            .expect("Codex FO fixture");
+            assert_eq!(
+                report.attributions[0].activity.status_label(),
+                "running · FO"
+            );
+        }
+        let text_only = scan_local_sessions_with(
+            &legacy_fixture_request(AgentRuntime::Codex, "codex-fo-exec-text-only"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("text-only fixture");
+        assert_eq!(text_only.attributions[0].activity.status_label(), "idle");
+
+        let codex_gate = scan_local_sessions_with(
+            &legacy_fixture_request(AgentRuntime::Codex, "codex-fo-gate"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("Codex gate");
+        assert_eq!(
+            codex_gate.attributions[0].activity.status_label(),
+            "human-gate"
+        );
+        let claude_gate = scan_local_sessions_with(
+            &legacy_fixture_request(AgentRuntime::ClaudeCode, "claude-fo-gate"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("Claude gate");
+        assert_eq!(
+            claude_gate.attributions[0].activity.status_label(),
+            "human-gate"
+        );
+        let claude_complete = scan_local_sessions_with(
+            &legacy_fixture_request(AgentRuntime::ClaudeCode, "claude-fo-complete"),
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("Claude complete");
+        assert_eq!(
+            claude_complete.attributions[0].activity.status_label(),
+            "idle"
+        );
+    }
+
+    #[test]
+    fn codex_evidence_survives_unchanged_partial_truncate_rotate_and_delete() {
+        let temp = tempfile::tempdir().expect("temp");
+        let child = temp.path().join("child.jsonl");
+        let parent = temp.path().join("parent.jsonl");
+        fs::copy(fixture_root("codex-v2-worker-open/child.jsonl"), &child).expect("child");
+        fs::copy(fixture_root("codex-v2-worker-open/parent.jsonl"), &parent).expect("parent");
+        let base = SessionScanRequest {
             roots: SessionRoots {
                 codex: vec![temp.path().to_path_buf()],
                 claude_code: Vec::new(),
             },
-            previous_session_files: HashMap::new(),
+            ..fixture_request(AgentRuntime::Codex, "codex-v2-worker-open")
         };
-        let first = scan_local_sessions_with_snapshots(&base_request, &StdProcessProbe, UNIX_EPOCH)
-            .expect("large scan");
+        let first =
+            scan_local_sessions_with_state(&base, &StdProcessProbe, UNIX_EPOCH).expect("first");
         assert_eq!(
             first.report.attributions[0].activity.status_label(),
             "running · worker"
         );
-        let first_cursor = first.session_files[&path].cursor;
-        assert_eq!(session_file_parse_starts(&path), vec![0]);
+        let unchanged = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: first.state,
+                ..base.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("unchanged");
+        assert_eq!(
+            unchanged.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
 
         let mut append = fs::OpenOptions::new()
             .append(true)
-            .open(&path)
+            .open(&child)
             .expect("append");
-        writeln!(
-            append,
-            r#"{{"timestamp":"2026-07-27T10:00:03Z","type":"event_msg","payload":{{"type":"task_complete","turn_id":"worker-turn-redacted"}}}}"#
-        )
-        .expect("terminal event");
-        let appended = scan_local_sessions_with_snapshots(
+        write!(append, "{{\"timestamp\":3").expect("partial");
+        let partial = scan_local_sessions_with_state(
             &SessionScanRequest {
-                previous_session_files: first.session_files,
-                ..base_request.clone()
+                previous_state: unchanged.state,
+                ..base.clone()
             },
             &StdProcessProbe,
             UNIX_EPOCH,
         )
-        .expect("append scan");
+        .expect("partial");
         assert_eq!(
-            appended.report.attributions[0].activity.status_label(),
-            "idle"
-        );
-        assert_eq!(
-            session_file_parse_starts(&path),
-            vec![0, first_cursor],
-            "append scanning must resume at the saved byte cursor"
-        );
-
-        fs::write(&path, &fixture).expect("truncate to open worker");
-        let truncated = scan_local_sessions_with_snapshots(
-            &SessionScanRequest {
-                previous_session_files: appended.session_files,
-                ..base_request.clone()
-            },
-            &StdProcessProbe,
-            UNIX_EPOCH,
-        )
-        .expect("truncation scan");
-        assert_eq!(
-            truncated.report.attributions[0].activity.status_label(),
+            partial.report.attributions[0].activity.status_label(),
             "running · worker"
         );
-        assert_eq!(
-            session_file_parse_starts(&path),
-            vec![0, first_cursor, 0],
-            "truncation must invalidate the cursor and rebuild the summary"
-        );
 
-        fs::remove_file(&path).expect("delete fixture");
-        let deleted = scan_local_sessions_with_snapshots(
+        fs::write(
+            &child,
+            "{\"timestamp\":1,\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-child\",\"cwd\":\"/repo/.worktrees/stable-agent-activity-detection\",\"source\":{\"subagent\":{\"thread_spawn\":{\"agent_path\":\"/root/spacedock_ensign_stable_agent_activity_detection_implement\",\"parent_thread_id\":\"codex-parent\"}}}}}\n",
+        )
+        .expect("truncate");
+        let truncated = scan_local_sessions_with_state(
             &SessionScanRequest {
-                previous_session_files: truncated.session_files,
-                ..base_request
+                previous_state: partial.state,
+                ..base.clone()
             },
             &StdProcessProbe,
             UNIX_EPOCH,
         )
-        .expect("deletion scan");
+        .expect("truncated");
+        assert_eq!(
+            truncated.report.attributions[0].activity.status_label(),
+            "running · worker",
+            "truncation without a terminal fact must retain the proven start"
+        );
+
+        let rotated_child = temp.path().join("child.jsonl.1");
+        fs::rename(&child, &rotated_child).expect("rotate old child");
+        fs::write(
+            &child,
+            "{\"timestamp\":4,\"type\":\"session_meta\",\"payload\":{\"id\":\"codex-child\",\"cwd\":\"/repo/.worktrees/stable-agent-activity-detection\",\"source\":{\"subagent\":{\"thread_spawn\":{\"agent_path\":\"/root/spacedock_ensign_stable_agent_activity_detection_implement\",\"parent_thread_id\":\"codex-parent\"}}},\"replacement\":true}}\n",
+        )
+        .expect("replacement child");
+        let rotated = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: truncated.state,
+                ..base.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("rotated");
+        assert_eq!(
+            rotated.report.attributions[0].activity.status_label(),
+            "running · worker",
+            "renaming the old log and replacing it without a terminal fact must retain the start"
+        );
+
+        fs::remove_file(&child).expect("delete");
+        fs::remove_file(&parent).expect("delete");
+        fs::remove_file(&rotated_child).expect("delete rotated");
+        let deleted = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: rotated.state,
+                ..base
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("deleted");
         assert_eq!(
             deleted.report.attributions[0].activity.status_label(),
-            "idle"
-        );
-        assert!(deleted.session_files.is_empty());
-        assert_eq!(
-            session_file_parse_starts(&path),
-            vec![0, first_cursor, 0],
-            "deletion must drop the snapshot without reading a missing file"
+            "running · worker",
+            "deletion alone must not synthesize a stop"
         );
     }
 
     #[test]
-    fn unchanged_scan_reuses_projected_summary_without_rereading_file() {
+    fn exact_codex_terminal_closes_retained_worker() {
         let temp = tempfile::tempdir().expect("temp");
-        let path = temp.path().join("rollout.jsonl");
-        fs::copy(fixture_root("codex-worker-open/rollout.jsonl"), &path).expect("fixture");
-        let base_request = SessionScanRequest {
-            workflow_dir: PathBuf::from("/repo/docs"),
-            repo_root: PathBuf::from("/repo"),
-            entities: vec![SessionScanEntity {
-                id: "069".to_string(),
-                path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
-                worktree: None,
-                worktree_source: None,
-            }],
+        let child = temp.path().join("child.jsonl");
+        fs::copy(fixture_root("codex-v2-worker-open/child.jsonl"), &child).expect("child");
+        fs::copy(
+            fixture_root("codex-v2-worker-open/parent.jsonl"),
+            temp.path().join("parent.jsonl"),
+        )
+        .expect("parent");
+        let base = SessionScanRequest {
             roots: SessionRoots {
                 codex: vec![temp.path().to_path_buf()],
                 claude_code: Vec::new(),
             },
-            previous_session_files: HashMap::new(),
+            ..fixture_request(AgentRuntime::Codex, "codex-v2-worker-open")
         };
-        let first = scan_local_sessions_with_snapshots(&base_request, &StdProcessProbe, UNIX_EPOCH)
-            .expect("first scan");
-        assert_eq!(session_file_parse_count(&path), 1);
-        assert_eq!(
-            first.report.attributions[0].activity.status_label(),
-            "running · worker"
-        );
-
-        let second = scan_local_sessions_with_snapshots(
+        let first =
+            scan_local_sessions_with_state(&base, &StdProcessProbe, UNIX_EPOCH).expect("first");
+        let first_cursor = first.state.files[&child].cursor;
+        let second = scan_local_sessions_with_state(
             &SessionScanRequest {
-                previous_session_files: first.session_files,
-                ..base_request
+                previous_state: first.state,
+                ..base.clone()
             },
             &StdProcessProbe,
             UNIX_EPOCH,
         )
-        .expect("unchanged scan");
+        .expect("second");
+        let third = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: second.state,
+                ..base.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("third");
+        let mut append = fs::OpenOptions::new()
+            .append(true)
+            .open(&child)
+            .expect("append");
+        writeln!(append, r#"{{"timestamp":4,"type":"event_msg","payload":{{"type":"task_complete","turn_id":"turn"}}}}"#).expect("terminal");
+        let complete = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: third.state,
+                ..base
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("complete");
         assert_eq!(
-            session_file_parse_count(&path),
-            1,
-            "unchanged metadata must reuse the safe projected summary"
+            complete.report.attributions[0].activity.status_label(),
+            "idle"
+        );
+        println!("Codex replay: running, running, running, idle");
+        assert_eq!(session_file_parse_starts(&child), vec![0, first_cursor]);
+    }
+
+    #[test]
+    fn malformed_claude_meta_does_not_replace_valid_identity() {
+        let temp = tempfile::tempdir().expect("temp");
+        copy_fixture_tree(&fixture_root("claude-modern-worker-open"), temp.path());
+        let base = SessionScanRequest {
+            roots: SessionRoots {
+                codex: Vec::new(),
+                claude_code: vec![temp.path().to_path_buf()],
+            },
+            ..fixture_request(AgentRuntime::ClaudeCode, "claude-modern-worker-open")
+        };
+        let first =
+            scan_local_sessions_with_state(&base, &StdProcessProbe, UNIX_EPOCH).expect("first");
+        let meta = temp.path().join("claude-parent/subagents/worker.meta.json");
+        fs::write(&meta, "{").expect("malformed");
+        let malformed = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: first.state,
+                ..base
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("malformed");
+        assert_eq!(
+            malformed.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+        assert!(!malformed.report.errors.is_empty());
+    }
+
+    #[test]
+    fn claude_replay_is_stable_then_stops_reopens_and_stops() {
+        let temp = tempfile::tempdir().expect("temp");
+        copy_fixture_tree(&fixture_root("claude-modern-worker-open"), temp.path());
+        let parent = temp.path().join("parent.jsonl");
+        let child = temp.path().join("claude-parent/subagents/worker.jsonl");
+        let base = SessionScanRequest {
+            roots: SessionRoots {
+                codex: Vec::new(),
+                claude_code: vec![temp.path().to_path_buf()],
+            },
+            ..fixture_request(AgentRuntime::ClaudeCode, "claude-modern-worker-open")
+        };
+        let first =
+            scan_local_sessions_with_state(&base, &StdProcessProbe, UNIX_EPOCH).expect("first");
+        let second = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: first.state,
+                ..base.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("second");
+        let third = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: second.state,
+                ..base.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("third");
+        assert_eq!(
+            [
+                first.report.attributions[0].activity.status_label(),
+                second.report.attributions[0].activity.status_label(),
+                third.report.attributions[0].activity.status_label(),
+            ],
+            ["running · worker"; 3]
+        );
+
+        let mut parent_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&parent)
+            .expect("parent append");
+        writeln!(
+            parent_append,
+            r#"{{"timestamp":3,"type":"user","sessionId":"claude-parent","cwd":"/repo","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"idle_notification\",\"from\":\"spacedock-ensign-stable-agent-activity-detection-implement\",\"idleReason\":\"available\"}}</teammate-message>"}}}}"#
+        )
+        .expect("idle");
+        let stopped = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: third.state,
+                ..base.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("stopped");
+        assert_eq!(
+            stopped.report.attributions[0].activity.status_label(),
+            "idle"
+        );
+
+        writeln!(
+            parent_append,
+            r#"{{"timestamp":4,"type":"user","sessionId":"claude-parent","cwd":"/repo","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"teammate_message\",\"from\":\"spacedock-ensign-stable-agent-activity-detection-implement\"}}</teammate-message>"}}}}"#
+        )
+        .expect("follow-up boundary");
+        let mut child_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&child)
+            .expect("child append");
+        writeln!(
+            child_append,
+            r#"{{"timestamp":5,"type":"assistant","sessionId":"claude-child","cwd":"/repo/.worktrees/stable-agent-activity-detection","isSidechain":true,"agentId":"claude-worker","message":{{"content":[{{"type":"text","text":"follow-up"}}],"stop_reason":null}}}}"#
+        )
+        .expect("follow-up assistant");
+        let reopened = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: stopped.state,
+                ..base.clone()
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("reopened");
+        assert_eq!(
+            reopened.report.attributions[0].activity.status_label(),
+            "running · worker"
+        );
+
+        writeln!(
+            parent_append,
+            r#"{{"timestamp":6,"type":"user","sessionId":"claude-parent","cwd":"/repo","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"idle_notification\",\"from\":\"spacedock-ensign-stable-agent-activity-detection-implement\",\"idleReason\":\"available\"}}</teammate-message>"}}}}"#
+        )
+        .expect("second idle");
+        let final_stop = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: reopened.state,
+                ..base
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("final stop");
+        assert_eq!(
+            final_stop.report.attributions[0].activity.status_label(),
+            "idle"
+        );
+        println!("Claude replay: running, running, idle, running, idle");
+    }
+
+    #[test]
+    fn claude_reopens_when_lifecycle_records_share_one_second() {
+        let temp = tempfile::tempdir().expect("temp");
+        copy_fixture_tree(&fixture_root("claude-modern-worker-open"), temp.path());
+        let parent = temp.path().join("parent.jsonl");
+        let child = temp.path().join("claude-parent/subagents/worker.jsonl");
+        let base = SessionScanRequest {
+            roots: SessionRoots {
+                codex: Vec::new(),
+                claude_code: vec![temp.path().to_path_buf()],
+            },
+            ..fixture_request(AgentRuntime::ClaudeCode, "claude-modern-worker-open")
+        };
+        let first =
+            scan_local_sessions_with_state(&base, &StdProcessProbe, UNIX_EPOCH).expect("first");
+
+        let mut parent_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&parent)
+            .expect("parent append");
+        writeln!(
+            parent_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.100Z","type":"user","sessionId":"claude-parent","cwd":"/repo","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"idle_notification\",\"from\":\"spacedock-ensign-stable-agent-activity-detection-implement\",\"idleReason\":\"available\"}}</teammate-message>"}}}}"#
+        )
+        .expect("idle");
+        writeln!(
+            parent_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.200Z","type":"user","sessionId":"claude-parent","cwd":"/repo","isSidechain":false,"message":{{"content":"<teammate-message>{{\"type\":\"teammate_message\",\"from\":\"spacedock-ensign-stable-agent-activity-detection-implement\"}}</teammate-message>"}}}}"#
+        )
+        .expect("follow-up");
+        drop(parent_append);
+        let mut child_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&child)
+            .expect("child append");
+        writeln!(
+            child_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.300Z","type":"assistant","sessionId":"claude-child","cwd":"/repo/.worktrees/stable-agent-activity-detection","isSidechain":true,"agentId":"claude-worker","message":{{"content":[{{"type":"text","text":"follow-up"}}],"stop_reason":null}}}}"#
+        )
+        .expect("assistant");
+        drop(child_append);
+
+        let reopened = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: first.state,
+                ..base
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("reopened");
+        assert_eq!(
+            reopened.report.attributions[0].activity.status_label(),
+            "running · worker",
+            "the fractional RFC3339 order idle -> boundary -> assistant must reopen the worker"
         );
         assert_eq!(
-            second.report.attributions[0].activity.status_label(),
-            "running · worker"
+            reopened.report.attributions[0].activity.updated_unix(),
+            Some(1_785_232_800),
+            "the display timestamp remains whole Unix seconds"
         );
     }
 
     #[test]
-    fn record_projection_drops_transcript_text() {
-        let projected = project_record(json!({
-            "timestamp": 1,
-            "type": "assistant",
-            "sessionId": "session",
-            "isSidechain": false,
-            "message": {
-                "content": [
-                    {"type": "text", "text": "private transcript"},
-                    {"type": "tool_use", "id": "call", "name": "Read", "input": {"file_path": "/repo/entity.md"}}
-                ],
-                "stop_reason": null
+    fn codex_restart_after_parent_stop_in_same_second_remains_running() {
+        let temp = tempfile::tempdir().expect("temp");
+        copy_fixture_tree(&fixture_root("codex-v2-worker-open"), temp.path());
+        let parent = temp.path().join("parent.jsonl");
+        let child = temp.path().join("child.jsonl");
+        let base = SessionScanRequest {
+            roots: SessionRoots {
+                codex: vec![temp.path().to_path_buf()],
+                claude_code: Vec::new(),
+            },
+            ..fixture_request(AgentRuntime::Codex, "codex-v2-worker-open")
+        };
+        let first =
+            scan_local_sessions_with_state(&base, &StdProcessProbe, UNIX_EPOCH).expect("first");
+
+        let mut parent_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&parent)
+            .expect("parent append");
+        writeln!(
+            parent_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.100Z","type":"event_msg","payload":{{"type":"sub_agent_activity","kind":"interrupted","agent_thread_id":"codex-child","agent_path":"/root/spacedock_ensign_stable_agent_activity_detection_implement"}}}}"#
+        )
+        .expect("parent stop");
+        drop(parent_append);
+        let mut child_append = fs::OpenOptions::new()
+            .append(true)
+            .open(&child)
+            .expect("child append");
+        writeln!(
+            child_append,
+            r#"{{"timestamp":"2026-07-28T10:00:00.200Z","type":"event_msg","payload":{{"type":"task_started","turn_id":"follow-up"}}}}"#
+        )
+        .expect("child restart");
+        drop(child_append);
+
+        let restarted = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: first.state,
+                ..base
+            },
+            &StdProcessProbe,
+            UNIX_EPOCH,
+        )
+        .expect("restarted");
+        assert_eq!(
+            restarted.report.attributions[0].activity.status_label(),
+            "running · worker",
+            "the fractional RFC3339 order parent stop -> child restart must remain running"
+        );
+        assert_eq!(
+            restarted.report.attributions[0].activity.updated_unix(),
+            Some(1_785_232_800),
+            "the display timestamp remains whole Unix seconds"
+        );
+    }
+
+    fn copy_fixture_tree(source: &Path, destination: &Path) {
+        for entry in walkdir::WalkDir::new(source) {
+            let entry = entry.expect("fixture entry");
+            let relative = entry.path().strip_prefix(source).expect("relative");
+            let target = destination.join(relative);
+            if entry.file_type().is_dir() {
+                fs::create_dir_all(&target).expect("dir");
+            } else {
+                fs::copy(entry.path(), target).expect("file");
             }
-        }))
-        .expect("projection");
-        assert!(!projected.to_string().contains("private transcript"));
-        assert!(projected.to_string().contains("/repo/entity.md"));
+        }
     }
 
     #[test]
@@ -2311,26 +1206,15 @@ mod tests {
         fs::write(&not_a_directory, "not a directory").expect("fixture");
         let result = scan_local_sessions_with(
             &SessionScanRequest {
-                workflow_dir: PathBuf::from("/repo/docs"),
-                repo_root: PathBuf::from("/repo"),
-                entities: vec![SessionScanEntity {
-                    id: "069".to_string(),
-                    path: PathBuf::from("/repo/docs/state/detect-entity-activity-state.md"),
-                    worktree: None,
-                    worktree_source: None,
-                }],
                 roots: SessionRoots {
                     codex: vec![not_a_directory],
                     claude_code: Vec::new(),
                 },
-                previous_session_files: HashMap::new(),
+                ..fixture_request(AgentRuntime::Codex, "codex-v2-worker-open")
             },
             &StdProcessProbe,
             UNIX_EPOCH,
         );
-        assert!(
-            result.is_err(),
-            "root IO failure must preserve prior app state"
-        );
+        assert!(result.is_err());
     }
 }
