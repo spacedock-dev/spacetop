@@ -12,7 +12,7 @@ verdict:
 score: 0.92
 worktree: .worktrees/spacedock-ensign-stable-agent-activity-detection
 issue:
-pr: "#79"
+pr: pr-merge:79
 id: 075
 mod-block: merge:pr-merge
 ---
