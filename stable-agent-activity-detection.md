@@ -1,6 +1,6 @@
 ---
 title: Fix intermittent Codex and Claude activity detection
-status: implement
+status: verify
 source: "Live false-idle observation while dispatching task 074 on 2026-07-28"
 kind: bugfix
 risk: high
