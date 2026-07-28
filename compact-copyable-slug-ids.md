@@ -14,6 +14,7 @@ worktree: .worktrees/spacedock-ensign-compact-copyable-slug-ids
 issue:
 pr:
 id: 074
+mod-block: merge:pr-merge
 ---
 
 Long slug-style IDs currently expand the task-list ID column without an upper bound, leaving too little room for the title. Keep the visible slug ID within a bounded, responsive width so task titles retain useful space.
