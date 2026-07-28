@@ -67,8 +67,12 @@ fn entity_id_at(state: &OverviewState, column: u16, row: u16) -> Option<String> 
     if !state.id_column_rect.get().contains(position) {
         return None;
     }
+    entity_id_at_row(state, row)
+}
+
+fn entity_id_at_row(state: &OverviewState, row: u16) -> Option<String> {
     let rows = state.list_rows_rect.get();
-    if !rows.contains(position) {
+    if row < rows.y || row >= rows.y.saturating_add(rows.height) {
         return None;
     }
     let index = state.list_offset.get() + usize::from(row - rows.y);
@@ -96,6 +100,8 @@ fn track_id_click(
             if candidate.as_ref().is_some_and(|prior| {
                 prior.workflow_dir == state.workflow_dir
                     && prior.position == position
+                    && entity_id_at_row(state, mouse.row).as_deref()
+                        == Some(prior.entity_id.as_str())
                     && now.saturating_duration_since(prior.pressed_at) <= ID_DOUBLE_CLICK_WINDOW
             }) {
                 return candidate.take().map(|prior| prior.entity_id);
@@ -810,6 +816,59 @@ mod tests {
         );
 
         assert_eq!(app.take_pending_copy_id(), Some(full_id));
+    }
+
+    #[test]
+    fn double_click_rejects_a_stale_id_after_row_mapping_changes() {
+        let ids = vec!["first-slug".to_string(), "second-slug".to_string()];
+        let app = fixture_app_with_ids(&ids, "body");
+        draw(&app, 100, 30);
+        let state = app.as_overview().expect("overview");
+        let id_rect = state.id_column_rect.get();
+        let position = Position::new(id_rect.x, id_rect.y);
+        let start = Instant::now();
+        let mut candidate = None;
+
+        assert_eq!(
+            track_id_click(
+                state,
+                mouse_at(
+                    MouseEventKind::Down(MouseButton::Left),
+                    position.x,
+                    position.y,
+                ),
+                start,
+                &mut candidate,
+            ),
+            None
+        );
+        assert_eq!(
+            candidate.as_ref().map(|click| click.entity_id.as_str()),
+            Some("first-slug")
+        );
+
+        // A keyboard selection or refresh can move the list between mouse
+        // events. The same screen row now identifies a different entity.
+        state.list_offset.set(1);
+        assert_eq!(
+            track_id_click(
+                state,
+                mouse_at(
+                    MouseEventKind::Down(MouseButton::Left),
+                    position.x,
+                    position.y,
+                ),
+                start + Duration::from_millis(100),
+                &mut candidate,
+            ),
+            None,
+            "the prior row mapping must not produce a stale copy"
+        );
+        assert_eq!(
+            candidate.as_ref().map(|click| click.entity_id.as_str()),
+            Some("second-slug"),
+            "the second press may begin a fresh gesture for the current row"
+        );
     }
 
     #[test]

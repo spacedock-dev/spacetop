@@ -8,7 +8,7 @@ use ratatui::{
 use crate::app::{OverviewState, ViewScope};
 use spacetop_core::config::SpacetopConfig;
 use spacetop_core::domain::{Entity, EntityParseError};
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub(crate) const ID_COL_MIN: usize = 4;
 pub(crate) const ID_COL_MAX: usize = 20;
@@ -164,16 +164,18 @@ fn id_col(id: &str, width: usize) -> String {
     let display_width = UnicodeWidthStr::width(id);
     if display_width > width {
         let content_width = width.saturating_sub(1);
-        let prefix_end = id
-            .char_indices()
-            .filter_map(|(index, ch)| {
-                let end = index + ch.len_utf8();
-                (UnicodeWidthStr::width(&id[..end]) <= content_width).then_some(end)
-            })
-            .next_back()
-            .unwrap_or(0);
+        let mut prefix_end = 0;
+        let mut prefix_width = 0;
+        for (index, ch) in id.char_indices() {
+            let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+            if prefix_width + char_width > content_width {
+                break;
+            }
+            prefix_width += char_width;
+            prefix_end = index + ch.len_utf8();
+        }
         let prefix = &id[..prefix_end];
-        let padding = content_width.saturating_sub(UnicodeWidthStr::width(prefix));
+        let padding = content_width.saturating_sub(prefix_width);
         format!("{prefix}{}\u{2026}", " ".repeat(padding))
     } else {
         format!("{}{id}", " ".repeat(width - display_width))
