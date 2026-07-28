@@ -1,12 +1,12 @@
 ---
 title: Fix intermittent Codex and Claude activity detection
-status: shape
+status: plan
 source: "Live false-idle observation while dispatching task 074 on 2026-07-28"
 kind: bugfix
 risk: high
 milestone: v1-maintenance
 proof: Reproducing Codex and Claude session fixtures plus repeated scanner and task-list activity tests
-started:
+started: 2026-07-28T06:55:46Z
 completed:
 verdict:
 score: 0.92
