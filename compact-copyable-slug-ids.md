@@ -114,3 +114,16 @@ Long IDs now use a responsive 4–20-cell column with trailing ellipsis and a 16
 ### Summary
 
 Commit `356411d` is healthy on its tested ASCII path and keeps the read-only and terminal ownership boundaries intact, but it confuses Unicode scalar count with terminal-cell width. Bounce back to size, truncate, and hit-test IDs by display-cell width, then add wide/combining-character rendering and rendered-tail double-click tests before re-verification.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Measure, budget, truncate, pad, and record slug ID rectangles by terminal display-cell width so wide and combining Unicode cannot exceed the responsive cap or shift the title reserve.
+  Commit `f9bee09`; `wide_and_combining_ids_use_terminal_cell_width` fails if the CJK or combining IDs exceed the 9-cell narrow budget, lose cell-aware padding or ellipsis, or move the title beyond the reserved start.
+- DONE: Add wide-Unicode and combining-character rendering tests plus a rendered-tail double-click test that copies the complete underlying ID, while preserving existing ASCII behavior.
+  The 35 task-list and 16 mouse tests fail if wide or combining glyph geometry drifts, the visible CJK tail escapes `id_column_rect`, full-ID copying truncates, or the accepted ASCII, reflow, timeout, outside-cell, or scroll behavior regresses.
+- DONE: Run focused task-list and mouse tests, full cargo test, formatting, diff checks, and make lint; commit the corrected worktree branch and report exact evidence.
+  `cargo fmt --all -- --check`, `git diff --check`, focused suites, final `cargo test` (385 Spacetop library tests, 188 core tests, integration and guardrail suites), and `make lint` passed at `f9bee09`.
+
+### Summary
+
+The correction replaces scalar counting with `unicode-width` display-cell measurement for ID budgeting, truncation, padding, and hit-test geometry. CJK and combining IDs now stay inside the responsive column and preserve the title reserve, while double-clicking the rendered Unicode tail copies the complete underlying ID and all accepted ASCII behavior remains green.
