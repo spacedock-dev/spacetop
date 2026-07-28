@@ -813,6 +813,52 @@ mod tests {
     }
 
     #[test]
+    fn double_click_on_wide_unicode_rendered_tail_copies_full_id() {
+        let full_id = "資料資料資料資料資料".to_string();
+        let mut app = fixture_app_with_ids(std::slice::from_ref(&full_id), "body");
+        draw(&app, 100, 30);
+        let id_rect = app.as_overview().expect("overview").id_column_rect.get();
+        assert_eq!(
+            id_rect.width, 20,
+            "ten wide scalars occupy the full 20-cell cap"
+        );
+        let rendered_width = unicode_width::UnicodeWidthStr::width(full_id.as_str()) as u16;
+        let rendered_tail = Position::new(id_rect.x + rendered_width - 1, id_rect.y);
+        assert!(
+            id_rect.contains(rendered_tail),
+            "the render-derived hit rectangle must include the visible Unicode tail"
+        );
+        let start = Instant::now();
+
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                rendered_tail.x,
+                rendered_tail.y,
+            ),
+            start,
+        );
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Up(MouseButton::Left),
+                rendered_tail.x,
+                rendered_tail.y,
+            ),
+            start + Duration::from_millis(10),
+        );
+        app.handle_mouse_at(
+            mouse_at(
+                MouseEventKind::Down(MouseButton::Left),
+                rendered_tail.x,
+                rendered_tail.y,
+            ),
+            start + Duration::from_millis(100),
+        );
+
+        assert_eq!(app.take_pending_copy_id(), Some(full_id));
+    }
+
+    #[test]
     fn outside_id_cell_and_timeout_do_not_copy() {
         let full_id = "compact-copyable-slug-ids".to_string();
         let mut outside = fixture_app_with_ids(std::slice::from_ref(&full_id), "body");

@@ -8,6 +8,7 @@ use ratatui::{
 use crate::app::{OverviewState, ViewScope};
 use spacetop_core::config::SpacetopConfig;
 use spacetop_core::domain::{Entity, EntityParseError};
+use unicode_width::UnicodeWidthStr;
 
 pub(crate) const ID_COL_MIN: usize = 4;
 pub(crate) const ID_COL_MAX: usize = 20;
@@ -143,7 +144,7 @@ fn phase_col_width(items: &[Entity]) -> usize {
 pub(crate) fn id_col_width(items: &[Entity], pane_width: u16, phase_width: usize) -> usize {
     let natural_width = items
         .iter()
-        .map(|item| item.id.chars().count())
+        .map(|item| UnicodeWidthStr::width(item.id.as_str()))
         .max()
         .unwrap_or(ID_COL_MIN)
         .clamp(ID_COL_MIN, ID_COL_MAX);
@@ -160,12 +161,22 @@ pub(crate) fn id_col_width(items: &[Entity], pane_width: u16, phase_width: usize
 }
 
 fn id_col(id: &str, width: usize) -> String {
-    let char_count = id.chars().count();
-    if char_count > width {
-        let truncated: String = id.chars().take(width - 1).collect();
-        format!("{truncated}\u{2026}")
+    let display_width = UnicodeWidthStr::width(id);
+    if display_width > width {
+        let content_width = width.saturating_sub(1);
+        let prefix_end = id
+            .char_indices()
+            .filter_map(|(index, ch)| {
+                let end = index + ch.len_utf8();
+                (UnicodeWidthStr::width(&id[..end]) <= content_width).then_some(end)
+            })
+            .next_back()
+            .unwrap_or(0);
+        let prefix = &id[..prefix_end];
+        let padding = content_width.saturating_sub(UnicodeWidthStr::width(prefix));
+        format!("{prefix}{}\u{2026}", " ".repeat(padding))
     } else {
-        format!("{id:>width$}")
+        format!("{}{id}", " ".repeat(width - display_width))
     }
 }
 

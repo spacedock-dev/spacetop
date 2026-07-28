@@ -1181,6 +1181,60 @@ fn long_slug_id_column_shrinks_responsively_and_caps_at_twenty_cells() {
 }
 
 #[test]
+fn wide_and_combining_ids_use_terminal_cell_width() {
+    let wide_id = "資料資料資料資料資料";
+    let wide_app = app_with_items(vec![item(wide_id, "Wide title", "Body")]);
+    let mut wide_terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+    wide_terminal
+        .draw(|frame| render(frame, &wide_app))
+        .expect("render wide Unicode");
+    let wide_buffer = wide_terminal.backend().buffer();
+    let wide_rect = wide_app
+        .as_overview()
+        .expect("overview")
+        .id_column_rect
+        .get();
+    assert_eq!(wide_rect.width, 9);
+    for (offset, symbol) in [(0, "資"), (2, "料"), (4, "資"), (6, "料"), (8, "\u{2026}")] {
+        assert_eq!(
+            wide_buffer[(wide_rect.x + offset, wide_rect.y)].symbol(),
+            symbol
+        );
+    }
+    let wide_title_x = wide_rect.x + wide_rect.width + 2 + 2 + 2;
+    assert_eq!(wide_buffer[(wide_title_x, wide_rect.y)].symbol(), "W");
+
+    let combining_id = "e\u{301}".repeat(12);
+    let combining_app = app_with_items(vec![item(&combining_id, "Combining title", "Body")]);
+    let mut combining_terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+    combining_terminal
+        .draw(|frame| render(frame, &combining_app))
+        .expect("render combining Unicode");
+    let combining_buffer = combining_terminal.backend().buffer();
+    let combining_rect = combining_app
+        .as_overview()
+        .expect("overview")
+        .id_column_rect
+        .get();
+    assert_eq!(combining_rect.width, 9);
+    for offset in 0..8 {
+        assert_eq!(
+            combining_buffer[(combining_rect.x + offset, combining_rect.y)].symbol(),
+            "e\u{301}"
+        );
+    }
+    assert_eq!(
+        combining_buffer[(combining_rect.x + 8, combining_rect.y)].symbol(),
+        "\u{2026}"
+    );
+    let combining_title_x = combining_rect.x + combining_rect.width + 2 + 2 + 2;
+    assert_eq!(
+        combining_buffer[(combining_title_x, combining_rect.y)].symbol(),
+        "C"
+    );
+}
+
+#[test]
 fn short_and_numeric_ids_remain_complete_and_right_aligned() {
     let short_app = app_with_items(vec![item("short-slug", "Short slug", "Body")]);
     let mut short_terminal = Terminal::new(TestBackend::new(160, 24)).expect("terminal");
@@ -1212,6 +1266,27 @@ fn short_and_numeric_ids_remain_complete_and_right_aligned() {
     assert_eq!(
         buffer_cells(numeric_terminal.backend().buffer(), numeric_id),
         " 074"
+    );
+
+    let combining_short = "e\u{301}e\u{301}e\u{301}";
+    let combining_short_app =
+        app_with_items(vec![item(combining_short, "Combining short", "Body")]);
+    let mut combining_short_terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
+    combining_short_terminal
+        .draw(|frame| render(frame, &combining_short_app))
+        .expect("render short combining ID");
+    let combining_short_rect = combining_short_app
+        .as_overview()
+        .expect("overview")
+        .id_column_rect
+        .get();
+    assert_eq!(combining_short_rect.width, 4);
+    assert_eq!(
+        buffer_cells(
+            combining_short_terminal.backend().buffer(),
+            combining_short_rect
+        ),
+        format!(" {combining_short}")
     );
 }
 

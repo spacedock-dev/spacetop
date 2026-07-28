@@ -2602,6 +2602,7 @@ dependencies = [
  "spacetop-core",
  "tempfile",
  "termimad",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
