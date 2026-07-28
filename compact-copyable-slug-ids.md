@@ -1,12 +1,12 @@
 ---
 title: Keep long slug IDs compact and copyable
-status: shape
+status: plan
 source: "UI feedback from task-list screenshot on 2026-07-28"
 kind: feature
 risk: medium
 milestone: v1-maintenance
 proof: Ratatui task-list width tests plus mouse double-click copy tests
-started:
+started: 2026-07-28T03:26:42Z
 completed:
 verdict:
 score: 0.78
