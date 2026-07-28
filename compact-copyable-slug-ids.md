@@ -1,6 +1,6 @@
 ---
 title: Keep long slug IDs compact and copyable
-status: verify
+status: implement
 source: "UI feedback from task-list screenshot on 2026-07-28"
 kind: feature
 risk: medium
@@ -59,6 +59,10 @@ make lint
 ```
 
 The plan-stage protocol spike used the current `ratatui 0.30`, `crossterm 0.28`, and `base64 0.22` APIs with a `CrosstermBackend` backed by `Vec<u8>`; it observed the exact OSC 52 payload for `compact-copyable-slug-ids` between the mouse-capture enable and disable sequences. Existing baselines also pass: 31 task-list tests and 11 overview-mouse tests.
+
+### Feedback Cycles
+
+- Cycle 1: REJECTED — verify; surface 1 blocking Unicode display-width defect vs estimate not declared (n/a%); AC unchanged
 
 ## Stage Report: plan
 
