@@ -179,3 +179,26 @@ schema drift and discarding previously proven lifecycle evidence. The
 implementation should retain typed evidence across scans, correlate current
 Codex/Claude records with exact parent/session/cwd keys, and publish only a
 coherent scan generation; no UI-state inference or workflow write is needed.
+
+## Stage Report: implement
+
+- DONE: Implement exact Codex and Claude correlation plus retained typed scan evidence so active workers survive repeated, partial, reordered, truncated, rotated, or transiently malformed scans until structured lifecycle events.
+  Commit `11bc334` adds typed projections and evidence ordered by timestamp/source/offset/kind; exact start/stop tests fail if retained evidence disappears or any parent, child, path, cwd, name, or call join weakens.
+- DONE: Thread coherent scan generations through the existing background/app boundary without UI inference or weaker attribution, and update the design/code-map documentation for the final module ownership.
+  `SessionScanState` now crosses the worker boundary; a before/after inventory change rejects publication and requests an immediate retry, while AGENTS.md and the activity design name the facade and five owning submodules.
+- DONE: Add sanitized regression fixtures and prove positive, negative, handoff, precedence, rendering, replay, full-test, formatting, and lint outcomes from the plan’s falsifiable matrix.
+  Fourteen focused scanner tests cover v2/legacy starts, exact negatives, retained scans, coherent generation, Claude reuse, terminals, FO/gates, deterministic precedence, and observable Codex/Claude replay sequences.
+- DONE: Focused task-list rendering proof.
+  `cargo test -p spacetop task_row_renders_scanner_replay_then_clears_on_terminal_report` fails unless scanner output renders the green worker marker/status and an exact terminal report removes it.
+- DONE: Repository gates.
+  `cargo fmt --all -- --check`, full `cargo test` (387 app, 182 core, integration/doc tests), `make lint`, and `git diff --check` passed after commit `11bc334`.
+- DONE: Replay is observable.
+  `cargo test -p spacetop-core session_activity -- --nocapture` reports Codex `running, running, running, idle` and Claude `running, running, idle, running, idle`.
+
+### Summary
+
+Spacetop now retains privacy-safe typed lifecycle evidence and publishes only
+coherent session-log generations, eliminating false idle during partial,
+truncated, rotated, deleted, or transiently malformed scans. Codex v2
+parent-start joins, modern Claude metadata/sidechain joins, reusable-worker
+handoffs, and direct `exec_command` evidence remain exact and fail closed.
