@@ -12,7 +12,7 @@ verdict:
 score: 0.78
 worktree: .worktrees/spacedock-ensign-compact-copyable-slug-ids
 issue:
-pr: "#78"
+pr: pr-merge:78
 id: 074
 mod-block: merge:pr-merge
 ---
