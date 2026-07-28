@@ -219,6 +219,34 @@ sub-second records onto one Unix second. It also replaces the prior claimed
 rotation coverage with an exercised rename-and-replacement scan while
 preserving whole-second timestamps at the domain/UI boundary.
 
+## Stage Report: verify (cycle 2)
+
+- DONE: Independently falsify the exact Codex and Claude joins and retained-evidence reducer across repeated scans, partial writes, truncation, rotation, malformed metadata, terminal events, reuse, FO handoff, and precedence.
+  Verification first rejected `11bc334`: Claude idle `.100Z` -> attributed follow-up `.200Z` -> same-agent assistant `.300Z` incorrectly stayed idle; `ee26e925` fixes and permanently pins that case, Codex same-second stop/restart, real rotation, exact negative joins, retained scans, terminals, handoff, gates, and precedence.
+- DONE: Audit coherent-generation publication, privacy-safe typed state, split module ownership, and unchanged UI/read-only boundaries against the implementation diff and task acceptance criteria.
+  The diff keeps before/after inventory rejection and last-state preservation at the worker boundary, retains typed structural projections without transcript text, splits projection/state/runtime/reducer ownership under the core facade, changes no production UI inference, and passes terminal-free/read-only guardrails.
+- DONE: Run the focused scanner and rendering replay proofs plus formatting, full cargo tests, lint, and diff checks; report exact evidence for every acceptance criterion or reject with actionable defects.
+  `cargo test -p spacetop-core session_activity -- --nocapture` passed 16/16 with the expected Codex and Claude replay sequences; the focused Ratatui scanner replay passed; `cargo fmt --all -- --check`, `git diff --check`, full `cargo test`, and `make lint` all exited 0.
+- DONE: AC-1 and AC-2 stable exact workers.
+  Repeated Codex and Claude scans retain `running · worker`; exact terminal/idle facts close them, and sub-second Claude reuse reopens only after the attributed boundary plus later same-agent assistant.
+- DONE: AC-3 reproduced false-idle and identified lost evidence.
+  Live task-074 structure confirms parent start `.782Z` and child start `.837Z`; sanitized v2/modern fixtures reproduce the encrypted-assignment and retained-lifecycle gaps without transcript bodies.
+- DONE: AC-4 incremental and ordering stability.
+  Tests exercise unchanged cursor reuse, partial append, truncation, rename-and-replacement rotation, deletion, malformed Claude metadata, coherent-generation rejection, and same-second cross-file ordering without transiently erasing active evidence.
+- DONE: AC-5 lifecycle and attribution safety.
+  Exact task completion/interruption and Claude idle/reuse transitions pass; mismatched parent, path, cwd, cross-parent metadata, duplicate no-call-id dispatch, unlinked worker, and module-text controls stay idle.
+- DONE: AC-6 scanner and rendering coverage.
+  Both runtimes have repeated lifecycle regressions, and `task_row_renders_scanner_replay_then_clears_on_terminal_report` fails unless scanner output renders the green worker marker/status and the terminal report clears it.
+- DONE: AC-7 repository and replay verification.
+  Full results were 387 `spacetop` unit tests, 184 `spacetop-core` unit tests, all integration/doc tests, 0 failures; watcher backend smokes remained intentionally ignored because watcher behavior did not change.
+
+### Summary
+
+Verification found one high-severity residual false-idle in the first
+implementation, routed it with a failing real-shape regression, and confirmed
+the correction in `ee26e925`. The final branch satisfies all acceptance
+criteria and repository gates; judgment: approve for the PR merge flow.
+
 ### Feedback Cycles
 
 - Cycle 1: REJECTED — verify; surface 1 lifecycle-ordering defect vs estimate undeclared (n/a%); AC unchanged
