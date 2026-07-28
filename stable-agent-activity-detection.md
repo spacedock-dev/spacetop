@@ -202,3 +202,23 @@ coherent session-log generations, eliminating false idle during partial,
 truncated, rotated, deleted, or transiently malformed scans. Codex v2
 parent-start joins, modern Claude metadata/sidechain joins, reusable-worker
 handoffs, and direct `exec_command` evidence remain exact and fail closed.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Implement exact Codex and Claude correlation plus retained typed scan evidence so active workers survive repeated, partial, reordered, truncated, rotated, or transiently malformed scans until structured lifecycle events.
+  Commit `ee26e92` preserves RFC3339 nanoseconds in the causal key while leaving visible `updated_unix` values at whole seconds; Claude same-second reopen and Codex parent-stop/child-restart tests fail if cross-file fractional ordering is lost.
+- DONE: Thread coherent scan generations through the existing background/app boundary without UI inference or weaker attribution, and update the design/code-map documentation for the final module ownership.
+  The correction stays inside typed projection/reduction and lifecycle correlation; no app/UI inference or scan-generation boundary changed.
+- DONE: Add sanitized regression fixtures and prove positive, negative, handoff, precedence, rendering, replay, full-test, formatting, and lint outcomes from the plan’s falsifiable matrix.
+  Sixteen focused session-activity tests now include `.100/.200/.300Z` Claude and Codex orderings plus a real old-log rename and replacement scan; the full suite, formatting check, `git diff --check`, and `make lint` pass.
+
+### Summary
+
+Cycle 2 fixes the verify-stage false idle caused by collapsing distinct
+sub-second records onto one Unix second. It also replaces the prior claimed
+rotation coverage with an exercised rename-and-replacement scan while
+preserving whole-second timestamps at the domain/UI boundary.
+
+### Feedback Cycles
+
+- Cycle 1: REJECTED — verify; surface 1 lifecycle-ordering defect vs estimate undeclared (n/a%); AC unchanged
