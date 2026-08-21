@@ -85,6 +85,9 @@ fn status_footer_hints_with_keymap_and_copy(
     for warning in warnings {
         hints.push((format!("\u{26A0} {warning}"), Color::Yellow));
     }
+    if let Some(diagnostic) = session.active_state().topology_diagnostic() {
+        hints.push((format!("\u{26A0} {diagnostic}"), Color::Yellow));
+    }
     let sync_status = session.active_state().sync_status();
     if let Some(label) = sync_pill_label(sync_status) {
         // `sync_pill_label` returned `Some`, so `sync_status` is `Some`.
@@ -96,6 +99,7 @@ fn status_footer_hints_with_keymap_and_copy(
         hints.push((format!("\u{26A0} {broken_count} broken"), Color::Red));
     }
     hints.push(("?: help".to_string(), Color::White));
+    hints.push(("q: quit".to_string(), Color::White));
     if !preview_open && session.is_multi() {
         hints.push((
             "\u{2190}/\u{2192}: switch workflow".to_string(),
@@ -134,7 +138,6 @@ fn status_footer_hints_with_keymap_and_copy(
     if preview_open {
         hints.push(("o: open".to_string(), Color::White));
     }
-    hints.push(("q: quit".to_string(), Color::White));
     hints
 }
 
@@ -163,6 +166,16 @@ pub(crate) fn sync_pill_label(status: Option<&SyncStatus>) -> Option<String> {
         SyncStatus::Succeeded { new_commits } => {
             format!("{SUCCESS_MARKER} Synced ({new_commits} new commits)")
         }
+        SyncStatus::SucceededWithState { new_commits: 0 } => {
+            format!("{SUCCESS_MARKER} Definition + state synced (already up to date)")
+        }
+        SyncStatus::SucceededWithState { new_commits: 1 } => {
+            format!("{SUCCESS_MARKER} Definition + state synced (1 new commit)")
+        }
+        SyncStatus::SucceededWithState { new_commits } => {
+            format!("{SUCCESS_MARKER} Definition + state synced ({new_commits} new commits)")
+        }
+        SyncStatus::Partial { message } => format!("{SYNC_FAIL_MARKER} {message}"),
         SyncStatus::Failed { message } => format!("{SYNC_FAIL_MARKER} Sync failed: {message}"),
         SyncStatus::Unavailable { hint } => format!("Sync unavailable: {hint}"),
     };
@@ -176,7 +189,8 @@ pub(crate) fn sync_pill_label(status: Option<&SyncStatus>) -> Option<String> {
 pub(crate) fn sync_pill_color(status: &SyncStatus) -> Color {
     match status {
         SyncStatus::InFlight => Color::Cyan,
-        SyncStatus::Succeeded { .. } => Color::Green,
+        SyncStatus::Succeeded { .. } | SyncStatus::SucceededWithState { .. } => Color::Green,
+        SyncStatus::Partial { .. } => Color::Yellow,
         SyncStatus::Failed { .. } => Color::Red,
         SyncStatus::Unavailable { .. } => Color::Yellow,
     }

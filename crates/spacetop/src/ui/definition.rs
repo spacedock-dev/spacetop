@@ -365,6 +365,7 @@ mod tests {
         WorkflowDefinition {
             root,
             state: None,
+            storage: Default::default(),
             stages,
             id_style: Some("sequential".to_string()),
             entity_type: Some("development_task".to_string()),

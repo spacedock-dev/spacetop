@@ -324,6 +324,22 @@ mod tests {
     }
 
     #[test]
+    fn split_root_directory_and_detached_entity_events_are_relevant() {
+        assert!(is_relevant(Path::new("docs/workflow/.spacedock-state")));
+        assert!(is_relevant(Path::new(
+            "docs/workflow/.spacedock-state/task.md"
+        )));
+        assert!(event_is_relevant(
+            &Event::new(EventKind::Create(notify::event::CreateKind::Folder))
+                .add_path(PathBuf::from("docs/workflow/.spacedock-state"))
+        ));
+        assert!(event_is_relevant(
+            &Event::new(EventKind::Remove(notify::event::RemoveKind::Folder))
+                .add_path(PathBuf::from("docs/workflow/.spacedock-state"))
+        ));
+    }
+
+    #[test]
     fn debounce_coalesces_burst_into_single_signal() {
         // Use a short but real debounce window; inject synthetic events on
         // the raw channel to avoid dependence on a live `notify` backend.

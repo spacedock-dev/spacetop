@@ -57,8 +57,9 @@ The app is no longer just a scaffold. It currently provides a read-first TUI tha
   `~/.config/spacetop/config.yaml` and persist per-workflow TUI session state
   under `$XDG_STATE_HOME/spacetop/session.yaml` or
   `~/.local/state/spacetop/session.yaml`; relative env-derived roots are ignored.
-- Sync from the workflow's git remote with the explicit `Y` action, limited to
-  `git pull --ff-only` and guarded by tests.
+- Sync the definition repository and a verified attached split-root state
+  checkout with the explicit `Y` action, limited to `git pull --ff-only` and
+  guarded by tests.
 
 ## CTO Development Policy
 
@@ -67,8 +68,10 @@ shape while making the internals easier to reason about and test.
 
 - **Read-only by default:** never mutate Spacedock workflow markdown unless a
   future task explicitly adds audited write support. The existing `Y` sync action
-  is the only sanctioned workflow-adjacent write path and must stay
-  `git pull --ff-only`. Config/session writes are allowed only under absolute
+  is the only sanctioned workflow-adjacent write path and may run only
+  `git pull --ff-only` against the definition repository and a verified attached
+  split-root state checkout. It must never repair checkout topology.
+  Config/session writes are allowed only under absolute
   user config/state paths, never inside workflow directories.
 - **Clean Code is required, not aspirational:** small functions, clear names,
   typed boundaries, limited side effects, no hidden parsing in UI code, and no
@@ -109,6 +112,9 @@ Keep module boundaries clear and testable:
   single pure helper that turns `(definition_dir, state)` into the entity
   directory, and `load_workflow_dir` / `sources.rs::load_archive` thread that
   resolved dir to the active and archive scans.
+- `crates/spacetop-core/src/state_checkout.rs` owns the two-backend storage
+  classifier and read-only Git probes for attached, detached, wrong-branch,
+  missing, and probe-failed split-root state checkouts.
 - `crates/spacetop-core/src/index.rs`, `query.rs`, and `sources.rs` own the
   v2 index/query spine; TUI code must consume `WorkflowIndex` through query
   methods instead of inferring schema rules from raw vectors.
@@ -117,7 +123,9 @@ Keep module boundaries clear and testable:
 - `crates/spacetop-core/src/watcher.rs` owns filesystem watching, event
   filtering, debounce, fallback backend selection, and refresh signaling.
 - `crates/spacetop-core/src/git_sync.rs` owns the explicit read-refresh sync
-  path and must remain limited to audited fast-forward pulls.
+  helper and must remain limited to audited fast-forward pulls. Top-level sync
+  may call it for the definition repository and only for a verified attached
+  split-root state checkout.
 - `crates/spacetop-core/src/session_activity.rs` is the local agent-session
   facade; its `session_activity/{projection,state,codex,claude,reducer}.rs`
   modules project privacy-safe typed facts, retain coherent scan evidence,
@@ -184,10 +192,17 @@ Preserve the current parsing contracts unless the task explicitly changes them:
   (single-root). Resolution is always relative to the definition directory; an
   absolute `state:` or one with a `..` parent-traversal component is unsupported
   and falls back to single-root rather than escaping the definition directory.
+  A relative state path whose canonical target escapes the canonical definition
+  directory remains a typed split-root but is unverified before any Git probe;
+  its available entities remain readable and it is never sync-eligible.
   Discovery, the watcher, and `WorkflowDefinition.root` stay on the definition
   directory; only entity/archive scans follow `state:`. A declared-but-absent
   state checkout yields no entities rather than erroring (mirrors missing
-  `_archive/`).
+  `_archive/`). Storage backend and checkout disposition are separate typed
+  facts: split-root state is attached, detached, on the wrong branch, missing,
+  or unverified after a failed probe. Detached and wrong-branch snapshots remain
+  readable. `state-branch:` overrides the expected branch; otherwise it is
+  `spacedock-state/<definition-directory-basename>`.
 - Active item loading ignores `README.md`, `_mods`, `_archive`, and nested non-item files.
 - Status values must match stages from the workflow README.
 - Archived parsing skips malformed archived entries but surfaces archive IO errors.

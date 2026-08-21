@@ -29,6 +29,7 @@ fn workflow_with_active_item() -> App {
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages: vec![
                 stage("design", true, false, false, false, None),
                 stage("plan", false, false, false, false, None),
@@ -215,6 +216,7 @@ fn reflects_different_workflow_topology() {
         definition: WorkflowDefinition {
             root: PathBuf::from("/tmp/other"),
             state: None,
+            storage: Default::default(),
             stages: vec![
                 stage("alpha", true, false, false, false, None),
                 stage("beta", false, false, false, false, None),
@@ -265,6 +267,7 @@ fn narrow_tier_renders_compact_textual_summary() {
         definition: WorkflowDefinition {
             root: PathBuf::from("/tmp/narrow-tier"),
             state: None,
+            storage: Default::default(),
             stages: vec![
                 stage("design", true, false, false, false, None),
                 stage("plan", false, false, false, false, None),
@@ -561,6 +564,7 @@ fn narrow_dag_wraps_to_two_rows() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/narrow-wrap"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -641,6 +645,7 @@ fn research_12_stage_workflow() -> App {
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages,
             id_style: None,
             entity_type: None,
@@ -783,6 +788,7 @@ fn narrow_tier_colors_each_stage_name_per_stage() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/narrow-colors"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -858,6 +864,7 @@ fn very_narrow_tier_colors_each_stage_name_per_stage() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/vnarrow-colors"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -935,6 +942,7 @@ fn narrow_tier_uses_full_pane_width() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/narrow-fullwidth"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -1021,6 +1029,7 @@ fn very_narrow_tier_uses_full_pane_width() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/vnarrow-fullwidth"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -1140,6 +1149,7 @@ fn very_narrow_tier_renders_feedback_rollback_annotation() {
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages,
             id_style: None,
             entity_type: None,
@@ -1192,6 +1202,7 @@ fn narrow_tier_inserts_blank_lines_between_rows() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/narrow-interrow"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -1263,6 +1274,7 @@ fn very_narrow_tier_inserts_blank_lines_between_rows() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/vnarrow-interrow"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -1344,6 +1356,7 @@ fn very_narrow_tier_row_budget_accounts_for_inter_row_padding() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/vnarrow-rowbudget"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -1443,6 +1456,7 @@ fn narrow_tier_last_row_does_not_end_with_arrow() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/narrow-no-trailing"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -1509,6 +1523,7 @@ fn very_narrow_tier_last_row_does_not_end_with_arrow() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/vnarrow-no-trailing"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -1603,6 +1618,7 @@ fn spacetop_ui_workflow() -> App {
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages,
             id_style: None,
             entity_type: None,
@@ -1731,6 +1747,7 @@ fn dag_each_stage_span_carries_per_stage_color_and_bold() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/dag-colors"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -1793,6 +1810,7 @@ fn dag_short_workflow_stays_within_height_bound() {
     let definition = WorkflowDefinition {
         root: PathBuf::from("/tmp/dag-short"),
         state: None,
+        storage: Default::default(),
         stages: stages.clone(),
         id_style: None,
         entity_type: None,
@@ -1855,6 +1873,7 @@ fn spacetop_dev_workflow() -> App {
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages,
             id_style: None,
             entity_type: None,
@@ -2002,6 +2021,7 @@ fn dag_falls_back_to_009_wrapped_text_when_height_starved() {
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages,
             id_style: None,
             entity_type: None,
@@ -2492,6 +2512,7 @@ fn research_workflow_definition() -> WorkflowDefinition {
     WorkflowDefinition {
         root: PathBuf::from("/tmp/spacetop-research-transitions"),
         state: None,
+        storage: Default::default(),
         stages,
         id_style: None,
         entity_type: None,
@@ -2594,6 +2615,7 @@ fn dag_omits_arcs_when_no_transitions_block() {
         definition: WorkflowDefinition {
             root: PathBuf::from("/tmp/transitionless"),
             state: None,
+            storage: Default::default(),
             stages,
             id_style: None,
             entity_type: None,

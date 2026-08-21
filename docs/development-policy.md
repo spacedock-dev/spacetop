@@ -16,7 +16,8 @@ Spacedock workflows, parse README metadata and work item frontmatter, browse
 active and archived items, render workflow graphs, preview markdown, merge
 selected worktree copies into the visible snapshot, auto-refresh filesystem
 changes, read user YAML config, persist per-workflow TUI session state under the
-user state path, and explicitly sync with `git pull --ff-only`.
+user state path, classify split-root checkout topology, and explicitly sync
+verified Git checkouts with `git pull --ff-only`.
 
 The repository is still early enough that architecture decisions matter. The
 v2 design under `docs/superpowers/specs/2026-06-11-spacetop-v2-design.md`
@@ -38,8 +39,11 @@ Spacetop is a read-first inspection tool for Spacedock markdown workflows.
 
 - Workflow markdown is the source of truth.
 - Spacetop must not rewrite workflow state by default.
-- The current `Y` sync action is the only approved write path. It may run
-  `git pull --ff-only` and nothing broader.
+- The current `Y` sync action is the only approved workflow-adjacent write path.
+  It may run `git pull --ff-only` against the definition repository and a
+  split-root state checkout only after read-only probes verify that checkout is
+  attached to the expected branch. Detached, wrong-branch, missing, or
+  unverified state must produce a partial result and must not be repaired.
 - User config and session persistence are not workflow-state writes. They are
   allowed only under absolute XDG/HOME-derived user paths:
   `$XDG_CONFIG_HOME/spacetop/config.yaml` or `~/.config/spacetop/config.yaml`,
@@ -83,13 +87,18 @@ Current two-crate workspace boundaries:
 - Frontmatter, README, entity, archive, and worktree parsing belong in
   `crates/spacetop-core/src/parser.rs` and
   `crates/spacetop-core/src/parser/*`.
+- Split-root storage classification and checkout Git probes belong in
+  `crates/spacetop-core/src/state_checkout.rs`; rendering consumes typed app
+  diagnostics and does not infer topology from strings.
 - `crates/spacetop-core/src/index.rs`, `query.rs`, and `sources.rs` own the v2
   index/query spine; TUI code must consume `WorkflowIndex` through query methods
   instead of inferring schema rules from raw vectors.
 - Discovery and git-root resolution belong in
   `crates/spacetop-core/src/discovery.rs`.
 - Filesystem watching belongs in `crates/spacetop-core/src/watcher.rs`.
-- Explicit git sync belongs in `crates/spacetop-core/src/git_sync.rs`.
+- The audited fast-forward helper belongs in
+  `crates/spacetop-core/src/git_sync.rs`; `spacetop/src/lib.rs` orchestrates the
+  definition-first and verified-attached-state sequence.
 - External file opening belongs in `crates/spacetop-core/src/editor.rs`.
 - User config and session persistence models, XDG/HOME path resolution, and YAML
   load/save helpers belong in `crates/spacetop-core/src/config.rs` and

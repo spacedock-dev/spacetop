@@ -405,6 +405,7 @@ fn synthetic_session(n: usize) -> crate::app::OverviewSession {
         definition: WorkflowDefinition {
             root: PathBuf::from("/x/w0"),
             state: None,
+            storage: Default::default(),
             stages: vec![StageDefinition {
                 name: "plan".to_string(),
                 initial: true,

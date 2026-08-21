@@ -16,7 +16,6 @@ pub(crate) use frontmatter::{split_frontmatter, top_level_scalar, SplitFrontmatt
 pub use item::parse_work_item;
 pub use readme::parse_workflow_readme;
 pub use snapshot::load_workflow_dir;
-pub(crate) use snapshot::resolve_entity_dir;
 
 pub use crate::domain::EntityParseError;
 

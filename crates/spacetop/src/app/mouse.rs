@@ -293,6 +293,7 @@ mod tests {
             definition: WorkflowDefinition {
                 root: root.clone(),
                 state: None,
+                storage: Default::default(),
                 stages: vec![StageDefinition {
                     name: "design".to_string(),
                     initial: true,

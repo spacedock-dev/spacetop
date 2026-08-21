@@ -287,6 +287,7 @@ fn preview_omits_session_metadata_for_unrelated_running_session() {
         definition: spacetop_core::domain::WorkflowDefinition {
             root: workflow.clone(),
             state: None,
+            storage: Default::default(),
             stages: vec![spacetop_core::domain::StageDefinition {
                 name: "design".to_string(),
                 initial: true,

@@ -42,16 +42,26 @@ render workflow graphs, show selected worktree state, derive entity activity
 from structured local Codex and Claude Code events, open query-backed search,
 timeline, metrics, activity, and relation views, auto-refresh filesystem
 changes, read YAML user config, restore per-workflow session state, expose
-headless query/export commands, and explicitly sync with `git pull --ff-only`.
+headless query/export commands, and explicitly fast-forward sync verified Git
+checkouts with `git pull --ff-only`.
 
-Entity and archive loading honors a split-root layout: when a workflow README
-declares `state:` (a relative path such as `state: .spacedock-state`), active
-entities and `_archive/` are read from that state checkout while the README and
-discovery stay on the definition directory. `$inline`, an empty value, or an
-absent `state:` keeps entities beside the README (single-root, unchanged); an
-absolute `state:` or one with `..` parent traversal is unsupported and also falls
-back to single-root. A declared-but-absent state checkout renders an empty list
-rather than failing.
+Workflow storage has two backends. `$inline`, an empty value, or an absent
+`state:` is single-root: entities live beside the README. A supported relative
+`state:` such as `.spacedock-state` is split-root: active entities and
+`_archive/` live in that contained state checkout while the README and discovery
+remain on the definition directory. Absolute paths and paths with `..` are
+unsupported and fail closed to single-root. A relative path whose canonical
+target escapes the definition directory is unverified: available entities stay
+readable, but Spacetop will not run Git sync operations against that target.
+
+A split-root checkout then has a separate runtime disposition. Attached means
+it holds the expected `state-branch:` (or the default
+`spacedock-state/<workflow-name>`) and needs no warning. Detached and
+wrong-branch checkouts remain fully readable, but the footer warns that their
+snapshot may be stale or names the actual and expected branches. Missing state
+shows an empty list together with “State checkout missing; no state loaded.” A
+Git probe failure shows “State topology unverified” instead of claiming the
+workflow is healthy.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.
@@ -147,8 +157,12 @@ Spacedock workflow directories.
 
 Spacetop should be read-only by default. The only current writes are the explicit
 `Y` sync action (`git pull --ff-only`) and session persistence under the user
-state path described above. Future workflow-state write features should make
-state changes explicit and easy to audit through git.
+state path described above. `Y` refreshes the definition repository first and
+then a split-root state checkout only when it is verified attached to the
+expected branch. Detached, wrong-branch, missing, and unverified state are never
+checked out or repaired; the footer reports that only the definition was
+refreshed. Future workflow-state write features should make state changes
+explicit and easy to audit through git.
 
 ## Development
 
@@ -202,8 +216,9 @@ cargo run -p spacetop -- export --workflow-dir docs/spacetop-dev --json
 
 ### Workspace Layout
 
-- `crates/spacetop-core/` contains domain, parser, discovery, watcher, git sync,
-  and editor helpers. It has no terminal UI dependencies.
+- `crates/spacetop-core/` contains domain, parser, split-root checkout topology,
+  discovery, watcher, git sync, and editor helpers. It has no terminal UI
+  dependencies.
 - `crates/spacetop/` contains the CLI, TUI app state, rendering, terminal event
   loop, and release-only Sentry setup.
 - `tests/fixtures/` contains shared integration-test fixtures.

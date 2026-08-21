@@ -1,6 +1,65 @@
 use super::*;
 
 #[test]
+fn footer_renders_stable_split_root_topology_diagnostics() {
+    use spacetop_core::domain::{StateCheckoutDisposition, WorkflowStorage};
+
+    let cases = [
+        (
+            StateCheckoutDisposition::Detached,
+            "State detached; snapshot may be stale",
+        ),
+        (
+            StateCheckoutDisposition::WrongBranch {
+                actual_branch: "wrong-state".to_string(),
+            },
+            "State on branch wrong-state; expected spacedock-state/demo",
+        ),
+        (
+            StateCheckoutDisposition::Missing,
+            "State checkout missing; no state loaded",
+        ),
+        (
+            StateCheckoutDisposition::ProbeFailed {
+                reason: "not a Git checkout".to_string(),
+            },
+            "State topology unverified: not a Git checkout",
+        ),
+    ];
+    for (disposition, expected) in cases {
+        let app = app_with_storage(WorkflowStorage::SplitRoot {
+            entity_dir: PathBuf::from("/tmp/spacetop-topology-test/.spacedock-state"),
+            expected_branch: "spacedock-state/demo".to_string(),
+            disposition,
+        });
+        let mut terminal = Terminal::new(TestBackend::new(320, 24)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains(expected), "rendered={rendered}");
+    }
+}
+
+#[test]
+fn footer_has_no_topology_warning_for_attached_or_single_root() {
+    use spacetop_core::domain::{StateCheckoutDisposition, WorkflowStorage};
+
+    for storage in [
+        WorkflowStorage::SingleRoot,
+        WorkflowStorage::SplitRoot {
+            entity_dir: PathBuf::from("/tmp/spacetop-topology-test/.spacedock-state"),
+            expected_branch: "spacedock-state/demo".to_string(),
+            disposition: StateCheckoutDisposition::Attached,
+        },
+    ] {
+        let app = app_with_storage(storage);
+        let mut terminal = Terminal::new(TestBackend::new(240, 24)).expect("terminal");
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(!rendered.contains("State "), "rendered={rendered}");
+    }
+}
+
+#[test]
 fn task_list_uses_full_pane_width_and_ratatui_list_selection() {
     let stable_title = "Stable selected title";
     let long_title = format!("{}FULLWIDTHMARKER", "X".repeat(60));
@@ -92,6 +151,7 @@ fn task_list_uses_configured_selection_background() {
         definition: spacetop_core::domain::WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages: vec![spacetop_core::domain::StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -298,6 +358,7 @@ fn footer_uses_configured_background() {
         definition: spacetop_core::domain::WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages: vec![spacetop_core::domain::StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -388,6 +449,7 @@ fn task_row_long_phase_name_ellipsis() {
             definition: spacetop_core::domain::WorkflowDefinition {
                 root: root.clone(),
                 state: None,
+                storage: Default::default(),
                 stages: vec![spacetop_core::domain::StageDefinition {
                     name: long_phase.to_string(),
                     initial: true,
@@ -825,6 +887,7 @@ fn app_with_broken_entity() -> App {
         definition: spacetop_core::domain::WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages: vec![spacetop_core::domain::StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -863,6 +926,7 @@ fn app_with_archived_broken_entity_only() -> App {
     let definition = spacetop_core::domain::WorkflowDefinition {
         root: root.clone(),
         state: None,
+        storage: Default::default(),
         stages: vec![spacetop_core::domain::StageDefinition {
             name: "done".to_string(),
             initial: true,
@@ -1013,6 +1077,17 @@ fn footer_sync_pill_labels_match_pinned_strings() {
         Some("\u{2713} Synced (3 new commits)")
     );
     assert_eq!(
+        sync_pill_label(Some(&SyncStatus::SucceededWithState { new_commits: 0 })).as_deref(),
+        Some("\u{2713} Definition + state synced (already up to date)")
+    );
+    assert_eq!(
+        sync_pill_label(Some(&SyncStatus::Partial {
+            message: "Definition synced; detached state not refreshed".into()
+        }))
+        .as_deref(),
+        Some("\u{26A0} Definition synced; detached state not refreshed")
+    );
+    assert_eq!(
         sync_pill_label(Some(&SyncStatus::Failed {
             message: "boom".into()
         }))
@@ -1126,6 +1201,16 @@ fn sync_pill_color_maps_each_variant() {
     assert_eq!(
         sync_pill_color(&SyncStatus::Succeeded { new_commits: 0 }),
         Color::Green
+    );
+    assert_eq!(
+        sync_pill_color(&SyncStatus::SucceededWithState { new_commits: 0 }),
+        Color::Green
+    );
+    assert_eq!(
+        sync_pill_color(&SyncStatus::Partial {
+            message: "partial".into()
+        }),
+        Color::Yellow
     );
     assert_eq!(
         sync_pill_color(&SyncStatus::Failed {

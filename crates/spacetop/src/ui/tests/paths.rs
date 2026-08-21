@@ -99,6 +99,7 @@ fn path_line_stays_visible_for_long_paths() {
         definition: WorkflowDefinition {
             root: workflow_dir.clone(),
             state: None,
+            storage: Default::default(),
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,

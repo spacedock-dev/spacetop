@@ -5,6 +5,8 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::domain::{StageDefinition, StageTransition, WorkflowDefinition};
+use crate::git::StdGitRunner;
+use crate::state_checkout::classify_storage;
 
 use super::frontmatter::extract_frontmatter;
 use super::{display_path, required, ParseError};
@@ -63,9 +65,17 @@ pub fn parse_workflow_readme(path: &Path) -> Result<WorkflowDefinition, ParseErr
             _ => None,
         })
         .collect();
+    let root = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
+    let storage = classify_storage(
+        &StdGitRunner,
+        &root,
+        raw.state.as_deref(),
+        raw.state_branch.as_deref(),
+    );
     Ok(WorkflowDefinition {
-        root: path.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
+        root,
         state: raw.state,
+        storage,
         stages,
         id_style: raw.id_style,
         entity_type: raw.entity_type,
@@ -249,6 +259,8 @@ struct RawWorkflowFrontmatter {
     /// keep entities beside the README. See `parser::snapshot::resolve_entity_dir`.
     #[serde(default)]
     state: Option<String>,
+    #[serde(rename = "state-branch")]
+    state_branch: Option<String>,
     stages: Option<RawStageBlock>,
 }
 
@@ -526,9 +538,8 @@ mod tests {
         }
     }
 
-    /// AC-1: a top-level `state:` scalar round-trips into
-    /// `WorkflowDefinition.state`; absence leaves it `None`. `root` stays the
-    /// README's parent regardless.
+    /// AC-1: `state:` selects split-root and `state-branch:` overrides the
+    /// branch derived from the workflow directory name.
     #[test]
     fn state_field_round_trips_from_frontmatter() {
         let tmp = tempdir_path("state_field");
@@ -537,12 +548,20 @@ mod tests {
         let with_state = tmp.join("README.md");
         std::fs::write(
             &with_state,
-            "---\nstate: .spacedock-state\nstages:\n  states:\n    - name: plan\n---\n",
+            "---\nstate: .spacedock-state\nstate-branch: custom/state\nstages:\n  states:\n    - name: plan\n---\n",
         )
         .expect("write readme");
         let wf = parse_workflow_readme(&with_state).expect("parse");
         assert_eq!(wf.state.as_deref(), Some(".spacedock-state"));
         assert_eq!(wf.root, tmp);
+        assert!(matches!(
+            wf.storage,
+            crate::domain::WorkflowStorage::SplitRoot {
+                ref expected_branch,
+                disposition: crate::domain::StateCheckoutDisposition::Missing,
+                ..
+            } if expected_branch == "custom/state"
+        ));
 
         let without = tmp.join("nested");
         std::fs::create_dir_all(&without).expect("mkdir nested");
@@ -554,6 +573,7 @@ mod tests {
         .expect("write readme");
         let wf2 = parse_workflow_readme(&without_path).expect("parse");
         assert_eq!(wf2.state, None);
+        assert_eq!(wf2.storage, crate::domain::WorkflowStorage::SingleRoot);
     }
 
     fn tempdir_path(label: &str) -> PathBuf {
