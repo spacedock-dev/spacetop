@@ -202,3 +202,20 @@ checkout repair or any Git write beyond audited fast-forward pulls.
 ### Summary
 
 Implemented fail-closed split-root topology inspection while preserving every materialized state snapshot’s readability. Sync now distinguishes single-root success, full attached-state success, and definition-only partial outcomes without adding repair commands or broader workflow-state writes. The implementation is committed as `c339356`.
+
+## Stage Report: verify
+
+- DONE: Independently review commit c339356 against AC-1 through AC-4: verify the two-backend/four-disposition typed contract, fail-closed read-only probes, detached/wrong-branch snapshot readability, and stable actionable diagnostics without UI string inference.
+  Classifier tests fail if facts collapse or probes stop failing closed; the real-Git fixture fails if detached/wrong-branch snapshots become unreadable; Ratatui tests pin all diagnostics and healthy-warning absence.
+- FAILED: Independently verify AC-5 and AC-6: reload/watcher topology transitions and sync orchestration must re-probe state, preserve readable snapshots, pull only definition plus verified attached state with git pull --ff-only, and keep no-write guardrails intact.
+  REQUEST CHANGES (High): `crates/spacetop/src/lib.rs:657-670` ignores `app.reload()` failure and can pull state using cached pre-definition-pull `Attached` topology. The fixture at `crates/spacetop/src/lib.rs:119-205` uses a nonexistent workflow root yet still expects that pull, proving the stale-verification fallback. On reload failure, return a partial/failure status without state Git calls and add a regression covering an invalidated or changed README.
+- DONE: Verify AC-7 and completion evidence by reviewing docs and test mapping, running focused tests plus full cargo test, cargo fmt --all -- --check, make lint, and git diff --check; report a direct acceptance verdict and every actionable defect with file/line evidence.
+  README, AGENTS, and development policy are accurate. Passed: `cargo test -p spacetop-core state_checkout`, `cargo test -p spacetop-core --test state_checkout_fixtures`, `cargo test -p spacetop --test state_topology_reload`, `cargo test -p spacetop topology`, `cargo test -p spacetop-core --test no_write_git_calls`, `cargo test -p spacetop-core watcher::tests`, full `cargo test`, `cargo fmt --all -- --check`, `make lint`, and both working-tree and commit `git diff --check`. Ignored watcher tests were skipped because production watcher behavior and ignored coverage did not change.
+
+### Summary
+
+Verdict: REQUEST CHANGES. AC-1 through AC-5 and AC-7 are supported, but AC-6 fails closed incorrectly when the mandatory post-definition reload/re-probe fails; cached topology must not authorize a state pull.
+
+### Feedback Cycles
+
+- Cycle 1: REQUEST CHANGES — independent verify reviewer; surface 30 files vs estimate undeclared (N/A); AC unchanged
