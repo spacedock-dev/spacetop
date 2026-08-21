@@ -1,13 +1,13 @@
 ---
 id: 078
 title: Stop runtime activity indicator flickering between scans
-status: shape
+status: plan
 source: "Captain report: Engram runtime indicator alternates on and off every few seconds while Spacetop is running"
 kind: bug
 risk: high
 milestone: v1-maintenance
 proof: Deterministic consecutive-scan regression plus a live Engram workflow check
-started:
+started: 2026-08-21T14:53:21Z
 completed:
 verdict:
 score: 0.86
