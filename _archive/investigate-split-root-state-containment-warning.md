@@ -9,7 +9,7 @@ milestone: v1-maintenance
 proof: Real filesystem and Git topology reproducer plus classifier and sync-call evidence
 started: 2026-08-21T11:59:50Z
 completed: 2026-08-21T13:03:51Z
-verdict: passed
+verdict: PASSED
 score: 0.76
 worktree: .worktrees/spacedock-ensign-investigate-split-root-state-containment-warning
 issue:
