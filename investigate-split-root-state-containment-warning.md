@@ -155,3 +155,16 @@ escapes the workflow definition directory, while preserving readable state.
 Implementation should keep that behavior and make its reason, remediation, and
 sync eligibility typed, including an explicit same-Git-top duplicate-pull
 guard and exact call-recording proof.
+
+## Stage Report: implement
+
+- DONE: Replace stringly unverified-state reasons with typed topology problems and an explicit sync-eligibility decision while preserving readable snapshots and fail-closed external-target behavior.
+  Commit `da77411` adds `StateTopologyProblem`, `StateSyncEligibility`, and typed blockers; the real external-symlink fixture would fail if escaped content stopped loading or any Git probe preceded containment rejection.
+- DONE: Consume the typed decision at the sync boundary so contained attached state receives exactly one distinct state pull, same-top state is never double-pulled, and escaped or otherwise blocked state receives no state pull; render actionable truthful diagnostics and update nearby documentation.
+  RecordingGitRunner tests would fail on zero/multiple contained-state pulls, any external-state call, or a second same-top pull; the TestBackend test pins readable/blocked/materialize/no-repair guidance, and README/AGENTS/policy document the contract.
+- DONE: Add lowest-layer real-topology, classifier, UI, and RecordingGitRunner regressions mapped to AC-1 through AC-5; keep the full topology and read-only safety matrix green, run cargo test, cargo fmt --all -- --check, make lint, and git diff --check, then commit only task-related deliverables.
+  `cargo test --no-fail-fast`, `cargo fmt --all -- --check`, `make lint`, and `git diff --check` passed; topology tests cover attached, detached, wrong-branch, missing, typed probe failures, external symlinks, canonical aliases, reload, exact pull roots, and the no-write guard.
+
+### Summary
+
+Implemented the planned typed topology and sync-authorization contract in commit `da77411`, without broadening the audited Git write surface. Supported contained attached checkouts receive one canonical distinct-root pull; escaped, same-top, stale, or unverified state remains readable but fail-closed with truthful remediation.
