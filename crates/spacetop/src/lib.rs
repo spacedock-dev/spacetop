@@ -47,8 +47,9 @@ pub enum DecideOutcome {
 mod topology_sync_tests {
     use super::*;
     use std::cell::RefCell;
+    use std::fs;
     use std::io;
-    use std::process::ExitStatus;
+    use std::process::{Command, ExitStatus};
 
     use spacetop_core::domain::{
         StateCheckoutDisposition, WorkflowDefinition, WorkflowSnapshot, WorkflowStorage,
@@ -116,8 +117,7 @@ mod topology_sync_tests {
         ]
     }
 
-    fn app_with_storage(storage: WorkflowStorage) -> App {
-        let root = PathBuf::from("/definitely/missing/spacetop-sync-topology");
+    fn app_with_storage(root: PathBuf, storage: WorkflowStorage) -> App {
         App::from_snapshot(
             root.clone(),
             WorkflowSnapshot {
@@ -140,49 +140,114 @@ mod topology_sync_tests {
         )
     }
 
+    fn write_split_root_readme(workflow_dir: &Path, state: &str) {
+        fs::create_dir_all(workflow_dir).expect("workflow dir");
+        fs::write(
+            workflow_dir.join("README.md"),
+            format!("---\nstate: {state}\nstages:\n  states: []\n---\n# Demo\n"),
+        )
+        .expect("workflow README");
+    }
+
+    fn init_attached_state_checkout(entity_dir: &Path) {
+        fs::create_dir_all(entity_dir).expect("state dir");
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(entity_dir)
+            .args(["init", "--initial-branch", "spacedock-state/demo"])
+            .output()
+            .expect("run git init");
+        assert!(
+            output.status.success(),
+            "git init failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[test]
-    fn non_holder_split_root_sync_never_pulls_state_checkout() {
+    fn reload_failure_does_not_pull_cached_attached_state_checkout() {
+        let workflow_dir = PathBuf::from("/definitely/missing/spacetop-sync-topology");
         let entity_dir = PathBuf::from("/state/checkout");
-        let cases = [
-            StateCheckoutDisposition::Detached,
-            StateCheckoutDisposition::WrongBranch {
-                actual_branch: "wrong-state".to_string(),
-            },
-            StateCheckoutDisposition::Missing,
-            StateCheckoutDisposition::ProbeFailed {
-                reason: "probe failed".to_string(),
-            },
-        ];
-        for disposition in cases {
-            let mut app = app_with_storage(WorkflowStorage::SplitRoot {
+        let mut app = app_with_storage(
+            workflow_dir,
+            WorkflowStorage::SplitRoot {
                 entity_dir: entity_dir.clone(),
                 expected_branch: "spacedock-state/demo".to_string(),
-                disposition,
-            });
-            let runner = RecordingGitRunner::new(successful_sync_responses());
-            apply_pending_sync(&mut app, &runner);
-            assert!(matches!(
-                app.sync_status(),
-                Some(SyncStatus::Partial { .. })
-            ));
-            assert!(
-                runner
-                    .calls()
-                    .iter()
-                    .all(|call| call.repo_root != entity_dir),
-                "non-holder state must receive no Git calls"
-            );
-        }
+                disposition: StateCheckoutDisposition::Attached,
+            },
+        );
+        let runner = RecordingGitRunner::new(successful_sync_responses());
+        apply_pending_sync(&mut app, &runner);
+        assert!(matches!(
+            app.sync_status(),
+            Some(SyncStatus::Partial { message })
+                if message.contains("workflow reload failed")
+                    && message.ends_with("state not refreshed")
+        ));
+        assert!(
+            runner
+                .calls()
+                .iter()
+                .all(|call| call.repo_root != entity_dir),
+            "failed mandatory reload must make no state Git call"
+        );
+    }
+
+    #[test]
+    fn changed_state_configuration_cannot_authorize_cached_attached_pull() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let workflow_dir = holder.path().join("demo");
+        write_split_root_readme(&workflow_dir, "new-state");
+        let cached_entity_dir = workflow_dir.join("old-state");
+        let mut app = app_with_storage(
+            workflow_dir.clone(),
+            WorkflowStorage::SplitRoot {
+                entity_dir: cached_entity_dir.clone(),
+                expected_branch: "spacedock-state/demo".to_string(),
+                disposition: StateCheckoutDisposition::Attached,
+            },
+        );
+        let runner = RecordingGitRunner::new(successful_sync_responses());
+        apply_pending_sync(&mut app, &runner);
+
+        assert_eq!(
+            app.sync_status(),
+            Some(&SyncStatus::Partial {
+                message: "Definition synced; missing state checkout not refreshed".to_string()
+            })
+        );
+        assert!(matches!(
+            app.workflow_storage(),
+            Some(WorkflowStorage::SplitRoot {
+                entity_dir,
+                disposition: StateCheckoutDisposition::Missing,
+                ..
+            }) if entity_dir == &workflow_dir.join("new-state")
+        ));
+        assert!(
+            runner
+                .calls()
+                .iter()
+                .all(|call| call.repo_root != cached_entity_dir),
+            "reloaded missing topology must not use cached attached state"
+        );
     }
 
     #[test]
     fn attached_split_root_runs_exact_fast_forward_state_pull() {
-        let entity_dir = PathBuf::from("/state/checkout");
-        let mut app = app_with_storage(WorkflowStorage::SplitRoot {
-            entity_dir: entity_dir.clone(),
-            expected_branch: "spacedock-state/demo".to_string(),
-            disposition: StateCheckoutDisposition::Attached,
-        });
+        let holder = tempfile::tempdir().expect("tempdir");
+        let workflow_dir = holder.path().join("demo");
+        let entity_dir = workflow_dir.join(".spacedock-state");
+        write_split_root_readme(&workflow_dir, ".spacedock-state");
+        init_attached_state_checkout(&entity_dir);
+        let mut app = app_with_storage(
+            workflow_dir,
+            WorkflowStorage::SplitRoot {
+                entity_dir: entity_dir.clone(),
+                expected_branch: "spacedock-state/demo".to_string(),
+                disposition: StateCheckoutDisposition::Attached,
+            },
+        );
         let mut responses = successful_sync_responses();
         responses.extend([
             ok("true\n"),
@@ -656,8 +721,15 @@ pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
 
     // A successful definition refresh can change `state:` or `state-branch:`.
     // Rebuild the index before deciding whether the state checkout is safe to
-    // pull. If reload fails, the prior readable snapshot and topology remain.
-    let _ = app.reload();
+    // pull. A failed re-probe must not fall back to cached pre-pull topology.
+    if let Err(error) = app.reload() {
+        app.set_sync_status(SyncStatus::Partial {
+            message: format!(
+                "Definition synced; workflow reload failed: {error}; state not refreshed"
+            ),
+        });
+        return;
+    }
     let storage = app.workflow_storage().cloned();
     let status = match storage {
         Some(WorkflowStorage::SingleRoot) => SyncStatus::Succeeded {
@@ -672,9 +744,15 @@ pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
                 new_commits: definition_commits,
             },
             SyncOutcome::Pulled { new_commits } => {
-                let _ = app.reload();
-                SyncStatus::SucceededWithState {
-                    new_commits: definition_commits.saturating_add(new_commits),
+                match app.reload() {
+                    Ok(()) => SyncStatus::SucceededWithState {
+                        new_commits: definition_commits.saturating_add(new_commits),
+                    },
+                    Err(error) => SyncStatus::Partial {
+                        message: format!(
+                            "Definition + state synced; workflow reload failed: {error}"
+                        ),
+                    },
                 }
             }
             SyncOutcome::Failed { message } => SyncStatus::Partial {
