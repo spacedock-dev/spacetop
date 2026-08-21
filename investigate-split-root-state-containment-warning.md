@@ -14,6 +14,7 @@ score: 0.76
 worktree: .worktrees/spacedock-ensign-investigate-split-root-state-containment-warning
 issue:
 pr:
+mod-block: merge:pr-merge
 ---
 
 Spacetop can report `State topology unverified: state directory resolves outside workflow definition directory: <path>` for a split-root workflow. The warning may be correctly rejecting a state path that symlinks into an unrelated repository, or it may be a false positive for a supported Spacedock checkout layout. Investigate the real topology first, then make the warning and sync behavior truthful without weakening the boundary that prevents Spacetop from pulling an unintended repository.
