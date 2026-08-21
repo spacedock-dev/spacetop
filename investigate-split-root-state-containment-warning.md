@@ -178,6 +178,14 @@ Implemented the planned typed topology and sync-authorization contract in commit
 - DONE: Cross-check AC-1 through AC-5 against concrete diff/test evidence, inspect read-only guardrails and documentation, run the required focused and full verification including cargo test --no-fail-fast, cargo fmt --all -- --check, make lint, and git diff --check, then issue PASSED or REJECTED with actionable findings.
   AC-1 through AC-5 are evidenced. `cargo test --no-fail-fast` passed with 399 app tests, 197 core tests, and all enabled integration and documentation tests; 3 unchanged notify tests remained ignored. `cargo fmt --all -- --check`, `make lint`, and `git diff --check` passed.
 
+### Acceptance-criteria evidence
+
+- **AC-1:** The sanitized external symlink reproducer and live supported linked-checkout probe record state spelling, lexical and canonical paths, symlink behavior, Git top, branch, and duplicate-pull classification.
+- **AC-2:** The external canonical escape is intentionally blocked, while the supported contained linked checkout remains attached; typed topology variants identify the actual classifier outcome without treating aliases as escapes.
+- **AC-3:** RecordingGitRunner regressions prove exactly one distinct state pull for eligible attached state and zero state pulls for external, same-top, detached, wrong-branch, missing, or unverified state; rendering tests prevent a false healthy message.
+- **AC-4:** Lowest-layer topology, sync-call, and TestBackend regressions cover the confirmed stringly-diagnostic and implicit-authorization defects; README guidance explains remediation without claiming automatic repair.
+- **AC-5:** The full topology matrix, no-write guardrail, complete tests, formatting check, required lint, and diff check all passed.
+
 ### Verdict
 
 PASSED. No actionable findings.
