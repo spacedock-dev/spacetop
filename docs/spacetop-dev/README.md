@@ -1,5 +1,5 @@
 ---
-commissioned-by: spacedock@0.20.0
+commissioned-by: spacedock@0.26.0
 id: spacetop-dev
 state: .spacedock-state
 entity-type: development_task
@@ -62,9 +62,10 @@ Every task file has YAML frontmatter. Fields are documented below; see **Task Te
 | `completed` | ISO 8601 | When the task reached terminal status |
 | `verdict` | enum | PASSED or REJECTED -- set at final stage |
 | `score` | number | Priority score, 0.0-1.0 (optional). Workflows can upgrade to a multi-dimension rubric in their README. |
-| `worktree` | string | Worktree path while a dispatched agent is active, empty otherwise |
+| `worktree` | string | Worktree path while a dispatched agent is active, empty otherwise. Once set on first dispatch into a `worktree: true` stage, it stays set across all non-terminal advancements and clears at terminal merge. |
 | `issue` | string | GitHub issue reference (e.g., `#42` or `owner/repo#42`). Optional cross-reference, set manually. |
 | `pr` | string | GitHub PR reference (e.g., `#57` or `owner/repo#57`). Set when a PR is created for this task's worktree branch. |
+| `mod-block` | string | Pending mod-declared blocking action, format `{lifecycle_point}:{mod_name}`. |
 
 ## Stages
 
@@ -95,6 +96,13 @@ A worker sets this status while making code or documentation changes for the tas
 - **Good:** Uses established Rust crates, keeps parsing/app facts typed before UI rendering, commits the worktree branch, and records reproducible evidence.
 - **Bad:** Mutates Spacedock workflow markdown by default, hides untested parsing assumptions in UI code, broadens git writes, or changes unrelated project files.
 
+- When consuming a review round's findings, triage before fixing:
+  - **Material** — breaks a value AC or a declared safety, security, data-integrity, or compatibility boundary reachable through the supported workflow. Fix it.
+  - **Correct-but-disproportionate** — substantively right, but no value AC breaks and its trigger is outside the supported workflow. Record a decline and the condition that would make it material.
+  - **Needs decision** — a genuine product or compatibility fork. Escalate to the first officer.
+
+  Record every disposition in `### Feedback Cycles`. Narrowing an acceptance criterion to make a rejection pass requires captain approval; it is not a licensed implementation decision.
+
 ### `verify`
 
 The first officer sets this status when implementation is ready for independent verification and captain approval.
@@ -103,6 +111,8 @@ The first officer sets this status when implementation is ready for independent 
 - **Outputs:** Verification verdict, defects or missing evidence if rejected, and approval notes if the task can move to done through the PR merge flow.
 - **Good:** Challenges whether the change helps users inspect Spacedock state, checks parser failures and terminal edge cases, and confirms every acceptance criterion has evidence.
 - **Bad:** Rubber-stamps code, treats prose as proof when a test or guardrail could enforce the behavior, or ignores required `make lint` evidence for code changes.
+
+- **Small-change fast path:** Scale verification to the diff's blast radius. Routine low-risk changes do not require the full checklist or a detached adversarial audit.
 
 ### `done`
 
@@ -126,11 +136,27 @@ Every task should prove the most important property at the lowest practical laye
 
 For code changes, `make lint` is the completion gate. A task may skip a command only when the stage report explains why it was not applicable or could not run.
 
+## Workflow-specific rules
+
+The first-officer and ensign contracts govern generic stage semantics and proof discipline. The rules below add the development-workflow specifics.
+
+- **Repo-mutation worktree layer.** `implement` runs in a dedicated worktree and `verify` uses a fresh agent. PR state lives on the `pr` field and is managed by the `pr-merge` mod; there is no `pr_open` or `awaiting_merge` stage.
+- **No prose-grep over instruction files.** A string, substring, or regex match over an instruction file never proves a behavioral claim. A one-off grep can prove presence or absence when that fact is itself the claim, but committing the same grep as a permanent behavioral test is tautological.
+- **Evidence must be able to fail.** Each acceptance criterion's evidence names the concrete change that would make it fail. If the author cannot name that falsifying edit, the criterion is not proven.
+- **Opt-in proof disciplines.** Adopt only the disciplines the task's risk requires:
+  - **Test-first authoring** — for code or fixture deliverables, write the failing test first, observe the intended failure, then implement the minimum passing change.
+  - **External-proof acceptance criteria** — cite a test, command result, produced file, or resulting on-disk state outside the task body.
+  - **Detached adversarial audit** — for high-stakes launchers, mutation guards, workflow scaffolding, CI, or release machinery, use a throwaway checkout to try to refute the validation.
+  - **Live scenario for runtime claims** — prove agent or model runtime behavior with a scripted before-and-after scenario, a durable result, and a negative case.
+- **Declaring a posture is optional.** If useful, state project maturity, default test depth, infrastructure-addition policy, and review-finding priority here. Do not invent a posture solely to satisfy the template.
+
 ## PR And Review Comment Flow
 
 Approving the `verify` gate authorizes PR publication. After that approval, the merge hook pushes the implementation branch and creates the GitHub PR directly, without asking for a second push or PR approval. GitHub Copilot PR review is expected to trigger automatically after PR creation.
 
-When the captain says "check PR review comments" or equivalent, inspect unresolved GitHub PR review comments, fix actionable feedback on the PR branch, push the updates, and reply to each review comment one by one. If a comment is not changed, reply with the reason.
+After PR creation, start an interruptible seven-minute wait. When it completes, fetch all live GitHub review threads, including Copilot, fix every actionable comment on the PR branch, run the relevant checks, push, reply to each thread individually, and resolve every addressed thread. Reply with a concise reason when no code change is appropriate. Do not ask the captain to select comments. An interruption pauses monitoring but does not cancel or duplicate the pending review pass.
+
+When the captain says "merge PR", refresh the live head, checks, unresolved threads, and mergeability, then merge without another confirmation when the PR is ready. When the captain reports a manual merge, verify it on GitHub. After either verified merge, immediately finalize and archive the task, close its linked issue if one is present and still open, and remove the clean worktree and local branch without another confirmation. Keep the remote branch while the merged PR references it.
 
 ## Workflow State
 
@@ -179,6 +205,7 @@ score:
 worktree:
 issue:
 pr:
+mod-block:
 ---
 ```
 

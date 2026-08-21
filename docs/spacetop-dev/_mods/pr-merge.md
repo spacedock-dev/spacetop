@@ -1,7 +1,7 @@
 ---
 name: pr-merge
 description: Push branches and create/track GitHub PRs for workflow entities
-version: 0.12.1-spacetop.1
+version: 0.12.1-spacetop.2
 ---
 
 # PR Merge
@@ -12,7 +12,7 @@ Manages the PR lifecycle for workflow entities processed in worktree stages. Pus
 
 Scan all entity files (in the workflow directory only, not `_archive/`) for entities with a non-empty `pr` field and a non-terminal status. For each, extract the PR number (strip any `#`, `owner/repo#` prefix) and check: `gh pr view {number} --json state --jq '.state'`.
 
-If `MERGED`, advance the entity to its terminal stage: set `status` to the terminal stage, `completed` to ISO 8601 now, `verdict: PASSED`, clear `worktree`, archive the file, and clean up any worktree/branch. Report each auto-advanced entity to the captain.
+If `MERGED`, advance the entity to its terminal stage immediately: set `status` to the terminal stage, `completed` to ISO 8601 now, `verdict: PASSED`, clear `worktree`, archive the file, and clean up the clean worktree and local branch. Keep the remote branch while the merged PR references it. If `issue` is non-empty, resolve its repository and number, check its live state, and close it when still open. Report each auto-advanced entity and issue closure to the captain. The captain's "merge PR" instruction or report of a manual merge is explicit authorization for this finalization; do not ask for separate archive, issue-close, worktree-removal, or local-branch-deletion confirmation.
 
 If `CLOSED` (closed without merge), report to the captain: "{entity title} has PR {pr number} which was closed without merging. How to proceed? Options: reopen the PR, create a new PR from the same branch, or clear `pr` and fall back to local merge." Wait for the captain's direction before taking action.
 
@@ -52,7 +52,7 @@ Then create the PR by running `gh pr create --base main --head {branch} --title 
 
 If push, rebase, or PR creation fails because of remote state, authentication, rebase conflicts, or GitHub availability, report the failure to the captain and stop with the merge mod-block still set. Do not silently local-merge, because this workflow expects GitHub Copilot PR review to run after PR creation.
 
-After PR creation, GitHub Copilot PR review is expected to trigger automatically from GitHub. Do not wait for Copilot inside the merge hook.
+After PR creation, GitHub Copilot PR review is expected to trigger automatically. Start the automatic review-follow-up procedure below without waiting for another captain instruction.
 
 ### PR body template
 
@@ -95,13 +95,24 @@ Set the entity's `pr` field to the PR number (e.g., `#57`). Report the PR to the
 
 Do NOT archive yet. The entity stays at its current stage with `pr` set until the PR is merged. The FO handles advancement to the terminal stage and archival when it detects the merge (via the event loop PR check, idle hook, or startup hook).
 
-## PR Review Comment Follow-Up
+## Automatic PR Review Comment Follow-Up
 
-When the captain says "check PR review comments" or equivalent for a PR-backed entity:
+Immediately after creating a PR for an entity:
 
-1. Inspect unresolved GitHub PR review comments, including GitHub Copilot comments.
-2. Fix each actionable comment on the same worktree branch.
-3. Push the updated branch.
-4. Reply to every reviewed comment one by one, either with the fix summary or a concise reason for not changing it.
+1. Record a review deadline exactly seven minutes after successful PR creation. Wait with the host's interruptible recurring monitoring mechanism in intervals no longer than 60 seconds so captain input remains responsive. An interruption returns control but does not cancel, complete, or duplicate the pending review pass; resume monitoring the same deadline when idle.
+2. At or after the deadline, refresh the PR's live head, checks, and every unresolved review thread, including GitHub Copilot comments.
+3. Fix every actionable comment on the same worktree branch. Run the relevant focused checks and the workflow's required completion gates, commit only task-related files, and push the updated branch.
+4. Reply to every reviewed thread individually with the fix and evidence, or with a concise reason when no change is appropriate. Resolve every addressed thread for which the host has authorization.
+5. Refresh the thread list once more and confirm that every thread observed by this review pass is answered and resolved. Do not ask the captain to select comments, and do not merge automatically.
+
+The captain may still say "check PR review comments" to request an immediate additional pass; use the same fix, verify, push, reply, and resolve behavior without waiting seven minutes.
 
 Keep the entity PR-backed and unarchived until the PR is merged.
+
+## Captain Merge And Manual-Merge Follow-Up
+
+When the captain says "merge PR", refresh the live PR head and base, required checks, unresolved review threads, and mergeability. If the PR is ready, merge it without another confirmation. If it is not ready, report the concrete blocker and retain the merge mod-block.
+
+When the captain says the PR was merged manually, verify `gh pr view {number} --json state` reports `MERGED`; never rely on the statement alone for terminal state.
+
+After either path confirms `MERGED`, execute the `MERGED` finalization from the startup hook immediately: archive the entity with `verdict: PASSED`, close a linked issue if it remains open, remove the clean worktree, delete the local feature branch, publish state, and report completion. Do not ask for another confirmation. Keep the remote feature branch while the merged PR references it.
