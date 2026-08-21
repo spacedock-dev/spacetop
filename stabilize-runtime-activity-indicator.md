@@ -137,10 +137,6 @@ REJECTED. The implementation and deterministic regressions are clean, but the us
 - DONE: If live evidence exposes a defect, fix it and rerun affected plus required gates; otherwise preserve implementation commit `96cfde1` and update only the implementation report.
   No live product behavior was reachable and no new defect was exposed; the code worktree remains clean at `96cfde1`, with this cycle changing only the shared implementation report.
 
-### Feedback Cycles
-
-- Cycle 2: MATERIAL — AC-4 remains unmet because the required live entity does not exist in the current Engram state; acceptance criteria were not weakened and no product change was made to conceal the environment blocker.
-
 ### Summary
 
 The implementation remains unchanged and clean. Current, five-cycle evidence proves the blocker precisely: Engram has no active entity to correlate, display, or transition, so AC-4 must wait for a real active attributed Engram run rather than be replaced by deterministic evidence.
