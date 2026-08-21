@@ -259,3 +259,16 @@ Verdict: REQUEST CHANGES. Commit `90e35c1` closes the cached-topology reload def
 ### Summary
 
 Correction cycle 2 now rejects canonical split-root escapes before Git probing or sync authorization while keeping available entity content readable with an actionable unverified diagnostic. The sync proof matrix now covers every non-holder re-probe and the final reload failure after a successful state pull.
+
+## Stage Report: verify (cycle 3)
+
+- DONE: Independently reproduce and verify correction 158d126 closes the external-symlink High finding: canonical state targets outside the definition directory must become non-pull-eligible ProbeFailed before Git probing, never receive a state Git call, and retain the intended read-only diagnostic behavior.
+  `state_checkout.rs:70-88` rejects the canonical escape before `GitRunner`; focused unit and real-Git fixtures fail if any probe occurs, the disposition becomes pull-eligible, or active content becomes unreadable.
+- DONE: Review the full c339356..158d126 implementation against every AC, with special scrutiny of all prior findings: mandatory re-probe failure, changed state configuration, Detached/WrongBranch/ProbeFailed call suppression, post-state-pull reload failure, path containment, snapshot readability, watcher transitions, docs, and no-write guardrails.
+  APPROVE with no findings: `lib.rs:978-1049` re-probes before state authorization and returns truthful partial statuses; eight sync regressions pin cached/changed/non-holder/final-reload branches, while parser, Ratatui, watcher, docs, and static guardrails cover AC-1 through AC-7.
+- DONE: Run focused real-Git/topology/parser/sync regressions and the required full cargo test, cargo fmt --all -- --check, make lint, and git diff --check; return a direct APPROVE or REQUEST CHANGES verdict with exact file/line evidence for any remaining defect.
+  Focused topology/parser tests passed 7, real-Git fixtures 2, sync tests 8, reload 1, watcher 9, and no-write 2; full `cargo test` passed 397 app and 193 core unit tests plus all enabled integration/doc tests, with 3 unchanged real-notify tests intentionally ignored; formatting, lint, and both range/worktree diff checks passed.
+
+### Summary
+
+Verdict: APPROVE. Correction `158d126` closes the external-symlink High finding before any state Git probe, preserves read-only snapshot visibility and diagnostics, and the complete `c339356..158d126` implementation now satisfies AC-1 through AC-7 with all required gates green.
