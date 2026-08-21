@@ -1,13 +1,13 @@
 ---
 id: 077
 title: Investigate split-root state containment warning
-status: shape
+status: plan
 source: "Captain report: State topology unverified: state directory resolves outside workflow definition directory"
 kind: bug
 risk: high
 milestone: v1-maintenance
 proof: Real filesystem and Git topology reproducer plus classifier and sync-call evidence
-started:
+started: 2026-08-21T11:59:50Z
 completed:
 verdict:
 score: 0.76
