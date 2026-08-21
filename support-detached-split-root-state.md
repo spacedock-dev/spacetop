@@ -246,3 +246,16 @@ Correction cycle 1 now fails closed at the mandatory post-definition reload boun
 ### Summary
 
 Verdict: REQUEST CHANGES. Commit `90e35c1` closes the cached-topology reload defect, and all required gates pass, but AC-1/AC-6 still permit a symlinked split-root declaration to authorize a fast-forward pull in an unrelated external repository; the negative sync proof matrix is also incomplete.
+
+## Stage Report: implement (cycle 3)
+
+- DONE: Fail closed for symlink escapes: a declared relative split-root path whose canonical target leaves the canonical definition directory must never classify as pull-eligible Attached and must never authorize Git operations against the external repository; preserve typed actionable diagnostics and existing valid attached/detached behavior.
+  Commit `158d126` classifies escaped canonical targets as `ProbeFailed` before any Git probe; the unit, real-Git parser, and sync regressions fail if the target becomes Attached, unreadable, or receives a state-sync call.
+- DONE: Complete the sync safety proof matrix with call-recording regressions for freshly re-probed Detached, WrongBranch, and ProbeFailed dispositions, plus the post-state-pull reload-failure branch; assert truthful status and exact absence/presence of state-root git pull --ff-only calls.
+  The three fresh real-checkout regressions fail on any state-root sync call and pin each partial status; the post-pull regression removes the README after exactly one state pull and fails unless the final reload reports a truthful partial result.
+- DONE: Run focused real-Git/parser/topology/sync/no-write tests, full cargo test, cargo fmt --all -- --check, make lint, and git diff --check; commit correction cycle 2 and return a checklist-complete implementation report.
+  Focused topology/parser tests passed 7 cases, sync tests passed 8, real-Git fixtures passed 2, and the no-write guardrail passed 2; full `cargo test` passed 397 app and 193 core unit tests plus all enabled integration/doc tests, with 3 watcher tests intentionally ignored; formatting, lint, and diff checks passed.
+
+### Summary
+
+Correction cycle 2 now rejects canonical split-root escapes before Git probing or sync authorization while keeping available entity content readable with an actionable unverified diagnostic. The sync proof matrix now covers every non-holder re-probe and the final reload failure after a successful state pull.
