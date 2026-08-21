@@ -127,6 +127,7 @@ REJECTED. The implementation and deterministic regressions are clean, but the us
 ### Feedback Cycles
 
 - Cycle 1: REJECTED — verify; surface n/a vs estimate not declared (n/a%); AC unchanged
+- Cycle 2: REJECTED — verify cycle 2; surface n/a vs estimate not declared (n/a%); AC unchanged
 
 ## Stage Report: implement (cycle 2)
 
@@ -140,3 +141,16 @@ REJECTED. The implementation and deterministic regressions are clean, but the us
 ### Summary
 
 The implementation remains unchanged and clean. Current, five-cycle evidence proves the blocker precisely: Engram has no active entity to correlate, display, or transition, so AC-4 must wait for a real active attributed Engram run rather than be replaced by deterministic evidence.
+
+## Stage Report: verify (cycle 2)
+
+- FAILED: Re-review unchanged AC-4 against the five timestamped live Engram polls and decide whether an empty active-entity set can satisfy the required user-facing scenario.
+  Five consecutive live polls returned `entities: []`. An empty active-entity set cannot exercise a visible correlated runtime marker or an actual structured stop or gate transition, so AC-4 remains unmet.
+- DONE: Confirm the product worktree remains unchanged at `96cfde1` and rely on prior green gates unless this cycle changed code or evidence invalidates them.
+  The product worktree is clean at `96cfde1`; cycle 2 changed no code, and no new evidence invalidated the previously green focused tests, 648-test full suite, format check, lint, or diff check.
+- DONE: Issue an AC-by-AC PASSED or REJECTED verdict and identify the exact next action if the environment still blocks live attribution.
+  AC-1, AC-2, AC-3, and AC-5 remain PASSED. AC-4 remains REJECTED. Re-run verification only after Engram has an active canonically correlated entity and session, then record five two-second observations plus the actual structured stop or gate with UTC timestamps and sanitized identifiers.
+
+### Verdict
+
+REJECTED. The implementation remains clean, but verification is blocked on an external prerequisite: an active attributed Engram entity/session that can exercise the reported user-facing marker lifecycle.
