@@ -189,3 +189,16 @@ missing, and attached are runtime dispositions of split-root state. The plan
 keeps every available snapshot readable, adds fail-closed typed diagnostics,
 re-probes on every load path, and makes `Y` sync truthful without introducing
 checkout repair or any Git write beyond audited fast-forward pulls.
+
+## Stage Report: implement
+
+- DONE: Implement the typed two-backend/four-disposition topology model and read-only Git probes, thread it through parser/index/app reload paths, and keep detached or wrong-branch snapshots readable while missing and probe failures stay explicit.
+  Commit `c339356` adds typed storage/disposition facts, canonical Git probes, `state-branch:` handling, readable non-holder snapshots, and reload re-probing.
+- DONE: Render stable topology diagnostics and truthful partial/full sync outcomes, ensure only verified attached split-root state receives the existing fast-forward pull, and preserve watcher/reload behavior without adding topology-repair or workflow-state writes.
+  Ratatui tests pin all diagnostics; GitRunner tests fail if non-holder state receives any Git call or attached state omits its audited fast-forward pull.
+- DONE: Add lowest-layer classifier, real-Git, parser/index, app, Ratatui, watcher, and GitRunner/no-write coverage for AC-1 through AC-7; update README, AGENTS.md, and development policy; run focused tests, full cargo test, formatting, and required make lint, then commit the implementation branch.
+  Focused topology, parser, watcher, reload, sync, real-Git, and no-write tests passed; full `cargo test` passed all unit/integration/doc tests, while `cargo fmt --all -- --check`, `make lint`, and `git diff --check` passed. Ignored watcher tests were not run because production watcher behavior and ignored coverage were unchanged.
+
+### Summary
+
+Implemented fail-closed split-root topology inspection while preserving every materialized state snapshot’s readability. Sync now distinguishes single-root success, full attached-state success, and definition-only partial outcomes without adding repair commands or broader workflow-state writes. The implementation is committed as `c339356`.
