@@ -63,3 +63,129 @@ Verified by: review of updated README/help text paired with the behavior tests a
 - Required commands: `cargo fmt --all -- --check`; focused `cargo test -p spacetop-core` topology/parser/git tests; focused `cargo test -p spacetop` app/UI tests; full `cargo test`; `make lint`
 - Manual check, if any: open a temporary split-root workflow whose state directory is a detached worktree and confirm entities remain readable while the detached diagnostic is visible
 - Docs/policy update needed: update README and the AGENTS code map if a new topology module or typed boundary is added; keep `docs/development-policy.md` subordinate to AGENTS and current with any changed architecture
+
+## Implementation plan
+
+### Evidence and classifier contract
+
+A disposable real-Git fixture at `/tmp/spacetop-detached-plan-probe-20260821`
+materialized the same `spacedock-state/dev` commit four ways. Read-only probes
+reported `spacedock-state/dev` for the holder, `HEAD` for the detached checkout,
+`wrong-state` for the wrong branch, and no directory for the missing checkout.
+Current `spacetop export` loaded one active and one archived entity from the
+detached checkout, but returned ordinary empty `entities` and
+`archived_entities` arrays for the missing checkout with no topology fact. This
+confirms both the existing inspectability and the silent-empty gap.
+
+1. In `crates/spacetop-core/src/domain/mod.rs`, add separate typed concepts for
+   the two storage backends and split-root checkout disposition. Model
+   `SingleRoot` separately from `SplitRoot { entity_dir, expected_branch,
+   disposition }`; disposition must include `Attached`, `Detached`,
+   `WrongBranch { actual_branch }`, and `Missing`. Add a fail-closed
+   `ProbeFailed { reason }` variant for a present non-checkout or unexpected Git
+   failure rather than mislabeling it healthy. Carry this typed state through
+   `WorkflowSnapshot` and `WorkflowIndex`, with query accessors for app code.
+2. In `parser/readme.rs`, parse optional `state-branch:` alongside `state:`.
+   Preserve current backend rules and `resolve_entity_dir`: absent/blank/
+   `$inline` and unsupported absolute or parent-traversing values stay
+   single-root; a supported relative path is split-root. For split-root, resolve
+   the expected branch exactly as Spacedock does: trimmed `state-branch:` wins,
+   otherwise `spacedock-state/<definition-directory-basename>`.
+3. Add `crates/spacetop-core/src/state_checkout.rs` for Git topology only. If
+   the entity directory is absent, return `Missing` without invoking Git. For a
+   present directory, run only `git -C <dir> rev-parse --show-toplevel` and
+   `git -C <dir> symbolic-ref --quiet --short HEAD` through `GitRunner`.
+   Canonicalize the reported top level before comparing it with the entity
+   directory (important for `/tmp` versus `/private/tmp`); a matching expected
+   branch is `Attached`, symbolic-ref exit 1 is `Detached`, and any other named
+   branch is `WrongBranch`. A non-repository, parent-repository fall-through, or
+   other probe error is `ProbeFailed`. Never fetch or inspect the network.
+4. Have `parser/snapshot.rs` probe after README parsing but before scanning.
+   Always scan a present entity directory regardless of non-holder disposition,
+   so detached/wrong-branch active and archived entities remain previewable.
+   `sources.rs` continues to resolve archives from the same entity directory;
+   `index.rs` retains the topology fact rather than dropping it while building
+   query state.
+
+### App, UI, reload, and sync
+
+5. In `app/overview.rs`, expose the typed topology and map non-healthy
+   dispositions to one stable diagnostic model. `Attached` and all single-root
+   workflows emit no warning. Detached says the snapshot may be stale;
+   wrong-branch names actual and expected branches; missing says no state
+   checkout was loaded; probe failure says topology could not be verified. UI
+   code must render this model, not reinterpret raw `state:` or Git strings.
+6. Render a compact persistent state-warning pill in `ui/footer.rs` (and keep
+   the header/list/preview layout unchanged). Pin exact detached, wrong-branch,
+   missing, and probe-failed strings with Ratatui `TestBackend`; also pin the
+   absence of a warning for attached and single-root fixtures. Empty missing
+   workflows therefore remain empty but can no longer look healthy.
+7. Keep the existing recursive watcher rooted at the definition/discovery root:
+   supported state paths are contained below it, and `.spacedock-state` plus
+   Markdown paths already pass the relevance filter. Add deterministic event
+   relevance/debounce tests for state-directory create/remove and detached
+   entity edits. Because `OverviewState::load`, `reload`,
+   `reload_with_rediscovery`, and `materialize_active` all rebuild the index,
+   each path must re-probe topology. Add app regressions for
+   detached-to-attached, present-to-missing, and missing-to-present transitions,
+   including selection/archive preservation. Run/add an ignored live-notify
+   smoke only if production watcher behavior changes.
+8. In `lib.rs::apply_pending_sync`, keep `git_sync.rs` as the only pull helper
+   and orchestrate two repositories from typed topology. Pull the definition
+   repository first. After a successful definition pull, reload/re-probe; for
+   single-root, preserve today's success status. For an attached split-root
+   checkout, run the same audited `git pull --ff-only` against `entity_dir`,
+   reload, and report definition-plus-state success. For detached,
+   wrong-branch, missing, or probe-failed state, never pull the entity directory;
+   report a partial result such as “definition synced; detached state not
+   refreshed,” never the existing whole-workflow success message. A failed
+   definition pull stops before state sync; a failed attached-state pull reports
+   partial/failure without discarding the readable snapshot.
+9. Update `SyncStatus`, `ui/footer.rs`, and `ui/help.rs` with pinned composite and
+   partial-sync messages. `GitRunner` recording tests must assert exact roots and
+   argv, especially that detached/wrong/missing cases contain no state-root
+   `pull` call. Keep `no_write_git_calls.rs` green: no checkout, switch, attach,
+   commit, rebase, push, or workflow-Markdown write is introduced.
+
+### Lowest-layer proof and documentation
+
+10. Add pure classifier/parser tests for all backend declarations,
+    `state-branch:` override/default derivation, the four required dispositions,
+    canonical path comparison, parent-repository fall-through, and probe failure.
+    Add a self-contained real-Git integration fixture under
+    `crates/spacetop-core/tests/` that creates attached, detached, wrong-branch,
+    and missing workspaces and proves detached/wrong snapshots still load active
+    and archived entities while missing stays typed split-root.
+11. Add app reload/switch tests, Ratatui diagnostic tests, watcher filter/debounce
+    tests, and sync call-recording tests mapped directly to AC-1 through AC-6.
+    Preserve the existing single-root, split-root parser, discovery, archive,
+    preview, selection, worktree-overlay, and sync tests as regressions.
+12. Update `README.md` with the two-backend/four-disposition explanation and the
+    meaning of each warning. Update `AGENTS.md` and
+    `docs/development-policy.md` for the new topology module and clarify that
+    `Y` may fast-forward both the definition repository and a verified attached
+    state checkout, but never repairs topology or runs any broader Git write.
+
+Verification: `cargo fmt --all -- --check`; focused
+`cargo test -p spacetop-core state_checkout`; focused split-root parser/index
+tests; focused `cargo test -p spacetop` app/UI/sync tests;
+`cargo test -p spacetop-core --test no_write_git_calls`; full `cargo test`; and
+required `make lint`. Run `cargo test -- --ignored` only if watcher production
+behavior or ignored watcher coverage changes.
+
+## Stage Report: plan
+
+- DONE: Exercise the smallest real detached split-root checkout path and use its evidence to confirm the two-backend, four-disposition taxonomy and the actual current Spacetop gap.
+  A four-workspace real-Git fixture confirmed attached/detached/wrong-branch/missing; current export reads detached active+archive state but emits missing state as undiagnosed empty arrays.
+- DONE: Produce an implementation plan with exact typed ownership across parser/domain, read-only git probes, app/UI diagnostics, reload/watcher behavior, sync messaging, and nearby documentation.
+  The 12-step plan assigns domain, parser, new `state_checkout`, index, app, Ratatui, watcher, sync, README, AGENTS, and development-policy ownership with exact read-only probe and partial-sync semantics.
+- DONE: Define lowest-layer failing tests and repository verification that cover every acceptance criterion while preserving the read-only boundary and existing single-root and attached split-root behavior.
+  Pure classifier/parser tests, real-Git fixtures, app reload/switch, TestBackend, watcher debounce, GitRunner argv, and no-write guardrails map to AC-1..AC-7; full test and lint commands are named.
+
+### Summary
+
+Confirmed the product has two storage backends and that detached, wrong-branch,
+missing, and attached are runtime dispositions of split-root state. The plan
+keeps every available snapshot readable, adds fail-closed typed diagnostics,
+re-probes on every load path, and makes `Y` sync truthful without introducing
+checkout repair or any Git write beyond audited fast-forward pulls.
