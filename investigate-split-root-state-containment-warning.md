@@ -50,3 +50,108 @@ Verified by: focused topology/sync/no-write suites, full `cargo test`, `cargo fm
 - Exercise the diagnosed topology through storage classification, workflow loading, the visible diagnostic, and sync call recording.
 - Preserve the external-symlink rejection and cached-topology fail-closed regressions added by task 076.
 - Run focused tests first; for a code change, run full `cargo test`, `cargo fmt --all -- --check`, required `make lint`, and `git diff --check`.
+
+## Investigation evidence and decision
+
+The captain supplied the affected target as `xxx`, so no original checkout was
+available for read-only inspection. The smallest sanitized real-Git reproducer
+uses `state: .spacedock-state`, definition `<tmp>/external-case/definition`, and
+symlink `.spacedock-state -> ../external-state`. The lexical entity path is
+`<tmp>/external-case/definition/.spacedock-state`; its canonical path and Git
+top are `<tmp>/external-case/external-state`, outside the canonical definition
+directory, while the branch is the expected `spacedock-state/definition`.
+Definition and state Git tops differ, so this is not a duplicate pull; it is an
+arbitrary external repository that must remain non-pull-eligible.
+
+This topology produces the exact diagnostic `State topology unverified: state
+directory resolves outside workflow definition directory:
+<tmp>/external-case/external-state`. The classifier stops before any Git probe,
+the snapshot remains readable, and sync call recording shows no call at either
+the lexical or canonical external-state root. A contained plain state directory
+has the opposite hazard: its Git top equals the definition Git top, so a second
+state pull would duplicate the definition pull; current parent-checkout
+classification also rejects it.
+
+The live supported `spacetop-dev` holder is a useful counterexample. Its README
+spells `state: .spacedock-state`; the shell exposes a case alias
+`/Users/<user>/dev/...`, but canonical definition and entity paths consistently
+use `/Users/<user>/Dev/...`. The state path is not a symlink, its Git top equals
+the canonical entity path, and it is attached to
+`spacedock-state/spacetop-dev`. Definition and state share a Git common directory
+but have distinct worktree tops and branches, so one pull per worktree is not a
+duplicate pull.
+
+Decision: the containment warning is intentional for the reproduced canonical
+escape; no classifier defect or case-alias false positive was found. The gap is
+that `ProbeFailed { reason: String }` collapses policy rejection and probe
+failure, leaving diagnostics and sync authorization stringly typed. The
+original `xxx` topology remains unclassified beyond this warning's exact
+canonical-escape precondition.
+
+## Typed contract and implementation plan
+
+1. **AC-1/AC-2 — own topology facts in core.** In
+   `crates/spacetop-core/src/domain/mod.rs`, replace the free-form unverified
+   reason with a typed `StateTopologyProblem` carried by
+   `StateCheckoutDisposition::Unverified`. At minimum distinguish
+   `OutsideDefinition { resolved_state }`,
+   `CheckoutRootMismatch { actual_top }`, path-resolution failures, Git
+   top-level probe failures, and branch-probe failures. In
+   `state_checkout.rs`, preserve the current order: lexical validation,
+   canonical containment, exact Git-top equality, then branch disposition.
+2. **AC-3 — make authorization explicit and duplicate-safe.** Add a core-owned
+   `StateSyncEligibility` decision with `NotApplicable`,
+   `Eligible { checkout_root }`, and `Blocked { problem }`. Only a freshly
+   reprobed `Attached` checkout whose canonical Git top is distinct from the
+   canonical definition sync root is eligible. Canonical escape, same-top
+   parent fallthrough, detached, wrong-branch, missing, and every unverified
+   variant are blocked; a linked worktree with a shared common Git directory
+   remains eligible because its top and branch are distinct.
+3. **AC-3 — consume the decision at the side-effect boundary.** In
+   `crates/spacetop/src/lib.rs::apply_pending_sync`, keep definition-first sync
+   and mandatory reload/re-probe, then match only `StateSyncEligibility` before
+   calling `git_sync::sync`. Record exactly one definition-root pull plus one
+   distinct state-root pull for eligible attached state; record no state-root
+   call for escaped or otherwise blocked state, and never issue a second pull
+   when the state Git top equals the definition root.
+4. **AC-4 — render typed remediation, not raw classifier prose.** Map
+   `StateTopologyProblem` in `app/overview.rs`; keep `ui/footer.rs` a thin
+   renderer. Pin an escaped-state message that says the snapshot is readable
+   but sync is blocked, and update `README.md` to tell users to materialize the
+   state checkout at the declared contained path. State explicitly that
+   Spacetop will not move, relink, or repair a checkout. Update `AGENTS.md` and
+   `docs/development-policy.md` only where the typed disposition/sync contract
+   wording changes.
+5. **AC-1 through AC-4 — prove at the lowest layers.** Extend
+   `state_checkout.rs` unit tests with typed assertions for external escape,
+   `/tmp` canonical aliasing, case/path aliases, parent fallthrough, and the
+   contained attached counterexample. Extend
+   `tests/state_checkout_fixtures.rs` to assert the sanitized real symlink facts
+   and readable entity body. Add Ratatui `TestBackend` assertions for the exact
+   escaped diagnostic and `lib.rs` `RecordingGitRunner` assertions for pull
+   roots/counts: external `0`, same-top `0`, contained attached `1` state pull.
+6. **AC-5 — preserve the full safety matrix.** Run focused topology, fixture,
+   UI, reload, sync-call, and `no_write_git_calls` tests first. Then run
+   `cargo test`, `cargo fmt --all -- --check`, `make lint`, and
+   `git diff --check`; retain attached, detached, wrong-branch, missing,
+   probe-failed, external-symlink, cached-topology/reload, and exact
+   `git pull --ff-only` coverage. No watcher production behavior changes are
+   planned, so ignored watcher tests are not required unless implementation
+   changes that boundary.
+
+## Stage Report: plan
+
+- DONE: Reproduce the exact warning with the smallest real filesystem and Git topology, recording sanitized lexical, canonical, symlink, repository, branch, and double-sync facts.
+  A three-case disposable topology plus the live supported holder recorded every requested fact; the original reported path was unavailable because it was supplied as `xxx`.
+- DONE: Decide whether the warning is intentional or a classifier defect, and define a typed diagnostic and sync-eligibility contract that preserves external-repository fail-closed behavior and prevents duplicate pulls.
+  The canonical-escape warning is intentional; the plan replaces stringly unverified state and implicit authorization with typed topology problems and an explicit distinct-root eligibility decision.
+- DONE: Produce an implementation and proof plan mapped to AC-1 through AC-5, naming owned modules, lowest-layer fixtures/tests, user-facing diagnostic or documentation changes, sync call recording, and required full gates.
+  The six-step plan names core/domain, classifier, app, UI, sync, fixture, documentation, call-recording, no-write, full test, format, lint, and diff gates.
+
+### Summary
+
+The warning correctly blocks a relative state path whose canonical target
+escapes the workflow definition directory, while preserving readable state.
+Implementation should keep that behavior and make its reason, remediation, and
+sync eligibility typed, including an explicit same-Git-top duplicate-pull
+guard and exact call-recording proof.
