@@ -272,3 +272,13 @@ Correction cycle 2 now rejects canonical split-root escapes before Git probing o
 ### Summary
 
 Verdict: APPROVE. Correction `158d126` closes the external-symlink High finding before any state Git probe, preserves read-only snapshot visibility and diagnostics, and the complete `c339356..158d126` implementation now satisfies AC-1 through AC-7 with all required gates green.
+
+### Acceptance evidence
+
+- **AC-1:** `domain/mod.rs:9-42` keeps storage backend and checkout disposition typed separately; seven focused topology/parser tests distinguish single-root, Attached, Detached, WrongBranch, Missing, and ProbeFailed.
+- **AC-2:** `state_checkout_fixtures::real_git_attached_detached_wrong_and_missing_topologies_remain_truthful` proves detached active and archived entities remain readable; Ratatui tests pin “State detached; snapshot may be stale.”
+- **AC-3:** `backend_classifier_keeps_inline_and_unsupported_paths_single_root`, `attached_split_root_runs_exact_fast_forward_state_pull`, and `footer_has_no_topology_warning_for_attached_or_single_root` preserve healthy attached and single-root behavior.
+- **AC-4:** The real-Git topology fixture distinguishes WrongBranch and Missing, while `footer_renders_stable_split_root_topology_diagnostics` pins actionable wrong-branch, missing, and ProbeFailed diagnostics.
+- **AC-5:** `state_topology_reload` proves Attached→Detached→Missing→Detached re-probing while preserving archived scope/readability; nine watcher tests include split-root create/remove and detached entity-event relevance.
+- **AC-6:** `lib.rs:978-1049` authorizes state sync only after successful reload/re-probe; eight topology-sync regressions cover cached reload failure, changed configuration, Detached/WrongBranch/ProbeFailed suppression, external symlink suppression, attached pull, and final reload failure. Both `no_write_git_calls` guardrails passed.
+- **AC-7:** `README.md:47-64,159-163`, `AGENTS.md:187-205`, and `docs/development-policy.md:41-46,87-101` document the two backends, split-root dispositions, diagnostics, and verified-attached-only fast-forward sync.
