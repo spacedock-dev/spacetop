@@ -12,7 +12,7 @@ verdict:
 score: 0.88
 worktree: .worktrees/spacedock-ensign-support-detached-split-root-state
 issue: spacedock-dev/spacedock#677
-pr: "#80"
+pr: pr-merge:80
 id: 076
 mod-block: merge:pr-merge
 ---
