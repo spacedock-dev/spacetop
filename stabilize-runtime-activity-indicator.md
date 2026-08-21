@@ -1,7 +1,7 @@
 ---
 id: 078
 title: Stop runtime activity indicator flickering between scans
-status: verify
+status: implement
 source: "Captain report: Engram runtime indicator alternates on and off every few seconds while Spacetop is running"
 kind: bug
 risk: high
@@ -123,3 +123,7 @@ Workflow reloads now retain the last good typed runtime attribution for unchange
 ### Verdict
 
 REJECTED. The implementation and deterministic regressions are clean, but the user-facing Engram scenario remains unverified until an active attributed Engram entity can be observed across five polling cycles.
+
+### Feedback Cycles
+
+- Cycle 1: REJECTED — verify; surface n/a vs estimate not declared (n/a%); AC unchanged
