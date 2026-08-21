@@ -102,3 +102,24 @@ The scanner already retains correlated lifecycle evidence across unchanged, appe
 ### Summary
 
 Workflow reloads now retain the last good typed runtime attribution for unchanged active identity instead of briefly replacing it with idle. The evidence scanner and polling cadence are unchanged, identity changes still fail closed, and an exact structured stop still clears the marker; live Engram observation remains for a verify run when that workflow next has an active attributed entity.
+
+## Stage Report: verify
+
+- DONE: Attack the claimed reload root cause and same-ID/same-path transfer boundary against the diff, regression tests, and strict structured-evidence contract.
+  Code review found the transfer narrow and typed: unchanged active ID and path retain the last good attribution, while renamed, removed, new, or reused identities fail closed. Scanner correlation, reducer semantics, and the two-second polling cadence are unchanged.
+- FAILED: Decide explicitly whether the deterministic five-cycle UI replay satisfies the Engram-facing stability criterion despite the unavailable live active item, naming any unmet evidence.
+  The replay proves five stable reload/poll cycles and a structured stop, but AC-4 explicitly requires an Engram live observation or repeatable probe with timestamps and correlated identifiers. The Engram workflow had no active entity, so that evidence is unavailable and AC-4 remains unmet.
+- DONE: Run or verify every change-required focused and full repository gate, then issue a PASSED or REJECTED verdict with AC-by-AC citations.
+  Twenty focused core tests and the exact core/app/UI regressions passed. Full `cargo test` passed 648 tests with 3 ignored; `cargo fmt --all -- --check`, `make lint`, and `git diff --check` also passed at implementation commit `96cfde1`.
+
+### Acceptance criteria verdict
+
+- AC-1: PASS — deterministic regression identifies workflow reload clearing the published activity map between unchanged scans.
+- AC-2: PASS — same-ID/same-path activity survives reload and repeated polling until exact structured stop evidence.
+- AC-3: PASS — changed identities fail closed and existing negative correlation, rotation, truncation, deletion, and scan-error contracts remain green.
+- AC-4: FAIL — no active Engram entity was available for the required live five-cycle timestamped observation.
+- AC-5: PASS — focused and full repository gates passed.
+
+### Verdict
+
+REJECTED. The implementation and deterministic regressions are clean, but the user-facing Engram scenario remains unverified until an active attributed Engram entity can be observed across five polling cycles.
