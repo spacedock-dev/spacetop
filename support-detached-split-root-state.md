@@ -232,3 +232,16 @@ Verdict: REQUEST CHANGES. AC-1 through AC-5 and AC-7 are supported, but AC-6 fai
 ### Summary
 
 Correction cycle 1 now fails closed at the mandatory post-definition reload boundary, so cached topology cannot authorize a state pull. Changed state configuration is honored before state sync, while a genuinely re-probed attached checkout retains the fast-forward sync path.
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Independently verify correction commit 90e35c1 closes the prior High finding: every failed post-definition reload must return without state-root Git calls, changed state configuration must replace cached topology, and only a successfully re-probed attached checkout may receive git pull --ff-only.
+  `lib.rs:725-742` returns before cached storage is read on reload failure; all three focused correction tests passed, including changed-path replacement and the real re-probed Attached happy path.
+- FAILED: Re-review the complete c339356..90e35c1 implementation against AC-1 through AC-7, including typed topology, readable non-holder snapshots, diagnostics, watcher/reload transitions, sync truthfulness, docs, and no-write boundaries; report any remaining defect with file/line evidence.
+  REQUEST CHANGES (High): `state_checkout.rs:31-43,69-95` accepts a contained-looking state symlink whose canonical target is an unrelated external Git repository as Attached; `lib.rs:738-742` may then pull it. A disposable real-Git export reproduced `state: .spacedock-state` symlinked outside the definition directory as `SplitRoot` / `Attached`. Medium proof gaps remain at `lib.rs:168-279`: correction coverage no longer records state-root calls for re-probed Detached, WrongBranch, or ProbeFailed cases, and `lib.rs:746-756` has no regression for reload failure after a successful state pull.
+- DONE: Run the focused correction regressions and required completion gates including full cargo test, cargo fmt --all -- --check, make lint, and git diff --check; return a direct APPROVE or REQUEST CHANGES verdict with checklist-complete evidence.
+  Passed: 3 focused topology-sync regressions, 6 focused topology/parser tests, real-Git topology fixture, state reload integration, no-write guardrail, full `cargo test` (392 spacetop + 192 core unit tests and all enabled integration/doc tests; 3 watcher tests intentionally ignored), `cargo fmt --all -- --check`, `make lint`, and commit plus working-tree `git diff --check`.
+
+### Summary
+
+Verdict: REQUEST CHANGES. Commit `90e35c1` closes the cached-topology reload defect, and all required gates pass, but AC-1/AC-6 still permit a symlinked split-root declaration to authorize a fast-forward pull in an unrelated external repository; the negative sync proof matrix is also incomplete.
