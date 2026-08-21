@@ -127,3 +127,20 @@ REJECTED. The implementation and deterministic regressions are clean, but the us
 ### Feedback Cycles
 
 - Cycle 1: REJECTED — verify; surface n/a vs estimate not declared (n/a%); AC unchanged
+
+## Stage Report: implement (cycle 2)
+
+- FAILED: Obtain the unchanged AC-4 evidence from a real active attributed Engram entity across at least five two-second polling cycles and an actual structured stop or gate transition.
+  Five live polls at `15:44:59Z`, `15:45:01Z`, `15:45:03Z`, `15:45:05Z`, and `15:45:07Z` on 2026-08-21 all returned `entities: []`; with no correlated entity or session, no marker or structured transition existed to observe.
+- DONE: Record timestamped observations with sanitized correlated entity and session identifiers, or report the concrete environmental blocker without changing product code or acceptance criteria.
+  `spacedock status --boot --json` reported a present Engram split-root state directory but empty `dispatchable`; each timestamped `status --json` returned no entities, and the built `spacetop ... list --json` returned `[]`. Both known reflection changes remain archived, so identifiers are unavailable rather than redacted.
+- DONE: If live evidence exposes a defect, fix it and rerun affected plus required gates; otherwise preserve implementation commit `96cfde1` and update only the implementation report.
+  No live product behavior was reachable and no new defect was exposed; the code worktree remains clean at `96cfde1`, with this cycle changing only the shared implementation report.
+
+### Feedback Cycles
+
+- Cycle 2: MATERIAL — AC-4 remains unmet because the required live entity does not exist in the current Engram state; acceptance criteria were not weakened and no product change was made to conceal the environment blocker.
+
+### Summary
+
+The implementation remains unchanged and clean. Current, five-cycle evidence proves the blocker precisely: Engram has no active entity to correlate, display, or transition, so AC-4 must wait for a real active attributed Engram run rather than be replaced by deterministic evidence.
