@@ -479,6 +479,14 @@ mod topology_sync_tests {
             "only the definition checkout may be pulled"
         );
         assert_no_state_calls(&runner, &entity_dir);
+        assert!(matches!(
+            app.sync_status(),
+            Some(SyncStatus::Partial { message })
+                if message == &format!(
+                    "Definition synced; state not refreshed: state directory belongs to checkout {}; declared state directory is not a checkout root",
+                    definition_top.display()
+                )
+        ));
     }
 
     #[test]
@@ -1129,7 +1137,7 @@ fn topology_problem_for_sync(problem: &StateTopologyProblem) -> String {
             path.display()
         ),
         StateTopologyProblem::CheckoutRootMismatch { actual_top } => format!(
-            "state directory belongs to checkout {} instead of its declared root",
+            "state directory belongs to checkout {}; declared state directory is not a checkout root",
             actual_top.display()
         ),
         StateTopologyProblem::BranchProbe { error } => {
