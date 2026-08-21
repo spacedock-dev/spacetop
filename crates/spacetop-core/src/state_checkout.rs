@@ -33,11 +33,15 @@ pub fn split_root_entity_dir(definition_dir: &Path, state: Option<&str>) -> Opti
         None | Some("") | Some("$inline") => return None,
         Some(rel) => Path::new(rel),
     };
-    if rel.is_absolute()
-        || rel
-            .components()
-            .any(|component| component == Component::ParentDir)
-    {
+    let mut has_entity_component = false;
+    for component in rel.components() {
+        match component {
+            Component::Normal(_) => has_entity_component = true,
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
+        }
+    }
+    if !has_entity_component {
         return None;
     }
     Some(definition_dir.join(rel))
@@ -150,6 +154,20 @@ mod tests {
         ] {
             assert_eq!(
                 classify_storage(&runner, root, state, None),
+                WorkflowStorage::SingleRoot
+            );
+        }
+        assert!(runner.calls().is_empty(), "single-root must not probe Git");
+    }
+
+    #[test]
+    fn current_directory_declarations_stay_single_root_with_branch_override() {
+        let runner = RecordingGitRunner::new(Vec::new());
+        let root = Path::new("/repo/docs/demo");
+
+        for state in [Some("."), Some("./"), Some("././")] {
+            assert_eq!(
+                classify_storage(&runner, root, state, Some("custom/state")),
                 WorkflowStorage::SingleRoot
             );
         }

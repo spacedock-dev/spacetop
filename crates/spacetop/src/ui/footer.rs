@@ -86,7 +86,7 @@ fn status_footer_hints_with_keymap_and_copy(
         hints.push((format!("\u{26A0} {warning}"), Color::Yellow));
     }
     if let Some(diagnostic) = session.active_state().topology_diagnostic() {
-        hints.push((format!("\u{26A0} {}", diagnostic.label()), Color::Yellow));
+        hints.push((format!("\u{26A0} {diagnostic}"), Color::Yellow));
     }
     let sync_status = session.active_state().sync_status();
     if let Some(label) = sync_pill_label(sync_status) {

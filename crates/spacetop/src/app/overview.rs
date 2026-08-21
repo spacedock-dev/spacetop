@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use ratatui::layout::Rect;
@@ -109,16 +110,21 @@ pub enum StateTopologyDiagnostic {
     },
 }
 
-impl StateTopologyDiagnostic {
-    pub fn label(&self) -> String {
+impl fmt::Display for StateTopologyDiagnostic {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Detached => "State detached; snapshot may be stale".to_string(),
+            Self::Detached => formatter.write_str("State detached; snapshot may be stale"),
             Self::WrongBranch {
                 actual_branch,
                 expected_branch,
-            } => format!("State on branch {actual_branch}; expected {expected_branch}"),
-            Self::Missing => "State checkout missing; no state loaded".to_string(),
-            Self::ProbeFailed { reason } => format!("State topology unverified: {reason}"),
+            } => write!(
+                formatter,
+                "State on branch {actual_branch}; expected {expected_branch}"
+            ),
+            Self::Missing => formatter.write_str("State checkout missing; no state loaded"),
+            Self::ProbeFailed { reason } => {
+                write!(formatter, "State topology unverified: {reason}")
+            }
         }
     }
 }

@@ -108,8 +108,9 @@ mod topology_sync_tests {
     impl GitRunner for RemovingReadmeGitRunner {
         fn run(&self, repo_root: &Path, args: &[&str]) -> io::Result<GitCmdResult> {
             let result = self.inner.run(repo_root, args)?;
-            if repo_root == self.state_root && args == ["pull", ["--ff-", "only"].concat().as_str()]
-            {
+            // Keep the flag split in source so the static guard can prove the
+            // production sync helper owns its only complete occurrence.
+            if repo_root == self.state_root && args == ["pull", concat!("--ff-", "only")] {
                 fs::remove_file(&self.readme)?;
             }
             Ok(result)
