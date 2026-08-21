@@ -2508,6 +2508,43 @@ fn session_activity_scan_failure_is_non_fatal_and_preserves_last_snapshot() {
     );
 }
 
+#[test]
+fn workflow_reload_preserves_running_activity_for_same_entity_identity() {
+    let workflow_dir = PathBuf::from("/tmp/spacetop-session-activity/workflow");
+    let snapshot = snapshot_with_items(1);
+    let mut app = App::from_snapshot(workflow_dir.clone(), snapshot.clone());
+    let repo_root = app.repo_root().expect("repo root").to_path_buf();
+
+    for report in [
+        session_report(&workflow_dir, &repo_root, "000"),
+        session_report(&workflow_dir, &repo_root, "000"),
+    ] {
+        app.apply_session_activity_result(SessionActivityWorkerResult {
+            workflow_dir: workflow_dir.clone(),
+            repo_root: repo_root.clone(),
+            result: Ok(report),
+            state: Default::default(),
+            retry_immediately: false,
+        });
+        assert!(
+            app.as_overview()
+                .expect("overview")
+                .index()
+                .entity_has_current_activity("000"),
+            "each successful periodic report should publish running"
+        );
+
+        app.reload_from_snapshot(snapshot.clone());
+        assert!(
+            app.as_overview()
+                .expect("overview")
+                .index()
+                .entity_has_current_activity("000"),
+            "an unchanged workflow reload must retain the last good running attribution"
+        );
+    }
+}
+
 fn session_report(workflow_dir: &Path, repo_root: &Path, entity_id: &str) -> SessionScanReport {
     SessionScanReport {
         workflow_dir: workflow_dir.to_path_buf(),

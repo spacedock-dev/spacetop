@@ -370,13 +370,13 @@ impl OverviewState {
         self.reload_from_index(index);
     }
 
-    pub fn reload_from_index(&mut self, index: WorkflowIndex) {
+    pub fn reload_from_index(&mut self, mut index: WorkflowIndex) {
         let prior_slug = self
             .selected_item()
             .and_then(|entity| entity_slug(&entity.path));
 
+        index.retain_session_activity_from(&self.index);
         self.index = index;
-        self.index.clear_entity_activities();
         // Invalidate archive view — a watcher-driven reload may have touched
         // `_archive/` too. Dropping the cached list forces a rescan the next
         // time the user toggles to archived scope.

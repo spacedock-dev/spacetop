@@ -24,7 +24,17 @@ mod worktree;
 
 fn app_with_items(items: Vec<Entity>) -> App {
     let root = PathBuf::from("/tmp/spacetop-test");
-    let snapshot = WorkflowSnapshot {
+    let mut app = App::from_snapshot(root, snapshot_with_items(items));
+    app.handle_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    app
+}
+
+fn snapshot_with_items(items: Vec<Entity>) -> WorkflowSnapshot {
+    let root = PathBuf::from("/tmp/spacetop-test");
+    WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
@@ -49,13 +59,7 @@ fn app_with_items(items: Vec<Entity>) -> App {
         },
         items,
         parse_errors: Vec::new(),
-    };
-    let mut app = App::from_snapshot(root, snapshot);
-    app.handle_key(crossterm::event::KeyEvent::new(
-        crossterm::event::KeyCode::Enter,
-        crossterm::event::KeyModifiers::NONE,
-    ));
-    app
+    }
 }
 
 fn app_with_storage(storage: spacetop_core::domain::WorkflowStorage) -> App {
