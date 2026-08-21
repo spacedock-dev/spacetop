@@ -53,6 +53,11 @@ remain on the definition directory. Absolute paths and paths with `..` are
 unsupported and fail closed to single-root. A relative path whose canonical
 target escapes the definition directory is unverified: available entities stay
 readable, but Spacetop will not run Git sync operations against that target.
+Materialize the checkout at the contained path named by `state:` to make it
+eligible for verification. Spacetop will not move, relink, or repair a state
+checkout. Even an attached checkout is sync-eligible only when its canonical
+Git top is distinct from the definition repository, so `Y` never pulls the same
+checkout twice.
 
 A split-root checkout then has a separate runtime disposition. Attached means
 it holds the expected `state-branch:` (or the default
@@ -60,8 +65,8 @@ it holds the expected `state-branch:` (or the default
 wrong-branch checkouts remain fully readable, but the footer warns that their
 snapshot may be stale or names the actual and expected branches. Missing state
 shows an empty list together with “State checkout missing; no state loaded.” A
-Git probe failure shows “State topology unverified” instead of claiming the
-workflow is healthy.
+Git probe failure shows “State topology unverified” and explains that sync is
+blocked instead of claiming the workflow is healthy.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.

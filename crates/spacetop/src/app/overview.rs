@@ -8,7 +8,8 @@ use ratatui::layout::Rect;
 use spacetop_core::config::{DefaultScope, DefaultSort, SpacetopConfig};
 use spacetop_core::discovery::resolve_scan_root;
 use spacetop_core::domain::{
-    Entity, EntityParseError, StateCheckoutDisposition, WorkflowSnapshot, WorkflowStorage,
+    Entity, EntityParseError, StateCheckoutDisposition, StateTopologyProblem, WorkflowSnapshot,
+    WorkflowStorage,
 };
 use spacetop_core::entity_identity::entity_slug;
 pub use spacetop_core::index::StageCount;
@@ -105,8 +106,9 @@ pub enum StateTopologyDiagnostic {
         expected_branch: String,
     },
     Missing,
-    ProbeFailed {
-        reason: String,
+    Unverified {
+        declared_path: PathBuf,
+        problem: StateTopologyProblem,
     },
 }
 
@@ -122,10 +124,60 @@ impl fmt::Display for StateTopologyDiagnostic {
                 "State on branch {actual_branch}; expected {expected_branch}"
             ),
             Self::Missing => formatter.write_str("State checkout missing; no state loaded"),
-            Self::ProbeFailed { reason } => {
-                write!(formatter, "State topology unverified: {reason}")
-            }
+            Self::Unverified {
+                declared_path,
+                problem,
+            } => write_unverified_diagnostic(formatter, declared_path, problem),
         }
+    }
+}
+
+fn write_unverified_diagnostic(
+    formatter: &mut fmt::Formatter<'_>,
+    declared_path: &Path,
+    problem: &StateTopologyProblem,
+) -> fmt::Result {
+    match problem {
+        StateTopologyProblem::OutsideDefinition { resolved_state } => write!(
+            formatter,
+            "State checkout resolves outside workflow at {}; snapshot is readable, sync is blocked. Materialize it at {}; Spacetop will not repair it",
+            resolved_state.display(),
+            declared_path.display()
+        ),
+        StateTopologyProblem::DefinitionPathResolution { path, error } => write!(
+            formatter,
+            "State topology unverified: cannot resolve workflow definition {}: {error}; sync blocked",
+            path.display()
+        ),
+        StateTopologyProblem::StatePathResolution { path, error } => write!(
+            formatter,
+            "State topology unverified: cannot resolve state directory {}: {error}; sync blocked",
+            path.display()
+        ),
+        StateTopologyProblem::GitTopLevelProbe { error } => write!(
+            formatter,
+            "State topology unverified: Git top-level probe failed: {error}; sync blocked"
+        ),
+        StateTopologyProblem::EmptyGitTopLevel => formatter.write_str(
+            "State topology unverified: Git reported an empty checkout root; sync blocked",
+        ),
+        StateTopologyProblem::GitTopLevelResolution { path, error } => write!(
+            formatter,
+            "State topology unverified: cannot resolve Git checkout root {}: {error}; sync blocked",
+            path.display()
+        ),
+        StateTopologyProblem::CheckoutRootMismatch { actual_top } => write!(
+            formatter,
+            "State directory belongs to checkout {}; snapshot is readable, sync is blocked",
+            actual_top.display()
+        ),
+        StateTopologyProblem::BranchProbe { error } => write!(
+            formatter,
+            "State topology unverified: Git branch probe failed: {error}; sync blocked"
+        ),
+        StateTopologyProblem::EmptyBranch => formatter.write_str(
+            "State topology unverified: Git reported an empty branch name; sync blocked",
+        ),
     }
 }
 
@@ -405,6 +457,7 @@ impl OverviewState {
 
     pub fn topology_diagnostic(&self) -> Option<StateTopologyDiagnostic> {
         let WorkflowStorage::SplitRoot {
+            entity_dir,
             expected_branch,
             disposition,
             ..
@@ -422,9 +475,10 @@ impl OverviewState {
                 })
             }
             StateCheckoutDisposition::Missing => Some(StateTopologyDiagnostic::Missing),
-            StateCheckoutDisposition::ProbeFailed { reason } => {
-                Some(StateTopologyDiagnostic::ProbeFailed {
-                    reason: reason.clone(),
+            StateCheckoutDisposition::Unverified { problem } => {
+                Some(StateTopologyDiagnostic::Unverified {
+                    declared_path: entity_dir.clone(),
+                    problem: problem.clone(),
                 })
             }
         }

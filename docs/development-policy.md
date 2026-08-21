@@ -88,7 +88,8 @@ Current two-crate workspace boundaries:
   `crates/spacetop-core/src/parser.rs` and
   `crates/spacetop-core/src/parser/*`.
 - Split-root storage classification and checkout Git probes belong in
-  `crates/spacetop-core/src/state_checkout.rs`; rendering consumes typed app
+  `crates/spacetop-core/src/state_checkout.rs`; it also owns the typed,
+  distinct-root state-sync eligibility decision. Rendering consumes typed app
   diagnostics and does not infer topology from strings.
 - `crates/spacetop-core/src/index.rs`, `query.rs`, and `sources.rs` own the v2
   index/query spine; TUI code must consume `WorkflowIndex` through query methods
@@ -98,7 +99,8 @@ Current two-crate workspace boundaries:
 - Filesystem watching belongs in `crates/spacetop-core/src/watcher.rs`.
 - The audited fast-forward helper belongs in
   `crates/spacetop-core/src/git_sync.rs`; `spacetop/src/lib.rs` orchestrates the
-  definition-first and verified-attached-state sequence.
+  definition-first sequence and consumes the explicit eligibility decision
+  before issuing at most one distinct verified-attached-state pull.
 - External file opening belongs in `crates/spacetop-core/src/editor.rs`.
 - User config and session persistence models, XDG/HOME path resolution, and YAML
   load/save helpers belong in `crates/spacetop-core/src/config.rs` and

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn footer_renders_stable_split_root_topology_diagnostics() {
-    use spacetop_core::domain::{StateCheckoutDisposition, WorkflowStorage};
+    use spacetop_core::domain::{StateCheckoutDisposition, StateTopologyProblem, WorkflowStorage};
 
     let cases = [
         (
@@ -20,10 +20,12 @@ fn footer_renders_stable_split_root_topology_diagnostics() {
             "State checkout missing; no state loaded",
         ),
         (
-            StateCheckoutDisposition::ProbeFailed {
-                reason: "not a Git checkout".to_string(),
+            StateCheckoutDisposition::Unverified {
+                problem: StateTopologyProblem::GitTopLevelProbe {
+                    error: "not a Git checkout".to_string(),
+                },
             },
-            "State topology unverified: not a Git checkout",
+            "State topology unverified: Git top-level probe failed: not a Git checkout; sync blocked",
         ),
     ];
     for (disposition, expected) in cases {
@@ -37,6 +39,31 @@ fn footer_renders_stable_split_root_topology_diagnostics() {
         let rendered = buffer_text(terminal.backend().buffer());
         assert!(rendered.contains(expected), "rendered={rendered}");
     }
+}
+
+#[test]
+fn footer_explains_external_state_is_readable_but_not_repaired_or_synced() {
+    use spacetop_core::domain::{StateCheckoutDisposition, StateTopologyProblem, WorkflowStorage};
+
+    let app = app_with_storage(WorkflowStorage::SplitRoot {
+        entity_dir: PathBuf::from("/tmp/workflow/.spacedock-state"),
+        expected_branch: "spacedock-state/workflow".to_string(),
+        disposition: StateCheckoutDisposition::Unverified {
+            problem: StateTopologyProblem::OutsideDefinition {
+                resolved_state: PathBuf::from("/tmp/external-state"),
+            },
+        },
+    });
+    let mut terminal = Terminal::new(TestBackend::new(320, 24)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("render");
+    let rendered = buffer_text(terminal.backend().buffer());
+
+    assert!(
+        rendered.contains(
+            "State checkout resolves outside workflow at /tmp/external-state; snapshot is readable, sync is blocked. Materialize it at /tmp/workflow/.spacedock-state; Spacetop will not repair it"
+        ),
+        "rendered={rendered}"
+    );
 }
 
 #[test]

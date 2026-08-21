@@ -22,11 +22,12 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use spacetop_core::config::{self, ConfigLoad, ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery;
-use spacetop_core::domain::{StateCheckoutDisposition, WorkflowStorage};
+use spacetop_core::domain::{StateSyncEligibility, StateSyncProblem, StateTopologyProblem};
 use spacetop_core::editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
 use spacetop_core::git_sync::{self, GitRunner, StdGitRunner, SyncOutcome};
 use spacetop_core::session_activity::SessionScanState;
 use spacetop_core::session_state;
+use spacetop_core::state_checkout::state_sync_eligibility;
 use spacetop_core::watcher::{self, WatcherBackend, WatcherConfig, WorkflowWatcher};
 
 /// Result of resolving a CLI invocation into a launch decision, prior to any
@@ -52,7 +53,8 @@ mod topology_sync_tests {
     use std::process::{Command, ExitStatus};
 
     use spacetop_core::domain::{
-        StateCheckoutDisposition, WorkflowDefinition, WorkflowSnapshot, WorkflowStorage,
+        StateCheckoutDisposition, StateTopologyProblem, WorkflowDefinition, WorkflowSnapshot,
+        WorkflowStorage,
     };
     use spacetop_core::git::GitCmdResult;
 
@@ -383,7 +385,7 @@ mod topology_sync_tests {
         assert!(matches!(
             app.workflow_storage(),
             Some(WorkflowStorage::SplitRoot {
-                disposition: StateCheckoutDisposition::ProbeFailed { .. },
+                disposition: StateCheckoutDisposition::Unverified { .. },
                 ..
             })
         ));
@@ -422,9 +424,11 @@ mod topology_sync_tests {
         assert!(matches!(
             app.workflow_storage(),
             Some(WorkflowStorage::SplitRoot {
-                disposition: StateCheckoutDisposition::ProbeFailed { reason },
+                disposition: StateCheckoutDisposition::Unverified {
+                    problem: StateTopologyProblem::OutsideDefinition { .. }
+                },
                 ..
-            }) if reason.contains("resolves outside workflow definition directory")
+            })
         ));
         assert!(matches!(
             app.sync_status(),
@@ -436,6 +440,48 @@ mod topology_sync_tests {
     }
 
     #[test]
+    fn state_directory_in_definition_checkout_cannot_trigger_duplicate_pull() {
+        let holder = tempfile::tempdir().expect("tempdir");
+        let workflow_dir = holder.path().join("demo");
+        let entity_dir = workflow_dir.join(".spacedock-state");
+        write_split_root_readme(&workflow_dir, ".spacedock-state");
+        fs::create_dir_all(&entity_dir).expect("state dir");
+        git(&workflow_dir, &["init", "--initial-branch", "main"]);
+        let definition_top = fs::canonicalize(&workflow_dir).expect("canonical definition");
+        let mut app = app_with_storage(
+            workflow_dir,
+            WorkflowStorage::SplitRoot {
+                entity_dir: entity_dir.clone(),
+                expected_branch: "spacedock-state/demo".to_string(),
+                disposition: StateCheckoutDisposition::Attached,
+            },
+        );
+        let runner = RecordingGitRunner::new(successful_sync_responses());
+
+        apply_pending_sync(&mut app, &runner);
+
+        assert!(matches!(
+            app.workflow_storage(),
+            Some(WorkflowStorage::SplitRoot {
+                disposition: StateCheckoutDisposition::Unverified {
+                    problem: StateTopologyProblem::CheckoutRootMismatch { actual_top }
+                },
+                ..
+            }) if actual_top == &definition_top
+        ));
+        assert_eq!(
+            runner
+                .calls()
+                .iter()
+                .filter(|call| { call.args == ["pull".to_string(), ["--ff-", "only"].concat()] })
+                .count(),
+            1,
+            "only the definition checkout may be pulled"
+        );
+        assert_no_state_calls(&runner, &entity_dir);
+    }
+
+    #[test]
     fn state_pull_reload_failure_reports_partial_after_exact_pull() {
         let holder = tempfile::tempdir().expect("tempdir");
         let workflow_dir = holder.path().join("demo");
@@ -443,6 +489,7 @@ mod topology_sync_tests {
         let readme = workflow_dir.join("README.md");
         write_split_root_readme(&workflow_dir, ".spacedock-state");
         init_attached_state_checkout(&entity_dir);
+        let canonical_entity_dir = fs::canonicalize(&entity_dir).expect("canonical state root");
         let mut app = app_with_storage(
             workflow_dir,
             WorkflowStorage::SplitRoot {
@@ -463,7 +510,7 @@ mod topology_sync_tests {
         ]);
         let runner = RemovingReadmeGitRunner {
             inner: RecordingGitRunner::new(responses),
-            state_root: entity_dir.clone(),
+            state_root: canonical_entity_dir.clone(),
             readme,
         };
 
@@ -481,7 +528,7 @@ mod topology_sync_tests {
                 .calls()
                 .iter()
                 .filter(|call| {
-                    call.repo_root == entity_dir
+                    call.repo_root == canonical_entity_dir
                         && call.args == ["pull".to_string(), ["--ff-", "only"].concat()]
                 })
                 .count(),
@@ -497,6 +544,7 @@ mod topology_sync_tests {
         let entity_dir = workflow_dir.join(".spacedock-state");
         write_split_root_readme(&workflow_dir, ".spacedock-state");
         init_attached_state_checkout(&entity_dir);
+        let canonical_entity_dir = fs::canonicalize(&entity_dir).expect("canonical state root");
         let mut app = app_with_storage(
             workflow_dir,
             WorkflowStorage::SplitRoot {
@@ -519,7 +567,7 @@ mod topology_sync_tests {
         let state_calls = runner
             .calls()
             .into_iter()
-            .filter(|call| call.repo_root == entity_dir)
+            .filter(|call| call.repo_root == canonical_entity_dir)
             .collect::<Vec<_>>();
         assert_eq!(
             state_calls
@@ -987,21 +1035,19 @@ pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
         });
         return;
     }
-    let storage = app.workflow_storage().cloned();
-    let status = match storage {
-        Some(WorkflowStorage::SingleRoot) => SyncStatus::Succeeded {
+    let eligibility = app
+        .workflow_storage()
+        .map(|storage| state_sync_eligibility(&root, storage));
+    let status = match eligibility {
+        Some(StateSyncEligibility::NotApplicable) => SyncStatus::Succeeded {
             new_commits: definition_commits,
         },
-        Some(WorkflowStorage::SplitRoot {
-            entity_dir,
-            disposition: StateCheckoutDisposition::Attached,
-            ..
-        }) => match git_sync::sync(runner, &entity_dir) {
-            SyncOutcome::UpToDate => SyncStatus::SucceededWithState {
-                new_commits: definition_commits,
-            },
-            SyncOutcome::Pulled { new_commits } => {
-                match app.reload() {
+        Some(StateSyncEligibility::Eligible { checkout_root }) => {
+            match git_sync::sync(runner, &checkout_root) {
+                SyncOutcome::UpToDate => SyncStatus::SucceededWithState {
+                    new_commits: definition_commits,
+                },
+                SyncOutcome::Pulled { new_commits } => match app.reload() {
                     Ok(()) => SyncStatus::SucceededWithState {
                         new_commits: definition_commits.saturating_add(new_commits),
                     },
@@ -1010,44 +1056,87 @@ pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
                             "Definition + state synced; workflow reload failed: {error}"
                         ),
                     },
-                }
+                },
+                SyncOutcome::Failed { message } => SyncStatus::Partial {
+                    message: format!("Definition synced; state sync failed: {message}"),
+                },
             }
-            SyncOutcome::Failed { message } => SyncStatus::Partial {
-                message: format!("Definition synced; state sync failed: {message}"),
-            },
-        },
-        Some(WorkflowStorage::SplitRoot {
-            disposition: StateCheckoutDisposition::Detached,
-            ..
-        }) => SyncStatus::Partial {
-            message: "Definition synced; detached state not refreshed".to_string(),
-        },
-        Some(WorkflowStorage::SplitRoot {
-            disposition: StateCheckoutDisposition::WrongBranch { actual_branch },
-            expected_branch,
-            ..
-        }) => SyncStatus::Partial {
-            message: format!(
-                "Definition synced; state on {actual_branch}, expected {expected_branch}, not refreshed"
-            ),
-        },
-        Some(WorkflowStorage::SplitRoot {
-            disposition: StateCheckoutDisposition::Missing,
-            ..
-        }) => SyncStatus::Partial {
-            message: "Definition synced; missing state checkout not refreshed".to_string(),
-        },
-        Some(WorkflowStorage::SplitRoot {
-            disposition: StateCheckoutDisposition::ProbeFailed { reason },
-            ..
-        }) => SyncStatus::Partial {
-            message: format!("Definition synced; state not refreshed: {reason}"),
+        }
+        Some(StateSyncEligibility::Blocked { problem }) => SyncStatus::Partial {
+            message: blocked_state_sync_message(&problem),
         },
         None => SyncStatus::Failed {
             message: "no active workflow".to_string(),
         },
     };
     app.set_sync_status(status);
+}
+
+fn blocked_state_sync_message(problem: &StateSyncProblem) -> String {
+    match problem {
+        StateSyncProblem::Detached => {
+            "Definition synced; detached state not refreshed".to_string()
+        }
+        StateSyncProblem::WrongBranch {
+            actual_branch,
+            expected_branch,
+        } => format!(
+            "Definition synced; state on {actual_branch}, expected {expected_branch}, not refreshed"
+        ),
+        StateSyncProblem::Missing => {
+            "Definition synced; missing state checkout not refreshed".to_string()
+        }
+        StateSyncProblem::Topology(problem) => format!(
+            "Definition synced; state not refreshed: {}",
+            topology_problem_for_sync(problem)
+        ),
+        StateSyncProblem::DefinitionRootResolution { path, error } => format!(
+            "Definition synced; state not refreshed: cannot resolve definition sync root {}: {error}",
+            path.display()
+        ),
+        StateSyncProblem::StateRootResolution { path, error } => format!(
+            "Definition synced; state not refreshed: cannot resolve state checkout {}: {error}",
+            path.display()
+        ),
+        StateSyncProblem::SameAsDefinition { checkout_root } => format!(
+            "Definition synced; state not refreshed: state checkout is the definition checkout {}; duplicate pull blocked",
+            checkout_root.display()
+        ),
+    }
+}
+
+fn topology_problem_for_sync(problem: &StateTopologyProblem) -> String {
+    match problem {
+        StateTopologyProblem::DefinitionPathResolution { path, error } => format!(
+            "cannot resolve workflow definition directory {}: {error}",
+            path.display()
+        ),
+        StateTopologyProblem::StatePathResolution { path, error } => {
+            format!("cannot resolve state directory {}: {error}", path.display())
+        }
+        StateTopologyProblem::OutsideDefinition { resolved_state } => format!(
+            "state directory resolves outside workflow definition directory: {}; sync blocked while the snapshot remains readable",
+            resolved_state.display()
+        ),
+        StateTopologyProblem::GitTopLevelProbe { error } => {
+            format!("Git top-level probe failed: {error}")
+        }
+        StateTopologyProblem::EmptyGitTopLevel => {
+            "Git reported an empty checkout root".to_string()
+        }
+        StateTopologyProblem::GitTopLevelResolution { path, error } => format!(
+            "cannot resolve Git checkout root {}: {error}",
+            path.display()
+        ),
+        StateTopologyProblem::CheckoutRootMismatch { actual_top } => format!(
+            "state directory belongs to checkout {} instead of its declared root",
+            actual_top.display()
+        ),
+        StateTopologyProblem::BranchProbe { error } => {
+            format!("Git branch probe failed: {error}")
+        }
+        StateTopologyProblem::EmptyBranch => "Git reported an empty branch name".to_string(),
+    }
 }
 
 fn start_watcher_for(
