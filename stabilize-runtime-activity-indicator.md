@@ -50,3 +50,38 @@ Verified by: focused session-activity and app/UI tests, full `cargo test`, `carg
 - Required command: focused `cargo test` filters first, then `cargo test`, `cargo fmt --all -- --check`, `make lint`, and `git diff --check`.
 - Manual check, if any: run Spacetop against the Engram reflection workflow during an attributed live agent session and observe at least five polling cycles.
 - Docs/policy update needed: update nearby runtime-activity documentation only if the corrected lifecycle contract is not already stated accurately.
+
+## Implementation plan
+
+1. Pin the visible transition at the application boundary before changing production code.
+   Extend the sanitized Codex scanner replay in `crates/spacetop/src/ui/tests/task_list.rs` and add an app regression in `crates/spacetop/src/app/tests.rs`: apply a running report, reload the unchanged entity snapshot, apply the next unchanged scan, and record the pre-fix visible sequence as `running -> idle -> running` even though both scan reports remain running.
+2. Preserve the last successful activity snapshot across workflow-data reloads in the typed index layer.
+   Add a narrow `WorkflowIndex` transfer method in `crates/spacetop-core/src/index.rs`; before `OverviewState::reload_from_index` replaces its index, copy activity and scanner-error state only for active entities whose ID and path match the prior index, then remove the unconditional `clear_entity_activities` call in `crates/spacetop/src/app/overview.rs`.
+3. Keep attribution fail-closed when workflow identity actually changes.
+   Core index tests must prove same-ID/same-path entities retain their typed `Running` or `HumanGate` state, while removed entities, new entities, renamed paths, and reused IDs do not inherit an old session; a fresh structured scan remains the only way to attribute those entities.
+4. Exercise the full lifecycle without changing scanner semantics.
+   The UI replay must render running before and after a workflow reload and an unchanged append-only scan, then clear only after the existing exact `task_complete` fixture; existing Codex/Claude correlation, reducer ordering, truncation/rotation/deletion, unlinked-session, wrong-parent/path/cwd, text-only, and scan-failure tests remain mandatory.
+5. Keep documentation aligned with the corrected ownership boundary.
+   Update `docs/superpowers/specs/2026-07-27-spacetop-entity-activity-design.md` to state that a successful workflow snapshot reload preserves the last good activity only for the same active entity identity; workflow reloads do not synthesize lifecycle events.
+6. Prove the Engram behavior and repository gates.
+   During an attributed Engram reflection session, observe the marker for at least five consecutive two-second cycles and record UTC timestamps plus sanitized entity/session IDs in the verify-stage report; pair that observation with the structured terminal regression, then run the focused session/app/UI tests, `cargo test`, `cargo fmt --all -- --check`, `make lint`, and `git diff --check`.
+
+### Owned modules and focused commands
+
+- Core ownership: `crates/spacetop-core/src/index.rs`; no planned changes to `session_activity/{state,codex,claude,reducer}.rs` because retained evidence already stays running across unchanged scans.
+- App ownership: `crates/spacetop/src/app/overview.rs` and `crates/spacetop/src/app/tests.rs`; the worker in `app/session_activity_worker.rs` and two-second scheduler in `lib.rs` stay unchanged.
+- Render proof: `crates/spacetop/src/ui/tests/task_list.rs`; production UI rendering stays unchanged.
+- Focused proof: `cargo test -p spacetop-core session_activity`, `cargo test -p spacetop-core session_scan_report_indexes_activity_by_entity_id`, `cargo test -p spacetop session_activity`, and `cargo test -p spacetop task_row_renders_scanner_replay_then_clears_on_terminal_report`.
+
+## Stage Report: plan
+
+- DONE: Identify the exact incremental-scan, attribution, reducer, or result-application path that can reproduce running to idle to running without a lifecycle boundary.
+  `OverviewState::reload_from_index` replaces `WorkflowIndex`, then clears activity; watcher reloads therefore erase a good running report until the next two-second scan reapplies the unchanged retained evidence.
+- DONE: Produce an implementation plan naming owned modules and the lowest-layer regressions while preserving strict structured-evidence boundaries.
+  The plan confines production changes to typed index-state transfer plus app reload wiring, matches ID and path, and keeps all source correlation and reducer rules unchanged.
+- DONE: Define proof for five stable Engram polling cycles plus focused tests and the full required repository gates.
+  The proof records five timestamped Engram observations, exercises a structured stop, runs focused core/app/UI regressions, then runs test, format, lint, and diff gates.
+
+### Summary
+
+The scanner already retains correlated lifecycle evidence across unchanged, append-only, truncated, rotated, and deleted logs; the false idle is introduced later when a workflow reload discards the published activity map. The implementation should carry the last good typed attribution across reload only for the same active entity identity, prove fail-closed behavior for identity changes, and leave polling and evidence rules intact.
