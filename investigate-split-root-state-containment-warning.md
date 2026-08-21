@@ -13,7 +13,7 @@ verdict:
 score: 0.76
 worktree: .worktrees/spacedock-ensign-investigate-split-root-state-containment-warning
 issue:
-pr:
+pr: "#81"
 mod-block: merge:pr-merge
 ---
 
