@@ -3,7 +3,10 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use crate::domain::{StateCheckoutDisposition, WorkflowStorage};
+use crate::domain::{
+    StateCheckoutDisposition, StateSyncEligibility, StateSyncProblem, StateTopologyProblem,
+    WorkflowStorage,
+};
 use crate::git::GitRunner;
 
 /// Classify the README storage declaration and, for a supported split-root,
@@ -74,42 +77,60 @@ fn probe_disposition<R: GitRunner>(
     let definition_top = match fs::canonicalize(definition_dir) {
         Ok(path) => path,
         Err(error) => {
-            return probe_failed(format!(
-                "cannot resolve workflow definition directory: {error}"
-            ));
+            return unverified(StateTopologyProblem::DefinitionPathResolution {
+                path: definition_dir.to_path_buf(),
+                error: error.to_string(),
+            });
         }
     };
     let expected_top = match fs::canonicalize(entity_dir) {
         Ok(path) => path,
-        Err(error) => return probe_failed(format!("cannot resolve state directory: {error}")),
+        Err(error) => {
+            return unverified(StateTopologyProblem::StatePathResolution {
+                path: entity_dir.to_path_buf(),
+                error: error.to_string(),
+            });
+        }
     };
     if !expected_top.starts_with(&definition_top) {
-        return probe_failed(format!(
-            "state directory resolves outside workflow definition directory: {}",
-            expected_top.display()
-        ));
+        return unverified(StateTopologyProblem::OutsideDefinition {
+            resolved_state: expected_top,
+        });
     }
     let top = match runner.run(entity_dir, &["rev-parse", "--show-toplevel"]) {
         Ok(result) if result.status.success() => result.stdout.trim().to_string(),
-        Ok(result) => return probe_failed(git_failure(&result.stderr, "not a Git checkout")),
-        Err(error) => return probe_failed(format!("Git probe failed: {error}")),
+        Ok(result) => {
+            return unverified(StateTopologyProblem::GitTopLevelProbe {
+                error: git_failure(&result.stderr, "not a Git checkout"),
+            });
+        }
+        Err(error) => {
+            return unverified(StateTopologyProblem::GitTopLevelProbe {
+                error: error.to_string(),
+            });
+        }
     };
     if top.is_empty() {
-        return probe_failed("Git reported an empty checkout root".to_string());
+        return unverified(StateTopologyProblem::EmptyGitTopLevel);
     }
     let actual_top = match fs::canonicalize(&top) {
         Ok(path) => path,
-        Err(error) => return probe_failed(format!("cannot resolve Git checkout root: {error}")),
+        Err(error) => {
+            return unverified(StateTopologyProblem::GitTopLevelResolution {
+                path: PathBuf::from(top),
+                error: error.to_string(),
+            });
+        }
     };
     if actual_top != expected_top {
-        return probe_failed("state directory belongs to a parent Git checkout".to_string());
+        return unverified(StateTopologyProblem::CheckoutRootMismatch { actual_top });
     }
 
     match runner.run(entity_dir, &["symbolic-ref", "--quiet", "--short", "HEAD"]) {
         Ok(result) if result.status.success() => {
             let actual_branch = result.stdout.trim().to_string();
             if actual_branch.is_empty() {
-                probe_failed("Git reported an empty branch name".to_string())
+                unverified(StateTopologyProblem::EmptyBranch)
             } else if actual_branch == expected_branch {
                 StateCheckoutDisposition::Attached
             } else {
@@ -117,8 +138,79 @@ fn probe_disposition<R: GitRunner>(
             }
         }
         Ok(result) if result.status.code() == Some(1) => StateCheckoutDisposition::Detached,
-        Ok(result) => probe_failed(git_failure(&result.stderr, "branch probe failed")),
-        Err(error) => probe_failed(format!("Git branch probe failed: {error}")),
+        Ok(result) => unverified(StateTopologyProblem::BranchProbe {
+            error: git_failure(&result.stderr, "branch probe failed"),
+        }),
+        Err(error) => unverified(StateTopologyProblem::BranchProbe {
+            error: error.to_string(),
+        }),
+    }
+}
+
+/// Decide whether a freshly classified state checkout may receive the one
+/// audited fast-forward pull. Canonical root equality blocks a second pull
+/// against the definition repository even if callers construct stale or
+/// synthetic `Attached` state.
+pub fn state_sync_eligibility(
+    definition_sync_root: &Path,
+    storage: &WorkflowStorage,
+) -> StateSyncEligibility {
+    let WorkflowStorage::SplitRoot {
+        entity_dir,
+        expected_branch,
+        disposition,
+    } = storage
+    else {
+        return StateSyncEligibility::NotApplicable;
+    };
+
+    match disposition {
+        StateCheckoutDisposition::Attached => {
+            let definition_root = match fs::canonicalize(definition_sync_root) {
+                Ok(path) => path,
+                Err(error) => {
+                    return StateSyncEligibility::Blocked {
+                        problem: StateSyncProblem::DefinitionRootResolution {
+                            path: definition_sync_root.to_path_buf(),
+                            error: error.to_string(),
+                        },
+                    };
+                }
+            };
+            let checkout_root = match fs::canonicalize(entity_dir) {
+                Ok(path) => path,
+                Err(error) => {
+                    return StateSyncEligibility::Blocked {
+                        problem: StateSyncProblem::StateRootResolution {
+                            path: entity_dir.clone(),
+                            error: error.to_string(),
+                        },
+                    };
+                }
+            };
+            if checkout_root == definition_root {
+                StateSyncEligibility::Blocked {
+                    problem: StateSyncProblem::SameAsDefinition { checkout_root },
+                }
+            } else {
+                StateSyncEligibility::Eligible { checkout_root }
+            }
+        }
+        StateCheckoutDisposition::Detached => StateSyncEligibility::Blocked {
+            problem: StateSyncProblem::Detached,
+        },
+        StateCheckoutDisposition::WrongBranch { actual_branch } => StateSyncEligibility::Blocked {
+            problem: StateSyncProblem::WrongBranch {
+                actual_branch: actual_branch.clone(),
+                expected_branch: expected_branch.clone(),
+            },
+        },
+        StateCheckoutDisposition::Missing => StateSyncEligibility::Blocked {
+            problem: StateSyncProblem::Missing,
+        },
+        StateCheckoutDisposition::Unverified { problem } => StateSyncEligibility::Blocked {
+            problem: StateSyncProblem::Topology(problem.clone()),
+        },
     }
 }
 
@@ -131,8 +223,8 @@ fn git_failure(stderr: &str, fallback: &str) -> String {
         .to_string()
 }
 
-fn probe_failed(reason: String) -> StateCheckoutDisposition {
-    StateCheckoutDisposition::ProbeFailed { reason }
+fn unverified(problem: StateTopologyProblem) -> StateCheckoutDisposition {
+    StateCheckoutDisposition::Unverified { problem }
 }
 
 #[cfg(test)]
@@ -234,8 +326,10 @@ mod tests {
         let failed = RecordingGitRunner::new(vec![err(128, "fatal: not a git repository\n")]);
         assert_eq!(
             probe_disposition(&failed, temp.path(), &state, "spacedock-state/demo"),
-            StateCheckoutDisposition::ProbeFailed {
-                reason: "fatal: not a git repository".to_string()
+            StateCheckoutDisposition::Unverified {
+                problem: StateTopologyProblem::GitTopLevelProbe {
+                    error: "fatal: not a git repository".to_string()
+                }
             }
         );
     }
@@ -249,8 +343,8 @@ mod tests {
         let runner = RecordingGitRunner::new(vec![ok(&format!("{}\n", parent.display()))]);
         assert_eq!(
             probe_disposition(&runner, temp.path(), &state, "spacedock-state/demo"),
-            StateCheckoutDisposition::ProbeFailed {
-                reason: "state directory belongs to a parent Git checkout".to_string()
+            StateCheckoutDisposition::Unverified {
+                problem: StateTopologyProblem::CheckoutRootMismatch { actual_top: parent }
             }
         );
     }
@@ -276,13 +370,92 @@ mod tests {
                 None
             ),
             WorkflowStorage::SplitRoot {
-                disposition: StateCheckoutDisposition::ProbeFailed { ref reason },
+                disposition: StateCheckoutDisposition::Unverified {
+                    problem: StateTopologyProblem::OutsideDefinition { ref resolved_state }
+                },
                 ..
-            } if reason.contains("resolves outside workflow definition directory")
+            } if resolved_state == &fs::canonicalize(&external).expect("canonical external")
         ));
         assert!(
             runner.calls().is_empty(),
             "escaped state path must be rejected before any Git probe"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_definition_alias_keeps_contained_checkout_attached() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempdir().expect("tempdir");
+        let real_definition = temp.path().join("real-definition");
+        let alias_definition = temp.path().join("definition-alias");
+        let state = real_definition.join(".spacedock-state");
+        fs::create_dir_all(&state).expect("state dir");
+        symlink(&real_definition, &alias_definition).expect("definition alias");
+        let canonical_state = fs::canonicalize(&state).expect("canonical state");
+        let runner = RecordingGitRunner::new(vec![
+            ok(&format!("{}\n", canonical_state.display())),
+            ok("spacedock-state/definition-alias\n"),
+        ]);
+
+        assert!(matches!(
+            classify_storage(&runner, &alias_definition, Some(".spacedock-state"), None),
+            WorkflowStorage::SplitRoot {
+                disposition: StateCheckoutDisposition::Attached,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn sync_eligibility_requires_distinct_canonical_roots() {
+        let temp = tempdir().expect("tempdir");
+        let definition = temp.path().join("definition");
+        let state = definition.join(".spacedock-state");
+        fs::create_dir_all(&state).expect("state dir");
+        let storage = WorkflowStorage::SplitRoot {
+            entity_dir: state.clone(),
+            expected_branch: "spacedock-state/definition".to_string(),
+            disposition: StateCheckoutDisposition::Attached,
+        };
+
+        assert_eq!(
+            state_sync_eligibility(&definition, &storage),
+            StateSyncEligibility::Eligible {
+                checkout_root: fs::canonicalize(&state).expect("canonical state")
+            }
+        );
+
+        let same_top = WorkflowStorage::SplitRoot {
+            entity_dir: definition.clone(),
+            expected_branch: "spacedock-state/definition".to_string(),
+            disposition: StateCheckoutDisposition::Attached,
+        };
+        assert!(matches!(
+            state_sync_eligibility(&definition, &same_top),
+            StateSyncEligibility::Blocked {
+                problem: StateSyncProblem::SameAsDefinition { .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn tmp_path_alias_cannot_make_one_checkout_look_distinct() {
+        let temp = tempfile::tempdir_in("/tmp").expect("tempdir in /tmp");
+        let lexical_root = temp.path().to_path_buf();
+        let canonical_root = fs::canonicalize(&lexical_root).expect("canonical /tmp root");
+        let storage = WorkflowStorage::SplitRoot {
+            entity_dir: canonical_root,
+            expected_branch: "spacedock-state/alias".to_string(),
+            disposition: StateCheckoutDisposition::Attached,
+        };
+
+        assert!(matches!(
+            state_sync_eligibility(&lexical_root, &storage),
+            StateSyncEligibility::Blocked {
+                problem: StateSyncProblem::SameAsDefinition { .. }
+            }
+        ));
     }
 }

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use spacetop_core::domain::{StateCheckoutDisposition, WorkflowStorage};
+use spacetop_core::domain::{StateCheckoutDisposition, StateTopologyProblem, WorkflowStorage};
 use spacetop_core::index::WorkflowIndex;
 use spacetop_core::parser::load_workflow_dir;
 use spacetop_core::sources::WorkflowSources;
@@ -20,6 +20,24 @@ fn git(root: &Path, args: &[&str]) {
         "git {args:?} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn git_stdout(root: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .expect("utf-8 git output")
+        .trim()
+        .to_string()
 }
 
 fn write_workflow(definition: &Path) {
@@ -138,6 +156,7 @@ fn external_symlinked_git_checkout_is_unverified_and_remains_readable() {
     let definition = temp.path().join("demo");
     let external_state = temp.path().join("external-state");
     write_workflow(&definition);
+    git(&definition, &["init", "--initial-branch", "main"]);
     write_entities(&external_state);
     git(
         &external_state,
@@ -145,14 +164,48 @@ fn external_symlinked_git_checkout_is_unverified_and_remains_readable() {
     );
     symlink(&external_state, definition.join(".spacedock-state")).expect("state symlink");
 
+    let declared_state = definition.join(".spacedock-state");
+    assert_eq!(
+        fs::read_link(&declared_state).expect("symlink target"),
+        external_state
+    );
+    let canonical_definition = fs::canonicalize(&definition).expect("canonical definition");
+    let canonical_state = fs::canonicalize(&declared_state).expect("canonical state");
+    assert!(!canonical_state.starts_with(&canonical_definition));
+    assert_eq!(
+        Path::new(&git_stdout(&definition, &["rev-parse", "--show-toplevel"])),
+        canonical_definition
+    );
+    assert_eq!(
+        Path::new(&git_stdout(
+            &external_state,
+            &["rev-parse", "--show-toplevel"]
+        )),
+        canonical_state
+    );
+    assert_ne!(
+        canonical_definition, canonical_state,
+        "not a duplicate pull"
+    );
+    assert_eq!(
+        git_stdout(
+            &external_state,
+            &["symbolic-ref", "--quiet", "--short", "HEAD"]
+        ),
+        "spacedock-state/demo"
+    );
+
     let snapshot = load_workflow_dir(&definition, temp.path()).expect("workflow load");
 
     assert!(matches!(
         snapshot.definition.storage,
         WorkflowStorage::SplitRoot {
-            disposition: StateCheckoutDisposition::ProbeFailed { ref reason },
+            disposition: StateCheckoutDisposition::Unverified {
+                problem: StateTopologyProblem::OutsideDefinition { ref resolved_state }
+            },
             ..
-        } if reason.contains("resolves outside workflow definition directory")
+        } if resolved_state == &fs::canonicalize(&external_state).expect("canonical external state")
     ));
-    assert_eq!(snapshot.items.len(), 1, "non-holder content stays readable");
+    assert_eq!(snapshot.items.len(), 1, "external content stays readable");
+    assert_eq!(snapshot.items[0].body.trim(), "active body");
 }

@@ -38,7 +38,54 @@ pub enum StateCheckoutDisposition {
     Detached,
     WrongBranch { actual_branch: String },
     Missing,
-    ProbeFailed { reason: String },
+    Unverified { problem: StateTopologyProblem },
+}
+
+/// A typed reason why a materialized split-root checkout could not be
+/// verified. Variants preserve the policy boundary separately from incidental
+/// filesystem and Git probe failures.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StateTopologyProblem {
+    DefinitionPathResolution { path: PathBuf, error: String },
+    StatePathResolution { path: PathBuf, error: String },
+    OutsideDefinition { resolved_state: PathBuf },
+    GitTopLevelProbe { error: String },
+    EmptyGitTopLevel,
+    GitTopLevelResolution { path: PathBuf, error: String },
+    CheckoutRootMismatch { actual_top: PathBuf },
+    BranchProbe { error: String },
+    EmptyBranch,
+}
+
+/// Final authorization decision consumed by the explicit sync boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateSyncEligibility {
+    NotApplicable,
+    Eligible { checkout_root: PathBuf },
+    Blocked { problem: StateSyncProblem },
+}
+
+/// A typed reason why split-root state cannot receive a sync call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateSyncProblem {
+    Detached,
+    WrongBranch {
+        actual_branch: String,
+        expected_branch: String,
+    },
+    Missing,
+    Topology(StateTopologyProblem),
+    DefinitionRootResolution {
+        path: PathBuf,
+        error: String,
+    },
+    StateRootResolution {
+        path: PathBuf,
+        error: String,
+    },
+    SameAsDefinition {
+        checkout_root: PathBuf,
+    },
 }
 
 /// A plain RGB color owned by the core (no terminal-crate dependency).

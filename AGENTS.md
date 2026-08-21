@@ -114,7 +114,8 @@ Keep module boundaries clear and testable:
   resolved dir to the active and archive scans.
 - `crates/spacetop-core/src/state_checkout.rs` owns the two-backend storage
   classifier and read-only Git probes for attached, detached, wrong-branch,
-  missing, and probe-failed split-root state checkouts.
+  missing, and typed-unverified split-root state checkouts, plus the explicit
+  distinct-root state-sync eligibility decision.
 - `crates/spacetop-core/src/index.rs`, `query.rs`, and `sources.rs` own the
   v2 index/query spine; TUI code must consume `WorkflowIndex` through query
   methods instead of inferring schema rules from raw vectors.
@@ -125,7 +126,8 @@ Keep module boundaries clear and testable:
 - `crates/spacetop-core/src/git_sync.rs` owns the explicit read-refresh sync
   helper and must remain limited to audited fast-forward pulls. Top-level sync
   may call it for the definition repository and only for a verified attached
-  split-root state checkout.
+  split-root state checkout whose canonical Git top differs from the definition
+  sync root.
 - `crates/spacetop-core/src/session_activity.rs` is the local agent-session
   facade; its `session_activity/{projection,state,codex,claude,reducer}.rs`
   modules project privacy-safe typed facts, retain coherent scan evidence,
