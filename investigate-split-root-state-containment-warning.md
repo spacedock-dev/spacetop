@@ -1,7 +1,7 @@
 ---
 id: 077
 title: Investigate split-root state containment warning
-status: plan
+status: implement
 source: "Captain report: State topology unverified: state directory resolves outside workflow definition directory"
 kind: bug
 risk: high
@@ -11,7 +11,7 @@ started: 2026-08-21T11:59:50Z
 completed:
 verdict:
 score: 0.76
-worktree:
+worktree: .worktrees/spacedock-ensign-investigate-split-root-state-containment-warning
 issue:
 pr:
 ---
