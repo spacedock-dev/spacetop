@@ -12,8 +12,9 @@ verdict:
 score: 0.88
 worktree: .worktrees/spacedock-ensign-support-detached-split-root-state
 issue: spacedock-dev/spacedock#677
-pr:
+pr: "#80"
 id: 076
+mod-block: merge:pr-merge
 ---
 
 Spacedock currently implements two storage backends, not three: default or `state: $inline` is single-root, while any supported relative `state:` path is split-root. A detached HEAD is a runtime disposition of a materialized split-root state checkout. The same split-root workflow can also be an attached holder, have no state checkout in this workspace, or have a checkout on the wrong branch.
