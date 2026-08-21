@@ -168,3 +168,16 @@ guard and exact call-recording proof.
 ### Summary
 
 Implemented the planned typed topology and sync-authorization contract in commit `da77411`, without broadening the audited Git write surface. Supported contained attached checkouts receive one canonical distinct-root pull; escaped, same-top, stale, or unverified state remains readable but fail-closed with truthful remediation.
+
+## Stage Report: verify
+
+- DONE: Independently attack the classification and typed contract across real external escape, supported contained linked checkout, same-top parent checkout, detached, wrong-branch, missing, and probe-failure cases; confirm readable snapshots remain separate from sync authorization.
+  All 9 `topology_sync_tests` passed, real-Git fixtures passed, and a live `spacetop-dev` probe exported `SplitRoot` / `Attached` with a contained distinct top and expected branch.
+- DONE: Verify exact side-effect behavior and user truthfulness: one distinct state pull only for eligible attached state, zero state pulls for escaped/same-top/blocked state, no false healthy status, and actionable materialize-without-auto-repair diagnostics.
+  RecordingGitRunner, real-topology, and rendering regressions passed with no actionable findings; the no-write guardrail also passed.
+- DONE: Cross-check AC-1 through AC-5 against concrete diff/test evidence, inspect read-only guardrails and documentation, run the required focused and full verification including cargo test --no-fail-fast, cargo fmt --all -- --check, make lint, and git diff --check, then issue PASSED or REJECTED with actionable findings.
+  AC-1 through AC-5 are evidenced. `cargo test --no-fail-fast` passed with 399 app tests, 197 core tests, and all enabled integration and documentation tests; 3 unchanged notify tests remained ignored. `cargo fmt --all -- --check`, `make lint`, and `git diff --check` passed.
+
+### Verdict
+
+PASSED. No actionable findings.
