@@ -192,6 +192,9 @@ Preserve the current parsing contracts unless the task explicitly changes them:
   (single-root). Resolution is always relative to the definition directory; an
   absolute `state:` or one with a `..` parent-traversal component is unsupported
   and falls back to single-root rather than escaping the definition directory.
+  A relative state path whose canonical target escapes the canonical definition
+  directory remains a typed split-root but is unverified before any Git probe;
+  its available entities remain readable and it is never sync-eligible.
   Discovery, the watcher, and `WorkflowDefinition.root` stay on the definition
   directory; only entity/archive scans follow `state:`. A declared-but-absent
   state checkout yields no entities rather than erroring (mirrors missing

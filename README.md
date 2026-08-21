@@ -50,7 +50,9 @@ Workflow storage has two backends. `$inline`, an empty value, or an absent
 `state:` such as `.spacedock-state` is split-root: active entities and
 `_archive/` live in that contained state checkout while the README and discovery
 remain on the definition directory. Absolute paths and paths with `..` are
-unsupported and fail closed to single-root.
+unsupported and fail closed to single-root. A relative path whose canonical
+target escapes the definition directory is unverified: available entities stay
+readable, but Spacetop will not run Git sync operations against that target.
 
 A split-root checkout then has a separate runtime disposition. Attached means
 it holds the expected `state-branch:` (or the default

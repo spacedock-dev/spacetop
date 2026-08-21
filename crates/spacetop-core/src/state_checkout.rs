@@ -19,7 +19,7 @@ pub fn classify_storage<R: GitRunner>(
         return WorkflowStorage::SingleRoot;
     };
     let expected_branch = expected_state_branch(definition_dir, state_branch);
-    let disposition = probe_disposition(runner, &entity_dir, &expected_branch);
+    let disposition = probe_disposition(runner, definition_dir, &entity_dir, &expected_branch);
     WorkflowStorage::SplitRoot {
         entity_dir,
         expected_branch,
@@ -59,6 +59,7 @@ pub fn expected_state_branch(definition_dir: &Path, state_branch: Option<&str>) 
 
 fn probe_disposition<R: GitRunner>(
     runner: &R,
+    definition_dir: &Path,
     entity_dir: &Path,
     expected_branch: &str,
 ) -> StateCheckoutDisposition {
@@ -66,10 +67,24 @@ fn probe_disposition<R: GitRunner>(
         return StateCheckoutDisposition::Missing;
     }
 
+    let definition_top = match fs::canonicalize(definition_dir) {
+        Ok(path) => path,
+        Err(error) => {
+            return probe_failed(format!(
+                "cannot resolve workflow definition directory: {error}"
+            ));
+        }
+    };
     let expected_top = match fs::canonicalize(entity_dir) {
         Ok(path) => path,
         Err(error) => return probe_failed(format!("cannot resolve state directory: {error}")),
     };
+    if !expected_top.starts_with(&definition_top) {
+        return probe_failed(format!(
+            "state directory resolves outside workflow definition directory: {}",
+            expected_top.display()
+        ));
+    }
     let top = match runner.run(entity_dir, &["rev-parse", "--show-toplevel"]) {
         Ok(result) if result.status.success() => result.stdout.trim().to_string(),
         Ok(result) => return probe_failed(git_failure(&result.stderr, "not a Git checkout")),
@@ -169,7 +184,7 @@ mod tests {
             ok("spacedock-state/demo\n"),
         ]);
         assert_eq!(
-            probe_disposition(&attached, &state, "spacedock-state/demo"),
+            probe_disposition(&attached, temp.path(), &state, "spacedock-state/demo"),
             StateCheckoutDisposition::Attached
         );
 
@@ -178,7 +193,7 @@ mod tests {
             ok("wrong-state\n"),
         ]);
         assert_eq!(
-            probe_disposition(&wrong, &state, "spacedock-state/demo"),
+            probe_disposition(&wrong, temp.path(), &state, "spacedock-state/demo"),
             StateCheckoutDisposition::WrongBranch {
                 actual_branch: "wrong-state".to_string()
             }
@@ -194,13 +209,13 @@ mod tests {
         let detached =
             RecordingGitRunner::new(vec![ok(&format!("{}\n", top.display())), err(1, "")]);
         assert_eq!(
-            probe_disposition(&detached, &state, "spacedock-state/demo"),
+            probe_disposition(&detached, temp.path(), &state, "spacedock-state/demo"),
             StateCheckoutDisposition::Detached
         );
 
         let failed = RecordingGitRunner::new(vec![err(128, "fatal: not a git repository\n")]);
         assert_eq!(
-            probe_disposition(&failed, &state, "spacedock-state/demo"),
+            probe_disposition(&failed, temp.path(), &state, "spacedock-state/demo"),
             StateCheckoutDisposition::ProbeFailed {
                 reason: "fatal: not a git repository".to_string()
             }
@@ -215,10 +230,41 @@ mod tests {
         let parent = fs::canonicalize(temp.path()).expect("canonical parent");
         let runner = RecordingGitRunner::new(vec![ok(&format!("{}\n", parent.display()))]);
         assert_eq!(
-            probe_disposition(&runner, &state, "spacedock-state/demo"),
+            probe_disposition(&runner, temp.path(), &state, "spacedock-state/demo"),
             StateCheckoutDisposition::ProbeFailed {
                 reason: "state directory belongs to a parent Git checkout".to_string()
             }
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_state_symlink_fails_before_git_probe() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempdir().expect("tempdir");
+        let definition = temp.path().join("demo");
+        let external = temp.path().join("external-state");
+        fs::create_dir(&definition).expect("definition dir");
+        fs::create_dir(&external).expect("external state dir");
+        symlink(&external, definition.join(".spacedock-state")).expect("state symlink");
+        let runner = RecordingGitRunner::new(Vec::new());
+
+        assert!(matches!(
+            classify_storage(
+                &runner,
+                &definition,
+                Some(".spacedock-state"),
+                None
+            ),
+            WorkflowStorage::SplitRoot {
+                disposition: StateCheckoutDisposition::ProbeFailed { ref reason },
+                ..
+            } if reason.contains("resolves outside workflow definition directory")
+        ));
+        assert!(
+            runner.calls().is_empty(),
+            "escaped state path must be rejected before any Git probe"
         );
     }
 }

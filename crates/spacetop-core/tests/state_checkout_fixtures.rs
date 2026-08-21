@@ -128,3 +128,31 @@ fn real_git_attached_detached_wrong_and_missing_topologies_remain_truthful() {
     ));
     assert!(missing.items.is_empty());
 }
+
+#[cfg(unix)]
+#[test]
+fn external_symlinked_git_checkout_is_unverified_and_remains_readable() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().expect("tempdir");
+    let definition = temp.path().join("demo");
+    let external_state = temp.path().join("external-state");
+    write_workflow(&definition);
+    write_entities(&external_state);
+    git(
+        &external_state,
+        &["init", "--initial-branch", "spacedock-state/demo"],
+    );
+    symlink(&external_state, definition.join(".spacedock-state")).expect("state symlink");
+
+    let snapshot = load_workflow_dir(&definition, temp.path()).expect("workflow load");
+
+    assert!(matches!(
+        snapshot.definition.storage,
+        WorkflowStorage::SplitRoot {
+            disposition: StateCheckoutDisposition::ProbeFailed { ref reason },
+            ..
+        } if reason.contains("resolves outside workflow definition directory")
+    ));
+    assert_eq!(snapshot.items.len(), 1, "non-holder content stays readable");
+}
