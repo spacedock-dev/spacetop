@@ -85,3 +85,20 @@ Verified by: focused session-activity and app/UI tests, full `cargo test`, `carg
 ### Summary
 
 The scanner already retains correlated lifecycle evidence across unchanged, append-only, truncated, rotated, and deleted logs; the false idle is introduced later when a workflow reload discards the published activity map. The implementation should carry the last good typed attribution across reload only for the same active entity identity, prove fail-closed behavior for identity changes, and leave polling and evidence rules intact.
+
+## Stage Report: implement
+
+- DONE: Reproduce and fix loss of the last good typed runtime attribution across workflow reloads, retaining it only when active entity ID and path still match.
+  Commit `96cfde1` transfers the last published activity at the typed index boundary; the new core regressions fail if same-identity state is lost or changed identity inherits it.
+- DONE: Add lowest-layer core/app/UI regressions proving running survives reload and periodic scans, clears on structured lifecycle evidence, and never leaks across changed identity.
+  Core tests pin `Running`, `HumanGate`, scanner diagnostics, and fail-closed identity changes; the app test pins reload/result application; the UI replay fails if any of five reload/poll cycles flickers or exact `task_complete` does not clear.
+- SKIPPED: Prove at least five stable Engram polling cycles, update the nearby activity contract if needed, and run all focused plus required repository gates.
+  At `2026-08-21T15:11:53Z` the exact Engram workflow rendered zero active items because both reflection changes are archived, so no live marker existed to observe without forbidden workflow mutation; the deterministic sanitized replay proved five cycles instead, the contract was updated, and every gate below passed.
+- DONE: Keep the nearby activity contract aligned with the corrected reload ownership boundary.
+  The entity-activity design now states that reload preserves only same-ID/same-path active attribution and does not create a lifecycle event.
+- DONE: Run all focused and required repository gates.
+  `cargo test -p spacetop-core session_activity`, the report-index filter, app activity filters, the five-cycle UI replay, full `cargo test`, `cargo fmt --all -- --check`, `make lint`, and `git diff --check` all passed; each fails on the behavior or repository rule it names.
+
+### Summary
+
+Workflow reloads now retain the last good typed runtime attribution for unchanged active identity instead of briefly replacing it with idle. The evidence scanner and polling cadence are unchanged, identity changes still fail closed, and an exact structured stop still clears the marker; live Engram observation remains for a verify run when that workflow next has an active attributed entity.
