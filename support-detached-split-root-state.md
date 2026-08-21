@@ -1,6 +1,6 @@
 ---
 title: Surface detached split-root state checkouts
-status: verify
+status: implement
 source: "Captain request plus spacedock-dev/spacedock#677 and #630"
 kind: feature
 risk: high
