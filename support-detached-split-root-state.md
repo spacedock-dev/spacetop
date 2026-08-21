@@ -219,3 +219,16 @@ Verdict: REQUEST CHANGES. AC-1 through AC-5 and AC-7 are supported, but AC-6 fai
 ### Feedback Cycles
 
 - Cycle 1: REQUEST CHANGES — independent verify reviewer; surface 30 files vs estimate undeclared (N/A); AC unchanged
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Fix `apply_pending_sync` so a failed mandatory reload/re-probe after the definition pull fails closed: do not consult cached split-root topology, make no state-root Git call, and surface a truthful partial or failed sync result.
+  Commit `90e35c1` returns before storage lookup when reload fails and reports post-state-sync reload failures truthfully.
+- DONE: Replace the fail-open expectation and add regression coverage where the definition pull invalidates or changes state configuration, proving stale attached topology cannot authorize a state pull.
+  `reload_failure_does_not_pull_cached_attached_state_checkout` and `changed_state_configuration_cannot_authorize_cached_attached_pull` fail if cached attached state receives any Git call. The attached happy path now requires a real re-probed checkout.
+- DONE: Run focused sync/topology/no-write tests, the full test suite, formatting, lint, and diff checks; commit the correction and return a checklist-complete implementation report for correction cycle 1.
+  `cargo test -p spacetop topology_sync_tests -- --nocapture` passed 3 tests; `cargo test -p spacetop --test git_sync_e2e` passed 4 tests; `cargo test -p spacetop-core --test no_write_git_calls` passed 2 tests. `cargo test` passed all enabled tests, including 392 `spacetop` library tests and 192 `spacetop-core` tests; 3 real-watcher tests remained intentionally ignored. `cargo fmt --all -- --check`, `make lint`, and `git diff --check` passed.
+
+### Summary
+
+Correction cycle 1 now fails closed at the mandatory post-definition reload boundary, so cached topology cannot authorize a state pull. Changed state configuration is honored before state sync, while a genuinely re-probed attached checkout retains the fast-forward sync path.
