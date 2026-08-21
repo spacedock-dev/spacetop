@@ -1,20 +1,21 @@
 ---
 id: 077
 title: Investigate split-root state containment warning
-status: verify
+status: done
 source: "Captain report: State topology unverified: state directory resolves outside workflow definition directory"
 kind: bug
 risk: high
 milestone: v1-maintenance
 proof: Real filesystem and Git topology reproducer plus classifier and sync-call evidence
 started: 2026-08-21T11:59:50Z
-completed:
-verdict:
+completed: 2026-08-21T13:03:51Z
+verdict: passed
 score: 0.76
 worktree: .worktrees/spacedock-ensign-investigate-split-root-state-containment-warning
 issue:
 pr: pr-merge:81
-mod-block: merge:pr-merge
+mod-block:
+archived: 2026-08-21T13:03:51Z
 ---
 
 Spacetop can report `State topology unverified: state directory resolves outside workflow definition directory: <path>` for a split-root workflow. The warning may be correctly rejecting a state path that symlinks into an unrelated repository, or it may be a false positive for a supported Spacedock checkout layout. Investigate the real topology first, then make the warning and sync behavior truthful without weakening the boundary that prevents Spacetop from pulling an unintended repository.
