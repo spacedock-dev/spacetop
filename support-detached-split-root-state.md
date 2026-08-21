@@ -1,6 +1,6 @@
 ---
 title: Surface detached split-root state checkouts
-status: verify
+status: implement
 source: "Captain request plus spacedock-dev/spacedock#677 and #630"
 kind: feature
 risk: high
@@ -219,6 +219,7 @@ Verdict: REQUEST CHANGES. AC-1 through AC-5 and AC-7 are supported, but AC-6 fai
 ### Feedback Cycles
 
 - Cycle 1: REQUEST CHANGES — independent verify reviewer; surface 30 files vs estimate undeclared (N/A); AC unchanged
+- Cycle 2: REQUEST CHANGES — independent verify reviewer; surface 30 files vs estimate undeclared (N/A); AC unchanged
 
 ## Stage Report: implement (cycle 2)
 
