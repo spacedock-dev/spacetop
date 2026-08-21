@@ -1,6 +1,6 @@
 ---
 title: Surface detached split-root state checkouts
-status: plan
+status: implement
 source: "Captain request plus spacedock-dev/spacedock#677 and #630"
 kind: feature
 risk: high
@@ -10,7 +10,7 @@ started: 2026-08-21T06:46:19Z
 completed:
 verdict:
 score: 0.88
-worktree:
+worktree: .worktrees/spacedock-ensign-support-detached-split-root-state
 issue: spacedock-dev/spacedock#677
 pr:
 id: 076
