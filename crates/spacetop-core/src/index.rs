@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::{
     Entity, EntityActivity, EntityParseError, SessionScanReport, WorkflowDefinition,
+    WorkflowStorage,
 };
 use crate::entity_identity::entity_slug;
 pub use crate::metrics::Metrics;
@@ -167,6 +168,10 @@ impl WorkflowIndex {
 
     pub fn definition(&self) -> &WorkflowDefinition {
         &self.definition
+    }
+
+    pub fn storage(&self) -> &WorkflowStorage {
+        &self.definition.storage
     }
 
     pub fn active_parse_errors(&self) -> &[EntityParseError] {
@@ -432,6 +437,7 @@ mod tests {
         WorkflowDefinition {
             root: PathBuf::from("/tmp/workflow"),
             state: None,
+            storage: Default::default(),
             stages: vec![
                 StageDefinition {
                     name: "plan".to_string(),

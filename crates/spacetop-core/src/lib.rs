@@ -14,4 +14,5 @@ pub mod relations;
 pub mod session_activity;
 pub mod session_state;
 pub mod sources;
+pub mod state_checkout;
 pub mod watcher;

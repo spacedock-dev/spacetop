@@ -1024,6 +1024,7 @@ fn snapshot_with_items(count: usize) -> WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: PathBuf::from("workflow"),
             state: None,
+            storage: Default::default(),
             stages: vec![
                 StageDefinition {
                     name: "plan".to_string(),
@@ -1082,6 +1083,7 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: PathBuf::from("workflow"),
             state: None,
+            storage: Default::default(),
             stages: vec![StageDefinition {
                 name: "plan".to_string(),
                 initial: true,

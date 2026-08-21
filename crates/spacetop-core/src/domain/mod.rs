@@ -6,6 +6,41 @@ use serde::{Deserialize, Serialize};
 const STAGE_LIGHTNESS: f32 = 0.78;
 const STAGE_CHROMA: f32 = 0.12;
 
+/// Where a workflow's entity markdown is stored, separate from the runtime
+/// disposition of a materialized split-root checkout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum WorkflowStorage {
+    /// Entities live beside the workflow README. This covers absent, blank,
+    /// and `$inline` declarations, plus unsupported paths that fail closed.
+    #[default]
+    SingleRoot,
+    /// Entities live in a contained relative state checkout.
+    SplitRoot {
+        entity_dir: PathBuf,
+        expected_branch: String,
+        disposition: StateCheckoutDisposition,
+    },
+}
+
+impl WorkflowStorage {
+    pub fn entity_dir<'a>(&'a self, definition_root: &'a std::path::Path) -> &'a std::path::Path {
+        match self {
+            Self::SingleRoot => definition_root,
+            Self::SplitRoot { entity_dir, .. } => entity_dir,
+        }
+    }
+}
+
+/// Runtime condition of a declared split-root checkout.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StateCheckoutDisposition {
+    Attached,
+    Detached,
+    WrongBranch { actual_branch: String },
+    Missing,
+    ProbeFailed { reason: String },
+}
+
 /// A plain RGB color owned by the core (no terminal-crate dependency).
 /// The UI layer converts this to its terminal color type at render time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -101,6 +136,9 @@ pub struct WorkflowDefinition {
     /// split-root state checkout. Resolve it through the parser's
     /// `resolve_entity_dir` helper rather than reading this field directly.
     pub state: Option<String>,
+    /// Typed storage backend and, for split-root workflows, the current
+    /// checkout disposition established by read-only Git probes.
+    pub storage: WorkflowStorage,
     pub stages: Vec<StageDefinition>,
     pub id_style: Option<String>,
     pub entity_type: Option<String>,
@@ -429,6 +467,7 @@ mod tests {
         WorkflowDefinition {
             root: PathBuf::new(),
             state: None,
+            storage: Default::default(),
             stages,
             id_style: None,
             entity_type: None,

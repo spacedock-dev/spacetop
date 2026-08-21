@@ -6,7 +6,9 @@ use ratatui::layout::Rect;
 
 use spacetop_core::config::{DefaultScope, DefaultSort, SpacetopConfig};
 use spacetop_core::discovery::resolve_scan_root;
-use spacetop_core::domain::{Entity, EntityParseError, WorkflowSnapshot};
+use spacetop_core::domain::{
+    Entity, EntityParseError, StateCheckoutDisposition, WorkflowSnapshot, WorkflowStorage,
+};
 use spacetop_core::entity_identity::entity_slug;
 pub use spacetop_core::index::StageCount;
 use spacetop_core::index::WorkflowIndex;
@@ -78,12 +80,47 @@ pub enum SyncStatus {
     /// The pull succeeded; either fast-forwarded `new_commits` commits
     /// or was already up to date.
     Succeeded { new_commits: u32 },
+    /// Both the definition repository and a verified attached split-root
+    /// state checkout completed their fast-forward-only refreshes.
+    SucceededWithState { new_commits: u32 },
+    /// The definition repository was refreshed, but split-root state was not
+    /// verified or could not be refreshed. The readable snapshot is retained.
+    Partial { message: String },
     /// The pull was attempted but failed; `message` is the trimmed
     /// stderr / synthesized reason from the helper.
     Failed { message: String },
     /// The repo state precluded a pull (no git repo, no upstream, no
     /// `origin` remote). `hint` is the user-facing description.
     Unavailable { hint: String },
+}
+
+/// Stable app-layer diagnostic consumed directly by the UI. This keeps Git
+/// and README interpretation out of rendering code.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateTopologyDiagnostic {
+    Detached,
+    WrongBranch {
+        actual_branch: String,
+        expected_branch: String,
+    },
+    Missing,
+    ProbeFailed {
+        reason: String,
+    },
+}
+
+impl StateTopologyDiagnostic {
+    pub fn label(&self) -> String {
+        match self {
+            Self::Detached => "State detached; snapshot may be stale".to_string(),
+            Self::WrongBranch {
+                actual_branch,
+                expected_branch,
+            } => format!("State on branch {actual_branch}; expected {expected_branch}"),
+            Self::Missing => "State checkout missing; no state loaded".to_string(),
+            Self::ProbeFailed { reason } => format!("State topology unverified: {reason}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -152,6 +189,7 @@ impl OverviewState {
             definition: spacetop_core::domain::WorkflowDefinition {
                 root: workflow_dir.clone(),
                 state: None,
+                storage: Default::default(),
                 stages: Vec::new(),
                 id_style: None,
                 entity_type: None,
@@ -353,6 +391,37 @@ impl OverviewState {
 
     pub fn definition(&self) -> &spacetop_core::domain::WorkflowDefinition {
         self.index.definition()
+    }
+
+    pub fn storage(&self) -> &WorkflowStorage {
+        self.index.storage()
+    }
+
+    pub fn topology_diagnostic(&self) -> Option<StateTopologyDiagnostic> {
+        let WorkflowStorage::SplitRoot {
+            expected_branch,
+            disposition,
+            ..
+        } = self.storage()
+        else {
+            return None;
+        };
+        match disposition {
+            StateCheckoutDisposition::Attached => None,
+            StateCheckoutDisposition::Detached => Some(StateTopologyDiagnostic::Detached),
+            StateCheckoutDisposition::WrongBranch { actual_branch } => {
+                Some(StateTopologyDiagnostic::WrongBranch {
+                    actual_branch: actual_branch.clone(),
+                    expected_branch: expected_branch.clone(),
+                })
+            }
+            StateCheckoutDisposition::Missing => Some(StateTopologyDiagnostic::Missing),
+            StateCheckoutDisposition::ProbeFailed { reason } => {
+                Some(StateTopologyDiagnostic::ProbeFailed {
+                    reason: reason.clone(),
+                })
+            }
+        }
     }
 
     pub fn index(&self) -> &WorkflowIndex {
@@ -898,6 +967,7 @@ mod tests {
             definition: WorkflowDefinition {
                 root: PathBuf::from("/tmp/ow-test"),
                 state: None,
+                storage: Default::default(),
                 stages: vec![StageDefinition {
                     name: "design".to_string(),
                     initial: true,
@@ -967,6 +1037,7 @@ mod tests {
             definition: WorkflowDefinition {
                 root: PathBuf::from("/tmp/ow-test"),
                 state: None,
+                storage: Default::default(),
                 stages,
                 id_style: None,
                 entity_type: None,

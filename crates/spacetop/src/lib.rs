@@ -22,6 +22,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use spacetop_core::config::{self, ConfigLoad, ConfigWarning, SpacetopConfig};
 use spacetop_core::discovery;
+use spacetop_core::domain::{StateCheckoutDisposition, WorkflowStorage};
 use spacetop_core::editor::{resolve_editor, EditorLauncher, StdEnv, StdLauncher};
 use spacetop_core::git_sync::{self, GitRunner, StdGitRunner, SyncOutcome};
 use spacetop_core::session_activity::SessionScanState;
@@ -40,6 +41,176 @@ pub enum DecideOutcome {
     /// No workflows found; caller should report the stable stderr message
     /// naming this scan root and exit non-zero.
     ZeroWorkflows { scan_root: PathBuf },
+}
+
+#[cfg(test)]
+mod topology_sync_tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::io;
+    use std::process::ExitStatus;
+
+    use spacetop_core::domain::{
+        StateCheckoutDisposition, WorkflowDefinition, WorkflowSnapshot, WorkflowStorage,
+    };
+    use spacetop_core::git::GitCmdResult;
+
+    #[derive(Clone)]
+    struct GitCall {
+        repo_root: PathBuf,
+        args: Vec<String>,
+    }
+
+    struct RecordingGitRunner {
+        responses: RefCell<Vec<GitCmdResult>>,
+        calls: RefCell<Vec<GitCall>>,
+    }
+
+    impl RecordingGitRunner {
+        fn new(responses: Vec<GitCmdResult>) -> Self {
+            Self {
+                responses: RefCell::new(responses),
+                calls: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<GitCall> {
+            self.calls.borrow().clone()
+        }
+    }
+
+    impl GitRunner for RecordingGitRunner {
+        fn run(&self, repo_root: &Path, args: &[&str]) -> io::Result<GitCmdResult> {
+            self.calls.borrow_mut().push(GitCall {
+                repo_root: repo_root.to_path_buf(),
+                args: args.iter().map(|arg| arg.to_string()).collect(),
+            });
+            if self.responses.borrow().is_empty() {
+                return Err(io::Error::other("no queued response"));
+            }
+            Ok(self.responses.borrow_mut().remove(0))
+        }
+    }
+
+    #[cfg(unix)]
+    fn ok(stdout: &str) -> GitCmdResult {
+        use std::os::unix::process::ExitStatusExt;
+        GitCmdResult {
+            status: ExitStatus::from_raw(0),
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+        }
+    }
+
+    fn successful_sync_responses() -> Vec<spacetop_core::git::GitCmdResult> {
+        vec![
+            ok("true\n"),
+            ok("origin/main\n"),
+            ok("git@example.invalid/repo\n"),
+            ok("abc\n"),
+            ok("Already up to date.\n"),
+            ok("abc\n"),
+            ok("true\n"),
+            ok("origin/main\n"),
+            ok("git@example.invalid/repo\n"),
+        ]
+    }
+
+    fn app_with_storage(storage: WorkflowStorage) -> App {
+        let root = PathBuf::from("/definitely/missing/spacetop-sync-topology");
+        App::from_snapshot(
+            root.clone(),
+            WorkflowSnapshot {
+                definition: WorkflowDefinition {
+                    root,
+                    state: Some(".spacedock-state".to_string()),
+                    storage,
+                    stages: Vec::new(),
+                    id_style: None,
+                    entity_type: None,
+                    entity_label: None,
+                    entity_label_plural: None,
+                    stage_colors: Default::default(),
+                    stage_prose: Default::default(),
+                    transitions: Vec::new(),
+                },
+                items: Vec::new(),
+                parse_errors: Vec::new(),
+            },
+        )
+    }
+
+    #[test]
+    fn non_holder_split_root_sync_never_pulls_state_checkout() {
+        let entity_dir = PathBuf::from("/state/checkout");
+        let cases = [
+            StateCheckoutDisposition::Detached,
+            StateCheckoutDisposition::WrongBranch {
+                actual_branch: "wrong-state".to_string(),
+            },
+            StateCheckoutDisposition::Missing,
+            StateCheckoutDisposition::ProbeFailed {
+                reason: "probe failed".to_string(),
+            },
+        ];
+        for disposition in cases {
+            let mut app = app_with_storage(WorkflowStorage::SplitRoot {
+                entity_dir: entity_dir.clone(),
+                expected_branch: "spacedock-state/demo".to_string(),
+                disposition,
+            });
+            let runner = RecordingGitRunner::new(successful_sync_responses());
+            apply_pending_sync(&mut app, &runner);
+            assert!(matches!(
+                app.sync_status(),
+                Some(SyncStatus::Partial { .. })
+            ));
+            assert!(
+                runner
+                    .calls()
+                    .iter()
+                    .all(|call| call.repo_root != entity_dir),
+                "non-holder state must receive no Git calls"
+            );
+        }
+    }
+
+    #[test]
+    fn attached_split_root_runs_exact_fast_forward_state_pull() {
+        let entity_dir = PathBuf::from("/state/checkout");
+        let mut app = app_with_storage(WorkflowStorage::SplitRoot {
+            entity_dir: entity_dir.clone(),
+            expected_branch: "spacedock-state/demo".to_string(),
+            disposition: StateCheckoutDisposition::Attached,
+        });
+        let mut responses = successful_sync_responses();
+        responses.extend([
+            ok("true\n"),
+            ok("origin/spacedock-state/demo\n"),
+            ok("git@example.invalid/state\n"),
+            ok("state-abc\n"),
+            ok("Already up to date.\n"),
+            ok("state-abc\n"),
+        ]);
+        let runner = RecordingGitRunner::new(responses);
+        apply_pending_sync(&mut app, &runner);
+        let state_calls = runner
+            .calls()
+            .into_iter()
+            .filter(|call| call.repo_root == entity_dir)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            state_calls
+                .iter()
+                .filter(|call| { call.args == ["pull".to_string(), ["--ff-", "only"].concat()] })
+                .count(),
+            1
+        );
+        assert!(matches!(
+            app.sync_status(),
+            Some(SyncStatus::SucceededWithState { new_commits: 0 })
+        ));
+    }
 }
 
 pub fn decide_app(cli: &Cli, cwd: &Path) -> anyhow::Result<DecideOutcome> {
@@ -465,29 +636,81 @@ pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
     };
     let outcome = git_sync::sync(runner, &root);
     let availability = git_sync::probe_availability(runner, &root);
-    let status = match outcome {
-        SyncOutcome::UpToDate => SyncStatus::Succeeded { new_commits: 0 },
-        SyncOutcome::Pulled { new_commits } => {
-            // Explicit re-parse so the overview reflects newly pulled
-            // entity files regardless of whether the filesystem watcher
-            // already fired (AC-4 cross-references task 045 but does not
-            // block on it).
-            if new_commits > 0 {
-                let _ = app.reload();
-            }
-            SyncStatus::Succeeded { new_commits }
-        }
+    let definition_commits = match outcome {
+        SyncOutcome::UpToDate => 0,
+        SyncOutcome::Pulled { new_commits } => new_commits,
         SyncOutcome::Failed { message } => {
             // Classify between true failure and unavailability so the
             // pill carries the right framing without re-running git
             // probes unnecessarily.
-            match availability {
+            let status = match availability {
                 git_sync::SyncAvailability::Unavailable(reason) => SyncStatus::Unavailable {
                     hint: reason.hint().to_string(),
                 },
                 git_sync::SyncAvailability::Available => SyncStatus::Failed { message },
-            }
+            };
+            app.set_sync_status(status);
+            return;
         }
+    };
+
+    // A successful definition refresh can change `state:` or `state-branch:`.
+    // Rebuild the index before deciding whether the state checkout is safe to
+    // pull. If reload fails, the prior readable snapshot and topology remain.
+    let _ = app.reload();
+    let storage = app.workflow_storage().cloned();
+    let status = match storage {
+        Some(WorkflowStorage::SingleRoot) => SyncStatus::Succeeded {
+            new_commits: definition_commits,
+        },
+        Some(WorkflowStorage::SplitRoot {
+            entity_dir,
+            disposition: StateCheckoutDisposition::Attached,
+            ..
+        }) => match git_sync::sync(runner, &entity_dir) {
+            SyncOutcome::UpToDate => SyncStatus::SucceededWithState {
+                new_commits: definition_commits,
+            },
+            SyncOutcome::Pulled { new_commits } => {
+                let _ = app.reload();
+                SyncStatus::SucceededWithState {
+                    new_commits: definition_commits.saturating_add(new_commits),
+                }
+            }
+            SyncOutcome::Failed { message } => SyncStatus::Partial {
+                message: format!("Definition synced; state sync failed: {message}"),
+            },
+        },
+        Some(WorkflowStorage::SplitRoot {
+            disposition: StateCheckoutDisposition::Detached,
+            ..
+        }) => SyncStatus::Partial {
+            message: "Definition synced; detached state not refreshed".to_string(),
+        },
+        Some(WorkflowStorage::SplitRoot {
+            disposition: StateCheckoutDisposition::WrongBranch { actual_branch },
+            expected_branch,
+            ..
+        }) => SyncStatus::Partial {
+            message: format!(
+                "Definition synced; state on {actual_branch}, expected {expected_branch}, not refreshed"
+            ),
+        },
+        Some(WorkflowStorage::SplitRoot {
+            disposition: StateCheckoutDisposition::Missing,
+            ..
+        }) => SyncStatus::Partial {
+            message: "Definition synced; missing state checkout not refreshed".to_string(),
+        },
+        Some(WorkflowStorage::SplitRoot {
+            disposition: StateCheckoutDisposition::ProbeFailed { reason },
+            ..
+        }) => SyncStatus::Partial {
+            message: format!("Definition synced; state not refreshed: {reason}"),
+        },
+        None => SyncStatus::Failed {
+            message: "no active workflow".to_string(),
+        },
     };
     app.set_sync_status(status);
 }

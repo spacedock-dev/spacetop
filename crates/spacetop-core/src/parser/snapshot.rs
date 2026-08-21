@@ -69,18 +69,8 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
 /// (single-root). This keeps an untrusted or misconfigured README from pointing
 /// entity/archive loading at arbitrary filesystem paths.
 pub(crate) fn resolve_entity_dir(definition_dir: &Path, state: Option<&str>) -> PathBuf {
-    let rel = match state.map(str::trim) {
-        None | Some("") | Some("$inline") => return definition_dir.to_path_buf(),
-        Some(rel) => Path::new(rel),
-    };
-    if rel.is_absolute()
-        || rel
-            .components()
-            .any(|component| component == std::path::Component::ParentDir)
-    {
-        return definition_dir.to_path_buf();
-    }
-    definition_dir.join(rel)
+    crate::state_checkout::split_root_entity_dir(definition_dir, state)
+        .unwrap_or_else(|| definition_dir.to_path_buf())
 }
 
 pub(crate) fn entity_parse_error_from(path: &Path, err: &ParseError) -> EntityParseError {

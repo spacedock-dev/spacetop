@@ -28,6 +28,7 @@ fn app_with_items(items: Vec<Entity>) -> App {
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -57,6 +58,37 @@ fn app_with_items(items: Vec<Entity>) -> App {
     app
 }
 
+fn app_with_storage(storage: spacetop_core::domain::WorkflowStorage) -> App {
+    let root = PathBuf::from("/tmp/spacetop-topology-test");
+    let snapshot = WorkflowSnapshot {
+        definition: WorkflowDefinition {
+            root: root.clone(),
+            state: Some(".spacedock-state".to_string()),
+            storage,
+            stages: vec![StageDefinition {
+                name: "design".to_string(),
+                initial: true,
+                terminal: false,
+                gate: false,
+                fresh: false,
+                feedback_to: None,
+                worktree: false,
+                concurrency: None,
+            }],
+            id_style: None,
+            entity_type: None,
+            entity_label: None,
+            entity_label_plural: None,
+            stage_colors: std::collections::HashMap::new(),
+            stage_prose: std::collections::HashMap::new(),
+            transitions: Vec::new(),
+        },
+        items: vec![item("001", "Readable snapshot", "Body")],
+        parse_errors: Vec::new(),
+    };
+    App::from_snapshot(root, snapshot)
+}
+
 fn app_with_session_attribution(
     mut items: Vec<Entity>,
     entity_id: &str,
@@ -72,6 +104,7 @@ fn app_with_session_attribution(
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,
@@ -144,6 +177,7 @@ fn snapshot_with_body(id: &str, title: &str, body: &str) -> WorkflowSnapshot {
         definition: WorkflowDefinition {
             root: PathBuf::from("/tmp/ww-test"),
             state: None,
+            storage: Default::default(),
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,

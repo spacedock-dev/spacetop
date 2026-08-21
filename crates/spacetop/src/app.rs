@@ -22,7 +22,8 @@ mod session_activity_worker;
 
 pub use history_worker::{spawn_history_worker, HistoryWorkerRequest, HistoryWorkerResult};
 pub use overview::{
-    OverviewState, PreviewPlacement, SelectedRow, SortMode, StageCount, SyncStatus, ViewScope,
+    OverviewState, PreviewPlacement, SelectedRow, SortMode, StageCount, StateTopologyDiagnostic,
+    SyncStatus, ViewScope,
 };
 pub use picker::PickerState;
 pub use search::{
@@ -584,6 +585,11 @@ impl App {
     pub fn repo_root(&self) -> Option<&Path> {
         self.as_session()
             .map(|s| s.active_state().repo_root.as_path())
+    }
+
+    pub fn workflow_storage(&self) -> Option<&spacetop_core::domain::WorkflowStorage> {
+        self.as_session()
+            .map(|session| session.active_state().storage())
     }
 
     /// Open a picker overlay with the given (possibly re-discovered)

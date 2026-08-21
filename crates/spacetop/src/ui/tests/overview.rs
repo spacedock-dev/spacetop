@@ -70,6 +70,7 @@ fn overview_hides_preview_until_enter_opens_preview_mode() {
         definition: WorkflowDefinition {
             root: root.clone(),
             state: None,
+            storage: Default::default(),
             stages: vec![StageDefinition {
                 name: "design".to_string(),
                 initial: true,
