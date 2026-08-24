@@ -1,20 +1,21 @@
 ---
 id: 078
 title: Stop runtime activity indicator flickering between scans
-status: verify
+status: done
 source: "Captain report: Engram runtime indicator alternates on and off every few seconds while Spacetop is running"
 kind: bug
 risk: high
 milestone: v1-maintenance
 proof: Deterministic consecutive-scan regression plus a live Engram workflow check
 started: 2026-08-21T14:53:21Z
-completed:
-verdict:
+completed: 2026-08-24T02:48:43Z
+verdict: passed
 score: 0.86
 worktree: .worktrees/spacedock-ensign-stabilize-runtime-activity-indicator
 issue:
 pr: pr-merge:82
-mod-block: merge:pr-merge
+mod-block:
+archived: 2026-08-24T02:48:43Z
 ---
 
 Spacetop intermittently alternates an entity runtime marker between running and idle every few seconds while the associated agent session remains active. The symptom is visible against the Engram workflow at `/Users/kent/Dev/InfuseAI/Spacedock/engram/.spacedock/reflection-dev` and matches Spacetop periodic session-activity refresh cadence. Reproduce the transition and make runtime state remain truthful and stable until correlated structured evidence changes it.
