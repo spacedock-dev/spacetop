@@ -157,9 +157,39 @@ impl WorkflowIndex {
             .collect();
     }
 
-    pub fn clear_entity_activities(&mut self) {
-        self.entity_activities.clear();
-        self.session_scan_error = None;
+    /// Carry the last published session activity through a workflow reload,
+    /// but only for active entities whose stable id and source path still
+    /// identify the same workflow item.
+    pub fn retain_session_activity_from(&mut self, previous: &Self) {
+        let previous_active_paths: HashMap<&str, &Path> = previous
+            .active
+            .iter()
+            .map(|entity| (entity.id.as_str(), entity.path.as_path()))
+            .collect();
+        let mut has_matching_identity = false;
+        let retained = self
+            .active
+            .iter()
+            .filter_map(|entity| {
+                let previous_path = previous_active_paths.get(entity.id.as_str())?;
+                if *previous_path != entity.path.as_path() {
+                    return None;
+                }
+                has_matching_identity = true;
+                previous
+                    .entity_activities
+                    .get(&entity.id)
+                    .cloned()
+                    .map(|activity| (entity.id.clone(), activity))
+            })
+            .collect();
+
+        self.entity_activities = retained;
+        self.session_scan_error = if has_matching_identity {
+            previous.session_scan_error.clone()
+        } else {
+            None
+        };
     }
 
     pub fn set_session_scan_error(&mut self, message: String) {
@@ -664,6 +694,86 @@ mod tests {
                 .and_then(crate::domain::EntityActivity::session_id),
             Some("session-010")
         );
+    }
+
+    #[test]
+    fn session_activity_transfer_preserves_matching_active_entity_identity() {
+        let mut previous = index();
+        previous.replace_session_scan_report(crate::domain::SessionScanReport {
+            workflow_dir: PathBuf::from("/tmp/workflow"),
+            repo_root: PathBuf::from("/tmp"),
+            scanned_roots: Vec::new(),
+            errors: vec!["one session record was malformed".to_string()],
+            attributions: vec![
+                crate::domain::EntityActivityAttribution {
+                    entity_id: "010".to_string(),
+                    activity: crate::domain::EntityActivity::Running {
+                        handler: crate::domain::ActivityHandler::Worker,
+                        runtime: crate::domain::AgentRuntime::Codex,
+                        session_id: "session-010".to_string(),
+                        updated_unix: 1_718_000_000,
+                    },
+                },
+                crate::domain::EntityActivityAttribution {
+                    entity_id: "002".to_string(),
+                    activity: crate::domain::EntityActivity::HumanGate {
+                        runtime: crate::domain::AgentRuntime::ClaudeCode,
+                        session_id: "session-002".to_string(),
+                        updated_unix: 1_718_000_001,
+                    },
+                },
+            ],
+        });
+        let mut reloaded = index();
+
+        reloaded.retain_session_activity_from(&previous);
+
+        assert_eq!(
+            reloaded
+                .entity_activity_for_entity_id("010")
+                .and_then(crate::domain::EntityActivity::session_id),
+            Some("session-010")
+        );
+        assert!(matches!(
+            reloaded.entity_activity_for_entity_id("002"),
+            Some(crate::domain::EntityActivity::HumanGate { .. })
+        ));
+        assert_eq!(
+            reloaded.session_scan_error(),
+            Some("one session record was malformed")
+        );
+    }
+
+    #[test]
+    fn session_activity_transfer_does_not_cross_changed_entity_identity() {
+        let mut previous = index();
+        previous.replace_session_scan_report(crate::domain::SessionScanReport {
+            workflow_dir: PathBuf::from("/tmp/workflow"),
+            repo_root: PathBuf::from("/tmp"),
+            scanned_roots: Vec::new(),
+            errors: vec!["old scanner warning".to_string()],
+            attributions: vec![crate::domain::EntityActivityAttribution {
+                entity_id: "010".to_string(),
+                activity: crate::domain::EntityActivity::Running {
+                    handler: crate::domain::ActivityHandler::Worker,
+                    runtime: crate::domain::AgentRuntime::Codex,
+                    session_id: "session-010".to_string(),
+                    updated_unix: 1_718_000_000,
+                },
+            }],
+        });
+        let mut reused_id = entity("010", "Reused id", "plan");
+        reused_id.path = PathBuf::from("renamed-010.md");
+        let mut reloaded = index();
+        reloaded.active = vec![reused_id, entity("003", "New entity", "plan")];
+        reloaded.rebuild_lookup_maps();
+
+        reloaded.retain_session_activity_from(&previous);
+
+        assert!(!reloaded.entity_has_current_activity("010"));
+        assert!(!reloaded.entity_has_current_activity("002"));
+        assert!(!reloaded.entity_has_current_activity("003"));
+        assert_eq!(reloaded.session_scan_error(), None);
     }
 
     #[test]

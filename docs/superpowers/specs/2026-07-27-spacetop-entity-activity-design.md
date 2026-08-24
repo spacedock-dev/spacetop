@@ -72,6 +72,13 @@ prompt and transcript bodies are not exposed in the UI. JSONL artifacts are
 streamed record by record without a size cutoff and projected directly into
 typed, privacy-safe facts.
 
+A successful workflow snapshot reload preserves the last published activity
+and scanner diagnostic only for active entities whose id and source path both
+match the prior snapshot. Removed entities, new entities, and reused ids at a
+different path inherit no prior attribution. A workflow reload is not a
+lifecycle event; only the correlated structured session evidence below can
+start, change, or stop activity.
+
 `SessionScanState` crosses the background/app boundary. It contains
 `SessionFileCursor` values and a `SessionEvidenceStore` keyed by stable runtime
 session identity (falling back to a typed source identity until a session id is

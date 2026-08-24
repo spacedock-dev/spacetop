@@ -309,6 +309,47 @@ fn task_row_renders_scanner_replay_then_clears_on_terminal_report() {
     }));
     assert!(buffer_text(running_buffer).contains("running · worker"));
 
+    let mut scan_state = running.state;
+    for cycle in 1..=5 {
+        app.reload_from_snapshot(snapshot_with_items(vec![active.clone()]));
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let reloaded_buffer = terminal.backend().buffer();
+        assert!(
+            find_styled_text(reloaded_buffer, "\u{25CF}", |style| {
+                style.fg == Some(Color::Green)
+            }),
+            "cycle {cycle}: reload must preserve the running marker"
+        );
+        assert!(buffer_text(reloaded_buffer).contains("running · worker"));
+
+        let unchanged = scan_local_sessions_with_state(
+            &SessionScanRequest {
+                previous_state: scan_state,
+                ..request.clone()
+            },
+            &StdProcessProbe,
+            SystemTime::now(),
+        )
+        .expect("unchanged scan");
+        scan_state = unchanged.state.clone();
+        app.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
+            workflow_dir: workflow_dir.clone(),
+            repo_root: repo_root.clone(),
+            result: Ok(unchanged.report),
+            state: unchanged.state,
+            retry_immediately: false,
+        });
+        terminal.draw(|frame| render(frame, &app)).expect("render");
+        let unchanged_buffer = terminal.backend().buffer();
+        assert!(
+            find_styled_text(unchanged_buffer, "\u{25CF}", |style| {
+                style.fg == Some(Color::Green)
+            }),
+            "cycle {cycle}: unchanged scan must keep the running marker"
+        );
+        assert!(buffer_text(unchanged_buffer).contains("running · worker"));
+    }
+
     let mut append = fs::OpenOptions::new()
         .append(true)
         .open(&child_path)
@@ -320,7 +361,7 @@ fn task_row_renders_scanner_replay_then_clears_on_terminal_report() {
     .expect("terminal");
     let stopped = scan_local_sessions_with_state(
         &SessionScanRequest {
-            previous_state: running.state,
+            previous_state: scan_state,
             ..request
         },
         &StdProcessProbe,
