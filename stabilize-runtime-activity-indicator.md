@@ -13,8 +13,8 @@ verdict:
 score: 0.86
 worktree: .worktrees/spacedock-ensign-stabilize-runtime-activity-indicator
 issue:
-pr:
-mod-block:
+pr: "#82"
+mod-block: merge:pr-merge
 ---
 
 Spacetop intermittently alternates an entity runtime marker between running and idle every few seconds while the associated agent session remains active. The symptom is visible against the Engram workflow at `/Users/kent/Dev/InfuseAI/Spacedock/engram/.spacedock/reflection-dev` and matches Spacetop periodic session-activity refresh cadence. Reproduce the transition and make runtime state remain truthful and stable until correlated structured evidence changes it.
