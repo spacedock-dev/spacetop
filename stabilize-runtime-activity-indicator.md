@@ -13,7 +13,7 @@ verdict:
 score: 0.86
 worktree: .worktrees/spacedock-ensign-stabilize-runtime-activity-indicator
 issue:
-pr: "#82"
+pr: pr-merge:82
 mod-block: merge:pr-merge
 ---
 
