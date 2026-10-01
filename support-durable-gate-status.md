@@ -179,3 +179,29 @@ FO's implementation-readiness request `/private/tmp/spacetop-079-jev-implementat
 ### Summary
 
 Independent verification found one High defect that loses invalid durable gate data and incorrectly promotes a clean initial entity to preparation-ready. The existing tests and lint are green, but AC-1 and AC-4 require a focused correction and regression; FO JEV review and captain approval remain pending.
+
+## Stage Report: implement (cycle 1)
+
+- DONE: Fix the structurally reproduced invalid-flow-gates to absent defect; prove flow/explicit-key/alias invalid authority remains diagnostic and cannot promote a clean seed.
+  `eb8e940` separates structural YAML gate presence from canonical validation; parser and tracked-clean-seed CLI regressions first failed with Absent / needs-preparation / proven=true, then passed with invalid diagnostics / invalid readiness / proven=false and zero preparation filter matches.
+- DONE: Run required format, full cargo test and make lint after the narrow fix; commit deliverables on the existing implementation branch and report AC-1/AC-4 evidence.
+  `cargo fmt --check`, full `cargo test` (664 passed, 3 unchanged notify ignored), `make lint`, and `git diff --check` passed after correction; only parser and its two regression test files changed at `eb8e940659c3a5420743ef60fa751bbbf58ae5e3`.
+- DONE: Return a closed canonical Briefing/review log for verify/1 that retains reviewer finding, JEV-authorized disposition and completed correction response; FO records the round and reuses the reviewer.
+  Inputs: `/private/tmp/spacetop-079-feedback-round-1/briefing.json` and `briefing.review.jsonl`; five attributed entries preserve reviewer revise, FO disposition and closing worker correction response. Source-based upstream schema/includes/closed-tail checks passed; the worker did not record the round or rerun JEV.
+
+### Feedback Cycles
+
+- Cycle 1: High invalid-flow-gates finding on `088710b` — Material / Fix, as authorized by FO's actual `jev-1.13.0` finding_disposition=material_fix, confidence 1.0, probability 1.0; no declined findings or new product decisions.
+- JEV provenance supplied by FO: `/private/tmp/spacetop-079-jev-finding-{request,response}.json`, 6225 input / 67 output tokens, USD 0.00026145. This is the recorded FO judgment, not a new worker model call. Original reviewer report and rejection remain unchanged.
+- Concrete correction: present structural gates never fall back to absent after schema errors. Legacy absence is permitted only when the existing flat-scalar parser succeeds and YAML-decoded scalar keys exclude gates; quoted gates cannot escape refusal.
+
+### AC evidence and checks
+
+- AC-1 evidence: `structural_gate_presence_refuses_invalid_flow_explicit_key_and_alias_forms` covers unsupported flow/explicit-key/value-alias/key-alias gates, empty-record flow gates, quoted gates under legacy syntax, ungated flow and legacy unquoted-colon metadata. Restoring the source-line heuristic makes invalid input Absent and fails the test.
+- AC-4 evidence: `clean_seed_with_invalid_structural_gates_never_promotes_in_query_or_export` initializes and commits real Git seeds, exercises export and readiness filters without session logs, asserts invalid diagnostics and no proven preparation, and checks byte-clean HEAD. Reclassifying any invalid structural gates as absent or promoting them breaks the observed JSON/filter assertions.
+- Targeted red/green commands: `cargo test -p spacetop-core --test durable_gates structural_gate_presence`; `cargo test -p spacetop --test durable_gates clean_seed_with_invalid_structural`. Final full-check logs: `/tmp/spacetop-079-cycle-1-cargo-test.log`, `/tmp/spacetop-079-cycle-1-lint.log`.
+- Briefing ID: `briefing:079:verify:round-1`; raw artifact revisions bind reviewed and corrected Git blobs, plus the original counterexample. First reviewer Resolution remains revise; closing worker Resolution is a correction response awaiting fresh verification, not approval. FO alone records `verify/1` and routes the existing reviewer.
+
+### Summary
+
+Corrected the original fallback that lost invalid gates in valid structural YAML, while preserving legacy gate-free flat frontmatter and all existing strict checks. Added parser and real clean-seed query/export regressions and passed all required implementation checks. The closed correction inputs retain the original rejection and actual FO JEV disposition; round recording and reviewer acceptance remain FO next-stage work.
