@@ -1,7 +1,7 @@
 ---
 id: 079
 title: Support durable gate status
-status: plan
+status: implement
 source: "Captain-requested Spacedock release compatibility survey, 2026-10-01"
 kind: feature
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-10-01T10:07:39Z
 completed:
 verdict:
 score: 0.95
-worktree:
+worktree: .worktrees/spacedock-ensign-support-durable-gate-status
 issue:
 pr:
 mod-block:
