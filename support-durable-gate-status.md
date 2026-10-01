@@ -1,7 +1,7 @@
 ---
 id: 079
 title: Support durable gate status
-status: verify
+status: implement
 source: "Captain-requested Spacedock release compatibility survey, 2026-10-01"
 kind: feature
 risk: medium
