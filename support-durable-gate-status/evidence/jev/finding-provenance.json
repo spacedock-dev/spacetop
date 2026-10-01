@@ -1,0 +1,19 @@
+{
+  "call": "finding",
+  "request_source": "/private/tmp/spacetop-079-jev-finding-request.json",
+  "request_sha256": "d0e39716fd63ab9ba98a104b397315f3539b22cc47872b8740a6bdfb035eb16b",
+  "request_model": "jev-1.13.0",
+  "response_model": "jev-1.13.0",
+  "response_file": "finding-response.json",
+  "response_sha256": "4caf5dfe541c93ab85b4667bcff7f466f00aab9ec10c1070b00118c401a0f1b2",
+  "response_hash_scope": "original response file bytes before compact serialization",
+  "source_commit_references": [
+    "088710b25f0d5f9fccec83bc281cd5efdc8e0f26"
+  ],
+  "usage": {
+    "input_tokens": 6225,
+    "output_tokens": 67
+  },
+  "cost_usd": 0.00026145,
+  "elapsed_seconds": 0.371
+}

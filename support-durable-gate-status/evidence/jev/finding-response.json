@@ -1,0 +1,1 @@
+{"model":"jev-1.13.0","answers":{"finding_disposition":{"type":"choice","choice":"material_fix","confidence":1.0,"probabilities":{"captain_decision":0.0,"disproportionate_decline":0.0,"material_fix":1.0,"insufficient_evidence":0.0}}},"usage":{"input_tokens":6225,"output_tokens":67}}

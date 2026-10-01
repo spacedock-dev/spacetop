@@ -1,0 +1,19 @@
+{
+  "call": "surface-ac",
+  "request_source": "/private/tmp/spacetop-079-jev-surface-ac-request.json",
+  "request_sha256": "95d05b2d1836d3478d163e49bf2a9cd7530a504dfc402d8008cb7b2167ab898d",
+  "request_model": "jev-1.13.0",
+  "response_model": "jev-1.13.0",
+  "response_file": "surface-ac-response.json",
+  "response_sha256": "dc526b00cdb098ff6b826aa24454dce9c6e1d44a4971988a3ca21b2829568132",
+  "response_hash_scope": "original response file bytes before compact serialization",
+  "source_commit_references": [
+    "eb8e940659c3a5420743ef60fa751bbbf58ae5e3"
+  ],
+  "usage": {
+    "input_tokens": 13883,
+    "output_tokens": 103
+  },
+  "cost_usd": 0.000583086,
+  "elapsed_seconds": 0.345
+}

@@ -245,8 +245,15 @@ No remaining material findings. Judgment: Approve corrected implementation for F
 
 ### FO JEV provenance
 
-FO finding assessment `/private/tmp/spacetop-079-jev-finding-response.json`: `jev-1.13.0`, material_fix, confidence/probability 1.0, 6225 input / 67 output tokens; reported cost USD 0.00026145. Repair-route response `/private/tmp/spacetop-079-jev-round-route-response.json`: same model, convert_then_record, confidence 0.83 (probability 0.88), 803 input / 50 output tokens. These are earlier FO semantic judgments; this worker independently exercised the correction and made no JEV call. Existing `verify/1` remains the sole correction round; no second round was published. FO final AC assessment remains pending.
+FO finding assessment `/private/tmp/spacetop-079-jev-finding-response.json`: `jev-1.13.0`, material_fix, confidence/probability 1.0, 6225 input / 67 output tokens; reported cost USD 0.00026145. Repair-route response `/private/tmp/spacetop-079-jev-round-route-response.json`: same model, convert_then_record, confidence 0.83 (probability 0.88), 803 input / 50 output tokens. These are earlier FO semantic judgments; this worker independently exercised the correction and made no JEV call. Existing `verify/1` remains the sole correction round; no second round was published. FO final AC assessment is recorded below; captain approval remains pending.
+
+### FO final JEV AC assessment
+
+Actual FO `jev-1.13.0` calls against `eb8e940` are retained in `evidence/jev/`: compact response JSON, original input request SHA256, model, explicit source commit references, usage and cost; no raw input source snapshots are published.
+Initial core assessment: AC-1 satisfied 0.95; AC-4 insufficient_evidence 0.33. Initial surface assessment: AC-2 satisfied 0.53; AC-3 satisfied 0.87. Follow-up supplied actual app/TestBackend/upstream evidence: AC-2 satisfied 0.84; AC-4 satisfied 0.52.
+Final selected AC-1/2/3/4 confidence: 0.95/0.84/0.87/0.52. AC-4 is the least certain and retains initial insufficient-evidence provenance; the outputs give no additional rationale. Observed six-call ledger total: USD 0.002453976.
+These FO model judgments supplement worker verification; captain gate approval remains pending. This provenance-only update made no model call, test rerun, product edit, or second correction round.
 
 ### Summary
 
-The original invalid-flow-authority counterexample is fixed, independently reproduced green, and covered by structural YAML parser and clean-seed export/filter regressions. All four ACs now have supported evidence; the corrected implementation is ready for FO semantic assessment and captain gate review.
+The original invalid-flow-authority counterexample is fixed, independently reproduced green, and covered by structural YAML parser and clean-seed export/filter regressions. All four ACs now have supported evidence; the corrected implementation is has actual FO semantic assessment recorded above and remains ready for captain gate review.

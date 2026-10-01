@@ -1,0 +1,17 @@
+{
+  "call": "round-route",
+  "request_source": "/private/tmp/spacetop-079-jev-round-route-request.json",
+  "request_sha256": "ced84e7294796f16ecdb193630d7295c97590b24d0b5ca2e2f1983eab1b4227c",
+  "request_model": "jev-1.13.0",
+  "response_model": "jev-1.13.0",
+  "response_file": "round-route-response.json",
+  "response_sha256": "7f94520effa7570d0900e7ef3dd33c4945b7f4b31f0ae4534e09fa2eb904aa16",
+  "response_hash_scope": "original response file bytes before compact serialization",
+  "source_commit_references": [],
+  "usage": {
+    "input_tokens": 803,
+    "output_tokens": 50
+  },
+  "cost_usd": 3.3726e-05,
+  "elapsed_seconds": 0.262
+}

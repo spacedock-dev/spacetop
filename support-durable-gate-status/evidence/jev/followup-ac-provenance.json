@@ -1,0 +1,19 @@
+{
+  "call": "followup-ac",
+  "request_source": "/private/tmp/spacetop-079-jev-followup-ac-request.json",
+  "request_sha256": "085e2aeeb67c477b029e21d3ba19f7d62925249ea413fa7da7e6712ec999078a",
+  "request_model": "jev-1.13.0",
+  "response_model": "jev-1.13.0",
+  "response_file": "followup-ac-response.json",
+  "response_sha256": "48633806d074b1b3c4e161e87da27fa8b5fae6d33b0054fad9bb0dca7e57bf72",
+  "response_hash_scope": "original response file bytes before compact serialization",
+  "source_commit_references": [
+    "eb8e940659c3a5420743ef60fa751bbbf58ae5e3"
+  ],
+  "usage": {
+    "input_tokens": 14173,
+    "output_tokens": 103
+  },
+  "cost_usd": 0.0005952660000000001,
+  "elapsed_seconds": 0.367
+}

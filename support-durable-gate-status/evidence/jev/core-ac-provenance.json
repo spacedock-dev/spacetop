@@ -1,0 +1,19 @@
+{
+  "call": "core-ac",
+  "request_source": "/private/tmp/spacetop-079-jev-core-ac-request.json",
+  "request_sha256": "a0876a4ac5cfb52380004756e95193625a92369734a08daa956acb465ce6f489",
+  "request_model": "jev-1.13.0",
+  "response_model": "jev-1.13.0",
+  "response_file": "core-ac-response.json",
+  "response_sha256": "48d0d57a9b4d9eca34f9f6204ea6769842d603ac1eb82332679883e23af7304e",
+  "response_hash_scope": "original response file bytes before compact serialization",
+  "source_commit_references": [
+    "eb8e940659c3a5420743ef60fa751bbbf58ae5e3"
+  ],
+  "usage": {
+    "input_tokens": 14015,
+    "output_tokens": 107
+  },
+  "cost_usd": 0.00058863,
+  "elapsed_seconds": 0.381
+}

@@ -1,0 +1,1 @@
+{"model":"jev-1.13.0","answers":{"repair_route":{"type":"choice","choice":"convert_then_record","confidence":0.83,"probabilities":{"convert_then_record":0.88,"unsafe_or_incomplete":0.1,"needs_decision":0.02}}},"usage":{"input_tokens":803,"output_tokens":50}}

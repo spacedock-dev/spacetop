@@ -1,0 +1,54 @@
+{
+  "budget_usd": 0.1,
+  "charged_usd": 0.002453976,
+  "calls": [
+    {
+      "call": "implementation",
+      "cost_usd": 0.00039181800000000005,
+      "usage": {
+        "input_tokens": 9329,
+        "output_tokens": 147
+      }
+    },
+    {
+      "call": "finding",
+      "cost_usd": 0.00026145,
+      "usage": {
+        "input_tokens": 6225,
+        "output_tokens": 67
+      }
+    },
+    {
+      "call": "round-route",
+      "cost_usd": 3.3726e-05,
+      "usage": {
+        "input_tokens": 803,
+        "output_tokens": 50
+      }
+    },
+    {
+      "call": "core-ac",
+      "cost_usd": 0.00058863,
+      "usage": {
+        "input_tokens": 14015,
+        "output_tokens": 107
+      }
+    },
+    {
+      "call": "surface-ac",
+      "cost_usd": 0.000583086,
+      "usage": {
+        "input_tokens": 13883,
+        "output_tokens": 103
+      }
+    },
+    {
+      "call": "followup-ac",
+      "cost_usd": 0.0005952660000000001,
+      "usage": {
+        "input_tokens": 14173,
+        "output_tokens": 103
+      }
+    }
+  ]
+}
