@@ -34,6 +34,9 @@ pub struct ListArgs {
     pub workflow_dir: Option<PathBuf>,
     #[arg(long)]
     pub status: Option<String>,
+    /// Filter current recorded gate readiness independently of session activity.
+    #[arg(long)]
+    pub gate_readiness: Option<spacetop_core::domain::GateReadiness>,
     #[arg(long)]
     pub text: Option<String>,
     #[arg(long)]

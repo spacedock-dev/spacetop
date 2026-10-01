@@ -1004,6 +1004,9 @@ mod tests {
 
     fn fixture_item(id: &str) -> Entity {
         Entity {
+            gates: Default::default(),
+            gate_preparation: Default::default(),
+            gate_readiness: None,
             path: PathBuf::from(format!("/tmp/{id}.md")),
             id: id.to_string(),
             title: format!("item {id}"),

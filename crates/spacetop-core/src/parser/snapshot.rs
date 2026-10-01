@@ -26,7 +26,11 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
     let mut parse_errors: Vec<EntityParseError> = Vec::new();
     for item_path in item_paths {
         match parse_work_item(&item_path, &allowed_statuses, id_style) {
-            Ok(item) => items.push(item),
+            Ok(mut item) => {
+                item.gate_preparation =
+                    crate::gate_proof::preparation(&item, &definition.stages, &definition.storage);
+                items.push(item);
+            }
             Err(err) if err.is_per_entity_parse_failure() => {
                 parse_errors.push(entity_parse_error_from(&item_path, &err));
             }
@@ -38,10 +42,14 @@ pub fn load_workflow_dir(path: &Path, repo_root: &Path) -> Result<WorkflowSnapsh
     // split-root state entities are not mirrored under `.worktrees/<task>/<workflow>`,
     // so this is effectively a no-op for them. The merge base, however, points at
     // the entity dir so `archived_slug_exists` consults the resolved `_archive/`.
-    let (worktree_items, worktree_parse_errors) = match path.strip_prefix(repo_root) {
+    let (mut worktree_items, worktree_parse_errors) = match path.strip_prefix(repo_root) {
         Ok(workflow_rel) => scan_worktrees(repo_root, workflow_rel, &allowed_statuses, id_style)?,
         Err(_) => (Vec::new(), Vec::new()),
     };
+    for item in &mut worktree_items {
+        item.gate_preparation =
+            crate::gate_proof::preparation(item, &definition.stages, &definition.storage);
+    }
     parse_errors.extend(worktree_parse_errors);
     let items = merge_worktree_items(items, worktree_items, &entity_dir);
 

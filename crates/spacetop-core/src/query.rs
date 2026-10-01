@@ -39,6 +39,7 @@ pub enum EntitySort {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FieldFilter {
+    GateReadiness(crate::domain::GateReadiness),
     HasIssue,
     HasPr,
     HasWorktreeSource,

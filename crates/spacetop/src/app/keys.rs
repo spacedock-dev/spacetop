@@ -472,6 +472,9 @@ mod tests {
                 transitions: Vec::new(),
             },
             items: vec![Entity {
+                gates: Default::default(),
+                gate_preparation: Default::default(),
+                gate_readiness: None,
                 path,
                 id: "001".to_string(),
                 title: "T".to_string(),

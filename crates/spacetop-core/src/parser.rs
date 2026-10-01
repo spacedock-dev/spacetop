@@ -6,6 +6,7 @@ use thiserror::Error;
 
 mod archive;
 mod frontmatter;
+mod gates;
 mod item;
 mod readme;
 mod snapshot;

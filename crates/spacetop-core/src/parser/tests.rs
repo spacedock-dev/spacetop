@@ -1647,3 +1647,34 @@ fn inline_state_keeps_single_root_behavior() {
     assert_eq!(archive.entities.len(), 1);
     assert_eq!(archive.entities[0].title, "Done Task");
 }
+
+#[test]
+fn durable_gates_invalid_metadata_never_erases_entity_or_claims_approval() {
+    let dir = tempfile::tempdir().unwrap();
+    let allowed = vec!["review".to_string()];
+    let valid = "gates:\n  version: 1\n  records:\n    - id: g\n      stage: review\n      attempts:\n        - id: a\n          briefing:\n            id: b\n            digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n            room-ref: opaque\n";
+    let invalid = [
+        valid.replace("version: 1", "version: 2"),
+        valid.replace("id: a", "id: a\n          id: duplicate"),
+        valid.replace("digest: sha256:", "digest: sha512:"),
+        valid.replace("stage: review", "stage: review\n      typo: value"),
+        valid.replace(
+            "room-ref: opaque",
+            "room-ref: opaque\n          application: null",
+        ),
+        "gates: {version: 1, records: []}\n".to_string(),
+        "gates: {room-ref: legacy-prototype}\n".to_string(),
+    ];
+    for (i, gates) in invalid.iter().enumerate() {
+        let path = dir.path().join(format!("{i}.md"));
+        std::fs::write(
+            &path,
+            format!("---\nid: test\ntitle: Readable\nstatus: review\n{gates}---\nBody"),
+        )
+        .unwrap();
+        let entity = super::parse_work_item(&path, &allowed, None).unwrap();
+        let json = serde_json::to_value(&entity).unwrap();
+        assert_eq!(entity.title, "Readable");
+        assert_eq!(json["gates"]["kind"], "invalid", "case {i}: {json}");
+    }
+}

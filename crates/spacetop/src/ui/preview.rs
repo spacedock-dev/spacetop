@@ -174,10 +174,22 @@ pub(super) fn render_preview(
     // root (main) copy, render a unified diff between the two bodies instead
     // of the plain markdown body. Otherwise fall back to the normal markdown
     // rendering path.
-    let diff_lines: Option<Vec<Line<'static>>> = item
-        .main_body
-        .as_deref()
-        .map(|main| diff::render_diff_lines_with_width(main, &item.body, body_inner.width));
+    let gate_body = gate_detail_body(&state.index().gate_details(&item));
+    let display_body = format!("{gate_body}{}", item.body);
+    let diff_lines: Option<Vec<Line<'static>>> = item.main_body.as_deref().map(|main| {
+        let mut lines = cached_markdown(
+            &item.path,
+            &gate_body,
+            state.preview_wrap(),
+            body_inner.width,
+        );
+        lines.extend(diff::render_diff_lines_with_width(
+            main,
+            &item.body,
+            body_inner.width,
+        ));
+        lines
+    });
 
     // First pass: determine content height for overflow detection.
     // In the diff path, derive height directly from `diff_lines.len()` to
@@ -195,7 +207,12 @@ pub(super) fn render_preview(
     let (content_height_full, body_lines_full) = if let Some(lines) = diff_lines.as_ref() {
         (lines.len() as u16, None)
     } else {
-        let lines = cached_markdown(&item.path, &item.body, state.preview_wrap(), render_width);
+        let lines = cached_markdown(
+            &item.path,
+            &display_body,
+            state.preview_wrap(),
+            render_width,
+        );
         (lines.len() as u16, Some(lines))
     };
     let show_scrollbar = content_height_full > body_inner.height && body_inner.width > 1;
@@ -224,7 +241,7 @@ pub(super) fn render_preview(
         // area, so code-block backgrounds still pad to the visible width.
         cached_markdown(
             &item.path,
-            &item.body,
+            &display_body,
             state.preview_wrap(),
             render_width_second_pass,
         )
@@ -404,6 +421,9 @@ fn build_preview_header_lines<'a>(
             }
         }
     }
+    if let Some(readiness) = state.index().gate_details(item).readiness {
+        lines.push(Line::from(format!("gate: {}", readiness.label())));
+    }
     // Render the entity path relative to the workflow root so it fits the
     // preview header and stays Smart-Selection-clickable in terminals that
     // resolve relative paths against OSC 7. Fall back to the absolute path
@@ -566,6 +586,95 @@ fn wrapped_lines_height(lines: &[Line<'_>], width: u16) -> u16 {
             len.div_ceil(width) as u16
         })
         .sum()
+}
+
+/// All recorded attempts remain inspectable; current authority is explicit.
+fn gate_detail_body(details: &spacetop_core::domain::GateDetails) -> String {
+    use spacetop_core::domain::GateData;
+    let mut lines = Vec::new();
+    match &details.data {
+        GateData::Absent => {}
+        GateData::Invalid { diagnostics } => {
+            lines.push("### Invalid recorded gates".to_string());
+            lines.extend(diagnostics.iter().map(|d| format!("- {d}")));
+        }
+        GateData::Valid { document, warnings } => {
+            lines.push("### Recorded gates".to_string());
+            for record in &document.records {
+                for attempt in &record.attempts {
+                    let selected = details.readiness.is_some()
+                        && details.selected_attempt.as_deref() == Some(&attempt.id);
+                    let label = if selected { "Current" } else { "Historical" };
+                    lines.push(format!(
+                        "- {label}: stage {} / gate {} / attempt {}",
+                        record.stage, record.id, attempt.id
+                    ));
+                    lines.push(format!(
+                        "  Briefing: {} / {}",
+                        attempt.briefing.id, attempt.briefing.digest
+                    ));
+                    lines.push(format!(
+                        "  Room reference: {} (recorded only)",
+                        attempt.briefing.room_ref
+                    ));
+                    if let Some(request) = &attempt.briefing.request_digest {
+                        lines.push(format!("  Request digest: {request}"));
+                    }
+                    if let Some(withdrawal) = &attempt.withdrawal {
+                        lines.push(format!(
+                            "  Withdrawn: {} / {} / {}",
+                            withdrawal.by, withdrawal.at, withdrawal.reason
+                        ));
+                    }
+                    if let Some(resolution) = &attempt.resolution {
+                        let decision = match resolution.decision {
+                            spacetop_core::domain::GateDecision::Approve => "approve",
+                            spacetop_core::domain::GateDecision::Revise => "revise",
+                            spacetop_core::domain::GateDecision::Hold => "hold",
+                        };
+                        lines.push(format!(
+                            "  Decision: {decision} / {} / {}",
+                            resolution.by, resolution.at
+                        ));
+                        if !resolution.reason.is_empty() {
+                            lines.push(format!("  Reason: {}", resolution.reason));
+                        }
+                        if let Some(conn) = &resolution.conn {
+                            lines.push(format!(
+                                "  Recorded conn citation: {} / {}",
+                                conn.quote, conn.source
+                            ));
+                        }
+                    }
+                    if let Some(application) = &attempt.application {
+                        let state = match application.state {
+                            spacetop_core::domain::GateApplicationState::Pending => "pending",
+                            spacetop_core::domain::GateApplicationState::Consumed => "consumed",
+                            spacetop_core::domain::GateApplicationState::Superseded => "superseded",
+                        };
+                        lines.push(format!(
+                            "  Application: {state} / target {}",
+                            application.target_stage
+                        ));
+                    }
+                }
+            }
+            for warning in warnings {
+                lines.push(format!(
+                    "- Gate warning: {} / {}",
+                    warning.path, warning.field
+                ));
+            }
+        }
+    }
+    for diagnostic in &details.preparation.diagnostics {
+        lines.push(format!("- Preparation proof: {diagnostic}"));
+    }
+    if lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n\n", lines.join("\n"))
+    }
 }
 
 #[cfg(test)]

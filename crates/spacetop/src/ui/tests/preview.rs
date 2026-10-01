@@ -645,3 +645,46 @@ fn preview_scrollbar_thumb_starts_at_top_at_zero_scroll() {
 }
 
 // --- Graph-aware coloring tests (AC-1, AC-2, AC-3) ---
+
+#[test]
+fn durable_gates_preview_shows_current_historical_and_invalid_details_and_scrolls() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/durable-gates");
+    let snapshot = spacetop_core::parser::load_workflow_dir(&root, &root).unwrap();
+    for (id, want) in [
+        ("pending", "awaiting-captain"),
+        ("advance", "approved-awaiting-advance"),
+        ("merge", "approved-awaiting-merge"),
+        ("consumed", "consumed"),
+        ("superseded", "superseded"),
+        ("historical", "Historical:"),
+        ("invalid", "Invalid recorded gates"),
+        ("withdrawn", "withdrawn-awaiting-prepare"),
+        ("feedback", "feedback-pending"),
+        ("held", "not-applicable"),
+        ("extended", "future-extension"),
+    ] {
+        let mut selected = snapshot.clone();
+        selected.items.retain(|e| e.id == id);
+        let mut app = App::from_snapshot(root.clone(), selected);
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        let mut terminal = Terminal::new(TestBackend::new(260, 55)).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(text.contains(want), "{id}: {text}");
+        if id != "invalid" {
+            assert!(text.contains("briefing-one"), "{text}");
+            assert!(text.contains("opaque/room"), "{text}");
+            if matches!(
+                id,
+                "advance" | "merge" | "consumed" | "superseded" | "historical" | "extended"
+            ) {
+                assert!(text.contains("Application:"), "{text}");
+            }
+        }
+        let mut narrow = Terminal::new(TestBackend::new(60, 20)).unwrap();
+        narrow.draw(|frame| render(frame, &app)).unwrap();
+        app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+        narrow.draw(|frame| render(frame, &app)).unwrap();
+        assert!(app.as_overview().unwrap().preview_open());
+    }
+}

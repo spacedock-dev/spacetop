@@ -62,14 +62,25 @@ pub struct ActivityEvent {
 impl WorkflowIndex {
     pub fn from_sources(sources: WorkflowSources) -> Self {
         let definition = sources.active.definition;
-        let active = sources.active.items;
+        let mut active = sources.active.items;
+        for entity in &mut active {
+            entity.gate_readiness = crate::gates::readiness(
+                &entity.gates,
+                &entity.status,
+                &definition.stages,
+                entity.gate_preparation.proven,
+            );
+        }
         let active_parse_errors = sources.active.parse_errors;
         let ArchiveSnapshot {
-            entities: archived,
+            entities: mut archived,
             parse_errors: archive_parse_errors,
             error: archive_error,
         } = sources.archive;
 
+        for entity in &mut archived {
+            entity.gate_readiness = None;
+        }
         let mut index = Self {
             definition,
             active,
@@ -113,6 +124,9 @@ impl WorkflowIndex {
         self.archive_parse_errors = archive.parse_errors;
         self.archive_error = archive.error;
         self.archived = archive.entities;
+        for entity in &mut self.archived {
+            entity.gate_readiness = None;
+        }
         self.rebuild_lookup_maps();
     }
 
@@ -372,7 +386,12 @@ impl WorkflowIndex {
             status: entity.status.clone(),
             worktree: entity.worktree.clone(),
             relations: self.related(entity_id),
+            gates: crate::gates::details(&entity),
         })
+    }
+
+    pub fn gate_details(&self, entity: &Entity) -> crate::domain::GateDetails {
+        crate::gates::details(entity)
     }
 
     pub fn entity_activity_for_entity_id(&self, entity_id: &str) -> Option<&EntityActivity> {
@@ -410,6 +429,9 @@ impl WorkflowIndex {
 
 fn matches_field(entity: &Entity, filter: &FieldFilter) -> bool {
     match filter {
+        FieldFilter::GateReadiness(expected) => entity
+            .gate_readiness
+            .is_some_and(|actual| actual.label() == expected.label()),
         FieldFilter::HasIssue => entity
             .issue
             .as_ref()
@@ -445,6 +467,9 @@ mod tests {
 
     fn entity(id: &str, title: &str, status: &str) -> Entity {
         Entity {
+            gates: Default::default(),
+            gate_preparation: Default::default(),
+            gate_readiness: None,
             path: PathBuf::from(format!("{id}.md")),
             id: id.to_string(),
             title: title.to_string(),

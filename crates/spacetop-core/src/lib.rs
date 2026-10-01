@@ -16,3 +16,6 @@ pub mod session_state;
 pub mod sources;
 pub mod state_checkout;
 pub mod watcher;
+
+pub mod gate_proof;
+pub mod gates;

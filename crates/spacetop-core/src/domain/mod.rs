@@ -1,3 +1,6 @@
+mod gates;
+pub use gates::*;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -267,6 +270,12 @@ pub struct StageDefinition {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entity {
+    #[serde(default)]
+    pub gates: GateData,
+    #[serde(default)]
+    pub gate_preparation: GatePreparation,
+    #[serde(default)]
+    pub gate_readiness: Option<GateReadiness>,
     pub path: PathBuf,
     pub id: String,
     pub title: String,
@@ -529,6 +538,9 @@ mod tests {
     #[test]
     fn entity_serializes_for_headless_export() {
         let entity = Entity {
+            gates: Default::default(),
+            gate_preparation: Default::default(),
+            gate_readiness: None,
             path: PathBuf::from("001-test.md"),
             id: "001".to_string(),
             title: "Test".to_string(),

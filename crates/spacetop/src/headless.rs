@@ -121,9 +121,13 @@ pub fn run_list(
     let entities = index.query(EntityQuery {
         scope,
         status: args.status,
+        field_filters: args
+            .gate_readiness
+            .into_iter()
+            .map(spacetop_core::query::FieldFilter::GateReadiness)
+            .collect(),
         text: args.text,
         sort: list_sort(scope, config.defaults.sort),
-        ..EntityQuery::default()
     });
 
     if args.json {
@@ -476,6 +480,7 @@ mod tests {
 
         run_list(
             crate::cli::ListArgs {
+                gate_readiness: None,
                 workflow_dir: Some(workflow),
                 status: None,
                 text: Some("roadmap".to_string()),
@@ -692,6 +697,7 @@ mod tests {
         run_command_with_io(
             Some(fixture.path().join("docs/workflow")),
             crate::cli::Command::List(crate::cli::ListArgs {
+                gate_readiness: None,
                 workflow_dir: None,
                 status: None,
                 text: None,
@@ -729,6 +735,7 @@ mod tests {
         run_command_with_io(
             Some(top_level_fixture.path().join("docs/workflow")),
             crate::cli::Command::List(crate::cli::ListArgs {
+                gate_readiness: None,
                 workflow_dir: Some(subcommand_fixture.path().join("docs/workflow")),
                 status: None,
                 text: None,
@@ -882,6 +889,7 @@ mod tests {
         let mut out = Vec::new();
         run_list(
             crate::cli::ListArgs {
+                gate_readiness: None,
                 workflow_dir: Some(workflow_dir),
                 status: None,
                 text: None,

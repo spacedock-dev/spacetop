@@ -1573,3 +1573,40 @@ fn footer_shows_copy_success_and_failure_then_expires_feedback() {
         "copy confirmation expires at the two-second boundary"
     );
 }
+
+#[test]
+fn durable_gates_list_is_independent_of_session_activity_at_narrow_and_wide_widths() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/durable-gates");
+    let snapshot = spacetop_core::parser::load_workflow_dir(&root, &root).unwrap();
+    for (id, label) in [
+        ("pending", "captain"),
+        ("advance", "advance"),
+        ("merge", "merge"),
+        ("consumed", "consumed"),
+        ("superseded", "superseded"),
+        ("invalid", "invalid"),
+        ("withdrawn", "withdrawn"),
+        ("feedback", "feedback"),
+        ("held", "held"),
+    ] {
+        let mut selected = snapshot.clone();
+        selected.items.retain(|e| e.id == id);
+        let app = App::from_snapshot(root.clone(), selected);
+        for width in [48, 180] {
+            let mut terminal = Terminal::new(TestBackend::new(width, 16)).unwrap();
+            terminal.draw(|frame| render(frame, &app)).unwrap();
+            let text = buffer_text(terminal.backend().buffer());
+            assert!(
+                text.contains(&format!("[gate:{label}]")),
+                "{id} width {width}: {text}"
+            );
+            assert!(!text.contains("Claude Code") && !text.contains("Codex"));
+        }
+    }
+    let mut historical = snapshot.clone();
+    historical.items.retain(|e| e.id == "historical");
+    let app = App::from_snapshot(root, historical);
+    let mut terminal = Terminal::new(TestBackend::new(120, 16)).unwrap();
+    terminal.draw(|frame| render(frame, &app)).unwrap();
+    assert!(!buffer_text(terminal.backend().buffer()).contains("[gate:"));
+}

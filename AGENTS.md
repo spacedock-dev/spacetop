@@ -49,6 +49,8 @@ The app is no longer just a scaffold. It currently provides a read-first TUI tha
 - Switch workflows with arrow keys and open a picker overlay with `P` when multiple workflows are available.
 - Parse workflow stage metadata, active items, archived items, and selected worktree copies.
 - Merge `.worktrees/*/<workflow>` items into the active snapshot, preserving main-branch frontmatter for matching slugs while showing changed worktree bodies.
+- Inspect versioned durable gate records and current-stage readiness separately
+  from runtime activity, with read-only preparation proof and JSON/filter surfaces.
 - Render a stage graph ribbon with counts, gates, worktree markers, feedback arcs, and graph-aware stage colors.
 - Toggle between active and archived scopes with `a`.
 - Preview selected markdown bodies with `Enter`, scroll preview content, and toggle preview wrapping with `w`.
@@ -112,6 +114,11 @@ Keep module boundaries clear and testable:
   single pure helper that turns `(definition_dir, state)` into the entity
   directory, and `load_workflow_dir` / `sources.rs::load_archive` thread that
   resolved dir to the active and archive scans.
+- `crates/spacetop-core/src/domain/gates.rs` owns typed durable v1 gate facts;
+  `parser/gates.rs` owns strict decoding and application extension warnings;
+  `gates.rs` owns pure current-stage readiness, and `gate_proof.rs` owns the
+  read-only, path-scoped Git/report preparation proof. Worktree merges retain
+  main gate facts and proof. Gates never authorize Spacetop workflow-state writes.
 - `crates/spacetop-core/src/state_checkout.rs` owns the two-backend storage
   classifier and read-only Git probes for attached, detached, wrong-branch,
   missing, and typed-unverified split-root state checkouts, plus the explicit

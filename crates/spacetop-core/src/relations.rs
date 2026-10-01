@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntityDetails {
+    pub gates: crate::domain::GateDetails,
     pub id: String,
     pub title: String,
     pub status: String,
@@ -51,6 +52,14 @@ mod tests {
     #[test]
     fn entity_details_groups_core_facts_without_ui_inference() {
         let details = EntityDetails {
+            gates: crate::domain::GateDetails {
+                readiness: None,
+                data: Default::default(),
+                preparation: Default::default(),
+                selected_gate: None,
+                selected_attempt: None,
+                stage: "verify".into(),
+            },
             id: "050".to_string(),
             title: "Roadmap".to_string(),
             status: "verify".to_string(),
