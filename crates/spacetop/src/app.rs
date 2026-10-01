@@ -699,6 +699,11 @@ impl App {
         }
     }
 
+    pub fn selected_gate_details(&self) -> Option<spacetop_core::domain::GateDetails> {
+        let entity = self.selected_item()?;
+        Some(self.as_overview()?.index().gate_details(&entity))
+    }
+
     pub fn reload_from_snapshot(&mut self, snapshot: WorkflowSnapshot) {
         if let Some(session) = self.mode.as_session_mut() {
             session.active_state_mut().reload_from_snapshot(snapshot);

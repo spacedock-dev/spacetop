@@ -16,7 +16,8 @@ Spacedock workflows, parse README metadata and work item frontmatter, browse
 active and archived items, render workflow graphs, preview markdown, merge
 selected worktree copies into the visible snapshot, auto-refresh filesystem
 changes, read user YAML config, persist per-workflow TUI session state under the
-user state path, classify split-root checkout topology, and explicitly sync
+user state path, classify split-root checkout topology, inspect durable gate readiness independently
+of session activity, and explicitly sync
 verified Git checkouts with `git pull --ff-only`.
 
 The repository is still early enough that architecture decisions matter. The
@@ -87,6 +88,10 @@ Current two-crate workspace boundaries:
 - Frontmatter, README, entity, archive, and worktree parsing belong in
   `crates/spacetop-core/src/parser.rs` and
   `crates/spacetop-core/src/parser/*`.
+- Typed recorded gate data belongs in `domain/gates.rs`; strict decoding belongs
+  in `parser/gates.rs`, pure readiness in `gates.rs`, and read-only preparation
+  proof in `gate_proof.rs`. List, preview, and headless filters consume index
+  projections. Recorded approval never authorizes workflow mutation by Spacetop.
 - Split-root storage classification and checkout Git probes belong in
   `crates/spacetop-core/src/state_checkout.rs`; it also owns the typed,
   distinct-root state-sync eligibility decision. Rendering consumes typed app

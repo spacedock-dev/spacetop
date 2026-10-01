@@ -2402,6 +2402,9 @@ fn dag_multi_row_chain_is_horizontally_centered_on_research_fixture() {
 #[allow(dead_code)]
 fn make_item(id: &str, status: &str, title: &str) -> Entity {
     Entity {
+        gates: Default::default(),
+        gate_preparation: Default::default(),
+        gate_readiness: None,
         path: PathBuf::from(format!("{id}.md")),
         id: id.to_string(),
         title: title.to_string(),

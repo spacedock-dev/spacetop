@@ -270,6 +270,14 @@ fn build_task_list_items(
                 Span::styled(item.title.clone(), title_style),
             ];
 
+            let gate = state.index().gate_details(item);
+            if let Some(readiness) = gate.readiness {
+                spans.insert(
+                    7,
+                    Span::styled(format!("[gate:{}] ", gate_list_label(readiness)), dim_style),
+                );
+            }
+
             if let Some(activity) = activity {
                 let activity_style = match activity {
                     spacetop_core::domain::EntityActivity::HumanGate { .. } => {
@@ -333,4 +341,21 @@ pub(crate) fn broken_list_item(err: &EntityParseError, is_selected: bool) -> Lis
         Span::styled(gutter_text, gutter_style),
         Span::styled(label, label_style),
     ]))
+}
+
+fn gate_list_label(readiness: spacetop_core::domain::GateReadiness) -> &'static str {
+    use spacetop_core::domain::GateReadiness::*;
+    match readiness {
+        Validating => "validate",
+        NeedsPreparation => "prepare",
+        AwaitingCaptain => "captain",
+        WithdrawnAwaitingPrepare => "withdrawn",
+        FeedbackPending => "feedback",
+        Held => "held",
+        ApprovedAwaitingAdvance => "advance",
+        ApprovedAwaitingMerge => "merge",
+        Consumed => "consumed",
+        Superseded => "superseded",
+        Invalid => "invalid",
+    }
 }

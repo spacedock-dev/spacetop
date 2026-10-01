@@ -190,6 +190,9 @@ fn content_hash(path: &Path) -> Option<[u8; 20]> {
 fn merge_main_frontmatter_with_worktree_body(main_item: &Entity, wt_item: Entity) -> Entity {
     let wt_path = wt_item.path.clone();
     Entity {
+        gates: main_item.gates.clone(),
+        gate_preparation: main_item.gate_preparation.clone(),
+        gate_readiness: main_item.gate_readiness,
         path: wt_item.path,
         id: main_item.id.clone(),
         title: main_item.title.clone(),

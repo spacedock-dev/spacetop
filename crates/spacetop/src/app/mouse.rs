@@ -259,6 +259,9 @@ mod tests {
 
     fn entity(id: &str, title: &str, body: &str) -> Entity {
         Entity {
+            gates: Default::default(),
+            gate_preparation: Default::default(),
+            gate_readiness: None,
             path: PathBuf::from(format!("/tmp/mouse-test/{id}.md")),
             id: id.to_string(),
             title: title.to_string(),

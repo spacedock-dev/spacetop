@@ -1057,6 +1057,9 @@ fn snapshot_with_items(count: usize) -> WorkflowSnapshot {
         },
         items: (0..count)
             .map(|index| Entity {
+                gates: Default::default(),
+                gate_preparation: Default::default(),
+                gate_readiness: None,
                 path: PathBuf::from(format!("workflow/task-{index}.md")),
                 id: format!("{index:03}"),
                 title: format!("Task {index}"),
@@ -1106,6 +1109,9 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
             .iter()
             .enumerate()
             .map(|(index, p)| Entity {
+                gates: Default::default(),
+                gate_preparation: Default::default(),
+                gate_readiness: None,
                 path: PathBuf::from(p),
                 id: format!("{index:03}"),
                 title: format!("Task {p}"),
@@ -1129,6 +1135,9 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
 
 fn item_at(path: PathBuf, id: &str, title: &str, status: &str) -> Entity {
     Entity {
+        gates: Default::default(),
+        gate_preparation: Default::default(),
+        gate_readiness: None,
         path,
         id: id.to_string(),
         title: title.to_string(),
@@ -2765,4 +2774,69 @@ fn reload_with_rediscovery_handles_removed_active_workflow() {
         .map(|s| s.name.clone())
         .collect();
     assert_eq!(stages, vec!["plan", "done"]);
+}
+
+#[test]
+fn durable_gates_reload_projection_without_runtime_and_preserve_selection_and_archive() {
+    use spacetop_core::domain::GateReadiness;
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/durable-gates");
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::copy(fixture.join("README.md"), root.join("README.md")).unwrap();
+    let contents = std::fs::read_to_string(fixture.join("merge.md")).unwrap();
+    std::fs::write(root.join("merge.md"), &contents).unwrap();
+    let mut app = App::load(root.to_path_buf()).unwrap();
+    assert_eq!(
+        app.selected_gate_details().unwrap().readiness,
+        Some(GateReadiness::ApprovedAwaitingMerge)
+    );
+    assert!(!app
+        .as_overview()
+        .unwrap()
+        .index()
+        .entity_has_current_activity("merge"));
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let definition = std::fs::read_to_string(root.join("README.md")).unwrap();
+    std::fs::write(
+        root.join("README.md"),
+        definition.replace("terminal: true", "terminal: false"),
+    )
+    .unwrap();
+    app.reload().unwrap();
+    assert_eq!(app.selected_item().unwrap().id, "merge");
+    assert!(app.as_overview().unwrap().preview_open());
+    assert_eq!(
+        app.selected_gate_details().unwrap().readiness,
+        Some(GateReadiness::ApprovedAwaitingAdvance)
+    );
+    std::fs::write(
+        root.join("merge.md"),
+        contents.replace("state: pending", "state: consumed"),
+    )
+    .unwrap();
+    app.reload().unwrap();
+    assert_eq!(
+        app.selected_gate_details().unwrap().readiness,
+        Some(GateReadiness::Consumed)
+    );
+    std::fs::create_dir(root.join("_archive")).unwrap();
+    std::fs::write(
+        root.join("_archive/old.md"),
+        contents.replace("id: merge", "id: archived"),
+    )
+    .unwrap();
+    app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    assert_eq!(app.selected_gate_details().unwrap().readiness, None);
+    assert!(app
+        .selected_gate_details()
+        .unwrap()
+        .data
+        .document()
+        .is_some());
+    app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    assert_eq!(
+        app.selected_gate_details().unwrap().readiness,
+        Some(GateReadiness::Consumed)
+    );
 }

@@ -158,6 +158,9 @@ fn app_with_session_attribution(
 
 fn item(id: &str, title: &str, body: &str) -> Entity {
     Entity {
+        gates: Default::default(),
+        gate_preparation: Default::default(),
+        gate_readiness: None,
         path: PathBuf::from(format!("/tmp/{id}.md")),
         id: id.to_string(),
         title: title.to_string(),
@@ -303,6 +306,9 @@ fn p3_snapshot() -> WorkflowSnapshot {
     snapshot.items[0].pr = Some("https://example.test/pulls/50".to_string());
     snapshot.items[0].worktree = Some(".worktrees/p3".to_string());
     snapshot.items.push(Entity {
+        gates: Default::default(),
+        gate_preparation: Default::default(),
+        gate_readiness: None,
         path: PathBuf::from("/tmp/051.md"),
         id: "051".to_string(),
         title: "Verify renderer".to_string(),

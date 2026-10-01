@@ -42,7 +42,7 @@ render workflow graphs, show selected worktree state, derive entity activity
 from structured local Codex and Claude Code events, open query-backed search,
 timeline, metrics, activity, and relation views, auto-refresh filesystem
 changes, read YAML user config, restore per-workflow session state, expose
-headless query/export commands, and explicitly fast-forward sync verified Git
+headless query/export commands, durable recorded gate readiness, and explicitly fast-forward sync verified Git
 checkouts with `git pull --ff-only`.
 
 Workflow storage has two backends. `$inline`, an empty value, or an absent
@@ -70,6 +70,31 @@ blocked instead of claiming the workflow is healthy.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.
+Durable gate readiness is separate from runtime activity. Spacetop reads the
+Spacedock v0.27.3 `gates.version: 1` contract without opening retained rooms or
+requiring a session log. Compact list labels include `[gate:captain]`,
+`[gate:advance]`, and `[gate:merge]`; the preview shows full readiness and
+scrollable recorded attempts, briefing bindings, decisions, application targets,
+and warnings. A recorded approval is an inspection fact, not authenticated
+permission for Spacetop to execute it.
+
+Only the latest attempt for the current gated nonterminal stage supplies current
+readiness. Consumed and superseded approvals keep their spent labels. Other-stage
+and archived attempts are historical. Invalid or unsupported gate data keeps the
+entity readable with diagnostics; application extension fields are ignored with
+warnings, while unknown canonical fields are refused.
+
+A gated stage without current authority stays `validating` until preparation
+proof passes. An initial gate needs a tracked entity clean against its local Git
+HEAD. Later gates also need the latest exact-stage report with nonempty
+DONE/SKIPPED items, evidence or rationale for each, no FAILED items, and a nonempty
+Summary. The proof uses the physical authority source, including a split-root
+state checkout's own HEAD; a displayed worktree body cannot supply main proof.
+Unverified split-root topology cannot provide preparation proof and receives no
+new preparation Git probes. Sibling dirt does not block proof. HEAD-only changes may require explicit reload;
+Git metadata events are not watched. Spacetop never prepares, approves, consumes,
+or merges a gate.
+
 Entity activity has three values: `idle`, `running`, and `human-gate`.
 `running` identifies its handler as `running · worker` or `running · FO`;
 `human-gate` uses the high-salience `◆` list marker. Detection fails closed:
@@ -92,6 +117,7 @@ return a stable error and ask for `--workflow-dir`.
 
 ```bash
 spacetop list --workflow-dir docs/spacetop-dev
+spacetop list --workflow-dir docs/spacetop-dev --gate-readiness approved-awaiting-merge --json
 spacetop list --workflow-dir docs/spacetop-dev --status verify --text sync --json
 spacetop timeline 050 --workflow-dir docs/spacetop-dev --json
 spacetop metrics --workflow-dir docs/spacetop-dev --json
@@ -100,6 +126,15 @@ spacetop export --workflow-dir docs/spacetop-dev --json
 ```
 
 `list` supports `--scope active`, `--scope archived`, and `--scope all`.
+`list --gate-readiness` filters active current readiness independently of
+runtime activity. Values include `validating`, `needs-preparation`,
+`awaiting-captain`, `withdrawn-awaiting-prepare`, `feedback-pending`,
+`not-applicable` (hold), `approved-awaiting-advance`, `approved-awaiting-merge`,
+`consumed`, `superseded`, and `invalid`. Archived rows never match a readiness
+filter. JSON list/export keeps existing entity fields and adds `gates`
+(`kind`, validated document/warnings or diagnostics), `gate_preparation`, and
+`gate_readiness` (null when no active readiness applies).
+
 When omitted, scope and sort follow the user config defaults. `export` requires
 `--json` and emits the workflow definition, active entities, and archived
 entities.

@@ -44,6 +44,9 @@ fn parse_work_item_contents(
     }
 
     Ok(Entity {
+        gates: super::gates::parse(frontmatter),
+        gate_preparation: Default::default(),
+        gate_readiness: None,
         path: path.to_path_buf(),
         id,
         title,
