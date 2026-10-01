@@ -1,0 +1,51 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:079:verify:round-1",
+  "question": "How was the High invalid-flow gate-presence rejection of task 079 at 088710b25f0d5f9fccec83bc281cd5efdc8e0f26 corrected in eb8e940659c3a5420743ef60fa751bbbf58ae5e3, while retaining the original reviewer revise and requiring fresh verification?",
+  "artifacts": [
+    {
+      "id": "artifact:reviewed-parser",
+      "uri": "https://github.com/spacedock-dev/spacetop/blob/088710b25f0d5f9fccec83bc281cd5efdc8e0f26/crates/spacetop-core/src/parser/gates.rs",
+      "mediaType": "text/plain",
+      "rev": "sha256:a17505d147d3fce2cf9db46c76843b657d2e30c11978aa622186ef36ac82abdb"
+    },
+    {
+      "id": "artifact:corrected-parser",
+      "uri": "https://github.com/spacedock-dev/spacetop/blob/eb8e940659c3a5420743ef60fa751bbbf58ae5e3/crates/spacetop-core/src/parser/gates.rs",
+      "mediaType": "text/plain",
+      "rev": "sha256:d340d9fb62284b2ca611ed526d04780fb1f36c189fd624e9803b98030eea0462"
+    },
+    {
+      "id": "artifact:parser-regression",
+      "uri": "https://github.com/spacedock-dev/spacetop/blob/eb8e940659c3a5420743ef60fa751bbbf58ae5e3/crates/spacetop-core/tests/durable_gates.rs",
+      "mediaType": "text/plain",
+      "rev": "sha256:4b6ffa1322b5002231f1d86be2d4ebe0119481a2b214f18452e62bd2965fb017"
+    },
+    {
+      "id": "artifact:clean-seed-regression",
+      "uri": "https://github.com/spacedock-dev/spacetop/blob/eb8e940659c3a5420743ef60fa751bbbf58ae5e3/crates/spacetop/tests/durable_gates.rs",
+      "mediaType": "text/plain",
+      "rev": "sha256:5b40952057ea9cb4c426c1d48a219dca6fc895f73da67bd469344640db8e0a08"
+    },
+    {
+      "id": "artifact:review-counterexample",
+      "uri": "file:///private/tmp/spacetop-079-review-flow-probe.rs",
+      "mediaType": "text/plain",
+      "rev": "sha256:e35199334750eed6ba859ad22e8b76aedf2de63ed311d92b197b04a5d1acc0fe"
+    }
+  ],
+  "context": [
+    {
+      "type": "Reference",
+      "id": "reference:jev-material-disposition",
+      "uri": "file:///private/tmp/spacetop-079-jev-finding-response.json",
+      "rev": "sha256:4caf5dfe541c93ab85b4667bcff7f466f00aab9ec10c1070b00118c401a0f1b2"
+    },
+    {
+      "type": "Note",
+      "id": "note:snapshots",
+      "body": "Reviewed code 088710b25f0d5f9fccec83bc281cd5efdc8e0f26; original verify report state commit 44ff71951ee97b2624c565ab525ec9e8e393b379. Correction eb8e940659c3a5420743ef60fa751bbbf58ae5e3. Artifact rev values bind raw Git blob bytes, not commit hashes. This advisory verify/1 correction round grants no gate approval or execution authority."
+    }
+  ]
+}

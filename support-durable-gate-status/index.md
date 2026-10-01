@@ -15,6 +15,14 @@ worktree: .worktrees/spacedock-ensign-support-durable-gate-status
 issue:
 pr:
 mod-block:
+review-round:
+    id: round:079:verify:1
+    stage: verify
+    cycle: 1
+    briefing:
+        id: briefing:079:verify:round-1
+        digest: sha256:75e3f47c27d8eb8b45182080ba5b2cf101f178917be5fc602250229344c68069
+        room-ref: ./review/verify/round-1
 ---
 
 Show durable gate state even when the originating agent session is no longer available. Spacedock 0.27 stores gate attempts, resolutions, and approval application state in entity frontmatter; Spacetop currently discards these fields.
