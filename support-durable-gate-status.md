@@ -112,3 +112,31 @@ Required implementation commands: targeted parser/gates/gate_proof/index/app/UI 
 ### Summary
 
 Defined a test-first Rust plan against Spacedock v0.27.3 and exercised its strict gate decoding and current-stage readiness reference before finalizing the design. The plan preserves main-frontmatter authority, records invalid/historical state without claiming queued approval, and adds only read-only proof probes and inspection surfaces.
+
+## Stage Report: implement
+
+- DONE: Implement typed durable gate parsing, current-stage readiness, and read-only preparation proof against Spacedock 0.27.3 with negative tests before production changes.
+  Code commit `088710b`; initial CLI tests failed on missing readiness projection and unsupported filter before production edits. Strict parser/reducer/proof matrices now pass; allowing malformed binding or dirty/untracked proof would fail them.
+- DONE: Expose gate status separately from runtime activity through index queries, list filtering, JSON export, and list/preview details; prove current, historical, invalid, consumed, and superseded cases with app and TestBackend tests.
+  Headless export/filter/archive tests and app/UI durable_gates tests pass; omitting labels, using runtime activity as gate authority, or queuing consumed/historical approvals would fail their observed output assertions.
+- DONE: Update nearby docs, preserve workflow/git/config/session safety, run cargo fmt --check, full cargo test and make lint, commit deliverables on the implementation branch, and record evidence for AC-1 through AC-4 plus DONE/SKIPPED/FAILED checklist accounting.
+  README, AGENTS and development policy updated; `cargo fmt --check`, full `cargo test` (662 passed, 3 ignored), `make lint` and `git diff --check` pass on `088710b`; all git/config/session/core guardrails remain passing.
+- SKIPPED: Run ignored notify backend smoke tests.
+  No watcher backend or event filter changed; the three existing real-backend checks remain explicitly ignored by the ordinary suite.
+
+### AC evidence
+
+- AC-1: `strict_gate_parser_matrix_refuses_invalid_authority_and_retains_extensions_only_at_application`, `duplicate_stage_attempt_briefing_resolution_and_pending_applications_are_refused`, and parser unit negative fixtures cover canonical fields, binding/digests, duplicate identities/keys/stages, malformed applications, legacy/prototype/version refusal, conn attribution, retired provider-evidence and sorted application warnings. Relaxing canonical validation or losing typed data breaks assertions.
+- AC-2: `readiness_uses_only_last_attempt_in_current_gated_nonterminal_stage` covers selected versus earlier attempts, revise/hold/withdrawal, self/unknown targets, terminal merge versus advance, consumed/superseded, other-stage and terminal records. App reload and narrow/wide TestBackend tests independently assert displayed classifications; treating any approve as current readiness fails.
+- AC-3: `query_keeps_runtime_and_archive_authority_separate` and all three headless durable_gates tests exercise JSON without session logs, readiness filtering, retained warnings and archived records with null readiness. Removing query/export projection or letting archived pending records match the filter fails.
+- AC-4: Preparation tests exercise clean initial seed, dirty/untracked/non-Git/probe failure, complete later report, missing/FAILED/blank checklist evidence/Summary, newer incomplete and other-stage reports, literal filename, sibling dirt, split-root local HEAD and main-versus-worktree body proof. External unverified state stays readable with validating readiness and no new preparation probes; taking proof from displayed prose or an escaped checkout fails.
+
+### Commands and reference
+
+- `cargo test -p spacetop-core --test durable_gates` (7 tests in final suite); `cargo test -p spacetop durable_gates` (app/TestBackend); `cargo test -p spacetop --test durable_gates` (3 CLI tests in final suite). Full `cargo test` also covers existing regression/guardrail suites.
+- Spacedock v0.27.3 reference checkout at `29da151096c1f2b7291a3adafa0f12a762bad78f`: `GOPROXY=off go test ./internal/gates ./internal/status -run 'Test(CurrentStageReadiness|StatusProjectsSharedGateReadinessReducer|GateReadiness|InitialGatedSeed|NonInitialGated|PrototypeAndUnknownGateShapes|RetiredProviderEvidence|ReadDiagnostics|ApplicationExtensionShapes)' -count=1` passed both packages. Go/reference checkout are only repeat-reference requirements, never Spacetop runtime dependencies.
+- Code branch: `spacedock-ensign/support-durable-gate-status`; commit: `088710b`. Build/test logs: `/tmp/spacetop-079-cargo-test.log`, `/tmp/spacetop-079-lint.log`; reproducible checks and fixtures are committed.
+
+### Summary
+
+Implemented typed v1 recorded gates, current-stage readiness and narrow read-only preparation proof, with independent query/export, compact list labels and scrollable preview history. Invalid metadata remains diagnostic and readable; room refs and conn citations remain recorded facts rather than authenticated execution authority. HEAD-only changes may require explicit reload; no gate preparation/approval/consumption/merge or workflow-state writer was added, and FO JEV assessment plus fresh verification remain separate next-stage work.
