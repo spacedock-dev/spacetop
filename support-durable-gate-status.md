@@ -140,3 +140,42 @@ Defined a test-first Rust plan against Spacedock v0.27.3 and exercised its stric
 ### Summary
 
 Implemented typed v1 recorded gates, current-stage readiness and narrow read-only preparation proof, with independent query/export, compact list labels and scrollable preview history. Invalid metadata remains diagnostic and readable; room refs and conn citations remain recorded facts rather than authenticated execution authority. HEAD-only changes may require explicit reload; no gate preparation/approval/consumption/merge or workflow-state writer was added, and FO JEV assessment plus fresh verification remain separate next-stage work.
+
+## Stage Report: verify
+
+- DONE: Independently assess AC-1 through AC-4 against committed code, upstream v0.27.3 semantics, fixtures and observed output; challenge invalid/historical gate authority, read-only preparation proof, and separation from runtime activity.
+  Reviewed `088710b25f0d5f9fccec83bc281cd5efdc8e0f26` against upstream `29da151`; focused parser and tracked-seed CLI probes reproduced invalid gates becoming preparation-ready (finding below).
+- DONE: Review parser/query/app/UI boundaries, split-root/worktree containment, export/filter/archive behavior, narrow terminals and docs; reproduce any material defect with the lowest practical test and record concrete findings and proposed dispositions.
+  Typed core/query/UI ownership and retained main proof are sound in reviewed paths; one High parser defect is reproduced at the parser boundary and observed through export. Product code remains unchanged.
+- DONE: Confirm required format, full cargo test and make lint evidence for the reviewed commit, avoid redundant reruns of already-green checks unless a new change or unresolved concern warrants them, and write a verify report with verdict, AC evidence and checklist accounting; retain JEV assessment provenance for FO gate review.
+  Confirmed full logs: 662 passed, zero failed, three unchanged notify tests ignored; clippy all targets/features with `-D warnings` passed. Fresh `cargo fmt --check` passed; clean worktree remains at reviewed commit. Green full gates were not redundantly rerun.
+
+### Findings and judgment
+
+High — `crates/spacetop-core/src/parser/gates.rs:70-78`: on any decoding/validation error, a source-line heuristic decides whether gates were present. Valid YAML flow mappings do not start with `gates:`, so unsupported versions and malformed canonical data silently become `GateData::Absent`. A tracked clean initial seed then gains `needs-preparation`, contradicting AC-1 and the rule that malformed gates never promote.
+
+Judgment: Request changes. Replace the line-presence fallback with structural gate-presence/error handling that preserves invalid diagnostics for valid YAML flow/explicit-key/alias forms, while retaining the intended legacy flat-frontmatter fallback. Add parser and clean-seed query/export regressions; rerun required gates after correction. FO owns semantic/AC adjudication and correction routing.
+
+### Reproduction and observed output
+
+- Minimal parser probe retained at `/tmp/spacetop-079-review-flow-probe.rs`; log at `/tmp/spacetop-079-review-flow-probe.log`. It writes `---\n{id: flow, title: Flow invalid gates, status: seed, gates: {version: 99, records: []}}\n---\nSeed\n`, calls `parse_work_item` with allowed status `seed`, and asserts `GateData::Invalid`.
+- Exact parser command from the code worktree: copy that probe to `crates/spacetop-core/tests/review_flow_probe.rs`, then run `cargo test -p spacetop-core --test review_flow_probe`. Exit 101; assertion failed with `actual: Absent`. Temporary probe was removed after execution; no product/test commit was made.
+- CLI fixture retained at `/tmp/spacetop-079-review-fixture/{README.md,invalid-flow.md,invalid-block.md}`; observed JSON at `/tmp/spacetop-079-review-flow-output.json`. Original fixture was a fresh nested Git repo in the code worktree, initialized with `git init -q`, test-only local name/email, `git add .`, `git commit -qm 'Review fixture'`; command: `target/debug/spacetop export --json -w gate-review-t9kerq2w`.
+- Flow entity observed: `gates={"kind":"absent"}`, `gate_readiness="needs-preparation"`, `gate_preparation={"proven":true,"diagnostics":[]}`. Equivalent block entity observed: `gates.kind="invalid"`, diagnostic `gates: version must be 1 and records nonempty`, readiness `invalid`, preparation false. Expected flow result equals block result. Both contained identical gate values; neither required session evidence.
+- Fresh reproduction: copy the retained fixture files to a fresh Git directory under the code worktree, run the same init/config/add/commit sequence, then export it with the reviewed binary. The files/probe fully describe synthetic input; retained `/tmp` paths are evidence conveniences, not runtime dependencies.
+
+### AC evidence and residual boundaries
+
+- AC-1: NOT SATISFIED. Strict binding/identity/digest/conn and application-extension matrices otherwise pass in committed evidence; flow-map invalid metadata escapes that validation result. Accepting unsupported data as absent fails the new parser assertion.
+- AC-2: Supported for canonical valid inputs. The selected last current-stage attempt reducer matches upstream `internal/gates/model.go`; unknown/self targets refuse, terminal target selects merge, spent/other-stage records never queue pending approval. Existing app reload and TestBackend narrow/wide assertions pin these classifications. The finding prevents unconditional approval.
+- AC-3: Supported for canonical valid inputs. Query/filter/export tests retain typed records and warnings without sessions; archived readiness is null and excludes queued filters. Durable readiness and runtime activity are independent projections; the fresh export exercised this without agent logs. Invalid-flow diagnostics remain blocked by AC-1.
+- AC-4: NOT SATISFIED. Existing negative matrices cover block malformed/version/legacy records, pending/consumed/superseded/withdrawn/history, physical main-versus-worktree proof, split-root local HEAD and unverified escape refusal, dirty/untracked/report-negative cases, and narrow/wide UI. The missing flow-frontmatter negative case demonstrates a real gap.
+- Read-only proof: only `rev-parse`, literal `ls-files`, and path-scoped `diff --quiet HEAD` were added; no retained room opening or new Git writes. Existing guardrails remain green. Report completion mirrors upstream exact-stage/checklist/Summary selection. Watcher/backend unchanged; HEAD-only explicit reload caveat is documented.
+
+### FO JEV provenance
+
+FO's implementation-readiness request `/private/tmp/spacetop-079-jev-implementation-request.json` and actual response `/private/tmp/spacetop-079-jev-implementation-response.json` used `jev-1.13.0`: 9329 input tokens, 147 output tokens, USD 0.000391818. Three implementation checklist answers were supported at confidence 0.88/0.86/0.85. This is an earlier FO semantic judgment, not worker verification evidence or final AC approval; the fresh counterexample above was not part of that assessment. No reviewer JEV call was made.
+
+### Summary
+
+Independent verification found one High defect that loses invalid durable gate data and incorrectly promotes a clean initial entity to preparation-ready. The existing tests and lint are green, but AC-1 and AC-4 require a focused correction and regression; FO JEV review and captain approval remain pending.
