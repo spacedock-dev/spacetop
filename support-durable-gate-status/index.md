@@ -13,8 +13,8 @@ verdict:
 score: 0.95
 worktree: .worktrees/spacedock-ensign-support-durable-gate-status
 issue:
-pr:
-mod-block:
+pr: "#83"
+mod-block: merge:pr-merge
 review-round:
     id: round:079:verify:1
     stage: verify
