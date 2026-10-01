@@ -1,0 +1,24 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:079:verify:attempt-1:revision-1",
+  "question": "Approve task 079 durable gate status for PR publication?",
+  "artifacts": [
+    {
+      "id": "artifact:079:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/1d5dda5807faa92707d221ded564eb18339d20cb/support-durable-gate-status/index.md",
+      "rev": "sha256:4260084276f3aa1a29c61a2060b0c7961a4e0815b2ca8ca4627fab0445fcf934",
+      "mediaType": "text/markdown",
+      "summary": "Corrected commit eb8e940 adds typed durable gate parsing/readiness, independent list and preview status, filtering and JSON export. Fresh verification reproduced the invalid-flow fix and found no remaining material defects. Format, 664 tests and required lint passed. JEV selects all four ACs satisfied; confidence 0.95/0.84/0.87/0.52, with AC-4 initially insufficient before expanded evidence. Approval authorizes PR publication and review follow-up; merge still requires a separate captain instruction. HEAD-only changes may require explicit reload."
+    }
+  ],
+  "context": [
+    {
+      "type": "Reference",
+      "id": "reference:079:verify:attempt-1:revision-1:item-2",
+      "uri": "git-root://main/e503807fc6bb3ae3b07d3cc5eb4bdfdb2f2450f9/docs/spacetop-dev/README.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:fe0f9d25b139e70020e8277a725eefd4e7a1fa477b151b9485d1f020b8ab428d"
+    }
+  ]
+}
