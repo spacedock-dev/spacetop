@@ -1,20 +1,20 @@
 ---
 id: 079
 title: Support durable gate status
-status: verify
+status: done
 source: "Captain-requested Spacedock release compatibility survey, 2026-10-01"
 kind: feature
 risk: medium
 milestone: spacedock-0.27-compatibility
 proof: "Gate parsing, query/export, app state, and TestBackend fixtures; deleting gate parsing or conflating consumed approval with pending readiness must fail the checks."
 started: 2026-10-01T10:07:39Z
-completed:
-verdict:
+completed: 2026-10-01T18:01:29Z
+verdict: PASSED
 score: 0.95
 worktree: .worktrees/spacedock-ensign-support-durable-gate-status
 issue:
-pr: "#83"
-mod-block: merge:pr-merge
+pr: pr-merge:83
+mod-block:
 review-round:
     id: round:079:verify:1
     stage: verify
@@ -44,7 +44,8 @@ gates:
                 reason: Captain approved task 079 verify gate in chat; publish PR and handle review comments, with merge reserved for a separate decision.
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+archived: 2026-10-01T18:01:29Z
 ---
 
 Show durable gate state even when the originating agent session is no longer available. Spacedock 0.27 stores gate attempts, resolutions, and approval application state in entity frontmatter; Spacetop currently discards these fields.
