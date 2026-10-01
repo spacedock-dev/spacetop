@@ -450,3 +450,39 @@ fn external_unverified_state_remains_readable_without_preparation_probes() {
         }
     ));
 }
+
+#[test]
+fn structural_gate_presence_refuses_invalid_flow_explicit_key_and_alias_forms() {
+    let dir = tempfile::tempdir().unwrap();
+    let shapes = [
+        "{id: seed, title: Invalid flow, status: seed, gates: {version: 99, records: []}}\n",
+        "id: seed\ntitle: Invalid explicit key\nstatus: seed\n? gates\n: {version: 99, records: []}\n",
+        "id: seed\ntitle: Invalid value alias\nstatus: seed\nother: &bad {version: 99, records: []}\ngates: *bad\n",
+        "id: seed\ntitle: Invalid key alias\nstatus: seed\nother: &key gates\n? *key\n: {version: 99, records: []}\n",
+        "{id: seed, title: Malformed flow, status: seed, gates: {version: 1, records: []}}\n",
+        "id: seed\ntitle: Legacy: unquoted colon\nstatus: seed\n\"gates\": invalid\n",
+    ];
+    for (n, shape) in shapes.iter().enumerate() {
+        let path = dir.path().join(format!("{n}.md"));
+        fs::write(&path, format!("---\n{shape}---\nSeed.\n")).unwrap();
+        let entity = parse_work_item(&path, &["seed".into()], None).unwrap();
+        assert!(
+            matches!(entity.gates, GateData::Invalid { .. }),
+            "shape {n}: {:?}",
+            entity.gates
+        );
+    }
+    for shape in [
+        "{id: seed, title: Legacy flow, status: seed}\n",
+        "id: seed\ntitle: Legacy: unquoted colon\nstatus: seed\n",
+    ] {
+        let path = dir.path().join("legacy.md");
+        fs::write(&path, format!("---\n{shape}---\nSeed.\n")).unwrap();
+        assert!(matches!(
+            parse_work_item(&path, &["seed".into()], None)
+                .unwrap()
+                .gates,
+            GateData::Absent
+        ));
+    }
+}

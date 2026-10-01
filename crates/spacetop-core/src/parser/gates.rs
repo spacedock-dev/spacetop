@@ -64,29 +64,39 @@ impl<'de> Deserialize<'de> for UniqueValue {
     }
 }
 pub(super) fn parse(frontmatter: &str) -> GateData {
-    match decode(frontmatter) {
-        Ok(Some((document, warnings))) => GateData::Valid { document, warnings },
-        Ok(None) => GateData::Absent,
-        Err(_)
-            if !frontmatter.lines().any(|line| {
-                !line.starts_with([' ', '\t'])
-                    && line
-                        .split_once(':')
-                        .is_some_and(|(key, _)| key.trim().trim_matches(['\'', '"']) == "gates")
-            }) =>
-        {
-            GateData::Absent
+    // Only the existing flat-scalar parser can establish legacy absence when
+    // YAML decoding fails. Once YAML is structural, every gate decode error
+    // stays invalid regardless of flow style, explicit keys, or aliases.
+    let root = match serde_yaml::from_str::<UniqueValue>(frontmatter) {
+        Ok(root) => root.0,
+        Err(error) => {
+            let legacy_absence = super::frontmatter::top_level_scalar_entries(frontmatter)
+                .is_some_and(|entries| {
+                    entries.iter().all(|(key, _)| {
+                        serde_yaml::from_str::<String>(key).is_ok_and(|key| key != "gates")
+                    })
+                });
+            return if legacy_absence {
+                GateData::Absent
+            } else {
+                invalid(error.to_string())
+            };
         }
-        Err(error) => GateData::Invalid {
-            diagnostics: vec![format!("gates: {error}")],
-        },
+    };
+    let Some(gates) = root.get("gates").cloned() else {
+        return GateData::Absent;
+    };
+    match decode(gates) {
+        Ok((document, warnings)) => GateData::Valid { document, warnings },
+        Err(error) => invalid(error),
     }
 }
-fn decode(frontmatter: &str) -> Result<Option<(GateDocument, Vec<GateWarning>)>, String> {
-    let root: UniqueValue = serde_yaml::from_str(frontmatter).map_err(|e| e.to_string())?;
-    let Some(mut gates) = root.0.get("gates").cloned() else {
-        return Ok(None);
-    };
+fn invalid(error: String) -> GateData {
+    GateData::Invalid {
+        diagnostics: vec![format!("gates: {error}")],
+    }
+}
+fn decode(mut gates: Value) -> Result<(GateDocument, Vec<GateWarning>), String> {
     let mut warnings = Vec::new();
     if let Some(records) = gates.get_mut("records").and_then(Value::as_sequence_mut) {
         for (ri, record) in records.iter_mut().enumerate() {
@@ -124,7 +134,7 @@ fn decode(frontmatter: &str) -> Result<Option<(GateDocument, Vec<GateWarning>)>,
     validate(&doc)?;
     warnings.sort_by(|a, b| (&a.path, &a.field).cmp(&(&b.path, &b.field)));
     warnings.dedup();
-    Ok(Some((doc, warnings)))
+    Ok((doc, warnings))
 }
 fn unique(set: &mut HashSet<String>, value: &str, path: &str) -> Result<(), String> {
     if value.is_empty() || !set.insert(value.into()) {
