@@ -34,6 +34,17 @@ gates:
                 id: briefing:079:verify:attempt-1:revision-1
                 digest: sha256:e16427fcfa5944eff14475a658d47b9aa0a6d9e06e1e8f8f042b3b220fd8f2cc
                 room-ref: ./review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:079:verify:1
+                briefing: briefing:079:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-01T15:14:01.885972Z"
+                decision: approve
+                reason: Captain approved task 079 verify gate in chat; publish PR and handle review comments, with merge reserved for a separate decision.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Show durable gate state even when the originating agent session is no longer available. Spacedock 0.27 stores gate attempts, resolutions, and approval application state in entity frontmatter; Spacetop currently discards these fields.
