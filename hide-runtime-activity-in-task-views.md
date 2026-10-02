@@ -14,6 +14,17 @@ issue:
 pr:
 mod-block:
 id: 084
+gates:
+    version: 1
+    records:
+        - id: gate:084:verify
+          stage: verify
+          attempts:
+            - id: gate-attempt:084-verify-1
+              briefing:
+                id: briefing:084:verify:attempt-1:revision-1
+                digest: sha256:516fc201439d5e2e01d6b08e8ba8f831adb8e79db4f2ca669fcfa3918dc582c2
+                room-ref: ./hide-runtime-activity-in-task-views/review/verify/briefing-1
 ---
 
 Make task browsing clearer by removing inferred agent runtime activity from the task list and detail header. The captain finds Idle unhelpful and real agent status difficult to determine for an individual task, and prefers those surfaces not to suggest a live activity state.

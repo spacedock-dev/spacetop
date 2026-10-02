@@ -1,0 +1,24 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:084:verify:attempt-1:revision-1",
+  "question": "Approve task 084 removal of inferred runtime information from task rows and detail headers for PR publication?",
+  "artifacts": [
+    {
+      "id": "artifact:084:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/8f4d8e608afb710e05b13d2c20e45fdc029b9af9/hide-runtime-activity-in-task-views.md",
+      "rev": "sha256:4541ea2212fa0698ef8f08b39caee6c499b43e3d6a869043ae8f0e0b08433dd0",
+      "mediaType": "text/markdown",
+      "summary": "Code 2d47c1e hides runtime labels, markers and attribution from list and preview headers while preserving workflow stages, durable gates, worktree/selection/archive facts and body text. Red/green rendering and preservation mutation proof, 685 full tests and lint passed; independent verification and JEV support all four ACs."
+    }
+  ],
+  "context": [
+    {
+      "type": "Reference",
+      "id": "reference:084:verify:attempt-1:revision-1:item-2",
+      "uri": "git-root://main/329467e6721e27562b3c9489a833b46161214d52/docs/spacetop-dev/README.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:fe0f9d25b139e70020e8277a725eefd4e7a1fa477b151b9485d1f020b8ab428d"
+    }
+  ]
+}
