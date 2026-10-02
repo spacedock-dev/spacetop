@@ -1,20 +1,20 @@
 ---
 id: 080
 title: Browse gate Briefings and decisions
-status: verify
+status: done
 source: "Captain-requested Spacedock release compatibility survey, 2026-10-01"
 kind: feature
 risk: medium
 milestone: spacedock-0.27-compatibility
 proof: "Briefing parser/path-boundary fixtures, app navigation tests, watcher refresh checks, and TestBackend assertions; wrong bindings and escaped refs must be rejected."
 started: 2026-10-01T18:17:27Z
-completed:
-verdict:
+completed: 2026-10-02T01:51:29Z
+verdict: PASSED
 score: 0.90
 worktree: .worktrees/spacedock-ensign-browse-gate-briefings-and-decisions
 issue:
-pr: "#84"
-mod-block: merge:pr-merge
+pr: pr-merge:84
+mod-block:
 review-round:
     id: round:080:verify:2
     stage: verify
@@ -44,7 +44,8 @@ gates:
                 reason: Captain approved the presented task 080 verify gate and its evidence; authorize PR publication.
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+archived: 2026-10-02T01:51:29Z
 ---
 
 Let users inspect a gate question, its evidence, and its recorded decision from Spacetop. Spacedock 0.27.1 prepares one canonical Briefing instead of requiring request.json.
