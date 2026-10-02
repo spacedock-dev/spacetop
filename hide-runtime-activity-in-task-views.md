@@ -106,3 +106,34 @@ The FO supplied a prior paid plan assessment; this worker made no paid calls. Re
 ### Summary
 
 Task rows and both preview header layouts now omit inferred runtime presentation while keeping workflow and durable gate facts. Red/green and preservation mutation tests exercise real TestBackend cells/styles; full tests and lint pass. Code is committed and pushed on the isolated branch; archived current readiness remains absent under the existing contract while recorded gate details stay available.
+
+
+## Stage Report: verify
+
+- DONE: Independently verify AC-1/AC-2 runtime suppression in list and both preview layouts while preserving workflow stage, gates, selection/worktree/archive facts and user-authored body text.
+  AC-1/AC-2 PASS: independently executed both TestBackend matrices on `2d47c1e`; five supplied runtime cases × active/archive × 60/200 columns, with both preview placements; each passed. Reintroducing runtime cells/styles, deleting stage/gate/worktree/verdict facts, or filtering body words falsifies the positive/equality assertions.
+- DONE: Assess AC-3 red/green and preservation-mutation TestBackend evidence across all five runtime cases, scopes and narrow/wide sizes; challenge meaningful uncovered display or layout regressions.
+  AC-3 PASS: inspected red logs (list 37 pass/2 fail; preview 18 pass/1 fail), green logs (39/19 pass), and gate/stage mutation failures; archive attribution presence is asserted before rendering. Independently reran mouse reflow proof (1 pass): full ID survives the first-click width change; removing candidate preservation makes it fail.
+- DONE: Verify AC-4 scoped diff, docs and green formatting/full tests/lint evidence, backend/headless/activity-feed/input/read-only preservation; report exact AC verdicts and any material findings without taking over implementation.
+  AC-4 PASS: reviewed `329467e..2d47c1e` eight-file diff; only list/preview production code changes, rendering fixtures/tests, test-only mouse width and two docs. Inspected fmt/full-test/lint logs: 685 passed, 0 failed, 4 ignored; strict clippy completed. Backend/headless/feed/input/write paths and dependencies are untouched; independent diff check passed.
+
+### Findings and judgment
+
+No Critical, High, Medium or Low findings under `docs/code-review-policy.md`. Approve this code change for the next gate; this technical judgment does not grant captain approval or authorize merging.
+Positive stage color, selected gutter/background, title, worktree marker and active gate assertions complement buffer equality; archive verdict and historical briefing remain visible under the existing archived-readiness contract.
+Existing Unicode/combining ID, narrow layout, wrapping/scrolling, malformed-entity, durable-gate, keyboard/headless and read-only guardrail coverage remains intact. The test-only mouse width adjustment (100→96) retains its 20→19-cell reflow assertion rather than weakening the scenario.
+Residual evidence limit: no real-terminal visual run or ignored watcher rerun; TestBackend is the appropriate lowest layer and watcher/backend code is unchanged. Full green gates were inspected rather than redundantly rerun; focused independent probes above exercised current committed behavior.
+Checklist accounting: 3 DONE, 0 SKIPPED, 0 FAILED. AC-1 PASS; AC-2 PASS; AC-3 PASS; AC-4 PASS.
+
+### Evidence provenance
+
+Implementation full-test log SHA-256: `39c76df87f86fe8fd0353009fec168f58cfa01ad73f9f4f85e381e35b392d2b3`; strict-lint log: `766de236e046a152f8ea161ae27ae53fa801b0c904a601ac9ddc759aa526a8b7`. FO retains the original logs for transfer; local `/private/tmp` artifacts are not fresh-checkout dependencies.
+FO supplied actual implementation-readiness assessment, not a synthetic verdict. Response SHA-256: `4fdfefef09220f822d0bc138f2559405822157a5e46f7f470163e876df99f081`; this verifier made no paid calls.
+
+```json
+{"model":"jev-1.13.0","answers":{"review_ready":{"type":"choice","choice":"dispatch_verify","confidence":0.99,"probabilities":{"dispatch_verify":0.99,"repair":0.01,"insufficient":0.0}}},"usage":{"input_tokens":1667,"output_tokens":44}}
+```
+
+### Summary
+
+Independent verification found no material defect in the display-only change and passes all four acceptance criteria. Runtime suppression is exercised without removing workflow facts, durable gate evidence or user-authored words; the existing full-suite/lint evidence is green. The captain gate and FO-owned paid judgment remain separate from this review.
