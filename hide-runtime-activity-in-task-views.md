@@ -134,6 +134,16 @@ FO supplied actual implementation-readiness assessment, not a synthetic verdict.
 {"model":"jev-1.13.0","answers":{"review_ready":{"type":"choice","choice":"dispatch_verify","confidence":0.99,"probabilities":{"dispatch_verify":0.99,"repair":0.01,"insufficient":0.0}}},"usage":{"input_tokens":1667,"output_tokens":44}}
 ```
 
+### Final AC cross-check provenance
+
+FO supplied the actual final JEV cross-check, model `jev-1.13.0`, using task ACs, this independent review, `329467e..2d47c1e` diff and repo policy as request sources (`state.task_ac`, `state.review`, `state.diff`, `state.policy`). Source artifacts: `/private/tmp/spacetop-084-jev-final-request.json`, `/private/tmp/spacetop-084-jev-final-response.json`; FO owns their retention/transfer. Raw input snapshots are not published here.
+Request SHA-256: `6fb1eb11fc96431d78efa845159851d4105055b10dcefd0f441644057f62ce03`; response SHA-256: `3ca91c3887dafa886412e70be08eab3174c1e96d628c9a8194898fcdc2cd0073`.
+Actual AC verdicts: all `satisfied`; confidence AC-1 0.98, AC-2 0.99, AC-3 0.90, AC-4 0.91. Ledger `/private/tmp/spacetop-084-jev-cost-ledger.json`: total task084 charge $0.000552426 of approved $0.01; final call $0.00036813. This verifier made no paid calls; the response supports technical verification and does not grant captain approval.
+
+```json
+{"model":"jev-1.13.0","answers":{"AC_1":{"type":"choice","choice":"satisfied","confidence":0.98,"probabilities":{"not_satisfied":0.0,"satisfied":0.99,"insufficient":0.01}},"AC_2":{"type":"choice","choice":"satisfied","confidence":0.99,"probabilities":{"not_satisfied":0.0,"satisfied":0.99,"insufficient":0.01}},"AC_3":{"type":"choice","choice":"satisfied","confidence":0.9,"probabilities":{"not_satisfied":0.0,"satisfied":0.94,"insufficient":0.06}},"AC_4":{"type":"choice","choice":"satisfied","confidence":0.91,"probabilities":{"not_satisfied":0.0,"satisfied":0.94,"insufficient":0.06}}},"usage":{"input_tokens":8765,"output_tokens":191}}
+```
+
 ### Summary
 
 Independent verification found no material defect in the display-only change and passes all four acceptance criteria. Runtime suppression is exercised without removing workflow facts, durable gate evidence or user-authored words; the existing full-suite/lint evidence is green. The captain gate and FO-owned paid judgment remain separate from this review.
