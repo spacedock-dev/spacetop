@@ -318,3 +318,40 @@ Correction 0efb0e5 fixes both previously reported cases and supplies meaningful 
 ### Summary
 
 Corrected the remaining upstream newline-prefix mismatch within the authorized parser scope, with red-first loader proof and green formatting/full-suite/lint gates. Code is committed on the isolated branch; correction inputs are staged outside recorder-owned output for FO recording and independent verify/2.
+
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Independently assess AC-1 and AC-2 against abc14cc: upstream current/retained/legacy room formats, strict digest/identity semantics and complete recorded-decision attribution; challenge meaningful uncovered cases.
+  Verified final `4368d4fe6576976a05f2b96fd70f8290ce19caef` atop abc14cc/0efb0e5; all original independent cases now pass: null context, plus ordinal, newline prefix and escaped state root. All three previously reported defects are closed.
+- DONE: Independently verify AC-3 safety and AC-4 usability/refresh: safe roots, traversal/symlink/race/Git-object boundaries, read-only proof, keyboard/history/reload behavior and narrow Unicode rendering; report material findings with exact evidence and proposed correction.
+  Final correction adds only the upstream LF-prefix guard and loader regression/docs; no safe-read/Git, app/UI or watcher change. Prior lowest-layer safety, read-only, history/reload and narrow rendering evidence remains applicable; fresh escaped-root probe passes.
+- DONE: Check required green formatting, full tests, lint and real watcher evidence, docs/policy/dependency fit; write a reproducible AC-by-AC verdict and checklist accounting without taking over implementation or approving the captain gate.
+  Fresh cargo fmt --check exits 0; retained cycle-2 focused/full/lint logs show 12/0/1, 686/0/4 and zero warnings. Prior 4 real notify passes apply to unchanged watcher code; no paid-model call, product-code edit or gate approval.
+
+### Findings
+
+No new material findings. The LF guard matches upstream Go dot semantics while preserving CR/tab/U+2028, exact recorded stage and unbounded ASCII ordinals; the explicit null inventory handling keeps wrong types diagnostic. The previous rejection reports and immutable advisory rounds remain intact.
+
+### Independent and falsifiable proof
+
+- Ran the unchanged verifier source from the prior rejection against final code: `cargo test -p spacetop-core --test gate_room_verify_probe verify_probe -- --nocapture` exits 0, 4 passed / 0 failed. Null context retains a canonical question, both malformed plus/newline identities lose verification, and a symlink-free escaped root refuses reads/dependencies. Reverting either correction makes its original assertions fail again.
+- Exact final result is retained at `/private/tmp/spacetop-080-independent-cycle2.log`; prior source at `/private/tmp/spacetop-080-independent-cycle1-probe-source.rs` and pinned upstream contrast at `/private/tmp/spacetop-080-upstream-cycle1-boundary.log`. Prior reports specify exact mutations using the committed Setup, so these supplementary local artifacts are not fresh-setup dependencies.
+- Reviewed cycle-2 committed `identity_prefix_newline_is_rejected_without_broadening_control_restrictions`: multiple LF prefix placements require IdentityMismatch; CR/tab/U+2028 must remain verified. Red log observes the exact pre-fix failure (0/1/0), then focused final loader suite passes (12/0/1); restoring or broadening the guard would fail this proof.
+- Reviewed retained `/private/tmp/spacetop-080-cycle2-{red,focused,fmt,test,lint}.log`: full 686 passing tests, 4 intentional real-notify ignores, completed clippy with `-D warnings`. Full suite/lint and original `/private/tmp/spacetop-080-ignored.log` real-notify results are author-run evidence, not claimed verifier reruns.
+- Removed the temporary Rust test after execution; fresh formatting passes and code worktree is clean. Only this report is written/committed; recorder-owned round-1 (8 entries) and round-2 (5 entries) retain revise provenance without reviewer append or approval.
+
+### AC-by-AC verdict
+
+- AC-1: PASS — current index without request, retained Briefing, request-backed/exact-file legacy precedence, historical selected stage, ordered nested references and flat/folder/archive/main provenance have parser/query proof; corrected null context preserves the question and artifact inventory.
+- AC-2: PASS — strict JCS/UTF-16/numeric/duplicate/Unicode vectors, digest and exact binding negatives, canonical identity syntax including original independent plus/LF cases, and complete recorded actor/time/reason/conn/includes/withdrawal/application coverage. Recorded attribution remains distinct from person authentication.
+- AC-3: PASS for declared boundaries — safe-root/traversal/symlink/replacement/size negatives, exact local Git commit/blob/mode/no-fallback checks, workflow byte/tree equality and static write/config/core guardrails. Independent external-root rejection passes; unsupported platforms/roots remain diagnostic.
+- AC-4: PASS for covered behavior — browser/history/focus/back/reserved/inert keys, identity-preserving reload and preview invalidation, 80x24/40x12/20x6 Unicode/failure/Esc assertions plus canonical room/artifact/state replacement real-notify proof. No watcher change or unresolved refresh concern warrants rerunning the unchanged real suite.
+
+### Judgment
+
+Approve the implementation's independent verification. All four ACs have reviewed falsifiable evidence and no blocking finding remains; FO owns its final JEV cross-check, captain-gate presentation and workflow transitions. This is not captain approval, gate recording, PR merge or release authorization.
+
+### Summary
+
+Final correction 4368d4f closes the residual upstream identity mismatch, and all previously failed independent probes now pass. Formatting, full tests and required lint are green with applicable real watcher evidence; task 080 is ready for the captain's review gate.
