@@ -175,3 +175,48 @@ Implemented and committed a read-only browser for canonical Briefings, recorded 
 ### State publication boundary
 
 Code is committed at `abc14cc2c76ab76644e1d752242b2d63259c9f1d`; implementation report and preserved JEV response data were committed path-scoped at `bfc6cc5`. Automatic approval review rejected `git -C docs/spacetop-dev/.spacedock-state push origin spacedock-state/spacetop-dev`: it did not find trusted user authorization for publishing the internal report/evaluation data to that exact shared remote destination, and considered remote trust unverified. No bypass or retry was performed. Remote state publication remains pending explicit user approval; the First Officer was notified. This is a publication boundary, not an implementation/test failure.
+
+
+## Stage Report: verify
+
+- DONE: Independently assess AC-1 and AC-2 against abc14cc: upstream current/retained/legacy room formats, strict digest/identity semantics and complete recorded-decision attribution; challenge meaningful uncovered cases.
+  Compared pinned v0.27.3 decoder/identity functions with independent Rust probes: valid null context is rejected and a plus-prefixed ordinal is falsely verified; AC-1/AC-2 require corrections below.
+- DONE: Independently verify AC-3 safety and AC-4 usability/refresh: safe roots, traversal/symlink/race/Git-object boundaries, read-only proof, keyboard/history/reload behavior and narrow Unicode rendering; report material findings with exact evidence and proposed correction.
+  Reviewed descriptor-relative NOFOLLOW reads, raw/JCS checks, exact blob plumbing, app identity/reload/keys and TestBackend/watch assertions; additional symlink-free escaped-state-root probe passes and registers no dependencies.
+- DONE: Check required green formatting, full tests, lint and real watcher evidence, docs/policy/dependency fit; write a reproducible AC-by-AC verdict and checklist accounting without taking over implementation or approving the captain gate.
+  Independently ran cargo fmt --check (exit 0); inspected retained test/lint/ignored/focus logs (683/0/4 full suite, zero clippy warnings, 4/0/0 real notify); no implementation, frontmatter, or paid-model edits/calls.
+
+### Findings
+
+- High — `crates/spacetop-core/src/parser/gate_room.rs:159`: `positive_suffix` uses Rust u64 parsing, which accepts a leading plus. Rebinding the fixture to `briefing:docs-dev:3k:validation:attempt-+1:revision-1` and recomputing its JCS digest produces a verified room; upstream `canonicalBriefingStage` rejects it. AC-2 explicitly requires invalid identities to remain diagnostic. Require ASCII `[1-9][0-9]*` syntax for both ordinals, a nonempty identity prefix, and regression tests; preserve upstream string semantics rather than imposing an undocumented numeric maximum.
+- High — `crates/spacetop-core/src/parser/gate_room.rs:204`: `flatten` requires arrays even for explicit JSON null. With the fixture's `context` replaced by null and the bound digest recomputed, a valid upstream Briefing becomes `InvalidSchema: context children must be arrays` and its question disappears. Upstream `parseBriefingManifest` plus `canonicalPresentationItems` accept null context as an empty inventory. Treat absent/null context and children as empty arrays while rejecting other wrong types; pin top-level and nested-null compatibility tests.
+
+### Reproducible evidence
+
+- Independent Rust probes reused the committed `Setup` fixture without changing production code: null-context acceptance and plus-identity rejection assertions both fail; symlink-free external state-root rejection succeeds. Command: `cargo test -p spacetop-core --test gate_room_verify_probe verify_probe -- --nocapture`; exit 101, 1 passed / 2 failed.
+- Null probe: deserialize `room/index.json`, set `v["context"] = Value::Null`, call `s.replace_manifest(v)`, then assert `s.view().verified()`. Identity probe: replace both `v["id"]` and `s.record.attempts[0].briefing.id` with the identity above, call `s.replace_manifest(v)`, then assert `!s.view().verified()`.
+- Pinned v0.27.3 independent Go probe calls `canonicalBriefingStage` on that identity (false), then `parseBriefingManifest`/`canonicalPresentationItems` on the same null-context schema (success). `go test ./internal/gates -run TestVerifyProbe -v` passed; these are executable schema results rather than source-string assertions.
+- Local evidence: `/private/tmp/spacetop-080-independent-probes.log`, `/private/tmp/spacetop-080-independent-probe-source.rs`, and `/private/tmp/spacetop-080-upstream-probes.log`. Temporary test files were removed from both trees; the code worktree stays clean. Local files supplement the exact mutations above and are not fresh-setup dependencies.
+
+### AC-by-AC verdict
+
+- AC-1: FAIL — current/retained/request-backed/exact-file precedence, nested Reference ordering, flat/folder/archive origins and main-worktree provenance are exercised; null context is an uncovered upstream-compatible case that loses the canonical question/inventory.
+- AC-2: FAIL — JCS numeric/UTF-16 vectors, strict duplicate/Unicode rejection, tampered request/Briefing/artifact checks and recorded actor/time/reason/conn/includes/withdrawal/application coverage are sound; malformed plus identity still earns verified evidence.
+- AC-3: PASS for reviewed boundaries — unsafe local/encoded paths, symlinks, replacement races, size limits, exact local Git blob modes/commits and read-only equality have falsifiable tests; the independent escaped-root probe prevents evidence reads and dependencies even without a symlink. This does not claim person authentication.
+- AC-4: PASS for covered behavior — stable history/focus/reload, stale preview invalidation, reserved B and inert mutation keys plus 80x24/40x12/20x6 Unicode/failure/Esc rendering assertions; room/artifact create/change/delete/state replacement has real notify evidence. No render-time I/O or new gate writes were found.
+
+### Open Questions
+
+No product decision is required for the two corrections: both are pinned upstream compatibility requirements. Full-suite and real notify results are retained implementation evidence, not reruns by this verifier; the sandbox-failing watcher run was not mistaken for behavioral failure. Dependency rationale and README/code-map/gate-browser docs match the owned changes.
+
+### Proposed correction routing
+
+Both findings are Material: the ordinal issue breaks AC-2 invalid-identity verification, and null inventory handling breaks AC-1 upstream compatibility. Assign both to the task 080 implementation owner on the existing feature worktree; add the failing lowest-layer cases first, keep captain criteria unchanged, then return to independent verify. These are reviewer proposals; FO owns semantic disposition and workflow routing.
+
+### Judgment
+
+Request changes. Return the two proven parser defects to implementation, then independently verify their new regression tests; this report does not approve or advance the captain gate.
+
+### Summary
+
+Verification ruled out missing green build/lint/watch evidence and found two concrete schema-compatibility gaps in `abc14cc2c76ab76644e1d752242b2d63259c9f1d`. The decision changes from gate-ready to correction-required; implementation quality and completed checks remain separate from these failed behavior assertions.
