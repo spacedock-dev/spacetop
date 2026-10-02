@@ -193,7 +193,21 @@ fn parse_binding(value: &str) -> Option<char> {
 fn is_reserved_key(key: char) -> bool {
     matches!(
         key,
-        'a' | 's' | 'D' | 'Y' | '?' | 'q' | 'j' | 'k' | 'w' | 'o' | 'b' | 'g' | 'G' | 'P' | ' '
+        'B' | 'a'
+            | 's'
+            | 'D'
+            | 'Y'
+            | '?'
+            | 'q'
+            | 'j'
+            | 'k'
+            | 'w'
+            | 'o'
+            | 'b'
+            | 'g'
+            | 'G'
+            | 'P'
+            | ' '
     )
 }
 
@@ -277,6 +291,7 @@ pub(crate) enum OverviewKeyAction {
     OpenMetrics,
     OpenActivity,
     OpenRelations,
+    OpenGateRoom,
     /// A mouse double-click landed on a rendered entity-ID cell. The full
     /// underlying ID is carried to the terminal boundary for OSC 52 output.
     CopyId(String),
@@ -395,6 +410,7 @@ pub(crate) fn handle_overview_key_with_keymap(
             state.cycle_sort_mode();
             OverviewKeyAction::None
         }
+        KeyCode::Char('B') if !state.preview_open() => OverviewKeyAction::OpenGateRoom,
         KeyCode::Char('D') if !state.preview_open() => OverviewKeyAction::OpenDefinition,
         code if keymap.search.matches(code) && !state.preview_open() => {
             OverviewKeyAction::OpenSearch

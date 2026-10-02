@@ -11,6 +11,7 @@ use spacetop_core::parser::ParseError;
 use spacetop_core::query::EntityQuery;
 use spacetop_core::session_state::{SessionState, WorkflowSessionKey};
 
+pub mod gate_room;
 mod history_worker;
 mod keys;
 mod mouse;
@@ -90,6 +91,10 @@ pub enum AppMode {
         underlying: OverviewSession,
         scroll: usize,
     },
+    GateRoom {
+        underlying: OverviewSession,
+        browser: gate_room::GateBrowser,
+    },
     Relations {
         underlying: OverviewSession,
         entity_id: String,
@@ -122,6 +127,10 @@ impl AppMode {
                 ..
             }
             | Self::Activity {
+                underlying: session,
+                ..
+            }
+            | Self::GateRoom {
                 underlying: session,
                 ..
             }
@@ -160,6 +169,10 @@ impl AppMode {
                 underlying: session,
                 ..
             }
+            | Self::GateRoom {
+                underlying: session,
+                ..
+            }
             | Self::Relations {
                 underlying: session,
                 ..
@@ -192,6 +205,10 @@ impl AppMode {
                 ..
             }
             | Self::Activity {
+                underlying: session,
+                ..
+            }
+            | Self::GateRoom {
                 underlying: session,
                 ..
             }
@@ -708,12 +725,32 @@ impl App {
         if let Some(session) = self.mode.as_session_mut() {
             session.active_state_mut().reload_from_snapshot(snapshot);
         }
+        self.refresh_gate_browser();
     }
 
     pub fn reload(&mut self) -> Result<(), ParseError> {
-        match self.mode.as_session_mut() {
+        let result = match self.mode.as_session_mut() {
             Some(session) => session.active_state_mut().reload(),
             None => Ok(()),
+        };
+        self.refresh_gate_browser();
+        result
+    }
+    fn refresh_gate_browser(&mut self) {
+        if let AppMode::GateRoom {
+            underlying,
+            browser,
+        } = &mut self.mode
+        {
+            if browser.workflow_dir != underlying.active_dir() {
+                let session = std::mem::replace(
+                    underlying,
+                    OverviewSession::single(OverviewState::empty(PathBuf::new()), true),
+                );
+                self.mode = AppMode::Overview(session);
+            } else {
+                browser.refresh(underlying.active_state());
+            }
         }
     }
 
@@ -728,6 +765,11 @@ impl App {
     /// a "workflow removed" message in `last_refresh_error` so the UI stays
     /// non-panicking until the user picks another workflow.
     pub fn reload_with_rediscovery(&mut self) -> Result<(), ParseError> {
+        let result = self.reload_discovery_inner();
+        self.refresh_gate_browser();
+        result
+    }
+    fn reload_discovery_inner(&mut self) -> Result<(), ParseError> {
         let config = self.config.clone();
         let session_state = self.session_state.clone();
         let Some(session) = self.mode.as_session_mut() else {
@@ -846,6 +888,18 @@ impl App {
 
         let definition_max_scroll = self.definition_max_scroll.get();
         match &mut self.mode {
+            AppMode::GateRoom {
+                underlying,
+                browser,
+            } => {
+                if browser.key(key.code, underlying.active_state()) {
+                    let restored = std::mem::replace(
+                        underlying,
+                        OverviewSession::single(OverviewState::empty(PathBuf::new()), true),
+                    );
+                    self.mode = AppMode::Overview(restored);
+                }
+            }
             AppMode::Overview(_) => {}
             AppMode::Picker(state) => match key.code {
                 KeyCode::Char('?') => self.help_open = true,
@@ -1118,6 +1172,16 @@ impl App {
             OverviewKeyAction::OpenMetrics => self.open_metrics(),
             OverviewKeyAction::OpenActivity => self.open_activity(),
             OverviewKeyAction::OpenRelations => self.open_relations(),
+            OverviewKeyAction::OpenGateRoom => {
+                if let AppMode::Overview(session) = &self.mode {
+                    if let Some(browser) = gate_room::GateBrowser::new(session.active_state()) {
+                        self.mode = AppMode::GateRoom {
+                            underlying: session.clone(),
+                            browser,
+                        };
+                    }
+                }
+            }
             OverviewKeyAction::CopyId(id) => self.pending_copy_id = Some(id),
             OverviewKeyAction::RequestSync => self.pending_sync = true,
         }

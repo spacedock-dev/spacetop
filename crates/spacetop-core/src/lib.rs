@@ -3,6 +3,7 @@ pub mod discovery;
 pub mod domain;
 pub mod editor;
 pub mod entity_identity;
+pub mod gate_room;
 pub mod git;
 pub mod git_history;
 pub mod git_sync;

@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -70,6 +71,7 @@ pub struct WorkflowWatcher {
     thread: Option<JoinHandle<()>>,
     shutdown: Sender<()>,
     backend: WatcherBackend,
+    dependencies: Arc<Mutex<Vec<PathBuf>>>,
 }
 
 impl WorkflowWatcher {
@@ -79,6 +81,7 @@ impl WorkflowWatcher {
         root: &Path,
         config: WatcherConfig,
     ) -> Result<(Self, Receiver<RefreshSignal>), WatcherError> {
+        let dependencies = Arc::new(Mutex::new(Vec::new()));
         let (raw_tx, raw_rx) = mpsc::channel::<Event>();
         let (signal_tx, signal_rx) = mpsc::channel::<RefreshSignal>();
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
@@ -113,8 +116,15 @@ impl WorkflowWatcher {
             };
 
         let debounce = config.debounce;
+        let thread_dependencies = dependencies.clone();
         let thread = thread::spawn(move || {
-            debounce_loop(raw_rx, signal_tx, shutdown_rx, debounce);
+            debounce_loop_with_dependencies(
+                raw_rx,
+                signal_tx,
+                shutdown_rx,
+                debounce,
+                thread_dependencies,
+            );
         });
 
         Ok((
@@ -123,9 +133,16 @@ impl WorkflowWatcher {
                 thread: Some(thread),
                 shutdown: shutdown_tx,
                 backend,
+                dependencies,
             },
             signal_rx,
         ))
+    }
+
+    pub fn set_dependencies(&mut self, paths: Vec<PathBuf>) {
+        if let Ok(mut dependencies) = self.dependencies.lock() {
+            *dependencies = paths;
+        }
     }
 
     pub fn backend(&self) -> WatcherBackend {
@@ -139,6 +156,15 @@ fn forward_events_to(raw_tx: Sender<Event>) -> impl FnMut(notify::Result<Event>)
             let _ = raw_tx.send(event);
         }
     }
+}
+fn relevant_with_dependencies(event: &Event, dependencies: &Arc<Mutex<Vec<PathBuf>>>) -> bool {
+    if matches!(event.kind, EventKind::Access(_)) {
+        return false;
+    }
+    event_is_relevant(event)
+        || dependencies
+            .lock()
+            .is_ok_and(|paths| event.paths.iter().any(|p| paths.contains(p)))
 }
 
 impl Drop for WorkflowWatcher {
@@ -175,8 +201,16 @@ pub(crate) fn is_relevant(path: &Path) -> bool {
         if matches!(ext_lc.as_str(), "swp" | "swx" | "swo" | "tmp" | "bak") {
             return false;
         }
-        if ext_lc == "md" {
+        if ext_lc == "md"
+            || matches!(
+                name,
+                "index.json" | "gate-briefing.json" | "briefing.json" | "request.json"
+            )
+        {
             return true;
+        }
+        if !name.starts_with('.') && !path.is_dir() {
+            return false;
         }
     }
 
@@ -191,7 +225,19 @@ fn event_is_relevant(event: &Event) -> bool {
     if matches!(event.kind, EventKind::Access(_)) {
         return false;
     }
-    event.paths.iter().any(|p| is_relevant(p))
+    let folder_event = matches!(
+        event.kind,
+        EventKind::Create(notify::event::CreateKind::Folder)
+            | EventKind::Remove(notify::event::RemoveKind::Folder)
+    );
+    event.paths.iter().any(|p| {
+        is_relevant(p)
+            || (folder_event
+                && p.file_name().and_then(|n| n.to_str()).is_some_and(|name| {
+                    name.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+                }))
+    })
 }
 
 /// How often the outer wait wakes up to check for shutdown when no raw
@@ -201,11 +247,27 @@ fn event_is_relevant(event: &Event) -> bool {
 /// idle outer wait is a periodic shutdown poll.
 const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+#[cfg(test)]
 fn debounce_loop(
     raw_rx: Receiver<Event>,
     signal_tx: Sender<RefreshSignal>,
     shutdown_rx: Receiver<()>,
     debounce: Duration,
+) {
+    debounce_loop_with_dependencies(
+        raw_rx,
+        signal_tx,
+        shutdown_rx,
+        debounce,
+        Arc::new(Mutex::new(Vec::new())),
+    );
+}
+fn debounce_loop_with_dependencies(
+    raw_rx: Receiver<Event>,
+    signal_tx: Sender<RefreshSignal>,
+    shutdown_rx: Receiver<()>,
+    debounce: Duration,
+    dependencies: Arc<Mutex<Vec<PathBuf>>>,
 ) {
     loop {
         // Wait for an event with a bounded timeout so we can poll the
@@ -221,7 +283,7 @@ fn debounce_loop(
         if shutdown_rx.try_recv().is_ok() {
             return;
         }
-        if !event_is_relevant(&first) {
+        if !relevant_with_dependencies(&first, &dependencies) {
             continue;
         }
 
@@ -238,7 +300,7 @@ fn debounce_loop(
             let remaining = deadline.saturating_duration_since(Instant::now());
             match raw_rx.recv_timeout(remaining) {
                 Ok(ev) => {
-                    if event_is_relevant(&ev) {
+                    if relevant_with_dependencies(&ev, &dependencies) {
                         deadline = Instant::now() + debounce;
                     }
                 }
@@ -296,6 +358,34 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::mpsc::TryRecvError;
 
+    #[test]
+    fn canonical_rooms_dependencies_unrelated_and_access_events() {
+        for name in [
+            "index.json",
+            "gate-briefing.json",
+            "briefing.json",
+            "request.json",
+        ] {
+            assert!(is_relevant(Path::new(name)));
+        }
+        assert!(!is_relevant(Path::new("unrelated.json")));
+        assert!(event_is_relevant(
+            &Event::new(EventKind::Remove(notify::event::RemoveKind::Folder))
+                .add_path(PathBuf::from("state.checkout"))
+        ));
+        let path = PathBuf::from("room/evidence with spaces.txt");
+        let dependencies = Arc::new(Mutex::new(vec![path.clone()]));
+        let event =
+            Event::new(EventKind::Modify(notify::event::ModifyKind::Any)).add_path(path.clone());
+        assert!(!event_is_relevant(&event));
+        assert!(relevant_with_dependencies(&event, &dependencies));
+        assert!(!relevant_with_dependencies(
+            &Event::new(EventKind::Access(notify::event::AccessKind::Any)).add_path(path),
+            &dependencies
+        ));
+        dependencies.lock().unwrap().clear();
+        assert!(!relevant_with_dependencies(&event, &dependencies));
+    }
     #[test]
     fn is_relevant_accepts_markdown_files() {
         assert!(is_relevant(Path::new("docs/spacetop-dev/task.md")));

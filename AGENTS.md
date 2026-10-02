@@ -119,6 +119,12 @@ Keep module boundaries clear and testable:
   `gates.rs` owns pure current-stage readiness, and `gate_proof.rs` owns the
   read-only, path-scoped Git/report preparation proof. Worktree merges retain
   main gate facts and proof. Gates never authorize Spacetop workflow-state writes.
+- `crates/spacetop-core/src/domain/gate_room.rs` owns verified Briefing/inventory
+  facts and typed diagnostics; `parser/gate_room.rs` owns strict raw JSON/JCS
+  decoding; `gate_room.rs` owns bounded safe-root, descriptor-relative and exact
+  local Git-blob evidence reads. App `gate_room.rs` owns browser navigation and
+  cached evidence; UI `gate_room.rs` only renders it. Recorded attribution and
+  binding verification never authenticate a person or authorize gate writes.
 - `crates/spacetop-core/src/state_checkout.rs` owns the two-backend storage
   classifier and read-only Git probes for attached, detached, wrong-branch,
   missing, and typed-unverified split-root state checkouts, plus the explicit

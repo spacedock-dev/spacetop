@@ -390,6 +390,64 @@ impl WorkflowIndex {
         })
     }
 
+    pub fn gate_attempts<'a>(
+        &self,
+        entity: &'a Entity,
+    ) -> Vec<(
+        &'a crate::domain::GateRecord,
+        &'a crate::domain::GateAttempt,
+    )> {
+        entity
+            .gates
+            .document()
+            .map(|d| {
+                d.records
+                    .iter()
+                    .flat_map(|r| r.attempts.iter().map(move |a| (r, a)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub fn gate_room(
+        &self,
+        entity: &Entity,
+        gate: &str,
+        attempt: &str,
+    ) -> crate::domain::GateRoomView {
+        match self
+            .gate_attempts(entity)
+            .into_iter()
+            .find(|(r, a)| r.id == gate && a.id == attempt)
+        {
+            Some((r, a)) => crate::gate_room::load(&self.definition, entity, r, a),
+            None => crate::domain::GateRoomView::failed(crate::domain::RoomDiagnostic::new(
+                crate::domain::RoomProblem::BindingMismatch,
+                "recorded attempt unavailable",
+            )),
+        }
+    }
+
+    pub fn gate_room_item(
+        &self,
+        entity: &Entity,
+        gate: &str,
+        attempt: &str,
+        item: &str,
+    ) -> Result<Vec<u8>, crate::domain::RoomDiagnostic> {
+        let (r, a) = self
+            .gate_attempts(entity)
+            .into_iter()
+            .find(|(r, a)| r.id == gate && a.id == attempt)
+            .ok_or_else(|| {
+                crate::domain::RoomDiagnostic::new(
+                    crate::domain::RoomProblem::BindingMismatch,
+                    "recorded attempt unavailable",
+                )
+            })?;
+        crate::gate_room::read_item(&self.definition, entity, r, a, item)
+    }
+
     pub fn gate_details(&self, entity: &Entity) -> crate::domain::GateDetails {
         crate::gates::details(entity)
     }

@@ -88,6 +88,10 @@ Current two-crate workspace boundaries:
 - Frontmatter, README, entity, archive, and worktree parsing belong in
   `crates/spacetop-core/src/parser.rs` and
   `crates/spacetop-core/src/parser/*`.
+- Read-only gate-room evidence belongs in `domain/gate_room.rs`, strict raw
+  JSON/JCS decoding in `parser/gate_room.rs`, and bounded descriptor/Git reads
+  in `gate_room.rs`. App navigation owns I/O requests and cached evidence;
+  rendering consumes those facts and never reads files. `B` opens this browser.
 - Typed recorded gate data belongs in `domain/gates.rs`; strict decoding belongs
   in `parser/gates.rs`, pure readiness in `gates.rs`, and read-only preparation
   proof in `gate_proof.rs`. List, preview, and headless filters consume index
@@ -275,3 +279,17 @@ A task can be called complete only when:
 - `make lint` passed for code changes.
 - Docs and policy remain consistent with implementation.
 - Any remaining risk is named plainly in the final response.
+
+### Gate-room dependencies
+
+`sha2` supplies SHA-256; existing `sha1` cannot verify the upstream revision
+contract. Pinned `serde_json_canonicalizer` 0.3.2 supplies RFC 8785 ECMAScript
+number formatting and UTF-16 property sorting. Sorted serde_json alone cannot
+provide either. Strict raw decoding rejects duplicate members, invalid Unicode,
+nonfinite numbers and excessive input before canonicalization. RFC golden
+vectors and the unchanged v0.27.3 upstream fixture pin compatibility.
+On Unix, `rustix` fs APIs supply safe descriptor-relative `openat` with
+`NOFOLLOW`, avoiding handwritten unsafe platform calls and std path-check/open
+races. Each parent is opened by descriptor, final files must be regular and
+bounded, and path identity is rechecked before returning evidence. Unsupported
+platforms return diagnostics instead of reading under a weaker boundary.
