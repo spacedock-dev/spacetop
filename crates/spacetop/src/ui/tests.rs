@@ -93,69 +93,6 @@ fn app_with_storage(storage: spacetop_core::domain::WorkflowStorage) -> App {
     App::from_snapshot(root, snapshot)
 }
 
-fn app_with_session_attribution(
-    mut items: Vec<Entity>,
-    entity_id: &str,
-    activity: spacetop_core::domain::EntityActivity,
-) -> App {
-    let root = PathBuf::from("/tmp/spacetop-test");
-    for item in &mut items {
-        if item.id == entity_id && item.worktree.is_none() {
-            item.worktree = Some(format!(".worktrees/task-{entity_id}"));
-        }
-    }
-    let snapshot = WorkflowSnapshot {
-        definition: WorkflowDefinition {
-            root: root.clone(),
-            state: None,
-            storage: Default::default(),
-            stages: vec![StageDefinition {
-                name: "design".to_string(),
-                initial: true,
-                terminal: false,
-                gate: false,
-                fresh: false,
-                feedback_to: None,
-                worktree: false,
-                concurrency: None,
-            }],
-            id_style: None,
-            entity_type: None,
-            entity_label: None,
-            entity_label_plural: None,
-            stage_colors: std::collections::HashMap::new(),
-            stage_prose: std::collections::HashMap::new(),
-            transitions: Vec::new(),
-        },
-        items,
-        parse_errors: Vec::new(),
-    };
-    let mut state = OverviewState::from_snapshot(root.clone(), snapshot);
-    let repo_root = state.repo_root.clone();
-    state.apply_session_activity_result(crate::app::SessionActivityWorkerResult {
-        workflow_dir: root.clone(),
-        repo_root: repo_root.clone(),
-        state: Default::default(),
-        retry_immediately: false,
-        result: Ok(spacetop_core::domain::SessionScanReport {
-            workflow_dir: root,
-            repo_root,
-            scanned_roots: Vec::new(),
-            errors: Vec::new(),
-            attributions: vec![spacetop_core::domain::EntityActivityAttribution {
-                entity_id: entity_id.to_string(),
-                activity,
-            }],
-        }),
-    });
-    let mut app = App::from_session(OverviewSession::single(state, true));
-    app.handle_key(crossterm::event::KeyEvent::new(
-        crossterm::event::KeyCode::Enter,
-        crossterm::event::KeyModifiers::NONE,
-    ));
-    app
-}
-
 fn item(id: &str, title: &str, body: &str) -> Entity {
     Entity {
         gates: Default::default(),
@@ -532,3 +469,79 @@ fn find_text(buffer: &ratatui::buffer::Buffer, needle: &str) -> Vec<(u16, u16)> 
 }
 
 // --- Help popup behaviour ---
+
+// Runtime data remains populated even in archive scope, so suppression is exercised.
+fn runtime_cases() -> Vec<Option<spacetop_core::domain::EntityActivity>> {
+    use spacetop_core::domain::{ActivityHandler, AgentRuntime, EntityActivity};
+    vec![
+        None,
+        Some(EntityActivity::Idle {
+            updated_unix: Some(1),
+        }),
+        Some(EntityActivity::Running {
+            handler: ActivityHandler::Worker,
+            runtime: AgentRuntime::Codex,
+            session_id: "worker-session".into(),
+            updated_unix: 1,
+        }),
+        Some(EntityActivity::Running {
+            handler: ActivityHandler::FirstOfficer,
+            runtime: AgentRuntime::ClaudeCode,
+            session_id: "fo-session".into(),
+            updated_unix: 1,
+        }),
+        Some(EntityActivity::HumanGate {
+            runtime: AgentRuntime::ClaudeCode,
+            session_id: "gate-session".into(),
+            updated_unix: 1,
+        }),
+    ]
+}
+
+fn runtime_display_state(
+    archived: bool,
+    activity: Option<spacetop_core::domain::EntityActivity>,
+) -> OverviewState {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/durable-gates");
+    let mut snapshot = spacetop_core::parser::load_workflow_dir(&root, &root).unwrap();
+    snapshot.items.retain(|entity| entity.id == "pending");
+    let entity = &mut snapshot.items[0];
+    entity.title = "Task".into();
+    entity.source = Some("test".into());
+    entity.score = Some(7.0);
+    entity.worktree = Some("wt".into());
+    entity.worktree_source = Some(PathBuf::from("wt"));
+    entity.verdict = Some("PASSED".into());
+    entity.body = "idle\nrunning · worker\nrunning · FO\nhuman-gate\nRuntime: body\nSession: body\nUpdated: body".into();
+    let entities = snapshot.items.clone();
+    let mut state = OverviewState::from_snapshot(root.clone(), snapshot);
+    if archived {
+        state
+            .index
+            .replace_archive(spacetop_core::sources::ArchiveSnapshot {
+                entities,
+                parse_errors: vec![],
+                error: None,
+            });
+        state.archive_loaded = true;
+        state.view_scope = crate::app::ViewScope::Archived;
+    }
+    state
+        .index
+        .replace_session_scan_report(spacetop_core::domain::SessionScanReport {
+            workflow_dir: root.clone(),
+            repo_root: root,
+            scanned_roots: vec![],
+            errors: vec![],
+            attributions: activity
+                .into_iter()
+                .map(
+                    |activity| spacetop_core::domain::EntityActivityAttribution {
+                        entity_id: "pending".into(),
+                        activity,
+                    },
+                )
+                .collect(),
+        });
+    state
+}

@@ -14,7 +14,6 @@ use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 thread_local! {
     /// Per-render-thread memoization of the termimad markdown render. Lives in
@@ -399,7 +398,6 @@ fn build_preview_header_lines<'a>(
                 spans.push(Span::styled("score: ", dim));
                 spans.push(Span::raw(score.clone()));
                 lines.push(Line::from(spans));
-                push_session_attribution_line(&mut lines, item, state, dim);
                 lines.push(Line::from(vec![
                     Span::styled("source: ", dim),
                     Span::raw(source.to_string()),
@@ -412,7 +410,6 @@ fn build_preview_header_lines<'a>(
                     Span::styled("score: ", dim),
                     Span::raw(score.clone()),
                 ]));
-                push_session_attribution_line(&mut lines, item, state, dim);
                 lines.push(Line::from(vec![
                     Span::styled("source: ", dim),
                     Span::raw(source.to_string()),
@@ -454,67 +451,6 @@ fn build_preview_header_lines<'a>(
     lines.push(Line::from(Span::styled(divider, dim)));
 
     lines
-}
-
-fn push_session_attribution_line<'a>(
-    lines: &mut Vec<Line<'a>>,
-    item: &'a spacetop_core::domain::Entity,
-    state: &OverviewState,
-    dim: Style,
-) {
-    if state.view_scope() == ViewScope::Active {
-        if let Some(line) = session_attribution_line(item, state, dim) {
-            lines.push(line);
-        }
-    }
-}
-
-fn session_attribution_line<'a>(
-    item: &'a spacetop_core::domain::Entity,
-    state: &OverviewState,
-    dim: Style,
-) -> Option<Line<'a>> {
-    let activity = state.index().entity_activity_for_entity_id(&item.id)?;
-    let runtime = activity
-        .runtime()
-        .map(spacetop_core::domain::AgentRuntime::label)
-        .unwrap_or("\u{2014}");
-    let session = activity.session_id().unwrap_or("\u{2014}");
-    let updated = activity
-        .updated_unix()
-        .map(format_latest_activity)
-        .unwrap_or_else(|| "\u{2014}".to_string());
-    Some(Line::from(vec![
-        Span::styled("Runtime: ", dim),
-        Span::raw(runtime),
-        Span::raw("  \u{00B7}  "),
-        Span::styled("Session: ", dim),
-        Span::raw(session.to_string()),
-        Span::raw("  \u{00B7}  "),
-        Span::styled("Status: ", dim),
-        Span::raw(activity.status_label()),
-        Span::raw("  \u{00B7}  "),
-        Span::styled("Updated: ", dim),
-        Span::raw(updated),
-    ]))
-}
-
-fn format_latest_activity(timestamp: i64) -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(timestamp);
-    let age = now.saturating_sub(timestamp);
-    const MINUTE: i64 = 60;
-    const HOUR: i64 = 60 * MINUTE;
-    const DAY: i64 = 24 * HOUR;
-
-    match age {
-        0..MINUTE => "just now".to_string(),
-        MINUTE..HOUR => format!("{}m ago", age / MINUTE),
-        HOUR..DAY => format!("{}h ago", age / HOUR),
-        _ => format!("{}d ago", age / DAY),
-    }
 }
 
 fn line_width(line: &Line<'_>) -> usize {

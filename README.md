@@ -96,8 +96,11 @@ Git metadata events are not watched. Spacetop never prepares, approves, consumes
 or merges a gate.
 
 Entity activity has three values: `idle`, `running`, and `human-gate`.
-`running` identifies its handler as `running · worker` or `running · FO`;
-`human-gate` uses the high-salience `◆` list marker. Detection fails closed:
+`running` identifies its handler as `running · worker` or `running · FO`.
+Task rows and preview headers omit inferred runtime activity, session attribution
+and last-activity timestamps. Workflow stages and durable gates remain visible.
+The activity backend, headless schemas and dedicated activity feed are unchanged.
+Detection fails closed:
 only exact structured worker, first-officer, terminal, and approve/reject gate
 records create activity. Process names, mtimes, workflow stages, ordinary path
 mentions, and filesystem writes alone do not claim a handler.

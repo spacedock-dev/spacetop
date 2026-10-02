@@ -777,7 +777,7 @@ mod tests {
     fn double_click_copies_full_id_after_first_click_reflows_the_list() {
         let full_id = "compact-copyable-slug-ids".to_string();
         let mut app = fixture_app_with_ids(std::slice::from_ref(&full_id), "body");
-        draw(&app, 100, 30);
+        draw(&app, 96, 30);
         let first_rect = app.as_overview().expect("overview").id_column_rect.get();
         assert_eq!(first_rect.width, 20);
         let position = Position::new(first_rect.x + first_rect.width - 1, first_rect.y);
@@ -796,7 +796,7 @@ mod tests {
 
         // The preview halves the list pane and shrinks the responsive ID
         // column, so the original last ID cell is no longer in the new rect.
-        draw(&app, 100, 30);
+        draw(&app, 96, 30);
         let reflowed = app.as_overview().expect("overview").id_column_rect.get();
         assert_eq!(reflowed.width, 19);
         assert!(!reflowed.contains(position));

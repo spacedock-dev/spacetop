@@ -216,40 +216,53 @@ fn task_list_uses_configured_selection_background() {
 }
 
 #[test]
-fn task_row_renders_active_session_marker_from_typed_attribution() {
-    let app = app_with_session_attribution(
-        vec![
-            item("064", "Inactive task", "Body"),
-            item("065", "Active task", "Body"),
-        ],
-        "065",
-        spacetop_core::domain::EntityActivity::Running {
-            handler: spacetop_core::domain::ActivityHandler::Worker,
-            runtime: spacetop_core::domain::AgentRuntime::Codex,
-            session_id: "session-065".to_string(),
-            updated_unix: 1_718_000_000,
-        },
-    );
-    let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
-    terminal.draw(|frame| render(frame, &app)).expect("render");
-    let rendered = buffer_text(terminal.backend().buffer());
-
-    assert!(
-        rendered.contains("\u{25CF}   Active task"),
-        "active row should include fixed-width running marker before the title; rendered: {rendered:?}"
-    );
-    assert!(
-        !rendered.contains("\u{25CF}   Inactive task"),
-        "inactive row must not render the active marker"
-    );
-    assert!(
-        rendered.contains("running · worker"),
-        "running handler must render inside the activity status"
-    );
+fn task_rows_ignore_runtime_across_scopes_and_widths() {
+    for archived in [false, true] {
+        for width in [60, 200] {
+            let mut baseline = None;
+            for activity in runtime_cases() {
+                let state = runtime_display_state(archived, activity.clone());
+                assert_eq!(
+                    state.index().entity_activity_for_entity_id("pending"),
+                    activity.as_ref()
+                );
+                let mut terminal = Terminal::new(TestBackend::new(width, 12)).unwrap();
+                terminal
+                    .draw(|frame| {
+                        super::super::list::render_task_list(
+                            frame,
+                            frame.area(),
+                            &Default::default(),
+                            &state,
+                        )
+                    })
+                    .unwrap();
+                let buffer = terminal.backend().buffer();
+                let text = buffer_text(buffer);
+                for fact in ["review", "pending", "Task", "▸", "⎇"] {
+                    assert!(text.contains(fact), "{fact}: {text}");
+                }
+                if archived {
+                    assert!(text.contains("[✓]"));
+                } else {
+                    assert!(text.contains("[gate:captain]"));
+                }
+                let stage_color =
+                    crate::ui::color::to_color(state.definition().stage_color_for("review"));
+                assert!(find_styled_text(buffer, "review", |style| style.fg == Some(stage_color)));
+                assert!(find_styled_text(buffer, "Task", |style| style.bg.is_some()));
+                if let Some(baseline) = &baseline {
+                    assert_eq!(buffer, baseline, "runtime changes row cells/styles");
+                } else {
+                    baseline = Some(buffer.clone());
+                }
+            }
+        }
+    }
 }
 
 #[test]
-fn task_row_renders_scanner_replay_then_clears_on_terminal_report() {
+fn task_row_stays_unchanged_while_scanner_replays_and_stops() {
     use std::fs;
     use std::io::Write;
     use std::path::Path;
@@ -303,24 +316,32 @@ fn task_row_renders_scanner_replay_then_clears_on_terminal_report() {
 
     let mut terminal = Terminal::new(TestBackend::new(200, 24)).expect("terminal");
     terminal.draw(|frame| render(frame, &app)).expect("render");
-    let running_buffer = terminal.backend().buffer();
-    assert!(find_styled_text(running_buffer, "\u{25CF}", |style| {
-        style.fg == Some(Color::Green)
-    }));
-    assert!(buffer_text(running_buffer).contains("running · worker"));
+    let running_buffer = terminal.backend().buffer().clone();
+    assert!(matches!(
+        app.as_overview()
+            .unwrap()
+            .index()
+            .entity_activity_for_entity_id(&active.id),
+        Some(spacetop_core::domain::EntityActivity::Running { .. })
+    ));
+    assert!(!buffer_text(&running_buffer).contains("running · worker"));
 
     let mut scan_state = running.state;
     for cycle in 1..=5 {
         app.reload_from_snapshot(snapshot_with_items(vec![active.clone()]));
         terminal.draw(|frame| render(frame, &app)).expect("render");
-        let reloaded_buffer = terminal.backend().buffer();
-        assert!(
-            find_styled_text(reloaded_buffer, "\u{25CF}", |style| {
-                style.fg == Some(Color::Green)
-            }),
-            "cycle {cycle}: reload must preserve the running marker"
+        assert_eq!(
+            terminal.backend().buffer(),
+            &running_buffer,
+            "cycle {cycle}: reload changed display"
         );
-        assert!(buffer_text(reloaded_buffer).contains("running · worker"));
+        assert!(matches!(
+            app.as_overview()
+                .unwrap()
+                .index()
+                .entity_activity_for_entity_id(&active.id),
+            Some(spacetop_core::domain::EntityActivity::Running { .. })
+        ));
 
         let unchanged = scan_local_sessions_with_state(
             &SessionScanRequest {
@@ -340,14 +361,18 @@ fn task_row_renders_scanner_replay_then_clears_on_terminal_report() {
             retry_immediately: false,
         });
         terminal.draw(|frame| render(frame, &app)).expect("render");
-        let unchanged_buffer = terminal.backend().buffer();
-        assert!(
-            find_styled_text(unchanged_buffer, "\u{25CF}", |style| {
-                style.fg == Some(Color::Green)
-            }),
-            "cycle {cycle}: unchanged scan must keep the running marker"
+        assert_eq!(
+            terminal.backend().buffer(),
+            &running_buffer,
+            "cycle {cycle}: scan changed display"
         );
-        assert!(buffer_text(unchanged_buffer).contains("running · worker"));
+        assert!(matches!(
+            app.as_overview()
+                .unwrap()
+                .index()
+                .entity_activity_for_entity_id(&active.id),
+            Some(spacetop_core::domain::EntityActivity::Running { .. })
+        ));
     }
 
     let mut append = fs::OpenOptions::new()
@@ -376,40 +401,17 @@ fn task_row_renders_scanner_replay_then_clears_on_terminal_report() {
         retry_immediately: false,
     });
     terminal.draw(|frame| render(frame, &app)).expect("render");
+    assert!(matches!(
+        app.as_overview()
+            .unwrap()
+            .index()
+            .entity_activity_for_entity_id(&active.id),
+        Some(spacetop_core::domain::EntityActivity::Idle { .. })
+    ));
+    assert_eq!(terminal.backend().buffer(), &running_buffer);
     let stopped_text = buffer_text(terminal.backend().buffer());
     assert!(!stopped_text.contains("running · worker"));
     assert!(!stopped_text.contains("\u{25CF}   Stable activity task"));
-}
-
-#[test]
-fn task_row_renders_human_gate_with_high_salience_marker() {
-    let app = app_with_session_attribution(
-        vec![item("069", "Awaiting captain", "Body")],
-        "069",
-        spacetop_core::domain::EntityActivity::HumanGate {
-            runtime: spacetop_core::domain::AgentRuntime::ClaudeCode,
-            session_id: "fo-session".to_string(),
-            updated_unix: 1_718_000_000,
-        },
-    );
-    let mut terminal = Terminal::new(TestBackend::new(120, 24)).expect("terminal");
-    terminal.draw(|frame| render(frame, &app)).expect("render");
-    let buffer = terminal.backend().buffer();
-
-    assert!(
-        find_styled_text(buffer, "\u{25C6}", |style| {
-            style.fg == Some(Color::Red)
-                && style.add_modifier.contains(ratatui::style::Modifier::BOLD)
-        }),
-        "human-gate rows must use a bold red diamond"
-    );
-    assert!(
-        find_styled_text(buffer, "human-gate", |style| {
-            style.fg == Some(Color::Red)
-                && style.add_modifier.contains(ratatui::style::Modifier::BOLD)
-        }),
-        "human-gate status text must be high-salience"
-    );
 }
 
 #[test]
@@ -1388,9 +1390,9 @@ fn long_slug_id_column_shrinks_responsively_and_caps_at_twenty_cells() {
     let narrow_state = narrow_app.as_overview().expect("overview");
     let narrow_id = narrow_state.id_column_rect.get();
     let narrow_rows = narrow_state.list_rows_rect.get();
-    assert_eq!(narrow_id.width, 9, "40-cell pane leaves 9 cells for ID");
-    assert_eq!(buffer_cells(narrow_buffer, narrow_id), "compact-\u{2026}");
-    let title_x = narrow_id.x + narrow_id.width + 2 + 2 + 2;
+    assert_eq!(narrow_id.width, 11, "40-cell pane leaves 11 cells for ID");
+    assert_eq!(buffer_cells(narrow_buffer, narrow_id), "compact-co\u{2026}");
+    let title_x = narrow_id.x + narrow_id.width + 2 + 2;
     assert!(
         usize::from(
             (narrow_rows.x + narrow_rows.width)
@@ -1439,14 +1441,21 @@ fn wide_and_combining_ids_use_terminal_cell_width() {
         .expect("overview")
         .id_column_rect
         .get();
-    assert_eq!(wide_rect.width, 9);
-    for (offset, symbol) in [(0, "資"), (2, "料"), (4, "資"), (6, "料"), (8, "\u{2026}")] {
+    assert_eq!(wide_rect.width, 11);
+    for (offset, symbol) in [
+        (0, "資"),
+        (2, "料"),
+        (4, "資"),
+        (6, "料"),
+        (8, "資"),
+        (10, "\u{2026}"),
+    ] {
         assert_eq!(
             wide_buffer[(wide_rect.x + offset, wide_rect.y)].symbol(),
             symbol
         );
     }
-    let wide_title_x = wide_rect.x + wide_rect.width + 2 + 2 + 2;
+    let wide_title_x = wide_rect.x + wide_rect.width + 2 + 2;
     assert_eq!(wide_buffer[(wide_title_x, wide_rect.y)].symbol(), "W");
 
     let combining_id = "e\u{301}".repeat(12);
@@ -1461,18 +1470,18 @@ fn wide_and_combining_ids_use_terminal_cell_width() {
         .expect("overview")
         .id_column_rect
         .get();
-    assert_eq!(combining_rect.width, 9);
-    for offset in 0..8 {
+    assert_eq!(combining_rect.width, 11);
+    for offset in 0..10 {
         assert_eq!(
             combining_buffer[(combining_rect.x + offset, combining_rect.y)].symbol(),
             "e\u{301}"
         );
     }
     assert_eq!(
-        combining_buffer[(combining_rect.x + 8, combining_rect.y)].symbol(),
+        combining_buffer[(combining_rect.x + 10, combining_rect.y)].symbol(),
         "\u{2026}"
     );
-    let combining_title_x = combining_rect.x + combining_rect.width + 2 + 2 + 2;
+    let combining_title_x = combining_rect.x + combining_rect.width + 2 + 2;
     assert_eq!(
         combining_buffer[(combining_title_x, combining_rect.y)].symbol(),
         "C"

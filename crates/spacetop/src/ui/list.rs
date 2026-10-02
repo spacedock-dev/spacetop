@@ -17,7 +17,6 @@ pub(crate) const TITLE_COL_MIN: usize = 16;
 const GUTTER_WIDTH: usize = 2;
 const PHASE_ID_GAP: usize = 1;
 const ID_TITLE_GAP: usize = 2;
-const ACTIVITY_MARKER_WIDTH: usize = 2;
 const WORKTREE_MARKER_WIDTH: usize = 2;
 
 /// Format a phase name into a fixed `width`-character column, preserving the
@@ -148,12 +147,8 @@ pub(crate) fn id_col_width(items: &[Entity], pane_width: u16, phase_width: usize
         .max()
         .unwrap_or(ID_COL_MIN)
         .clamp(ID_COL_MIN, ID_COL_MAX);
-    let fixed_width = GUTTER_WIDTH
-        + phase_width
-        + PHASE_ID_GAP
-        + ID_TITLE_GAP
-        + ACTIVITY_MARKER_WIDTH
-        + WORKTREE_MARKER_WIDTH;
+    let fixed_width =
+        GUTTER_WIDTH + phase_width + PHASE_ID_GAP + ID_TITLE_GAP + WORKTREE_MARKER_WIDTH;
     let responsive_ceiling = usize::from(pane_width)
         .saturating_sub(fixed_width + TITLE_COL_MIN)
         .max(ID_COL_MIN);
@@ -242,30 +237,12 @@ fn build_task_list_items(
             } else {
                 ("  ", Style::default())
             };
-            let activity = (scope == ViewScope::Active)
-                .then(|| state.index().entity_activity_for_entity_id(&item.id))
-                .flatten();
-            let (active_marker, active_marker_style) = match activity {
-                Some(spacetop_core::domain::EntityActivity::HumanGate { .. }) => (
-                    "\u{25C6} ",
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                ),
-                Some(spacetop_core::domain::EntityActivity::Running { .. }) => (
-                    "\u{25CF} ",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                _ => ("  ", Style::default()),
-            };
-
             let mut spans: Vec<Span<'_>> = vec![
                 Span::styled(gutter_text, gutter_style),
                 Span::styled(phase, stage_style),
                 Span::raw(" "),
                 Span::styled(id_str, id_style),
                 Span::raw("  "),
-                Span::styled(active_marker, active_marker_style),
                 Span::styled(wt_marker, wt_marker_style),
                 Span::styled(item.title.clone(), title_style),
             ];
@@ -273,23 +250,9 @@ fn build_task_list_items(
             let gate = state.index().gate_details(item);
             if let Some(readiness) = gate.readiness {
                 spans.insert(
-                    7,
+                    6,
                     Span::styled(format!("[gate:{}] ", gate_list_label(readiness)), dim_style),
                 );
-            }
-
-            if let Some(activity) = activity {
-                let activity_style = match activity {
-                    spacetop_core::domain::EntityActivity::HumanGate { .. } => {
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
-                    }
-                    spacetop_core::domain::EntityActivity::Running { .. } => {
-                        Style::default().fg(Color::Green)
-                    }
-                    spacetop_core::domain::EntityActivity::Idle { .. } => dim_style,
-                };
-                spans.push(Span::raw("  "));
-                spans.push(Span::styled(activity.status_label(), activity_style));
             }
 
             if scope == ViewScope::Archived {
