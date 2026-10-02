@@ -1,7 +1,7 @@
 ---
 id: 080
 title: Browse gate Briefings and decisions
-status: implement
+status: verify
 source: "Captain-requested Spacedock release compatibility survey, 2026-10-01"
 kind: feature
 risk: medium
