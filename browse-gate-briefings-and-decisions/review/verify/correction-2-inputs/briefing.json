@@ -1,0 +1,56 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:spacetop-dev:080:verify:round-2",
+  "question": "Does the newline-prefix parser correction address the Material/Fix finding against unchanged AC-2? Independent verification remains pending; these staging inputs do not approve a gate.",
+  "artifacts": [
+    {
+      "id": "artifact:original-parser",
+      "uri": "git-root://main/0efb0e5e78b4a03d93f5f419c25c18f7e00a5ad5/crates/spacetop-core/src/parser/gate_room.rs",
+      "rev": "sha256:606ea427e940b7b5e3090a4858ea33ae4f6165e376b1d0b6c92802f58adf7014"
+    },
+    {
+      "id": "artifact:corrected-parser",
+      "uri": "git-root://main/4368d4fe6576976a05f2b96fd70f8290ce19caef/crates/spacetop-core/src/parser/gate_room.rs",
+      "rev": "sha256:1a851d7b0d5ac04f11588bf8351e1871b8199eaa2bbcece3b9b41b69513e71aa"
+    },
+    {
+      "id": "artifact:corrected-regressions",
+      "uri": "git-root://main/4368d4fe6576976a05f2b96fd70f8290ce19caef/crates/spacetop-core/tests/gate_rooms.rs",
+      "rev": "sha256:015f799188da185ecdf0a152072bfddf887a0678ee9f7b64b11a326c242a862b"
+    }
+  ],
+  "context": [
+    {
+      "type": "CorrectionProvenance",
+      "rejectedCommit": "0efb0e5e78b4a03d93f5f419c25c18f7e00a5ad5",
+      "correctedCommit": "4368d4fe6576976a05f2b96fd70f8290ce19caef",
+      "originalReviewCommit": "31f2cbf22b197701434a7af9d93357c92eddb3d0",
+      "originalReviewPath": "browse-gate-briefings-and-decisions/index.md",
+      "reviewerResolutionProjection": "The retained reviewer revise projects the original verify (cycle 1) report judgment; it is not an original pre-existing JSONL event.",
+      "stagingBoundary": "correction-2-inputs contains recorder inputs only; FO creates immutable round-2 exactly once.",
+      "jevRequestSha256": "15fd0ac2f477ad7f1b2295ab3b724caa304b64fbaf4757082b81c55a0b2b5c56",
+      "jevResponseSha256": "e5430d63ee7e35cc46c8c1e712563f128c190cf613d43e361667412d118669c5",
+      "jevResponse": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "prefix_finding": {
+            "type": "choice",
+            "choice": "material_fix",
+            "confidence": 1.0,
+            "probabilities": {
+              "insufficient": 0.0,
+              "material_fix": 1.0,
+              "disproportionate": 0.0,
+              "needs_decision": 0.0
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 1740,
+          "output_tokens": 60
+        }
+      }
+    }
+  ]
+}

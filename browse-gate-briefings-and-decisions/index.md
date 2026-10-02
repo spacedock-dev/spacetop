@@ -292,3 +292,29 @@ Proposed Material / Fix: the residual prefix guard violates the same declared AC
 ### Summary
 
 Correction 0efb0e5 fixes both previously reported cases and supplies meaningful red-first regression proof with green full-suite/lint evidence. Independent re-review found one remaining exact upstream identity mismatch; verification is correction-required for that bounded case, with AC-1/AC-3/AC-4 evidence retained.
+
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Implement typed read-only gate-room loading for current, retained and legacy bindings, with strict identity/digest verification, bounded safe roots and rejected traversal/symlink cases; reuse task 079 facts.
+  Commit `4368d4fe6576976a05f2b96fd70f8290ce19caef` adds only a newline-prefix guard matching upstream Go dot semantics; prior ordinal/stage/null behavior and safe-read ownership remain unchanged.
+- DONE: Deliver the gate briefing/recorded-decision browser with predictable keyboard navigation, historical attempts, artifact/reference visibility, narrow-terminal diagnostics and refresh invalidation.
+  Full suite rerun retains existing app/TestBackend/history/reload evidence; this parser-only correction changes no browser input, UI, watcher or mutation behavior.
+- DONE: Prove all four ACs with committed fixtures and lowest-layer tests, update docs, pass cargo fmt --check, cargo test, make lint and applicable real watcher checks; commit deliverables on the isolated branch and report reproducible evidence.
+  Worktree commands: cargo fmt --check exit 0; cargo test exit 0 (686 passed, 4 ignored); make lint exit 0 (zero warnings); gate_rooms focused exit 0 (12 passed, 1 ignored). Nearby docs now state the prefix newline boundary.
+- SKIPPED: Rerun real notify checks for this correction.
+  No watcher change or new watcher concern; dispatch expressly limits rerun to those triggers. Original 4 passing real notify checks remain prior evidence, not a new run.
+
+### Feedback Cycles
+
+- verify/2 newline prefix: Material / Fix, FO-authorized; declared AC-2 requires upstream-invalid identities to remain diagnostic. Reject only LF within the prefix; retain nonempty prefix, stage and unbounded ASCII ordinal semantics. No AC narrowing or product decision.
+- Red-first command: `cargo test -p spacetop-core --test gate_rooms identity_prefix_newline -- --nocapture` exit 101 (0 passed / 1 failed); the exact LF-prefixed identity produced verified Current evidence on rejected `0efb0e5`. Corrected focused/full runs pass.
+- AC-2 regression: `identity_prefix_newline_is_rejected_without_broadening_control_restrictions` checks LF in several prefix positions and requires IdentityMismatch; reverting the guard fails it. CR, tab and U+2028 remain accepted, so broadening the refusal beyond upstream dot semantics also fails it. Existing invalid ordinal/large ordinal/null tests remain green.
+- AC-1/AC-3/AC-4: full tests retain format/provenance, safe root/Git blob/read-only, historical input/reload and narrow-render assertions; no new I/O or UI boundary introduced.
+- Two-file staging inputs: `review/verify/correction-2-inputs/briefing.json` binds rejected/corrected parser and corrected regression raw SHA-256 Git artifacts; `review/verify/correction-2-inputs/briefing.review.jsonl` retains original reviewer revise as an explicit report projection, FO Material/Fix and closing ensign response. Closing decision stays revise pending independent verification; FO creates recorder-owned immutable `round-2` exactly once.
+- Actual JEV response is retained in input Briefing provenance: `jev-1.13.0`, material_fix confidence 1.0. Request SHA-256: `15fd0ac2f477ad7f1b2295ab3b724caa304b64fbaf4757082b81c55a0b2b5c56`; original response SHA-256: `e5430d63ee7e35cc46c8c1e712563f128c190cf613d43e361667412d118669c5`. No raw input snapshots or paid-model calls.
+- Supplementary command logs: `/private/tmp/spacetop-080-cycle2-{red,focused,fmt,test,lint}.log`; committed regression and fixture are sufficient for fresh-setup reproduction. Immutable round-1 and entity frontmatter are untouched; previous reports remain intact.
+
+### Summary
+
+Corrected the remaining upstream newline-prefix mismatch within the authorized parser scope, with red-first loader proof and green formatting/full-suite/lint gates. Code is committed on the isolated branch; correction inputs are staged outside recorder-owned output for FO recording and independent verify/2.
