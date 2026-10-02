@@ -1,0 +1,19 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "AC_4": {
+      "type": "choice",
+      "choice": "satisfied",
+      "confidence": 0.73,
+      "probabilities": {
+        "insufficient": 0.16,
+        "not_satisfied": 0.02,
+        "satisfied": 0.82
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 9014,
+    "output_tokens": 50
+  }
+}

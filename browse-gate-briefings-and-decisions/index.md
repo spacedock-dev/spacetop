@@ -348,6 +348,10 @@ No new material findings. The LF guard matches upstream Go dot semantics while p
 - AC-3: PASS for declared boundaries — safe-root/traversal/symlink/replacement/size negatives, exact local Git commit/blob/mode/no-fallback checks, workflow byte/tree equality and static write/config/core guardrails. Independent external-root rejection passes; unsupported platforms/roots remain diagnostic.
 - AC-4: PASS for covered behavior — browser/history/focus/back/reserved/inert keys, identity-preserving reload and preview invalidation, 80x24/40x12/20x6 Unicode/failure/Esc assertions plus canonical room/artifact/state replacement real-notify proof. No watcher change or unresolved refresh concern warrants rerunning the unchanged real suite.
 
+### Actual FO JEV provenance
+
+Retained original-byte `jev-1.13.0` responses and cost ledger under `evidence/jev/`; `provenance.json` records request/response SHA-256, model and exact source refs without raw input snapshots. Core AC-2 initially returned insufficient confidence 0.24; added actual app/UI/parser evidence yielded final AC-2 satisfied 1.0. Actual other judgments: AC-1 satisfied 0.93, AC-3 satisfied 0.91, AC-4 satisfied 0.73. Cumulative actual spend is $0.004364682 of the approved $0.10 budget for tasks 079–083; these typed judgments supplement independent probes and do not grant captain approval.
+
 ### Judgment
 
 Approve the implementation's independent verification. All four ACs have reviewed falsifiable evidence and no blocking finding remains; FO owns its final JEV cross-check, captain-gate presentation and workflow transitions. This is not captain approval, gate recording, PR merge or release authorization.

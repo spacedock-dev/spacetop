@@ -1,0 +1,160 @@
+{
+  "budget_usd": 0.1,
+  "charged_usd": 0.004364682,
+  "calls": [
+    {
+      "request": "/private/tmp/spacetop-079-jev-implementation-request.json",
+      "response": "/private/tmp/spacetop-079-jev-implementation-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 9329,
+        "output_tokens": 147
+      },
+      "cost_usd": 0.00039181800000000005,
+      "elapsed_seconds": 0.338
+    },
+    {
+      "request": "/private/tmp/spacetop-079-jev-finding-request.json",
+      "response": "/private/tmp/spacetop-079-jev-finding-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 6225,
+        "output_tokens": 67
+      },
+      "cost_usd": 0.00026145,
+      "elapsed_seconds": 0.371
+    },
+    {
+      "request": "/private/tmp/spacetop-079-jev-round-route-request.json",
+      "response": "/private/tmp/spacetop-079-jev-round-route-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 803,
+        "output_tokens": 50
+      },
+      "cost_usd": 3.3726e-05,
+      "elapsed_seconds": 0.262
+    },
+    {
+      "request": "/private/tmp/spacetop-079-jev-core-ac-request.json",
+      "response": "/private/tmp/spacetop-079-jev-core-ac-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 14015,
+        "output_tokens": 107
+      },
+      "cost_usd": 0.00058863,
+      "elapsed_seconds": 0.381
+    },
+    {
+      "request": "/private/tmp/spacetop-079-jev-surface-ac-request.json",
+      "response": "/private/tmp/spacetop-079-jev-surface-ac-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 13883,
+        "output_tokens": 103
+      },
+      "cost_usd": 0.000583086,
+      "elapsed_seconds": 0.345
+    },
+    {
+      "request": "/private/tmp/spacetop-079-jev-followup-ac-request.json",
+      "response": "/private/tmp/spacetop-079-jev-followup-ac-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 14173,
+        "output_tokens": 103
+      },
+      "cost_usd": 0.0005952660000000001,
+      "elapsed_seconds": 0.367
+    },
+    {
+      "request": "/private/tmp/spacetop-080-jev-plan-request.json",
+      "response": "/private/tmp/spacetop-080-jev-plan-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 4807,
+        "output_tokens": 147
+      },
+      "cost_usd": 0.00020189400000000002,
+      "elapsed_seconds": 0.321
+    },
+    {
+      "request": "/private/tmp/spacetop-080-jev-deps-request.json",
+      "response": "/private/tmp/spacetop-080-jev-deps-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 596,
+        "output_tokens": 57
+      },
+      "cost_usd": 2.5032e-05,
+      "elapsed_seconds": 0.26
+    },
+    {
+      "request": "/private/tmp/spacetop-080-jev-implement-request.json",
+      "response": "/private/tmp/spacetop-080-jev-implement-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1836,
+        "output_tokens": 46
+      },
+      "cost_usd": 7.7112e-05,
+      "elapsed_seconds": 0.287
+    },
+    {
+      "request": "/private/tmp/spacetop-080-jev-findings-request.json",
+      "response": "/private/tmp/spacetop-080-jev-findings-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 3103,
+        "output_tokens": 158
+      },
+      "cost_usd": 0.00013032600000000003,
+      "elapsed_seconds": 0.279
+    },
+    {
+      "request": "/private/tmp/spacetop-080-jev-cycle2-request.json",
+      "response": "/private/tmp/spacetop-080-jev-cycle2-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 1740,
+        "output_tokens": 60
+      },
+      "cost_usd": 7.308e-05,
+      "elapsed_seconds": 0.272
+    },
+    {
+      "request": "/private/tmp/spacetop-080-jev-final-core-request.json",
+      "response": "/private/tmp/spacetop-080-jev-final-core-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 12355,
+        "output_tokens": 145
+      },
+      "cost_usd": 0.00051891,
+      "elapsed_seconds": 0.338
+    },
+    {
+      "request": "/private/tmp/spacetop-080-jev-final-surface-request.json",
+      "response": "/private/tmp/spacetop-080-jev-final-surface-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 9014,
+        "output_tokens": 50
+      },
+      "cost_usd": 0.000378588,
+      "elapsed_seconds": 0.283
+    },
+    {
+      "request": "/private/tmp/spacetop-080-jev-final-ac2-request.json",
+      "response": "/private/tmp/spacetop-080-jev-final-ac2-response.json",
+      "model": "jev-1.13.0",
+      "usage": {
+        "input_tokens": 12042,
+        "output_tokens": 49
+      },
+      "cost_usd": 0.000505764,
+      "elapsed_seconds": 0.331
+    }
+  ]
+}

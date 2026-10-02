@@ -1,0 +1,80 @@
+{
+  "purpose": "FO typed judgments supplement independently executed verification; no captain approval. Raw input code snapshots are not copied.",
+  "assessments": [
+    {
+      "assessment": "core",
+      "model": "jev-1.13.0",
+      "request_source_ref": "/private/tmp/spacetop-080-jev-final-core-request.json",
+      "request_sha256": "c241e752521d183e79cc9a764a494cedd94065780b6e05a0080773cc8311fb80",
+      "response_file": "final-core-response.json",
+      "response_source_ref": "/private/tmp/spacetop-080-jev-final-core-response.json",
+      "response_sha256": "48aceed657d472a491ad0639f3659d913ecb8dcc1c7e2333b8cd1b2592eb42d2",
+      "code_commit": "4368d4fe6576976a05f2b96fd70f8290ce19caef",
+      "code_source_refs": [
+        "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop-core/src/parser/gate_room.rs",
+        "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop-core/tests/gate_rooms.rs"
+      ],
+      "report_source_ref": "browse-gate-briefings-and-decisions/index.md#stage-report-verify-cycle-2",
+      "independent_probe_source_ref": "/private/tmp/spacetop-080-independent-cycle2.log"
+    },
+    {
+      "assessment": "surface",
+      "model": "jev-1.13.0",
+      "request_source_ref": "/private/tmp/spacetop-080-jev-final-surface-request.json",
+      "request_sha256": "26d3dbec92ed969e28a63eb0c1379c5e6d4e7a8d073065498e76fe6680bb64cd",
+      "response_file": "final-surface-response.json",
+      "response_source_ref": "/private/tmp/spacetop-080-jev-final-surface-response.json",
+      "response_sha256": "8fbeca75b0509c31d9ec3d8e589cdac5fbe4290dd12a326e678c573dbf96037e",
+      "code_commit": "4368d4fe6576976a05f2b96fd70f8290ce19caef",
+      "code_source_refs": [
+        "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop/src/app/gate_room.rs",
+        "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop/src/ui/gate_room.rs"
+      ],
+      "report_source_ref": "browse-gate-briefings-and-decisions/index.md#stage-report-verify-cycle-2",
+      "independent_probe_source_ref": "/private/tmp/spacetop-080-independent-cycle2.log"
+    },
+    {
+      "assessment": "ac2",
+      "model": "jev-1.13.0",
+      "request_source_ref": "/private/tmp/spacetop-080-jev-final-ac2-request.json",
+      "request_sha256": "58d09f165914ffd50c3f9a266b8ad02406f23cde3a9719604507b66f285effba",
+      "response_file": "final-ac2-response.json",
+      "response_source_ref": "/private/tmp/spacetop-080-jev-final-ac2-response.json",
+      "response_sha256": "63760c5133909dd2736da104ae900aa5b1a6312cf8a9ac101f955bded6868e03",
+      "code_commit": "4368d4fe6576976a05f2b96fd70f8290ce19caef",
+      "code_source_refs": [
+        "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop/src/app/gate_room.rs",
+        "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop/src/ui/gate_room.rs",
+        "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop-core/src/parser/gate_room.rs"
+      ],
+      "report_source_ref": "browse-gate-briefings-and-decisions/index.md#stage-report-verify-cycle-2",
+      "independent_probe_source_ref": "/private/tmp/spacetop-080-independent-cycle2.log"
+    }
+  ],
+  "ac2_sequence": {
+    "initial": {
+      "assessment": "core",
+      "choice": "insufficient",
+      "confidence": 0.24
+    },
+    "added_evidence_source_refs": [
+      "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop/src/app/gate_room.rs",
+      "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop/src/ui/gate_room.rs",
+      "4368d4fe6576976a05f2b96fd70f8290ce19caef:crates/spacetop-core/src/parser/gate_room.rs"
+    ],
+    "final": {
+      "assessment": "ac2",
+      "choice": "satisfied",
+      "confidence": 1.0
+    }
+  },
+  "cost": {
+    "ledger_file": "cost-ledger.json",
+    "source_ref": "/private/tmp/spacetop-jev-cost-ledger.json",
+    "sha256": "81d0236ad0dbc77bc6ab767a007db6bbd255ae4469daa4da11a2d4a44a4dcb47",
+    "cumulative_actual_spend_usd": 0.004364682,
+    "approved_budget_usd": 0.1,
+    "budget_scope": "tasks 079–083",
+    "note": "Actual ledger charges to date; this retention step makes no paid call."
+  }
+}
