@@ -11,8 +11,8 @@ completed:
 verdict:
 worktree: .worktrees/spacedock-ensign-hide-runtime-activity-in-task-views
 issue:
-pr:
-mod-block:
+pr: "#85"
+mod-block: merge:pr-merge
 id: 084
 gates:
     version: 1
