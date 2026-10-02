@@ -255,3 +255,40 @@ Verification ruled out missing green build/lint/watch evidence and found two con
 ### Summary
 
 Corrected the two upstream compatibility defects within the authorized parser scope and committed the regression proof and nearby docs. All required formatting, full tests and lint pass; original rejection and reports remain intact, and independent verify/1 is still the First Officer's next step.
+
+
+## Stage Report: verify (cycle 1)
+
+- DONE: Independently assess AC-1 and AC-2 against abc14cc: upstream current/retained/legacy room formats, strict digest/identity semantics and complete recorded-decision attribution; challenge meaningful uncovered cases.
+  Re-reviewed correction `0efb0e5e78b4a03d93f5f419c25c18f7e00a5ad5` atop abc14cc: original null-context/plus-ordinal probes now pass, but a new prefix-newline probe still verifies an upstream-invalid identity.
+- DONE: Independently verify AC-3 safety and AC-4 usability/refresh: safe roots, traversal/symlink/race/Git-object boundaries, read-only proof, keyboard/history/reload behavior and narrow Unicode rendering; report material findings with exact evidence and proposed correction.
+  The correction changes only parser predicates, core tests and nearby docs; original escaped-state-root probe remains green. No new I/O, key, watcher, mutation, or rendering boundary is introduced.
+- DONE: Check required green formatting, full tests, lint and real watcher evidence, docs/policy/dependency fit; write a reproducible AC-by-AC verdict and checklist accounting without taking over implementation or approving the captain gate.
+  Inspected correction logs: red 9/2/1, focused 11/0/1, full 685/0/4 and make lint zero warnings; fmt log empty with reported exit 0. Prior 4 real notify checks remain valid because watcher code is unchanged.
+
+### Findings
+
+- High — `crates/spacetop-core/src/parser/gate_room.rs:155`: the new nonempty-prefix guard still accepts a newline in the prefix, unlike pinned upstream `^briefing:(.+):([^:]+):attempt-[1-9][0-9]*:revision-[1-9][0-9]*$` where Go's dot excludes newline. Binding fixture id and attempt briefing id to the Rust string `"briefing:docs\ndev:3k:validation:attempt-1:revision-1"`, then recomputing its correct JCS digest, produces `GateRoomView::verified() == true`; upstream `canonicalBriefingStage` returns false. This leaves AC-2's invalid-identity diagnostic requirement unsatisfied. Reject newline in the identity prefix, preserve the already-correct ordinal/stage semantics, and add this exact loader regression.
+
+### Independent proof and closed findings
+
+- Original independent probes ran unmodified against correction 0efb0e5: null context accepted, plus-prefixed ordinal rejected, symlink-free escaped state-root rejected; `cargo test -p spacetop-core --test gate_room_verify_probe verify_probe -- --nocapture` exit 0, 3 passed. Both original reported defects are fixed, rather than restated as new failures.
+- Added prefix-newline assertion to the same fixture probes: set the two bound ids to the string above, call `s.replace_manifest(v)` to recompute the bound JCS digest, then assert `!s.view().verified()`. The same command exits 101 with 3 passed / 1 failed; actual output confirms a verified Current room with no diagnostics.
+- Pinned v0.27.3 executable contrast: `GOCACHE=/private/tmp/spacetop-080-go-cache go test ./internal/gates -run TestVerifyProbeCycle1 -v` exits 0; direct `canonicalBriefingStage` assertions reject both plus ordinal and newline prefix. The cache path is only an execution-environment workaround, not a product/test dependency.
+- Local outputs: `/private/tmp/spacetop-080-independent-cycle1.log`, `/private/tmp/spacetop-080-independent-cycle1-boundary.log`, `/private/tmp/spacetop-080-upstream-cycle1-boundary.log`; supplementary reproducer `/private/tmp/spacetop-080-independent-cycle1-probe-source.rs`. Exact mutations above permit reproduction using the committed Setup on a fresh checkout. Temporary tests were removed and the code worktree is clean.
+- Committed regressions cover both ordinal positions, empty/zero/leading-zero/non-ASCII/sign syntax and large canonical strings, plus absent/null context/children and wrong-type rejection. Restoring integer parsing or array-only handling breaks their observed red-first assertions. Docs now specify those boundaries.
+
+### AC-by-AC verdict
+
+- AC-1: PASS for the reviewed room formats/provenance and empty/null inventory semantics; the original current/retained/legacy/history/origin coverage remains unchanged and the null-context question now survives.
+- AC-2: FAIL — both previous defects are closed, but the residual prefix-newline identity is falsely verified. Existing digest/recorded-decision attribution checks remain green.
+- AC-3: PASS for reviewed boundaries — no safe-read/Git behavior changed, original guardrails and read-only assertions remain green, and the independent escaped-root case passes.
+- AC-4: PASS for covered usability/refresh — no UI/input/watcher behavior changed; full app/TestBackend suite is green, prior real notify evidence applies. No duplicate full-suite or real watcher rerun was warranted for this parser-only correction.
+
+### Proposed correction routing and judgment
+
+Proposed Material / Fix: the residual prefix guard violates the same declared AC-2 compatibility boundary as the original identity finding. Assign the narrow guard and regression to the existing task 080 implementation owner; no product fork or AC narrowing is required. Request changes; FO owns JEV disposition/routing and the captain gate remains unapproved.
+
+### Summary
+
+Correction 0efb0e5 fixes both previously reported cases and supplies meaningful red-first regression proof with green full-suite/lint evidence. Independent re-review found one remaining exact upstream identity mismatch; verification is correction-required for that bounded case, with AC-1/AC-3/AC-4 evidence retained.
