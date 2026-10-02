@@ -1,18 +1,18 @@
 ---
 title: Hide runtime activity from task list and detail header
-status: verify
+status: done
 source: Captain request to remove unreliable per-task agent status, 2026-10-02
 kind: feature
 risk: low
 milestone: v1-maintenance
 proof: Ratatui TestBackend assertions for list and preview metadata across runtime states, scopes and terminal widths; workflow stages and durable gates remain visible.
 started: 2026-10-02T02:11:23Z
-completed:
-verdict:
+completed: 2026-10-02T02:30:15Z
+verdict: PASSED
 worktree: .worktrees/spacedock-ensign-hide-runtime-activity-in-task-views
 issue:
-pr: "#85"
-mod-block: merge:pr-merge
+pr: pr-merge:85
+mod-block:
 id: 084
 gates:
     version: 1
@@ -35,7 +35,8 @@ gates:
                 reason: Captain approved the presented task 084 verify gate and its evidence; authorize PR publication.
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+archived: 2026-10-02T02:30:15Z
 ---
 
 Make task browsing clearer by removing inferred agent runtime activity from the task list and detail header. The captain finds Idle unhelpful and real agent status difficult to determine for an individual task, and prefers those surfaces not to suggest a live activity state.
