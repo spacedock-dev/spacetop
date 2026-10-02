@@ -194,64 +194,74 @@ fn preview_renders_markdown_body_instead_of_raw_markers() {
 }
 
 #[test]
-fn preview_renders_session_metadata_without_transcript_content() {
-    let app = app_with_session_attribution(
-        vec![item(
-            "065",
-            "Active task",
-            "Visible markdown body, not a transcript leak.",
-        )],
-        "065",
-        spacetop_core::domain::EntityActivity::Running {
-            handler: spacetop_core::domain::ActivityHandler::Worker,
-            runtime: spacetop_core::domain::AgentRuntime::Codex,
-            session_id: "session-065".to_string(),
-            updated_unix: 1_718_000_000,
-        },
-    );
-    let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
-    terminal.draw(|frame| render(frame, &app)).expect("render");
-    let rendered = buffer_text(terminal.backend().buffer());
-
-    assert!(
-        rendered.contains("Runtime: Codex"),
-        "preview should name the matched runtime; rendered: {rendered:?}"
-    );
-    assert!(rendered.contains("Session: session-065"));
-    assert!(rendered.contains("Status: running · worker"));
-    assert!(!rendered.contains("Confidence:"));
-    assert!(!rendered.contains("Handler:"));
-    assert!(
-        rendered.contains(" ago"),
-        "updated activity should be human-readable; rendered: {rendered:?}"
-    );
-    assert!(!rendered.contains("Updated: 1718000000"));
-    let status_index = rendered.find("status:").expect("status line");
-    let activity_index = rendered.find("Runtime: Codex").expect("activity line");
-    let source_index = rendered.find("source:").expect("source line");
-    assert!(
-        status_index < activity_index && activity_index < source_index,
-        "activity line should sit between status/score and source; rendered: {rendered:?}"
-    );
-    assert!(
-        !rendered.contains("prompt:") && !rendered.contains("response:"),
-        "preview metadata must not expose transcript fields"
-    );
-
-    let app = app_with_session_attribution(
-        vec![item("066", "Stale task", "Visible markdown body.")],
-        "066",
-        spacetop_core::domain::EntityActivity::Idle {
-            updated_unix: Some(1_718_000_000),
-        },
-    );
-    let mut terminal = Terminal::new(TestBackend::new(160, 30)).expect("terminal");
-    terminal.draw(|frame| render(frame, &app)).expect("render");
-    let rendered = buffer_text(terminal.backend().buffer());
-
-    assert!(rendered.contains("Runtime: —"));
-    assert!(rendered.contains("Session: —"));
-    assert!(rendered.contains("Status: idle"));
+fn preview_ignores_runtime_preserving_metadata_and_body() {
+    for archived in [false, true] {
+        for width in [60, 200] {
+            for placement in [
+                crate::app::PreviewPlacement::Left,
+                crate::app::PreviewPlacement::Bottom,
+            ] {
+                let mut baseline = None;
+                for activity in runtime_cases() {
+                    let state = runtime_display_state(archived, activity.clone());
+                    assert_eq!(
+                        state.index().entity_activity_for_entity_id("pending"),
+                        activity.as_ref()
+                    );
+                    let mut terminal = Terminal::new(TestBackend::new(width, 50)).unwrap();
+                    terminal
+                        .draw(|frame| {
+                            super::super::preview::render_preview(
+                                frame,
+                                frame.area(),
+                                &state,
+                                placement,
+                            )
+                        })
+                        .unwrap();
+                    let buffer = terminal.backend().buffer();
+                    let text = buffer_text(buffer);
+                    let (header, body) = text.split_once("── body").unwrap();
+                    for fact in [
+                        "status: ● review",
+                        "score:",
+                        "7",
+                        "source: test",
+                        "worktree: wt",
+                        "path:",
+                        "pending.md",
+                    ] {
+                        assert!(header.contains(fact), "{fact}: {header}");
+                    }
+                    for field in ["Runtime:", "Session:", "Status:", "Updated:"] {
+                        assert!(!header.contains(field));
+                    }
+                    if archived {
+                        assert!(header.contains("PASSED"));
+                    } else {
+                        assert!(header.contains("gate: awaiting-captain"));
+                    }
+                    for word in [
+                        "idle",
+                        "running · worker",
+                        "running · FO",
+                        "human-gate",
+                        "Runtime: body",
+                        "Session: body",
+                        "Updated: body",
+                    ] {
+                        assert!(body.contains(word), "{word}: {body}");
+                    }
+                    assert!(body.contains("briefing-one"));
+                    if let Some(baseline) = &baseline {
+                        assert_eq!(buffer, baseline, "runtime changes preview cells/styles");
+                    } else {
+                        baseline = Some(buffer.clone());
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -354,7 +364,7 @@ fn preview_omits_session_metadata_for_unrelated_running_session() {
 
     assert!(!rendered.contains("\u{25CF}   New task"));
     assert!(!rendered.contains("Runtime: Codex"));
-    assert!(rendered.contains("Status: idle"));
+    assert!(!rendered.contains("Status: idle"));
     assert!(!rendered.contains("Session: Mendel"));
 }
 

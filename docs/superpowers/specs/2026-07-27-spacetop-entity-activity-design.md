@@ -24,8 +24,10 @@ Display precedence is:
 human-gate > running · worker > running · FO > idle
 ```
 
-The preview exposes only `Runtime`, `Session`, `Status`, and `Updated`.
-Confidence and a separate handler field are not part of the activity display.
+Task rows and preview headers omit inferred runtime labels, activity markers,
+session attribution and last-activity timestamps. They retain workflow stage,
+score, source, worktree and durable gate facts. The backend activity model,
+headless activity/export schemas and dedicated activity feed remain unchanged.
 
 ## Evidence boundary
 
