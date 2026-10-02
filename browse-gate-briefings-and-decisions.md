@@ -130,3 +130,44 @@ Before code completion run focused crate tests while implementing, then `cargo f
 ### Summary
 
 Planned a read-only gate-room browser using task 079's typed durable records and the pinned Spacedock v0.27.3 contract. The main implementation risk is correct JCS and safe evidence resolution; a failing digest spike or unsupported root must produce diagnostics rather than verified evidence. This stage changes only task 080 planning state; product implementation and its test gates remain pending.
+
+
+## Implementation evaluation provenance
+
+FO-owned JEV `jev-1.13.0` assessments are preserved below as response data, not test results or human authorization. Plan judgments were supported at confidence 1.0 / 0.97 / 1.0; the dependency spike was in scope at 0.99. FO reported cumulative approved spend $0.002680902 of $0.10 after these assessments; this worker made no paid model calls.
+
+- Plan request SHA-256: `e2445a1ed480f47adaf886f6889c3984d426eca743e39f43428ab0a0600ad33a`; response original bytes SHA-256: `d5a8893b30f32aa995ddfd1be042d922240ae97f9847e68772e69c69a06148ba`.
+- Dependency request SHA-256: `36d5ea42232fa17e148406fe7e63ee21fb11a157fc1975b31ec540497e52e67d`; response original bytes SHA-256: `ccd4dca0ffe272bb2af038b3d5b04b198e622058c8198b099aa6a78774ed5ffd`.
+- Original request/response filenames: `/private/tmp/spacetop-080-jev-{plan,deps}-{request,response}.json`. The response values are retained here without changing the entity topology.
+
+```json
+{"plan_response":{"model":"jev-1.13.0","answers":{"linchpin_1":{"type":"choice","choice":"supported","confidence":1.0,"probabilities":{"supported":1.0,"insufficient_evidence":0.0,"missing_or_unsafe":0.0}},"linchpin_2":{"type":"choice","choice":"supported","confidence":0.97,"probabilities":{"supported":0.98,"insufficient_evidence":0.0,"missing_or_unsafe":0.02}},"linchpin_3":{"type":"choice","choice":"supported","confidence":1.0,"probabilities":{"supported":1.0,"insufficient_evidence":0.0,"missing_or_unsafe":0.0}}},"usage":{"input_tokens":4807,"output_tokens":147}},"dependency_response":{"model":"jev-1.13.0","answers":{"dependency_scope":{"type":"choice","choice":"in_scope_spike","confidence":0.99,"probabilities":{"needs_captain_decision":0.01,"insufficient_evidence":0.0,"in_scope_spike":0.99}}},"usage":{"input_tokens":596,"output_tokens":57}}}
+```
+
+## Stage Report: implement
+
+- DONE: Implement typed read-only gate-room loading for current, retained and legacy bindings, with strict identity/digest verification, bounded safe roots and rejected traversal/symlink cases; reuse task 079 facts.
+  Code `abc14cc2c76ab76644e1d752242b2d63259c9f1d`; domain/parser/core/index modules reuse existing GateRecord/GateAttempt and selected-attempt provenance rather than reparsing gate frontmatter.
+- DONE: Deliver the gate briefing/recorded-decision browser with predictable keyboard navigation, historical attempts, artifact/reference visibility, narrow-terminal diagnostics and refresh invalidation.
+  B/Tab/j/k/Enter/PgUp/PgDn/w/Esc browser; app tests reject Y/editor/scope/picker/switch mutations, retain attempt/focus across reload and remove invalid item previews. TestBackend covers 80x24, 40x12 and 20x6 including long Unicode content.
+- DONE: Prove all four ACs with committed fixtures and lowest-layer tests, update docs, pass cargo fmt --check, cargo test, make lint and applicable real watcher checks; commit deliverables on the isolated branch and report reproducible evidence.
+  From the assigned worktree: cargo fmt --check exit 0; cargo test exit 0 (683 passed); make lint exit 0 (zero warnings); cargo test -- --ignored exit 0 (4 real notify tests, outside sandbox). README, gate-room contract, code map and dependency policy updated in the same commit.
+
+### Acceptance evidence
+
+- AC-1: `formats_origins_history_and_order_do_not_require_request` exercises current/retained/request-backed/exact-file across flat/folder/archive origins and ordered nested References; requiring a current request or following current status rather than recorded stage fails it.
+- AC-1 provenance/query: `worktree_body_never_rebases_main_gate_room_provenance` supplies a conflicting external worktree room and queries an unknown attempt; rebasing main bindings or selecting a nearby attempt fails it.
+- AC-2: RFC8785 golden vectors, upstream v0.27.3 canonical digest, raw SHA-256 golden, strict duplicate/Unicode refusal and tampered Briefing/request fixtures reject false verification; replacing JCS with sorted JSON or trusting changed bytes fails them.
+- AC-2 recorded fields: app tests show approve/revise/hold, actor/time/reason/conn/includes, withdrawal and pending/consumed/superseded application facts without a room; hiding attribution on missing evidence or treating conn as person authentication fails them.
+- AC-3: traversal/encoded path/locator/symlink/root/size tests, deterministic final-file and directory replacement races, exact Git blob/mode/missing-object tests and wrong-branch/detached state history reject outside or fallback bytes; returning escaped/current-worktree bytes fails them.
+- AC-3 read-only: entity/room bytes and tree-entry counts remain equal after browsing and rejection; fake Git audit allows only exact local rev-parse/ls-tree/cat-file calls. Existing no_write_git_calls, no_terminal_deps and config/session guardrails also pass.
+- AC-4: app B/history/focus/preview/back/reload/deletion/reserved-key tests plus TestBackend details/failure/Unicode tests fail on changed controls, stale previews, clipped failure labels or lost Esc hints.
+- AC-4 refresh: exact dependency/filter/access/debounce tests and real notify room/artifact create/change/delete/state replacement test fail on missed invalidation. One recursive contained root covers state/archive; event paths never authorize evidence reads.
+
+### Verification boundary
+
+The first real notify run timed out inside the sandbox, including all three pre-existing smoke tests; the unchanged suite and new refresh test passed outside the sandbox. Supported release targets are macOS/Linux (Unix); other platforms show an unsupported safe-read diagnostic. A bound Briefing badge does not verify inventory bytes until explicit selection, and recorded identity/digest checks do not authenticate a person. No approval, consumption, repair, fetch, editor/URL launch or gate-state write was added.
+
+### Summary
+
+Implemented and committed a read-only browser for canonical Briefings, recorded decisions and historical attempts with strict JCS/digest and safe-path/Git-object boundaries. All four acceptance criteria have reproducible lower-layer evidence, including read-only equality and real refresh checks; product code is committed only on the assigned isolated branch.
