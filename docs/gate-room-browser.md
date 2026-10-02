@@ -21,6 +21,9 @@ question, at least one Artifact, and unique complete inventory bindings.
 References in nested context children retain source order. Reference summaries
 are invalid. Artifact summaries are shown verbatim. Stage identities are
 checked against the historical gate record, independently of current status.
+The identity prefix is nonempty; attempt/revision ordinals use ASCII
+`[1-9][0-9]*` with no numeric upper bound. Absent or null context and nested
+children are empty inventories; other non-array values are invalid.
 
 Recorded decisions are frontmatter facts. A valid room binding authenticates
 neither the recorded actor nor a conn quote. Included annotations remain

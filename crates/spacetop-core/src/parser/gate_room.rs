@@ -152,13 +152,15 @@ fn stage_identity(id: &str, stage: &str) -> bool {
     let parts = id.split(':').collect::<Vec<_>>();
     parts.len() >= 5
         && parts[0] == "briefing"
+        && !parts[1..parts.len() - 3].join(":").is_empty()
         && parts[parts.len() - 3] == stage
         && positive_suffix(parts[parts.len() - 2], "attempt-")
         && positive_suffix(parts[parts.len() - 1], "revision-")
 }
 fn positive_suffix(s: &str, prefix: &str) -> bool {
-    s.strip_prefix(prefix)
-        .is_some_and(|n| !n.starts_with('0') && n.parse::<u64>().is_ok_and(|n| n > 0))
+    s.strip_prefix(prefix).is_some_and(|n| {
+        matches!(n.as_bytes().first(), Some(b'1'..=b'9')) && n.bytes().all(|c| c.is_ascii_digit())
+    })
 }
 fn add_item(
     v: &Value,
@@ -194,6 +196,9 @@ fn flatten(
     items: &mut Vec<RoomItem>,
     depth: usize,
 ) -> Result<(), RoomDiagnostic> {
+    if nodes.is_null() {
+        return Ok(());
+    }
     if depth > 64 {
         return Err(RoomDiagnostic::new(
             RoomProblem::SizeLimit,

@@ -149,6 +149,92 @@ fn formats_origins_history_and_order_do_not_require_request() {
     }
 }
 #[test]
+fn stage_identity_requires_canonical_unbounded_ascii_ordinals_and_prefix() {
+    for ordinal in ["+1", "0", "01", "", "-1", "１", "١"] {
+        for suffix in [
+            format!("attempt-{ordinal}:revision-1"),
+            format!("attempt-1:revision-{ordinal}"),
+        ] {
+            let mut s = Setup::new("e.md");
+            let id = format!("briefing:docs-dev:3k:validation:{suffix}");
+            let mut v: serde_json::Value =
+                serde_json::from_slice(&fs::read(s.room().join("index.json")).unwrap()).unwrap();
+            v["id"] = id.clone().into();
+            s.record.attempts[0].briefing.id = id.clone();
+            s.replace_manifest(v);
+            assert_eq!(
+                s.view().diagnostics.first().map(|d| &d.kind),
+                Some(&RoomProblem::IdentityMismatch),
+                "{id}"
+            );
+        }
+    }
+    for id in [
+        "briefing::validation:attempt-1:revision-1",
+        "briefing:validation:attempt-1:revision-1",
+    ] {
+        let mut s = Setup::new("e.md");
+        let mut v: serde_json::Value =
+            serde_json::from_slice(&fs::read(s.room().join("index.json")).unwrap()).unwrap();
+        v["id"] = id.into();
+        s.record.attempts[0].briefing.id = id.into();
+        s.replace_manifest(v);
+        assert_eq!(s.view().diagnostics[0].kind, RoomProblem::IdentityMismatch);
+    }
+    let mut s = Setup::new("e.md");
+    let id = "briefing:docs-dev:3k:validation:attempt-184467440737095516160000:revision-999999999999999999999999";
+    let mut v: serde_json::Value =
+        serde_json::from_slice(&fs::read(s.room().join("index.json")).unwrap()).unwrap();
+    v["id"] = id.into();
+    s.record.attempts[0].briefing.id = id.into();
+    s.replace_manifest(v);
+    assert!(
+        s.view().verified(),
+        "canonical ordinals have no numeric maximum"
+    );
+}
+#[test]
+fn absent_and_null_context_or_children_are_empty_but_wrong_types_fail() {
+    for context in [
+        None,
+        Some(serde_json::Value::Null),
+        Some(serde_json::json!([{"type":"Group","children":null}])),
+        Some(serde_json::json!([{"type":"Group","children":[{"type":"Group","children":null}]}])),
+    ] {
+        let mut s = Setup::new("e.md");
+        let mut v: serde_json::Value =
+            serde_json::from_slice(&fs::read(s.room().join("index.json")).unwrap()).unwrap();
+        v.as_object_mut().unwrap().remove("context");
+        if let Some(context) = context {
+            v["context"] = context;
+        }
+        s.replace_manifest(v);
+        let view = s.view();
+        assert!(view.verified(), "{view:?}");
+        let briefing = view.briefing.unwrap();
+        assert!(!briefing.question.is_empty());
+        assert_eq!(briefing.items.len(), 1);
+    }
+    for bad in [
+        serde_json::json!({}),
+        serde_json::json!(""),
+        serde_json::json!(false),
+        serde_json::json!(1),
+    ] {
+        for context in [
+            bad.clone(),
+            serde_json::json!([{"type":"Group","children":bad}]),
+        ] {
+            let mut s = Setup::new("e.md");
+            let mut v: serde_json::Value =
+                serde_json::from_slice(&fs::read(s.room().join("index.json")).unwrap()).unwrap();
+            v["context"] = context;
+            s.replace_manifest(v);
+            assert_eq!(s.view().diagnostics[0].kind, RoomProblem::InvalidSchema);
+        }
+    }
+}
+#[test]
 fn precedence_and_binding_fail_closed_without_hiding_recorded_decision() {
     let mut s = Setup::new("e.md");
     fs::copy(
