@@ -1,7 +1,7 @@
 ---
 id: 080
 title: Browse gate Briefings and decisions
-status: plan
+status: implement
 source: "Captain-requested Spacedock release compatibility survey, 2026-10-01"
 kind: feature
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-10-01T18:17:27Z
 completed:
 verdict:
 score: 0.90
-worktree:
+worktree: .worktrees/spacedock-ensign-browse-gate-briefings-and-decisions
 issue:
 pr:
 mod-block:
