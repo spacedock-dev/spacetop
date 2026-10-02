@@ -13,8 +13,8 @@ verdict:
 score: 0.90
 worktree: .worktrees/spacedock-ensign-browse-gate-briefings-and-decisions
 issue:
-pr:
-mod-block:
+pr: "#84"
+mod-block: merge:pr-merge
 review-round:
     id: round:080:verify:2
     stage: verify
