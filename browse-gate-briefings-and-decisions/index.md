@@ -34,6 +34,17 @@ gates:
                 id: briefing:080:verify:attempt-1:revision-1
                 digest: sha256:e0826b843dab37759aaab3a83baafa5479782b51165e6cebb98516ad35d03c4a
                 room-ref: ./review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:080:verify:1
+                briefing: briefing:080:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-02T01:44:00.229561Z"
+                decision: approve
+                reason: Captain approved the presented task 080 verify gate and its evidence; authorize PR publication.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Let users inspect a gate question, its evidence, and its recorded decision from Spacetop. Spacedock 0.27.1 prepares one canonical Briefing instead of requiring request.json.
