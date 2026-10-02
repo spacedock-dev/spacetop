@@ -23,6 +23,17 @@ review-round:
         id: briefing:spacetop-dev:080:verify:round-2
         digest: sha256:82781799905904ca1ac4cdcebf7b570685bf6372c26f46da15321ef60413efc8
         room-ref: ./review/verify/round-2
+gates:
+    version: 1
+    records:
+        - id: gate:080:verify
+          stage: verify
+          attempts:
+            - id: gate-attempt:080-verify-1
+              briefing:
+                id: briefing:080:verify:attempt-1:revision-1
+                digest: sha256:e0826b843dab37759aaab3a83baafa5479782b51165e6cebb98516ad35d03c4a
+                room-ref: ./review/verify/briefing-1
 ---
 
 Let users inspect a gate question, its evidence, and its recorded decision from Spacetop. Spacedock 0.27.1 prepares one canonical Briefing instead of requiring request.json.

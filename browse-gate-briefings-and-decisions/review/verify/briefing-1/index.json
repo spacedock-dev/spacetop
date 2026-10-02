@@ -1,0 +1,24 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:080:verify:attempt-1:revision-1",
+  "question": "Approve task 080 gate briefing and decision browser for PR publication?",
+  "artifacts": [
+    {
+      "id": "artifact:080:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/32feb57991b25bfb50af44cfa752decda87392bd/browse-gate-briefings-and-decisions/index.md",
+      "rev": "sha256:adbfde6c996bb77f97a4a217e3734c653ec7bf2750af256cfdffd478f224abf8",
+      "mediaType": "text/markdown",
+      "summary": "Code 4368d4f delivers the read-only current/retained/legacy briefing browser. Three independently reproduced parser defects were fixed across two correction rounds. 686 tests and lint are green, four real watcher checks remain applicable, all four independent probes pass, and all ACs pass independent review and JEV cross-check."
+    }
+  ],
+  "context": [
+    {
+      "type": "Reference",
+      "id": "reference:080:verify:attempt-1:revision-1:item-2",
+      "uri": "git-root://main/108a4f983b7d29b9d2b52d05ff24a8de3637c08b/docs/spacetop-dev/README.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:fe0f9d25b139e70020e8277a725eefd4e7a1fa477b151b9485d1f020b8ab428d"
+    }
+  ]
+}
