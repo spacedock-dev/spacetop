@@ -3,6 +3,7 @@ pub(crate) mod color;
 mod definition;
 mod diff;
 pub(crate) mod footer;
+mod gate_room;
 mod graph;
 mod header;
 mod help;
@@ -49,6 +50,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     let warning_messages = app.warning_messages();
     let copy_feedback = app.copy_feedback();
     match app.mode() {
+        AppMode::GateRoom { browser, .. } => gate_room::render(frame, browser),
         AppMode::Picker(state) => {
             // Picker overlays a centered dialog; the dashboard responsive-
             // width rule does not apply to picker (it's a one-off chooser).

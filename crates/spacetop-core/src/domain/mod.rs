@@ -1,3 +1,5 @@
+mod gate_room;
+pub use gate_room::*;
 mod gates;
 pub use gates::*;
 

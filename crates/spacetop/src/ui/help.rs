@@ -29,6 +29,7 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         key_line("s", "cycle sort mode (when preview closed)"),
         key_line(keymap.search.label(), "search entities"),
         key_line(keymap.command.label(), "open command palette"),
+        key_line("B", "browse gate briefings and recorded decisions"),
         key_line("D", "open workflow definition"),
         key_line("Y", "sync verified workflow state (fast-forward)"),
         key_line("?", "toggle this help popup"),

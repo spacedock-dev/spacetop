@@ -775,6 +775,14 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
             }
         }
 
+        if let Some((watcher, _)) = &mut watcher_state {
+            let dependencies = if let AppMode::GateRoom { browser, .. } = app.mode() {
+                browser.dependencies.clone()
+            } else {
+                Vec::new()
+            };
+            watcher.set_dependencies(dependencies);
+        }
         // 2. Short crossterm poll.
         let prior_mode_was_picker = matches!(app.mode(), AppMode::Picker(_));
         if event::poll(Duration::from_millis(100)).context("failed to poll terminal events")? {
@@ -1167,6 +1175,9 @@ fn start_watcher_for(
         .unwrap_or_else(|| app.workflow_dir().to_path_buf());
     match WorkflowWatcher::start(&dir, WatcherConfig::default()) {
         Ok((w, rx)) => {
+            // Contained entity/state roots and archive rooms are already covered
+            // by this recursive root. Duplicate nested registration can suppress
+            // macOS FSEvents, so keep one watcher registration.
             if w.backend() == WatcherBackend::Poll {
                 app.set_refresh_error("watcher: polling fallback".into());
             }

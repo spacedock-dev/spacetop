@@ -1,3 +1,4 @@
+pub mod gate_room;
 use std::fs;
 use std::fs::DirEntry;
 use std::path::Path;

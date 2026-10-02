@@ -287,3 +287,40 @@ To remove the installed binary:
 ```bash
 make uninstall
 ```
+
+### Gate Briefings and recorded decisions
+
+See [the gate-room contract](docs/gate-room-browser.md) for format and safety details.
+
+Press `B` with the entity preview closed to browse recorded gate attempts.
+`Tab` changes focus between attempt history and item inventory; `j/k` or arrows
+select, `Enter` previews the selected supported item, `PgUp/PgDn` scroll,
+`w` toggles wrapping, and `Esc` (or `q`) backs out of the item, then the browser.
+The browser has no approval, recording, consumption, sync, editor or URL action.
+
+Current `index.json` rooms do not need `request.json`. Retained `briefing.json`,
+legacy `gate-briefing.json`, exact-file bindings, and digest-bound legacy
+requests are supported. A malformed reserved file never selects a fallback.
+Question/inventory verification uses duplicate-free RFC 8785/JCS JSON and
+SHA-256; selected artifact bytes use raw SHA-256. Recorded decisions, actors,
+timestamps, reasons, conn citations, annotation ids, withdrawals and application
+states remain visible when room evidence fails. Binding verification does not
+authenticate a person or the quoted grant. Included annotation ids are references;
+this view does not resolve correction-round history.
+
+Evidence reads stay inside the canonical workflow entity/state root. Symlink
+components, traversal, encoded local paths, unsupported external state roots and
+nonregular/oversized evidence are rejected. Unix descriptor APIs prevent symlink
+replacement reads; other platforms show an unsupported-root diagnostic.
+Each evidence document or item is limited to 2 MiB. Local `git-root://main|state`
+links read the exact full local commit's regular blob, with canonical path
+encoding and its raw revision pin. State links require a verified distinct
+checkout; detached and wrong-branch history may be read. There is no network
+fetch, worktree-byte fallback or checkout repair. Other schemes stay visible
+without being opened. Briefing verification and selected-item verification are
+separate: an inventory link alone is not verified artifact bytes.
+
+Filesystem refresh invalidates room bindings and rechecks an open item. Removed
+or tampered sources lose the preview; immutable missing Git objects can be
+retried with explicit item selection. The watcher includes contained split-root
+state and archives, canonical room files and selected safe local dependencies.

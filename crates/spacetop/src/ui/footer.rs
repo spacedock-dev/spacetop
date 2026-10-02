@@ -119,6 +119,7 @@ fn status_footer_hints_with_keymap_and_copy(
         hints.push(("w: word wrap".to_string(), Color::White));
     } else {
         hints.push(("PgUp/PgDn: page list".to_string(), Color::White));
+        hints.push(("B: gate rooms".to_string(), Color::White));
         hints.push(("s: sort".to_string(), Color::White));
         hints.push((key_hint(keymap.search.label(), "search"), Color::White));
         hints.push((key_hint(keymap.command.label(), "command"), Color::White));

@@ -1,0 +1,37 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:docs-dev:3k:validation:attempt-1:revision-1",
+  "question": "Should this exact candidate proceed to merge?",
+  "artifacts": [
+    {
+      "id": "artifact:gate-review",
+      "uri": "gate-review.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:dfea8ebe8de586ed7c9e45e384d66dba7fec1000b86783384d00aa7b0869cb01",
+      "summary": "Exact validation review summary"
+    }
+  ],
+  "context": [
+    {
+      "type": "Reference",
+      "id": "reference:entity-snapshot",
+      "uri": "entity-snapshot.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:52b486c2bd893f09174c3f05339492f9387a1e9903e70ee1380730111b33fff7"
+    },
+    {
+      "type": "EvidenceSet",
+      "id": "context:validation-evidence",
+      "children": [
+        {
+          "type": "Reference",
+          "id": "reference:recorder-contract",
+          "uri": "contract-snapshot.md",
+          "mediaType": "text/markdown",
+          "rev": "sha256:56063cbf93e3a349675dda99dfd76a39e20a393bf3fbd3bef91898f79c7031bf"
+        }
+      ]
+    }
+  ]
+}
