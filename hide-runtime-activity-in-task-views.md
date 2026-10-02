@@ -25,6 +25,17 @@ gates:
                 id: briefing:084:verify:attempt-1:revision-1
                 digest: sha256:516fc201439d5e2e01d6b08e8ba8f831adb8e79db4f2ca669fcfa3918dc582c2
                 room-ref: ./hide-runtime-activity-in-task-views/review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:084:verify:1
+                briefing: briefing:084:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-02T02:23:26.296539Z"
+                decision: approve
+                reason: Captain approved the presented task 084 verify gate and its evidence; authorize PR publication.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Make task browsing clearer by removing inferred agent runtime activity from the task list and detail header. The captain finds Idle unhelpful and real agent status difficult to determine for an individual task, and prefers those surfaces not to suggest a live activity state.
