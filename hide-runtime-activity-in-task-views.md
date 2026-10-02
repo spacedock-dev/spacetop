@@ -1,12 +1,12 @@
 ---
 title: Hide runtime activity from task list and detail header
-status: shape
+status: plan
 source: Captain request to remove unreliable per-task agent status, 2026-10-02
 kind: feature
 risk: low
 milestone: v1-maintenance
 proof: Ratatui TestBackend assertions for list and preview metadata across runtime states, scopes and terminal widths; workflow stages and durable gates remain visible.
-started:
+started: 2026-10-02T02:11:23Z
 completed:
 verdict:
 worktree:
