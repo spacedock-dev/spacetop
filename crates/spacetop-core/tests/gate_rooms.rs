@@ -194,6 +194,31 @@ fn stage_identity_requires_canonical_unbounded_ascii_ordinals_and_prefix() {
     );
 }
 #[test]
+fn identity_prefix_newline_is_rejected_without_broadening_control_restrictions() {
+    for (prefix, valid) in [
+        ("docs\ndev:3k", false),
+        ("docs-dev:3\nk", false),
+        ("\ndocs-dev:3k", false),
+        ("docs-dev:3k\n", false),
+        ("docs\rdev:3k", true),
+        ("docs\tdev:3k", true),
+        ("docs\u{2028}dev:3k", true),
+    ] {
+        let mut s = Setup::new("e.md");
+        let id = format!("briefing:{prefix}:validation:attempt-1:revision-1");
+        let mut v: serde_json::Value =
+            serde_json::from_slice(&fs::read(s.room().join("index.json")).unwrap()).unwrap();
+        v["id"] = id.clone().into();
+        s.record.attempts[0].briefing.id = id.clone();
+        s.replace_manifest(v);
+        let view = s.view();
+        assert_eq!(view.verified(), valid, "{id:?}: {view:?}");
+        if !valid {
+            assert_eq!(view.diagnostics[0].kind, RoomProblem::IdentityMismatch);
+        }
+    }
+}
+#[test]
 fn absent_and_null_context_or_children_are_empty_but_wrong_types_fail() {
     for context in [
         None,

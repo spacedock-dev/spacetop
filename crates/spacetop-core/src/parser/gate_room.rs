@@ -153,6 +153,9 @@ fn stage_identity(id: &str, stage: &str) -> bool {
     parts.len() >= 5
         && parts[0] == "briefing"
         && !parts[1..parts.len() - 3].join(":").is_empty()
+        && !parts[1..parts.len() - 3]
+            .iter()
+            .any(|part| part.contains('\n'))
         && parts[parts.len() - 3] == stage
         && positive_suffix(parts[parts.len() - 2], "attempt-")
         && positive_suffix(parts[parts.len() - 1], "revision-")
