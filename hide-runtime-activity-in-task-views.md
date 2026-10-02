@@ -1,6 +1,6 @@
 ---
 title: Hide runtime activity from task list and detail header
-status: plan
+status: implement
 source: Captain request to remove unreliable per-task agent status, 2026-10-02
 kind: feature
 risk: low
@@ -9,7 +9,7 @@ proof: Ratatui TestBackend assertions for list and preview metadata across runti
 started: 2026-10-02T02:11:23Z
 completed:
 verdict:
-worktree:
+worktree: .worktrees/spacedock-ensign-hide-runtime-activity-in-task-views
 issue:
 pr:
 mod-block:
