@@ -15,6 +15,14 @@ worktree: .worktrees/spacedock-ensign-browse-gate-briefings-and-decisions
 issue:
 pr:
 mod-block:
+review-round:
+    id: round:080:verify:1
+    stage: verify
+    cycle: 1
+    briefing:
+        id: briefing:spacetop-dev:080:verify:round-1
+        digest: sha256:fe1e5db4400191fd44d265bdee50efa1a38ff0659ad60ec227abbf6d3ab7f140
+        room-ref: ./review/verify/round-1
 ---
 
 Let users inspect a gate question, its evidence, and its recorded decision from Spacetop. Spacedock 0.27.1 prepares one canonical Briefing instead of requiring request.json.

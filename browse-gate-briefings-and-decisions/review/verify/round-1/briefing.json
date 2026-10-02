@@ -1,0 +1,76 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:spacetop-dev:080:verify:round-1",
+  "question": "Do the parser corrections address both Material/Fix findings against the unchanged ACs? Independent verification remains pending; this advisory room does not approve a gate.",
+  "artifacts": [
+    {
+      "id": "artifact:original-parser",
+      "uri": "git-root://main/abc14cc2c76ab76644e1d752242b2d63259c9f1d/crates/spacetop-core/src/parser/gate_room.rs",
+      "rev": "sha256:fd9f9b77b1440df9696cbf94cca0acb033a032f61669a22bc1468724d6d145a6"
+    },
+    {
+      "id": "artifact:corrected-parser",
+      "uri": "git-root://main/0efb0e5e78b4a03d93f5f419c25c18f7e00a5ad5/crates/spacetop-core/src/parser/gate_room.rs",
+      "rev": "sha256:606ea427e940b7b5e3090a4858ea33ae4f6165e376b1d0b6c92802f58adf7014"
+    },
+    {
+      "id": "artifact:corrected-regressions",
+      "uri": "git-root://main/0efb0e5e78b4a03d93f5f419c25c18f7e00a5ad5/crates/spacetop-core/tests/gate_rooms.rs",
+      "rev": "sha256:e5821891904966bc91e75190b482e53d237dbf96fc3a4694ae58a1efca39a875"
+    }
+  ],
+  "context": [
+    {
+      "type": "CorrectionProvenance",
+      "rejectedCommit": "abc14cc2c76ab76644e1d752242b2d63259c9f1d",
+      "correctedCommit": "0efb0e5e78b4a03d93f5f419c25c18f7e00a5ad5",
+      "originalReviewCommit": "f901ed8ae1288edeb5bd99b98fe2b39303cf971d",
+      "originalReviewPath": "browse-gate-briefings-and-decisions.md",
+      "reviewerResolutionProjection": "The retained reviewer revise below projects the original verify report judgment; it is not an original pre-existing JSONL event.",
+      "jevRequestSha256": "ebf8dcf7f3d0cb96e191738d6bad0ba99d58413265b79cd902c33577249fd0c9",
+      "jevResponseSha256": "1dd676396973a3452fd98d3c5fa8efa0acd067f04bdc64b54b91e45ca2b50fc3",
+      "jevResponse": {
+        "model": "jev-1.13.0",
+        "answers": {
+          "identity": {
+            "type": "choice",
+            "choice": "material_fix",
+            "confidence": 1.0,
+            "probabilities": {
+              "needs_decision": 0.0,
+              "material_fix": 1.0,
+              "insufficient": 0.0,
+              "disproportionate_decline": 0.0
+            }
+          },
+          "null_context": {
+            "type": "choice",
+            "choice": "material_fix",
+            "confidence": 1.0,
+            "probabilities": {
+              "needs_decision": 0.0,
+              "material_fix": 1.0,
+              "insufficient": 0.0,
+              "disproportionate_decline": 0.0
+            }
+          },
+          "folder_route": {
+            "type": "choice",
+            "choice": "convert",
+            "confidence": 0.49,
+            "probabilities": {
+              "needs_decision": 0.27,
+              "convert": 0.66,
+              "insufficient": 0.07
+            }
+          }
+        },
+        "usage": {
+          "input_tokens": 3103,
+          "output_tokens": 158
+        }
+      }
+    }
+  ]
+}
