@@ -171,3 +171,7 @@ The first real notify run timed out inside the sandbox, including all three pre-
 ### Summary
 
 Implemented and committed a read-only browser for canonical Briefings, recorded decisions and historical attempts with strict JCS/digest and safe-path/Git-object boundaries. All four acceptance criteria have reproducible lower-layer evidence, including read-only equality and real refresh checks; product code is committed only on the assigned isolated branch.
+
+### State publication boundary
+
+Code is committed at `abc14cc2c76ab76644e1d752242b2d63259c9f1d`; implementation report and preserved JEV response data were committed path-scoped at `bfc6cc5`. Automatic approval review rejected `git -C docs/spacetop-dev/.spacedock-state push origin spacedock-state/spacetop-dev`: it did not find trusted user authorization for publishing the internal report/evaluation data to that exact shared remote destination, and considered remote trust unverified. No bypass or retry was performed. Remote state publication remains pending explicit user approval; the First Officer was notified. This is a publication boundary, not an implementation/test failure.
