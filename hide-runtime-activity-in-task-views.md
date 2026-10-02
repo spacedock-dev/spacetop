@@ -1,6 +1,6 @@
 ---
 title: Hide runtime activity from task list and detail header
-status: implement
+status: verify
 source: Captain request to remove unreliable per-task agent status, 2026-10-02
 kind: feature
 risk: low
