@@ -220,3 +220,30 @@ Request changes. Return the two proven parser defects to implementation, then in
 ### Summary
 
 Verification ruled out missing green build/lint/watch evidence and found two concrete schema-compatibility gaps in `abc14cc2c76ab76644e1d752242b2d63259c9f1d`. The decision changes from gate-ready to correction-required; implementation quality and completed checks remain separate from these failed behavior assertions.
+
+
+## Stage Report: implement (cycle 1)
+
+- DONE: Implement typed read-only gate-room loading for current, retained and legacy bindings, with strict identity/digest verification, bounded safe roots and rejected traversal/symlink cases; reuse task 079 facts.
+  Correction commit `0efb0e5e78b4a03d93f5f419c25c18f7e00a5ad5` fixes only the two dispatched parser defects; existing loader, safe reads and task 079 ownership remain covered by the green suite.
+- DONE: Deliver the gate briefing/recorded-decision browser with predictable keyboard navigation, historical attempts, artifact/reference visibility, narrow-terminal diagnostics and refresh invalidation.
+  Existing browser/app/TestBackend/refresh tests pass in the full rerun; this cycle changes no UI/input/watcher behavior or gate authority.
+- DONE: Prove all four ACs with committed fixtures and lowest-layer tests, update docs, pass cargo fmt --check, cargo test, make lint and applicable real watcher checks; commit deliverables on the isolated branch and report reproducible evidence.
+  Worktree: cargo fmt --check exit 0; cargo test exit 0 (685 passed, 4 ignored); make lint exit 0 (zero warnings); gate_rooms focused exit 0 (11 passed, 1 ignored). Docs specify ordinal and null compatibility.
+- SKIPPED: Rerun real notify checks for this correction.
+  Dispatch requires rerun only for watcher changes or unresolved watcher concern; neither applies. Original 4 passing real notify checks remain prior evidence, not a new run.
+
+### Feedback Cycles
+
+- verify/1 identity: Material / Fix, FO-authorized. Canonical ASCII `[1-9][0-9]*` replaces integer parsing; nonempty identity prefix is required; no numeric maximum is added. No AC change.
+- verify/1 null inventory: Material / Fix, FO-authorized. Null/absent context and nested children are empty; object/string/bool/number remain InvalidSchema. No AC change.
+- Red-first proof: `cargo test -p spacetop-core --test gate_rooms -- --nocapture` failed 2 new regressions against the rejected parser (9 pass / 2 fail / 1 ignored); corrected run passes both. Restoring integer parsing or array-only null refusal fails them.
+- AC-1/AC-2: `absent_and_null_context_or_children_are_empty_but_wrong_types_fail` retains the question and single Artifact for empty context; `stage_identity_requires_canonical_unbounded_ascii_ordinals_and_prefix` rejects malformed bindings and verifies large canonical strings. Both reuse the committed upstream fixture; no machine-only test source.
+- AC-3/AC-4: full rerun retains safe-path/Git-blob/read-only, historical browser, reload and narrow-render coverage; removing refusal or retaining stale evidence breaks their existing assertions.
+- Canonical advisory correction room: `review/verify/round-1/briefing.json` binds original/corrected parser and corrected regression raw SHA-256 Git artifacts; `briefing.review.jsonl` preserves the original reviewer revise as an explicitly labeled report projection, FO Material/Fix dispositions, and ensign closing entries. Closing decision stays revise pending independent verification; no gate approval or frontmatter mutation.
+- Actual JEV `jev-1.13.0` response data is retained in the Briefing provenance. Request SHA-256: `ebf8dcf7f3d0cb96e191738d6bad0ba99d58413265b79cd902c33577249fd0c9`; original response SHA-256: `1dd676396973a3452fd98d3c5fa8efa0acd067f04bdc64b54b91e45ca2b50fc3`. No raw input snapshots or paid model calls.
+- Reproduction: use committed tests from the code worktree; supplementary command outputs are `/private/tmp/spacetop-080-correction-{red,focused,fmt,test,lint}.log` and are not runtime dependencies.
+
+### Summary
+
+Corrected the two upstream compatibility defects within the authorized parser scope and committed the regression proof and nearby docs. All required formatting, full tests and lint pass; original rejection and reports remain intact, and independent verify/1 is still the First Officer's next step.
