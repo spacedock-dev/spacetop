@@ -74,3 +74,35 @@ Use existing ui/tests/task_list.rs and ui/tests/preview.rs plus shared runtime f
 ### Summary
 
 The plan removes inferred runtime presentation through two narrow rendering edits and updates their tests and current docs. It preserves workflow and durable gate facts with positive assertions, and proves runtime independence across states, scopes and sizes without changing detection or headless data. This stage produces the implementation plan only; code and final test/lint evidence belong to the implementation stage.
+
+
+## Stage Report: implement
+
+- DONE: Remove runtime activity labels/markers/styles from list and runtime/session/status/updated attribution from both preview headers, preserving workflow metadata, durable gates, worktree/selection/archive facts and body text.
+  AC-1/AC-2: code commit `2d47c1e` removes only list runtime spans/column and both preview attribution calls/helpers; tests positively retain stage color, selection, worktree, title, active gate readiness, archived verdict, historical gate briefing and user-authored runtime words.
+- DONE: Add red-first TestBackend proof across missing/Idle/Running Worker/Running FO/HumanGate, active/archive and narrow/wide views; preserve backend/headless/activity-feed/key/read-only contracts and update affected docs.
+  AC-3: `task_rows_ignore_runtime_across_scopes_and_widths` and `preview_ignores_runtime_preserving_metadata_and_body` compare cells/styles for all five variants, active/archive, 60/200 columns, and both preview placements; supplied archive runtime data is asserted present before rendering.
+- DONE: Commit scoped deliverables on the isolated branch; pass cargo fmt --check, cargo test and make lint, then report all four ACs with falsifiable evidence and exact command results.
+  AC-4: `2d47c1e` committed and pushed to `spacedock-ensign/hide-runtime-activity-in-task-views`; production changes are only list/preview, plus rendering fixtures/tests, one mouse fixture width and two docs; backend, headless, activity feed and workflow write paths unchanged.
+
+### Reproducible evidence
+
+- Red: `cargo test -p spacetop ui::tests::task_list` exited 101: 37 passed, 2 failed; runtime Worker changes row cells/styles and scanner replay shows the old marker. `cargo test -p spacetop ui::tests::preview` exited 101: 18 passed, 1 failed; Idle header contains runtime attribution.
+- Green: same focused commands exited 0: list 39 passed and preview 19 passed. The replay test asserts index Running across reload/unchanged scans then Idle after terminal evidence, while task render buffers remain identical; changing scanner lifecycle or reintroducing labels fails it.
+- Preservation mutation: `cargo test -p spacetop task_rows_ignore_runtime_across_scopes_and_widths` exited 101 (1 failed) after changing `[gate:{}]` to `[removed:{}]`; `cargo test -p spacetop preview_ignores_runtime_preserving_metadata_and_body` exited 101 (1 failed) after replacing the displayed stage with `removed-stage`. Both temporary mutations were restored.
+- A first stage mutation revealed `review` also occurs in `Preview`; the final test asserts exact `status: ● review` and catches the mutation. Positive metadata/body assertions catch accidental removal rather than relying only on equal buffers.
+- `cargo fmt --check`: exit 0. `cargo test`: exit 0, 685 passed, 0 failed, 4 ignored across unit/integration/doc suites. `make lint`: exit 0, runs `cargo clippy --all-targets --all-features -- -D warnings`. `git diff --check`: exit 0.
+- Existing headless JSON/filter, keyboard/mouse, terminal-free core and `no_write_git_calls` tests passed. Ignored real-watcher rerun omitted because watcher behavior is unchanged.
+- Removing the activity column expands the narrow ID reservation by two cells; Unicode/layout tests were updated. The mouse reflow test uses 96 instead of 100 columns to keep proving full-ID double click after the first click moves its original last cell outside the new ID rectangle; mouse production code unchanged.
+
+### Plan assessment provenance
+
+The FO supplied a prior paid plan assessment; this worker made no paid calls. Request SHA-256: `c5d32a29c272aa674bd24668cec0c2afd74e0f3f3514478a7b75fe2dcc10a019`; response SHA-256: `41956a948e590b4db5fb1b07704e6206ece397c7db0850dd70d922a6b74ed1e5`. Model `jev-1.13.0`; charge $0.000114282 of approved $0.01. Original response retained below; no raw source snapshot is included.
+
+```json
+{"model":"jev-1.13.0","answers":{"plan_1":{"type":"choice","choice":"supported","confidence":1.0,"probabilities":{"supported":1.0,"insufficient":0.0,"missing":0.0}},"plan_2":{"type":"choice","choice":"supported","confidence":1.0,"probabilities":{"supported":1.0,"insufficient":0.0,"missing":0.0}},"plan_3":{"type":"choice","choice":"supported","confidence":1.0,"probabilities":{"supported":1.0,"insufficient":0.0,"missing":0.0}}},"usage":{"input_tokens":2721,"output_tokens":123}}
+```
+
+### Summary
+
+Task rows and both preview header layouts now omit inferred runtime presentation while keeping workflow and durable gate facts. Red/green and preservation mutation tests exercise real TestBackend cells/styles; full tests and lint pass. Code is committed and pushed on the isolated branch; archived current readiness remains absent under the existing contract while recorded gate details stay available.
