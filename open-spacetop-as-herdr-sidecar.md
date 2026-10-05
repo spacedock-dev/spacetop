@@ -1,6 +1,6 @@
 ---
 title: Open Spacetop as a Herdr sidecar plugin
-status: implement
+status: verify
 source: Captain request on 2026-10-02; https://herdr.dev/docs/plugins/
 kind: feature
 risk: medium
