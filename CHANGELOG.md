@@ -18,6 +18,47 @@ release notes.
 
 ### Internal
 
+## v0.4.0 - 2026-10-05
+
+This release covers changes since `v0.3.0`.
+
+### Added
+
+- Read-only durable Spacedock gate status and current-stage readiness inspection.
+- A browser for verified gate Briefings, recorded decisions, and local evidence.
+- An optional Herdr sidecar plugin that opens Spacetop beside the invoking agent,
+  preserves its worktree context, and reuses the inspector within each workspace.
+- Release archives and the installer now deliver both `spacetop` and
+  `spacetop-herdr`; archives also include the Herdr manifest and setup docs.
+
+### Changed
+
+- Task lists and detail headers no longer display inferred runtime activity.
+  This changes the visible task status indicators from v0.3.0.
+- Detached and wrong-branch split-root checkouts remain readable, with explicit
+  diagnostics and guarded sync eligibility.
+- Both binaries report the matching v0.4.0 workspace version.
+
+### Fixed
+
+- Preserve runtime scan evidence across reloads to prevent activity flickering.
+- Fail closed for escaped or unverifiable split-root sync targets.
+- Preserve invalid gate metadata diagnostics and match upstream gate identity
+  and inventory semantics.
+- Package and install the Herdr helper with released binaries.
+
+### Merged Pull Requests
+
+- [#80](https://github.com/spacedock-dev/spacetop/pull/80) Surface detached split-root state checkouts.
+- [#81](https://github.com/spacedock-dev/spacetop/pull/81) Investigate split-root state containment warning.
+- [#82](https://github.com/spacedock-dev/spacetop/pull/82) Stop runtime activity indicator flickering between scans.
+- [#83](https://github.com/spacedock-dev/spacetop/pull/83) Support durable Spacedock gate status.
+- [#84](https://github.com/spacedock-dev/spacetop/pull/84) Browse gate briefings and decisions.
+- [#85](https://github.com/spacedock-dev/spacetop/pull/85) Hide runtime activity from task list and detail header.
+- [#86](https://github.com/spacedock-dev/spacetop/pull/86) Open Spacetop as a Herdr sidecar plugin.
+
+Full changelog: https://github.com/spacedock-dev/spacetop/compare/v0.3.0...v0.4.0
+
 ## v0.2.0 - 2026-06-17
 
 This release covers changes since `v0.1.0`.

@@ -2603,7 +2603,7 @@ dependencies = [
 
 [[package]]
 name = "spacetop"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -2624,7 +2624,7 @@ dependencies = [
 
 [[package]]
 name = "spacetop-core"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "notify",

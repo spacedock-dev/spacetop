@@ -46,6 +46,10 @@ fn darwin_arm64_selects_macos_archive_and_installs_to_temp_dir() {
         harness.install_dir.join("spacetop").is_file(),
         "installer should place spacetop in SPACETOP_INSTALL_DIR"
     );
+    assert!(
+        harness.install_dir.join("spacetop-herdr").is_file(),
+        "installer should also install the Herdr helper"
+    );
     assert_log_contains(&harness, "version.log", "--version\n");
     assert_temp_cleaned(&harness);
 }
@@ -67,6 +71,27 @@ fn linux_x86_64_selects_linux_archive() {
         "curl.log",
         "https://github.com/spacedock-dev/spacetop/releases/download/v0.1.0/spacetop-v0.1.0-x86_64-unknown-linux-gnu.tar.gz\n",
     );
+}
+
+#[test]
+fn missing_helper_exits_before_installing_either_binary() {
+    let harness = InstallerHarness::new();
+    harness.fake_uname("Darwin", "arm64");
+    harness.fake_curl();
+    harness.fake_sha256sum_success();
+    harness.fake_tar();
+    harness.fake_install();
+    let tar_path = harness.bin_dir.join("tar");
+    let mut script = fs::read_to_string(&tar_path).expect("read fake tar");
+    script.push_str("\n/bin/rm -f \"$dest/$package/spacetop-herdr\"\n");
+    fs::write(tar_path, script).expect("remove helper from fake archive");
+
+    let output = harness.run();
+
+    assert_failure(&output);
+    assert_stderr_contains(&output, "spacetop-herdr");
+    assert_log_absent(&harness, "install.log");
+    assert_temp_cleaned(&harness);
 }
 
 #[test]
@@ -439,6 +464,7 @@ printf '%s\n' "$*" >> "$FAKE_LOGS_DIR/version.log"
 printf 'spacetop 0.1.0\n'
 SCRIPT
 /bin/chmod 755 "$dest/$package/spacetop"
+/bin/cp "$dest/$package/spacetop" "$dest/$package/spacetop-herdr"
 "#,
         );
     }

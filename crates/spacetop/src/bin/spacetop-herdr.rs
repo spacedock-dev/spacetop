@@ -1,7 +1,11 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(about = "Open the invoking Herdr project's Spacetop sidecar")]
+#[command(
+    name = "spacetop-herdr",
+    version,
+    about = "Open the invoking Herdr project's Spacetop sidecar"
+)]
 struct Cli {
     #[command(subcommand)]
     action: Action,

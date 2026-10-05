@@ -122,7 +122,7 @@ jobs:
             release-${{ matrix.target }}-
 
       - name: Build release binary
-        run: cargo build --release --target "${{ matrix.target }}" -p spacetop
+        run: cargo build --release --target "${{ matrix.target }}" -p spacetop --bins
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
 
@@ -130,13 +130,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          binary="target/${{ matrix.target }}/release/spacetop"
-          actual="$("${binary}" --version)"
-          expected="spacetop ${{ needs.validate.outputs.version }}"
-          if [[ "${actual}" != "${expected}" ]]; then
-            echo "expected '${expected}', got '${actual}'" >&2
-            exit 1
-          fi
+          for name in spacetop spacetop-herdr; do
+            binary="target/${{ matrix.target }}/release/${name}"
+            actual="$("${binary}" --version)"
+            expected="${name} ${{ needs.validate.outputs.version }}"
+            if [[ "${actual}" != "${expected}" ]]; then
+              echo "expected '${expected}', got '${actual}'" >&2
+              exit 1
+            fi
+          done
 
       - name: Package archive
         shell: bash
@@ -147,6 +149,9 @@ jobs:
           package_dir="dist/spacetop-v${version}-${target}"
           mkdir -p "${package_dir}"
           cp "target/${target}/release/spacetop" "${package_dir}/"
+          cp "target/${target}/release/spacetop-herdr" "${package_dir}/"
+          mkdir -p "${package_dir}/plugins/herdr"
+          cp plugins/herdr/herdr-plugin.toml plugins/herdr/README.md "${package_dir}/plugins/herdr/"
           cp README.md "${package_dir}/"
           cp CHANGELOG.md "${package_dir}/"
           tar -C dist -czf "dist/spacetop-v${version}-${target}.tar.gz" "spacetop-v${version}-${target}"

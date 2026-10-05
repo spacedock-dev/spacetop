@@ -17,7 +17,7 @@ curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/in
 The installer script is published with each GitHub Release, so later changes on
 `main` cannot change this install path accidentally. It installs the latest
 released binary, verifies the selected archive against the release `SHA256SUMS`
-file, and installs `spacetop` to `~/.cargo/bin` by default. The supported binary
+file, and installs `spacetop` and `spacetop-herdr` to `~/.cargo/bin` by default. The supported binary
 platforms are macOS Apple Silicon and Linux x64.
 
 Override the install directory with an absolute path:
@@ -277,7 +277,7 @@ make build
 make install
 ```
 
-By default, install places the binary at `~/.cargo/bin/spacetop`.
+By default, install places both binaries in `~/.cargo/bin`.
 
 To install to a different location, override `PREFIX`:
 

@@ -48,6 +48,13 @@ The first supported binary assets are:
 The macOS archive targets Apple Silicon. The Linux archive targets x64 GNU
 Linux.
 
+Starting with v0.4.0, both archives contain `spacetop` and `spacetop-herdr`, plus
+the optional Herdr manifest and setup docs under `plugins/herdr`. Both binaries
+must report the release version. The curl installer checks that both are present
+before installing either, then installs both to the selected directory.
+Herdr integration is verified only on macOS; including the helper in the Linux
+archive does not extend that support. Plugin registration remains a user action.
+
 The README curl installer is the documented user install path for released
 binaries. The README downloads `install.sh` from the latest GitHub Release, not
 from a moving source branch. The installer depends on those two archive assets
@@ -98,9 +105,8 @@ Prerequisites:
   release.
 - `gh auth status` succeeds for the release repository.
 - The release actor can push to `main` and create GitHub Releases.
-- For the next release after the current `v0.1.0`, choose either a patch
-  version such as `v0.1.1` or a minor version such as `v0.2.0` according to the
-  version meaning above.
+- Choose the next version from the latest published release according to the
+  version meaning above, or use the version explicitly requested by the user.
 
 Preparation:
 

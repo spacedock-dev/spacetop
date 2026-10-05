@@ -188,13 +188,15 @@ verify_checksum "${checksum_tool}" "${archive_name}"
 
 tar -xzf "${archive_path}" -C "${temp_dir}"
 package_dir="${temp_dir}/${archive_name%.tar.gz}"
-source_binary="${package_dir}/spacetop"
-if [ ! -f "${source_binary}" ]; then
-  die "archive did not contain expected binary: ${archive_name}"
-fi
+for binary in spacetop spacetop-herdr; do
+  if [ ! -f "${package_dir}/${binary}" ]; then
+    die "archive did not contain expected binary ${binary}: ${archive_name}"
+  fi
+done
 
-target_binary="${install_dir}/spacetop"
-install_binary "${source_binary}" "${target_binary}" "${install_dir}"
-"${target_binary}" --version >/dev/null
-
-printf 'spacetop installed to %s\n' "${target_binary}"
+for binary in spacetop spacetop-herdr; do
+  target_binary="${install_dir}/${binary}"
+  install_binary "${package_dir}/${binary}" "${target_binary}" "${install_dir}"
+  "${target_binary}" --version >/dev/null
+  printf '%s installed to %s\n' "${binary}" "${target_binary}"
+done

@@ -17,6 +17,17 @@ Plugins execute ordinary user code; link only a checkout you trust.
 
 ## Install and choose a shortcut
 
+The v0.4.0 release installer installs both binaries. To use the plugin without
+building from source, download and extract the macOS archive from the same
+GitHub Release, then link its bundled `plugins/herdr` directory:
+
+```sh
+herdr plugin link /absolute/path/to/extracted-archive/plugins/herdr
+```
+
+Keep that directory after linking. It contains the plugin manifest and setup
+docs. Registration and keybinding setup remain explicit user actions.
+
 From the Spacetop checkout:
 
 ```sh
