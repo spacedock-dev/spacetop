@@ -1,0 +1,18 @@
+Task 085 final implementation checks
+
+cargo fmt --check: exit 0
+cargo test: exit 0; 695 passed, 4 ignored, 0 failed
+Includes ten actual-helper boundary tests and no_write_git_calls/no_terminal_deps guardrails.
+
+cargo clippy --all-targets --all-features -- -D warnings
+   Compiling spacetop v0.2.0 (/Users/kent/Dev/InfuseAI/GitHub/spacetop/.worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar/crates/spacetop)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.92s
+
+SENTRY_DSN="" make install BINDIR=/tmp/spacetop-085-install: exit 0
+    Finished `release` profile [optimized] target(s) in 7.48s
+install -d "/tmp/spacetop-085-install"
+install -m 755 "target/release/spacetop" "/tmp/spacetop-085-install/spacetop"
+install -m 755 "target/release/spacetop-herdr" "/tmp/spacetop-085-install/spacetop-herdr"
+
+Final installed-binary live_scenario.py: exit 0; four shortcut actions succeeded; assertions passed; plugin unlinked; session stopped; auth copy removed.
+Independent acceptance review is assigned to verify stage.

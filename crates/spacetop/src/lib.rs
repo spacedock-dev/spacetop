@@ -1,6 +1,7 @@
 pub mod app;
 pub mod cli;
 pub mod headless;
+pub mod herdr_sidecar;
 pub mod ui;
 
 use std::io::{self, IsTerminal, Write};

@@ -1,0 +1,563 @@
+{
+  "model": "jev-1.13.0",
+  "state": {
+    "task_and_stage_reports": "---\ntitle: Open Spacetop as a Herdr sidecar plugin\nstatus: verify\nsource: Captain request on 2026-10-02; https://herdr.dev/docs/plugins/\nkind: feature\nrisk: medium\nmilestone: v1-maintenance\nproof: Launcher integration tests and an isolated live Herdr shortcut/right-split scenario\nstarted: 2026-10-05T01:42:46Z\ncompleted:\nverdict:\nworktree: .worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar\nissue:\npr:\nmod-block:\nid: 085\n---\n\nWhen an agent runs a Spacedock workflow under Herdr, let the user open Spacetop beside that agent with a keyboard shortcut. The right-side terminal pane must inspect the invoking agent's repository or worktree, without requiring the user to start another terminal or navigate to the project manually.\n\n## Scope\n\n- Deliverable home: a Herdr plugin packaged in the Spacetop repository, with its manifest, launcher, tests, and user setup documentation. This is a product integration tracked by the Spacetop development workflow.\n- Touches: launch integration, packaging, tests, and docs. Reuse the existing TUI, workflow discovery/picker, and watcher wherever possible.\n- Declare the supported platforms and the oldest Herdr version actually verified for the APIs used.\n- Non-goals: a replacement TUI, automatic agent dispatch, workflow-state editing, Herdr core changes, marketplace publication, or automatic changes to the user's global plugin/keybinding configuration.\n\n## Acceptance criteria\n\n**AC-1 -- Shortcut opens the right-side inspector.** After the documented plugin registration and keybinding setup, invoking the shortcut from an agent pane opens a managed Spacetop terminal pane split to its right. The first open retains focus on the agent so work can continue there.\nVerified by: an isolated live Herdr scenario showing the shortcut, target agent pane, resulting right-side layout, running Spacetop, and focus state. Opening an overlay or splitting the wrong pane would falsify this criterion.\n\n**AC-2 -- The inspector reads the invoking project.** Launch context selects the invoking repository or worktree rather than the plugin installation directory. Paths containing spaces are handled as argv data. With several discovered workflows, Spacetop's existing selection behavior remains available. If an explicit workflow hint is supported, document its precedence and validation; do not claim Herdr automatically knows the current Spacedock workflow.\nVerified by: launcher tests for repository/worktree context, paths with spaces, and missing or invalid context, plus a live project containing recognizable workflow data. Launching against the plugin directory or another project would falsify this criterion.\n\n**AC-3 -- Repeated use reuses the sidecar.** Invoking the shortcut again in the same workspace selects the existing Spacetop sidecar instead of adding duplicate panes. After that sidecar closes, the next invocation opens a new one. A sidecar in a different workspace must not be selected accidentally.\nVerified by: launch/reuse tests and repeated invocation in the live Herdr scenario, including closed-pane recovery and workspace isolation. An extra pane or a cross-workspace selection would falsify this criterion.\n\n**AC-4 -- Read-only product boundaries are preserved.** The plugin does not edit Spacedock markdown, repair checkout topology, introduce new Git write operations, or persist config/session files in workflow directories. Existing explicitly initiated Spacetop sync and permitted user config/session paths retain their documented contract. Context is passed without interpolating project paths into executable shell text.\nVerified by: negative launcher cases, before/after workflow-file and Git-state checks during open/reuse/close, and existing Spacetop write-safety guardrails. A workflow write, an unrequested Git mutation, or command execution from a crafted path would falsify this criterion.\n\n**AC-5 -- Installation and failures are understandable.** Documentation provides reproducible registration/install steps, binary/runtime prerequisites, a configurable example shortcut, removal steps, platform/version support, and workflow-selection behavior. Missing Spacetop, unusable launch context, or Herdr API failures produce an actionable error rather than silently opening the wrong project or modifying user settings.\nVerified by: documented setup exercised in an isolated environment and failure-path command results. A clean supported setup that cannot launch, or a silent wrong-project fallback, would falsify this criterion.\n\n**AC-6 -- The integration has independent evidence.** The finished change has focused tests at the launcher boundary, a real Herdr scenario for the shortcut and pane behavior, and passing applicable repository checks. Each AC has evidence outside this task's own assertions.\nVerified by: independent verification of the diff, command output, live scenario artifacts, cargo test, and make lint. Missing live proof or a failing required check would falsify this criterion.\n\n## Proof plan\n\n- Start with the riskiest path: a minimal plugin action opening a real right-side pane with the correct invoking-project cwd. Use an isolated Herdr session/config to avoid altering the captain's active layout or settings.\n- Test the actual launcher with controlled Herdr/Spacetop command boundaries; verify argv, project context, failures, pane reuse, and workspace isolation.\n- Exercise the installed plugin and shortcut on the declared supported Herdr version; retain layout/process evidence and before/after workflow state.\n- Run cargo test and make lint for the completed code change. Run cargo fmt if Rust changes. Add no standing enforcement process or CI lane as part of this task.\n- Update nearby product documentation with installation, keybinding, selection, support, and troubleshooting instructions.\n- FO semantic judgments and acceptance review use the typesafe-ai skill with JEV, as requested by the captain. Obtain a task-specific paid-call budget before making those calls; prior approvals for tasks 079-084 do not cover this task.\n\n## Reference\n\n- Official Herdr plugin documentation: https://herdr.dev/docs/plugins/\n- Official Herdr socket API: https://herdr.dev/docs/socket-api/\n- Initial feasibility check: local Herdr 0.9.3 exposes plugin pane open with placement split, direction right, target-pane, cwd, and focus/no-focus options. Plugin commands start in the plugin directory and receive Herdr invocation context; this fact makes context selection part of the deliverable rather than an assumed cwd.\n\n## Implementation plan\n\n### Owned files and delivery boundary\n\n- `plugins/herdr/herdr-plugin.toml`: package `spacetop.sidecar`, one `open` action and one `inspector` terminal entrypoint; argv commands use the installed `spacetop-herdr` helper on PATH. No startup/event hooks, automatic registration, or global config writes.\n- `crates/spacetop/src/bin/spacetop-herdr.rs`: thin `open`/`pane` dispatch. `crates/spacetop/src/herdr_sidecar/{mod,context,client,launcher}.rs`: typed context/Herdr responses, pure launch decisions, and narrow subprocess boundary. Export the module from `lib.rs` only as needed by this binary/tests. Keep this integration out of core/parser/UI.\n- `crates/spacetop/Cargo.toml`: set `default-run = \"spacetop\"` so adding the helper preserves existing `cargo run -p spacetop` commands. Reuse `serde`, `serde_json`, `clap`, and standard process/filesystem APIs; no new dependency or scripting runtime.\n- `crates/spacetop/tests/herdr_sidecar.rs` plus `tests/fixtures/herdr/`: execute the real helper against controlled Herdr/Spacetop boundaries; assert exit codes, argv, context and side effects, rather than testing a second launcher implementation.\n- `Makefile`: explicitly build/install both binaries; removal docs name both. `README.md` links `plugins/herdr/README.md`, which owns setup, support, selection, failure and removal instructions. Do not change workflow parsing, TUI, or release publication.\n\n### Supported setup and API assumptions\n\nInitial declared support is **macOS, Herdr 0.9.3 or later**, with 0.9.3 the oldest version actually exercised. Linux and Windows remain unverified and outside the initial manifest platform list; broaden only with equivalent real scenario proof. Installed Spacetop plus the new helper, Git, and a Herdr-managed local pane are prerequisites; source build additionally requires the existing Rust toolchain. No Node/Python runtime is required for the product.\n\nThe helper calls the injected `HERDR_BIN_PATH`, using inherited session/socket environment. Herdr 0.9.3 schema reports protocol 22. Required facts are `HERDR_PLUGIN_CONTEXT_JSON` (`workspace_id`, `tab_id`, `focused_pane_id`, `focused_pane_cwd`), `plugin pane open` with split/right/target/cwd/no-focus, `pane list --workspace`, display-only `pane report-metadata --token`, and `plugin pane focus`. Action cwd is the plugin directory; it is never a project fallback. Upstream APIs are early interfaces: fail visibly on missing methods or malformed responses, and do not upgrade/restart Herdr to recover.\n\n### Steps and decisions\n\n1. In the dedicated implement worktree, add the helper and typed context parser. Require nonempty IDs and an absolute existing `focused_pane_cwd`; confirm the target pane belongs to the supplied workspace/tab. Resolve its repository/worktree root with argv-backed `git rev-parse --show-toplevel` in that directory. A missing/invalid focused context or non-Git directory is an actionable failure; do not silently substitute workspace cwd or plugin cwd. Preserve the invoking worktree even when workspace root differs.\n2. Resolve the Spacetop executable before opening: prefer a documented absolute `SPACETOP_BIN` override, otherwise the installed binary beside the helper/PATH; validate executable presence. Pass a canonical project directory to `--cwd` as one argv element and pass executable information through pane env as data. The pane entrypoint starts Spacetop with `--workflow-dir <project-root>` via `Command`, never shell text. No explicit workflow hint in this first version: existing discovery and multi-workflow selection remain authoritative.\n3. Open the manifest entrypoint using explicit workspace/target pane, `--placement split --direction right --cwd <project-root> --no-focus`. Verify the response matches the requested workspace and new pane identity, then tag it with a stable display-only `spacetop_sidecar=v1` token. The pane entrypoint retains its terminal and streams Spacetop output; actionable startup errors remain visible/logged. Do not send commands into the invoking agent terminal.\n4. Reuse by querying live panes in the invoking workspace and matching the owned sidecar token, rather than label/title alone or a persisted pane-id cache. Focus the existing plugin pane; a closed pane disappears from the query and the next invocation opens again. Validate token provenance with controlled plugin-owned focus results; a tagged ordinary pane, failed focus, duplicate match, mismatched context, or unreadable query must fail clearly rather than open duplicates. If a workspace's project differs from an existing sidecar's recorded launch project, fail with close-and-reopen guidance; do not silently show stale project data. Serialize overlapping open actions with a bounded lock under the absolute `HERDR_PLUGIN_STATE_DIR`, with explicit stale-lock/failure recovery documentation; no lock/state under workflow paths.\n5. Add manifest/setup docs and tests before live acceptance. Installation is user-driven: build/install both binaries, `herdr plugin link <checkout>/plugins/herdr`, add a configurable `[[keys.command]]` with `type = \"plugin_action\"`, qualified command `spacetop.sidecar.open`, then reload config as documented. Document plugin trust, no automatic current-workflow inference, prerequisite errors, API errors, unsupported platforms, unlink/removal and optional lock cleanup. Validate exact config syntax in the clean scenario.\n6. Run focused launcher tests, `cargo fmt --check`, `cargo test`, and `make lint`. Independently review the diff and repeat the real shortcut scenario before claiming acceptance; FO owns semantic JEV judgments. No new standing CI lane is part of this task.\n\n### Isolated feasibility evidence (2026-10-05)\n\nA temporary manifest/action was linked to a new headless Herdr **0.9.3** session and opened the installed real Spacetop through the requested API path. This is a feasibility spike, not product implementation or full AC acceptance: invocation used the action CLI from a shell pane; keyboard routing, real agent targeting, reuse logic and worktree/space cases still require implementation-stage live proof.\n\n- Isolation: `HOME=/tmp/spacetop-085-clean/home`, `XDG_CONFIG_HOME=/tmp/spacetop-085-clean/config`, `HERDR_CONFIG_PATH=/tmp/spacetop-085-spike/config.toml`, named session `spacetop-085-clean`; socket `/tmp/spacetop-085-clean/config/herdr/sessions/spacetop-085-clean/herdr.sock`. Initial `plugin list` returned `No plugins installed.` All API calls explicitly selected that session. The owned session was stopped after proof.\n- Discovery warning: `HERDR_CONFIG_PATH` by itself changes config only; an earlier owned named session inherited the user's plugin registry. It was stopped and proof rerun with temporary HOME/XDG roots. Never use config override alone as proof of plugin isolation. Sandbox denied server/socket access; the authorized isolated exercise succeeded through escalated commands. No captain active layout or global config was edited.\n- `plugin action invoke spacetop.spike085.open`: exit 0; action context recorded `focused_pane_id=\"w1:p1\"`, `focused_pane_cwd=\"/Users/kent/Dev/InfuseAI/GitHub/spacetop\"`; actual action cwd was `/private/tmp/spacetop-085-spike`. `plugin log` contained only this action, `status=\"succeeded\"`, `exit_code=0`.\n- `plugin pane open --plugin spacetop.spike085 --entrypoint inspect --placement split --direction right --target-pane w1:p1 --cwd /Users/kent/Dev/InfuseAI/GitHub/spacetop --no-focus`: exit 0; response `plugin_id=\"spacetop.spike085\"`, `entrypoint=\"inspect\"`, pane `w1:p2`, `focused=false`, cwd equal to the project.\n- `pane layout --pane w1:p1`: exit 0; `focused_pane_id=\"w1:p1\"`, split `direction=\"right\"`, ratio `0.5`, area `120x40`, caller rect `(0,0,60,40)`, inspector rect `(60,0,60,40)`. `pane process-info --pane w1:p2` reported `argv=[\"/Users/kent/.cargo/bin/spacetop\"]` and project cwd. `pane read w1:p2 --source visible` showed `docs/spacetop-dev`, task `085 Open Spacetop as a Herdr sidecar plugin`, and the current shape/plan ribbon.\n- `plugin pane focus w1:p2`: exit 0, `focused=true`; `plugin pane close w1:p2`: exit 0; subsequent `pane list --workspace w1` contained only `w1:p1`. Full local stdout/argv/process/layout records, temporary manifest and exercise source are `/tmp/spacetop-085-spike/{proof.json,herdr-plugin.toml,spike.py,exercise.py}`. The facts above are retained here because `/tmp` artifacts are transient. Product tests/docs must replace these machine-specific absolute executable paths with declared installed prerequisites.\n- Remaining risk: generic pane list does not expose plugin ownership, only pane metadata; implementation must test the token/owned-focus reuse contract on live Herdr. Real shortcut dispatch and concurrent action behavior are also unproven. These are explicit verification obligations, not assumed host guarantees.\n\n### Acceptance-to-proof map\n\n| Criterion | Launcher/repository evidence | Required isolated live evidence and docs |\n|---|---|---|\n| AC-1 | Fake Herdr captures exact split/right/workspace/target/no-focus argv; wrong placement or absent target fails tests. | Register final manifest/keybinding, invoke from a real agent pane, retain shortcut input, layout JSON, process and screen evidence; caller stays focused on first open. Setup explains key choice. |\n| AC-2 | Actual helper cases for repo, linked worktree, focused subdirectory, spaces/metacharacters, missing/relative/invalid context and contradictory IDs; argv recorder proves each path remains one argument. | Agent in recognizable temporary worktree plus multi-workflow fixture; inspector shows its data. Docs state focused project precedence and no workflow hint. |\n| AC-3 | Live-query decision tests for matching workspace token, other workspace, stale/closed pane, duplicate matches, tagged non-plugin pane, failed focus, overlapping invocation and project mismatch. | Repeat shortcut without pane-count increase, focus existing sidecar, close it, reopen; second workspace never selects first workspace's pane. Document per-workspace reuse and recovery. |\n| AC-4 | Reject crafted paths and context without executing shell text; before/after hashes and Git status/HEAD/index in fixtures stay unchanged; run `cargo test -p spacetop-core --test no_write_git_calls --test no_terminal_deps`. | Snapshot workflow bytes and Git state around open/reuse/close; exclude deliberate test fixture setup and normal absolute user session persistence. No sync key during proof. Docs preserve explicit Y sync and XDG boundaries. |\n| AC-5 | Real helper failures for missing binary, unavailable socket, nonzero API result, malformed JSON and unsupported context assert nonzero exits with next action; installation tests ensure both binaries are delivered. | Fresh isolated setup exercises docs, logs and failures. No global settings changed automatically; removal steps unlink plugin and remove helper/config entry. |\n| AC-6 | Focused launcher tests, full `cargo test`, `make lint`, formatting and independent diff review; no success claim based solely on this plan. | Retain final raw scenario outputs and independent verifier's per-AC conclusion; no replacement of missing shortcut evidence with CLI spike evidence. |\n\n## Stage Report: plan\n\n- DONE: Name the owned plugin files, implementation steps, supported platforms, and Herdr API/version assumptions.\n  The implementation plan names the manifest, Rust helper/modules, launcher tests, Makefile/Cargo setup and documentation; macOS/Herdr 0.9.3 is the verified initial support boundary.\n- DONE: Exercise the riskiest isolated Herdr right-split/context path and retain concrete evidence or an explicit blocker.\n  Real Spacetop opened as w1:p2 at x=60 beside w1:p1, project cwd matched, first focus stayed w1:p1, plugin action log exited 0; retained context/layout/process/screen and cleanup facts above plus local proof.json.\n- DONE: Map all six acceptance criteria to launcher tests, live scenario evidence, repository checks, and setup/failure documentation.\n  The per-AC table names falsifiable command/argv cases, full test/lint gates, required real-agent shortcut/reuse/worktree proof and actionable setup/failure docs.\n- SKIPPED: Product implementation and completed-change Rust checks.\n  This stage edits only the authorized entity body; implementation belongs to the subsequent dedicated worktree. No Rust/product file changed, so cargo formatting/test/clippy are deferred to that change.\n\n### Summary\n\nThe riskiest host path works on macOS with Herdr 0.9.3: an action receives the invoking project separately from plugin cwd, and a real Spacetop pane can open to the right without taking focus. The plan keeps integration in a separate Rust helper and manifest, preserves read-only boundaries, and makes keyboard routing, ownership-safe reuse, spaces/worktrees and concurrency explicit implementation proof obligations. This stage does not claim the six product acceptance criteria are already passed.\n\n\n## Stage Report: implement\n\n- DONE: Deliver the Herdr manifest and Rust helper with correct invoking-worktree argv context, right-split/no-focus first open, workspace-safe pane reuse and clear failures.\n  Commit af8d1c6 adds the optional manifest/helper; typed context, live workspace/tab validation, argv-only project launch, plugin-owned focus checks and bounded external-state locking preserve the existing TUI/core boundaries.\n- DONE: Prove the six ACs with launcher boundary tests and an isolated real-agent shortcut scenario covering reuse, close/reopen, workspace isolation, spaces/worktrees and read-only state.\n  Ten actual-helper tests plus final installed-binary Herdr 0.9.3/Codex 0.160.0 proof map AC-1 through AC-6 in plugins/herdr/evidence/085/README.md; independent verify-stage acceptance review remains pending.\n  Split/right/no-focus tests fail if target/direction/focus argv changes; the real Ctrl+B,v PTY input yielded agent w1:p1 focused and inspector w1:p2 at x=77 with Spacetop process argv and recognizable two-workflow screen.\n  Context tests fail for relative/missing/non-Git cwd, wrong tab/workspace, broken API, wrong owner, stale project, duplicate tokens or missing executable; linked-worktree/subdirectory/space paths must remain one argv argument.\n  Reuse/concurrency/close tests fail if a second pane opens; installed long-path proof exposed Herdr's 80-character token truncation, so the final regression models that host limit and requires full recorded pane cwd identity.\n  Final live proof reuses w1:p2, reopens as w1:p3 after close, creates separate w2:p2, and retains identical workflow hashes/Git HEAD/index/status; crafted path execution remained false and no sync key was sent.\n- DONE: Update installation/support/removal docs, run applicable cargo formatting/test and make lint checks, and commit task-only deliverables with the implementation stage report.\n  README links plugin setup/support/failures/removal; make install actually delivered both release binaries to a temporary BINDIR. cargo fmt --check, cargo test (695 passed, 4 ignored), make lint and git diff --check passed; checks.txt retains results.\n- DONE: Retain the supplied FO JEV request/response as task review evidence.\n  plugins/herdr/evidence/085/plan-jev-request.json and plan-jev-response.json preserve the supplied judgment; this worker made no additional JEV calls.\n- SKIPPED: PR publication and independent acceptance judgment.\n  Captain verify-gate approval is required before PR publication; FO owns semantic JEV review and independent verifier dispatch. No PR was created.\n\n### Summary\n\nThe final optional Herdr integration opens the invoking Git worktree to the right without taking first focus, reuses a plugin-owned inspector per workspace, and reports actionable errors without workflow writes. Actual host exercise corrected split-target CLI usage, empty metadata stdout handling and long display-token truncation; only the final installed-binary green proof feeds verification. HOME/XDG/agent homes and the named live session were isolated, the plugin was unlinked, the session stopped, and the temporary auth copy removed.\n\n\n## Stage Report: verify\n\n- DONE: Independently check every AC against the actual manifest/helper diff, launcher cases, read-only guardrails, installed setup and retained command artifacts.\n  Reviewed product commit af8d1c6, all ten actual-helper tests, manifest/installation/docs and retained raw full test/lint/install logs; independent evidence is committed as db050f1 under plugins/herdr/evidence/085/.\n- DONE: Challenge the runtime claims in a clean isolated real-agent shortcut scenario: right split and initial focus, project/worktree and space paths, repeated reuse, closed-pane recovery and workspace isolation.\n  Independent Herdr 0.9.3/Codex 0.160.0 installed-binary run exited 0; verify-proof.json retains actual PTY shortcut bytes, process/layout/screen results and new live stale-project/forged-ordinary-pane challenges plus recovery.\n- DONE: Verify formatting, cargo test and make lint evidence is green for the final commit; record actionable findings with workflow dispositions and a per-AC PASSED or REJECTED verdict.\n  Product code remains af8d1c6; inspected raw test log totals 695 passed/0 failed/4 ignored, clippy logs are clean, retained fmt result is exit 0, installed hashes match release artifacts. Evidence-only db050f1 passes git diff --check; deterministic checks were not rerun solely for a second opinion.\n\n### Per-AC verdicts\n\n- AC-1: PASSED \u2014 Real agent w1:p1, Ctrl+B,v bytes 0276, right-side w1:p2 at x=77, first focus remains on caller, installed Spacetop appears in foreground process argv. Changing direction, target or first focus fails launcher/live assertions.\n- AC-2: PASSED \u2014 Linked worktree with spaces/metacharacters remains one --workflow-dir argv value; screen shows two workflows and INVOKING-WORKTREE content. Context tests reject relative/missing/non-Git cwd and keep focused subdirectory/worktree precedence; a main/plugin fallback falsifies this evidence.\n- AC-3: PASSED \u2014 Reuse focuses w1:p2 without adding a pane, close/reopen produces w1:p3, workspace two owns w2:p2. New real-host challenges log exit 1 for changed project and a forged token on plain w2:p3, keep pane counts/focus safe, then recover as w2:p4 after removal; accidental duplicates or cross-workspace reuse fail these checks.\n- AC-4: PASSED \u2014 Workflow bytes, Git HEAD/index/status match before, after baseline and after adversarial exercises; no crafted-path execution or sync key. Actual guardrail tests passed; new Git writes/core terminal dependencies would fail them. Locks remain outside the project in isolated user state.\n- AC-5: PASSED \u2014 Fresh registry starts empty and final documented manifest/keybinding work with both installed binaries. Missing binary/context/API tests fail with next actions; actual stale-project/forged-owner logs are actionable. Support/selection/removal docs match code and cleanup; no global config/layout changed.\n- AC-6: PASSED \u2014 Independent diff/runtime review and inspected full test/lint/install evidence support all criteria; verify-proof.json/verify-checks.txt and README retain exact commands, hashes and conclusions. No product change or PR publication occurred in verification.\n\n### Findings and disposition\n\nNo actionable product defect found. Judgment: Approve technical verification; no revise assignment required. Captain approval and FO-owned JEV judgment remain workflow decisions, and no JEV call was made by this worker.\n\nResidual risk: verified platform/API is macOS with Herdr 0.9.3; other platforms and later host APIs remain unverified as documented. Verification-only setup failures were isolated socket permission/path-length limits, an early asynchronous-log read, and incorrect plain-pane close syntax; the final corrected run passed, unlinked the plugin, stopped only session verify085 and removed its temporary auth copy.\n\n### Summary\n\nAll six ACs passed independent verification of the final product commit, with new runtime evidence beyond the author's scenario. The added adversarial checks ruled out stale-project reuse and ordinary-pane metadata spoofing while preserving workflow/Git state; ready for the captain's verify gate, with no product fix requested.\n",
+    "independent_raw_proof": {
+      "before": {
+        "files": {
+          "workflow-b/001.md": "69fc9ffd37b8588e47bc923c8b4bef47222ea9da0c67a2a2a92873306fb2ec54",
+          "workflow-b/README.md": "7179e8419524ca176d67a01d323cea27f1f18674deca8a149f9c47be943b19cb",
+          "workflow-a/001.md": "f3502d34bc6feaf17cb59ebdbcbfd3790329bfd0f28e66780084e77d81231757",
+          "workflow-a/README.md": "77d602269dc2cc78a34362194111c36243eaa4fa12f932afd1be992c7b38b6e6"
+        },
+        "head": "858d0e3e59d9e0ea9df54adf04fab9e83d22f93a\n",
+        "status": " M workflow-a/001.md\n",
+        "index": "61b96a71b7c5f7db683875f9abdf03254cc7c89f19ff89ac7b68a0c041ebfe86"
+      },
+      "initial-plugins": {
+        "argv": [
+          "plugin",
+          "list"
+        ],
+        "exit": 0,
+        "stdout": "No plugins installed.\n",
+        "stderr": ""
+      },
+      "workspace": {
+        "argv": [
+          "workspace",
+          "create",
+          "--cwd",
+          "/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)",
+          "--label",
+          "agent-worktree",
+          "--focus"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:workspace:create\",\"result\":{\"root_pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69580efd1\",\"workspace_id\":\"w1\"},\"tab\":{\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"1\",\"number\":1,\"pane_count\":1,\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\"},\"type\":\"workspace_created\",\"workspace\":{\"active_tab_id\":\"w1:t1\",\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"agent-worktree\",\"number\":1,\"pane_count\":1,\"tab_count\":1,\"workspace_id\":\"w1\"}}}\n",
+        "stderr": ""
+      },
+      "link": {
+        "argv": [
+          "plugin",
+          "link",
+          "/Users/kent/Dev/InfuseAI/GitHub/spacetop/.worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar/plugins/herdr"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"plugin\":{\"actions\":[{\"command\":[\"spacetop-herdr\",\"open\"],\"contexts\":[\"workspace\"],\"id\":\"open\",\"title\":\"Open Spacetop beside this agent\"}],\"enabled\":true,\"manifest_path\":\"/Users/kent/Dev/InfuseAI/GitHub/spacetop/.worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar/plugins/herdr/herdr-plugin.toml\",\"min_herdr_version\":\"0.9.3\",\"name\":\"Spacetop sidecar\",\"panes\":[{\"command\":[\"spacetop-herdr\",\"pane\"],\"id\":\"inspector\",\"placement\":\"split\",\"title\":\"Spacetop\"}],\"platforms\":[\"macos\"],\"plugin_id\":\"spacetop.sidecar\",\"plugin_root\":\"/Users/kent/Dev/InfuseAI/GitHub/spacetop/.worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar/plugins/herdr\",\"source\":{\"kind\":\"local\"},\"version\":\"0.1.0\"},\"type\":\"plugin_linked\"}}\n",
+        "stderr": ""
+      },
+      "agent-start": {
+        "argv": [
+          "agent",
+          "start",
+          "sidecar-proof",
+          "--kind",
+          "codex",
+          "--pane",
+          "w1:p1",
+          "--timeout",
+          "15000",
+          "--",
+          "--no-alt-screen"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:agent:start\",\"result\":{\"agent\":{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"interactive_ready\":true,\"name\":\"sidecar-proof\",\"pane_id\":\"w1:p1\",\"revision\":0,\"state_change_seq\":0,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69580efd1\",\"workspace_id\":\"w1\"},\"argv\":[\"codex\",\"--no-alt-screen\"],\"type\":\"agent_started\"}}\n",
+        "stderr": ""
+      },
+      "agent-before": {
+        "argv": [
+          "agent",
+          "get",
+          "sidecar-proof"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:agent:get\",\"result\":{\"agent\":{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"interactive_ready\":true,\"name\":\"sidecar-proof\",\"pane_id\":\"w1:p1\",\"revision\":0,\"state_change_seq\":0,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69580efd1\",\"workspace_id\":\"w1\"},\"type\":\"agent_info\"}}\n",
+        "stderr": ""
+      },
+      "agent-screen": {
+        "argv": [
+          "pane",
+          "read",
+          "w1:p1",
+          "--source",
+          "visible"
+        ],
+        "exit": 0,
+        "stdout": "kent@Kents-Mac-mini invoking worktree spaces ; $(touch NEVER) % codex --no-alt-screen\n\n  >_ OpenAI Codex (v0.160.0)\n     /private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\n\n  Hello again. What\u2019s the plot this time?\n\n\n\u203a Ask Codex to do anything\n",
+        "stderr": ""
+      },
+      "first-input": {
+        "hex": "0276",
+        "meaning": "Ctrl+B then v to Herdr client PTY"
+      },
+      "first-log": {
+        "argv": [
+          "plugin",
+          "log"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166344259,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166344215,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+        "stderr": ""
+      },
+      "first-panes": {
+        "argv": [
+          "pane",
+          "list",
+          "--workspace",
+          "w1"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":1,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69580efd1\",\"workspace_id\":\"w1\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"label\":\"Spacetop\",\"pane_id\":\"w1:p2\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69aec1072\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w1\"}],\"type\":\"pane_list\"}}\n",
+        "stderr": ""
+      },
+      "first-layout": {
+        "argv": [
+          "pane",
+          "layout",
+          "--pane",
+          "w1:p1"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:layout\",\"result\":{\"layout\":{\"area\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p1\",\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p1\",\"rect\":{\"height\":47,\"width\":77,\"x\":0,\"y\":0}},{\"focused\":false,\"pane_id\":\"w1:p2\",\"rect\":{\"height\":47,\"width\":77,\"x\":77,\"y\":0}}],\"splits\":[{\"direction\":\"right\",\"id\":\"split_0_root\",\"ratio\":0.5,\"rect\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0}}],\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\",\"zoomed\":false},\"type\":\"pane_layout\"}}\n",
+        "stderr": ""
+      },
+      "first-process": {
+        "argv": [
+          "pane",
+          "process-info",
+          "--pane",
+          "w1:p2"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":77516,\"foreground_processes\":[{\"argv\":[\"/private/tmp/spacetop-085-install/spacetop\",\"--workflow-dir\",\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\"],\"argv0\":\"spacetop\",\"cmdline\":\"/private/tmp/spacetop-085-install/spacetop --workflow-dir /private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"name\":\"spacetop\",\"pid\":77518},{\"argv\":[\"spacetop-herdr\",\"pane\"],\"argv0\":\"spacetop-herdr\",\"cmdline\":\"spacetop-herdr pane\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"name\":\"spacetop-herdr\",\"pid\":77516}],\"pane_id\":\"w1:p2\",\"shell_pid\":77516},\"type\":\"pane_process_info\"}}\n",
+        "stderr": ""
+      },
+      "first-screen": {
+        "argv": [
+          "pane",
+          "read",
+          "w1:p2",
+          "--source",
+          "visible"
+        ],
+        "exit": 0,
+        "stdout": " workflow-a | workflow-b\nWorkflow [active]  archived: (press a)  [sort: id] (press s) \u2026R)/workflow-a\nWorkflow \u2014 [active] \u2014 archived: (press a)\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n                       \u25b6 implement(1) \u2500\u2500\u25ba done(0) \u25a0\n\n\n\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nTasks  \u00b7  1\n\u25b8 implement  001    WORKTREE-085-A INVOKING-WORKTREE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n?: help  q: quit  \u2190/\u2192: switch workflow  P: pick workflow  \u23ce: toggle preview\n",
+        "stderr": ""
+      },
+      "reuse-input": {
+        "hex": "0276",
+        "meaning": "Ctrl+B then v to Herdr client PTY"
+      },
+      "reuse-log": {
+        "argv": [
+          "plugin",
+          "log"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166344259,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166344215,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166345464,\"log_id\":\"plugin-log-2\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166345438,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+        "stderr": ""
+      },
+      "reuse-panes": {
+        "argv": [
+          "pane",
+          "list",
+          "--workspace",
+          "w1"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":1,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69580efd1\",\"workspace_id\":\"w1\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"label\":\"Spacetop\",\"pane_id\":\"w1:p2\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69aec1072\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w1\"}],\"type\":\"pane_list\"}}\n",
+        "stderr": ""
+      },
+      "reuse-layout": {
+        "argv": [
+          "pane",
+          "layout",
+          "--pane",
+          "w1:p1"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:layout\",\"result\":{\"layout\":{\"area\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p2\",\"panes\":[{\"focused\":false,\"pane_id\":\"w1:p1\",\"rect\":{\"height\":47,\"width\":77,\"x\":0,\"y\":0}},{\"focused\":true,\"pane_id\":\"w1:p2\",\"rect\":{\"height\":47,\"width\":77,\"x\":77,\"y\":0}}],\"splits\":[{\"direction\":\"right\",\"id\":\"split_0_root\",\"ratio\":0.5,\"rect\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0}}],\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\",\"zoomed\":false},\"type\":\"pane_layout\"}}\n",
+        "stderr": ""
+      },
+      "close": {
+        "argv": [
+          "plugin",
+          "pane",
+          "close",
+          "w1:p2"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"pane_id\":\"w1:p2\",\"type\":\"plugin_pane_closed\"}}\n",
+        "stderr": ""
+      },
+      "return-agent": {
+        "argv": [
+          "pane",
+          "focus",
+          "--direction",
+          "left",
+          "--pane",
+          "w1:p1"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:focus\",\"result\":{\"focus\":{\"changed\":false,\"focused_pane_id\":\"w1:p1\",\"layout\":{\"area\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p1\",\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p1\",\"rect\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0}}],\"splits\":[],\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\",\"zoomed\":false},\"reason\":\"no_neighbor\",\"source_pane_id\":\"w1:p1\"},\"type\":\"pane_focus_direction\"}}\n",
+        "stderr": ""
+      },
+      "reopen-input": {
+        "hex": "0276",
+        "meaning": "Ctrl+B then v to Herdr client PTY"
+      },
+      "reopen-log": {
+        "argv": [
+          "plugin",
+          "log"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166344259,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166344215,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166345464,\"log_id\":\"plugin-log-2\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166345438,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166346721,\"log_id\":\"plugin-log-3\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166346688,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+        "stderr": ""
+      },
+      "reopen-panes": {
+        "argv": [
+          "pane",
+          "list",
+          "--workspace",
+          "w1"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":9,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69580efd1\",\"workspace_id\":\"w1\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"label\":\"Spacetop\",\"pane_id\":\"w1:p3\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69d457793\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w1\"}],\"type\":\"pane_list\"}}\n",
+        "stderr": ""
+      },
+      "workspace-two": {
+        "argv": [
+          "workspace",
+          "create",
+          "--cwd",
+          "/private/tmp/s085v3/main project",
+          "--label",
+          "other-project",
+          "--focus"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:workspace:create\",\"result\":{\"root_pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/main project\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/main project\",\"pane_id\":\"w2:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":47},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e69e40c534\",\"workspace_id\":\"w2\"},\"tab\":{\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"1\",\"number\":1,\"pane_count\":1,\"tab_id\":\"w2:t1\",\"workspace_id\":\"w2\"},\"type\":\"workspace_created\",\"workspace\":{\"active_tab_id\":\"w2:t1\",\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"other-project\",\"number\":2,\"pane_count\":1,\"tab_count\":1,\"workspace_id\":\"w2\"}}}\n",
+        "stderr": ""
+      },
+      "workspace-two-log": {
+        "argv": [
+          "plugin",
+          "log"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166344259,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166344215,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166345464,\"log_id\":\"plugin-log-2\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166345438,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166346721,\"log_id\":\"plugin-log-3\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166346688,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166347957,\"log_id\":\"plugin-log-4\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166347925,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+        "stderr": ""
+      },
+      "workspace-two-panes": {
+        "argv": [
+          "pane",
+          "list",
+          "--workspace",
+          "w2"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/main project\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/main project\",\"pane_id\":\"w2:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e69e40c534\",\"workspace_id\":\"w2\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/main project\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/main project\",\"label\":\"Spacetop\",\"pane_id\":\"w2:p2\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e69e73c0e5\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w2\"}],\"type\":\"pane_list\"}}\n",
+        "stderr": ""
+      },
+      "workspace-one-final": {
+        "argv": [
+          "pane",
+          "list",
+          "--workspace",
+          "w1"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":9,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69580efd1\",\"workspace_id\":\"w1\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"label\":\"Spacetop\",\"pane_id\":\"w1:p3\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e69d457793\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w1\"}],\"type\":\"pane_list\"}}\n",
+        "stderr": ""
+      },
+      "after": {
+        "files": {
+          "workflow-b/001.md": "69fc9ffd37b8588e47bc923c8b4bef47222ea9da0c67a2a2a92873306fb2ec54",
+          "workflow-b/README.md": "7179e8419524ca176d67a01d323cea27f1f18674deca8a149f9c47be943b19cb",
+          "workflow-a/001.md": "f3502d34bc6feaf17cb59ebdbcbfd3790329bfd0f28e66780084e77d81231757",
+          "workflow-a/README.md": "77d602269dc2cc78a34362194111c36243eaa4fa12f932afd1be992c7b38b6e6"
+        },
+        "head": "858d0e3e59d9e0ea9df54adf04fab9e83d22f93a\n",
+        "status": " M workflow-a/001.md\n",
+        "index": "61b96a71b7c5f7db683875f9abdf03254cc7c89f19ff89ac7b68a0c041ebfe86"
+      },
+      "readonly_equal": true,
+      "crafted_path_executed": false,
+      "version": "herdr 0.9.3",
+      "shell-focus": {
+        "argv": [
+          "pane",
+          "focus",
+          "--direction",
+          "left",
+          "--pane",
+          "w2:p2"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:focus\",\"result\":{\"focus\":{\"changed\":true,\"focused_pane_id\":\"w2:p1\",\"layout\":{\"area\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0},\"focused_pane_id\":\"w2:p1\",\"panes\":[{\"focused\":true,\"pane_id\":\"w2:p1\",\"rect\":{\"height\":47,\"width\":77,\"x\":0,\"y\":0}},{\"focused\":false,\"pane_id\":\"w2:p2\",\"rect\":{\"height\":47,\"width\":77,\"x\":77,\"y\":0}}],\"splits\":[{\"direction\":\"right\",\"id\":\"split_0_root\",\"ratio\":0.5,\"rect\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0}}],\"tab_id\":\"w2:t1\",\"workspace_id\":\"w2\",\"zoomed\":false},\"source_pane_id\":\"w2:p2\"},\"type\":\"pane_focus_direction\"}}\n",
+        "stderr": ""
+      },
+      "shell-project-change": {
+        "argv": [
+          "pane",
+          "run",
+          "w2:p1",
+          "cd -- '/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)'"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "changed-shell": {
+        "argv": [
+          "pane",
+          "get",
+          "w2:p1"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:get\",\"result\":{\"pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w2:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e69e40c534\",\"workspace_id\":\"w2\"},\"type\":\"pane_info\"}}\n",
+        "stderr": ""
+      },
+      "project-mismatch-action": {
+        "argv": [
+          "plugin",
+          "action",
+          "invoke",
+          "spacetop.sidecar.open"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"action\":{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"contexts\":[\"workspace\"],\"platforms\":[\"macos\"],\"plugin_id\":\"spacetop.sidecar\",\"title\":\"Open Spacetop beside this agent\"},\"context\":{\"correlation_id\":\"cli:plugin\",\"focused_pane_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused_pane_id\":\"w2:p1\",\"focused_pane_status\":\"unknown\",\"invocation_source\":\"cli\",\"tab_id\":\"w2:t1\",\"tab_label\":\"1\",\"workspace_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"workspace_id\":\"w2\",\"workspace_label\":\"other-project\"},\"log\":{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"log_id\":\"plugin-log-5\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166350065,\"status\":\"running\"},\"type\":\"plugin_action_invoked\"}}\n",
+        "stderr": ""
+      },
+      "project-mismatch-log": {
+        "argv": [
+          "plugin",
+          "log"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166344259,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166344215,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166345464,\"log_id\":\"plugin-log-2\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166345438,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166346721,\"log_id\":\"plugin-log-3\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166346688,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166347957,\"log_id\":\"plugin-log-4\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166347925,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":1,\"finished_unix_ms\":1791166350080,\"log_id\":\"plugin-log-5\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166350065,\"status\":\"failed\",\"stderr\":\"spacetop-herdr: this workspace already has a sidecar for another project; close it and invoke the shortcut from the intended agent\\n\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+        "stderr": ""
+      },
+      "project-mismatch-panes": {
+        "argv": [
+          "pane",
+          "list",
+          "--workspace",
+          "w2"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w2:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e69e40c534\",\"workspace_id\":\"w2\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/main project\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/main project\",\"label\":\"Spacetop\",\"pane_id\":\"w2:p2\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e69e73c0e5\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w2\"}],\"type\":\"pane_list\"}}\n",
+        "stderr": ""
+      },
+      "shell-project-restore": {
+        "argv": [
+          "pane",
+          "run",
+          "w2:p1",
+          "cd -- '/private/tmp/s085v3/main project'"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "adversarial-close": {
+        "argv": [
+          "plugin",
+          "pane",
+          "close",
+          "w2:p2"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"pane_id\":\"w2:p2\",\"type\":\"plugin_pane_closed\"}}\n",
+        "stderr": ""
+      },
+      "plain-split": {
+        "argv": [
+          "pane",
+          "split",
+          "--pane",
+          "w2:p1",
+          "--direction",
+          "right",
+          "--cwd",
+          "/private/tmp/s085v3/main project",
+          "--no-focus"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:split\",\"result\":{\"pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/main project\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/main project\",\"pane_id\":\"w2:p3\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":47},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e6a28435b6\",\"workspace_id\":\"w2\"},\"type\":\"pane_info\"}}\n",
+        "stderr": ""
+      },
+      "forge-token": {
+        "argv": [
+          "pane",
+          "report-metadata",
+          "w2:p3",
+          "--source",
+          "adversarial",
+          "--token",
+          "spacetop_sidecar=v1"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "forged-owner-action": {
+        "argv": [
+          "plugin",
+          "action",
+          "invoke",
+          "spacetop.sidecar.open"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"action\":{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"contexts\":[\"workspace\"],\"platforms\":[\"macos\"],\"plugin_id\":\"spacetop.sidecar\",\"title\":\"Open Spacetop beside this agent\"},\"context\":{\"correlation_id\":\"cli:plugin\",\"focused_pane_cwd\":\"/private/tmp/s085v3/main project\",\"focused_pane_id\":\"w2:p1\",\"focused_pane_status\":\"unknown\",\"invocation_source\":\"cli\",\"tab_id\":\"w2:t1\",\"tab_label\":\"1\",\"workspace_cwd\":\"/private/tmp/s085v3/main project\",\"workspace_id\":\"w2\",\"workspace_label\":\"other-project\"},\"log\":{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"log_id\":\"plugin-log-6\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166352230,\"status\":\"running\"},\"type\":\"plugin_action_invoked\"}}\n",
+        "stderr": ""
+      },
+      "forged-owner-log": {
+        "argv": [
+          "plugin",
+          "log"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166344259,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166344215,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166345464,\"log_id\":\"plugin-log-2\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166345438,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166346721,\"log_id\":\"plugin-log-3\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166346688,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791166347957,\"log_id\":\"plugin-log-4\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166347925,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":1,\"finished_unix_ms\":1791166350080,\"log_id\":\"plugin-log-5\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166350065,\"status\":\"failed\",\"stderr\":\"spacetop-herdr: this workspace already has a sidecar for another project; close it and invoke the shortcut from the intended agent\\n\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":1,\"finished_unix_ms\":1791166352252,\"log_id\":\"plugin-log-6\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166352230,\"status\":\"failed\",\"stderr\":\"spacetop-herdr: Herdr plugin pane focus w2:p3 failed: {\\\"error\\\":{\\\"code\\\":\\\"plugin_pane_not_found\\\",\\\"message\\\":\\\"plugin pane not found\\\"},\\\"id\\\":\\\"cli:plugin\\\"}; check session/socket, API version and plugin registration\\n\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+        "stderr": ""
+      },
+      "forged-owner-panes": {
+        "argv": [
+          "pane",
+          "list",
+          "--workspace",
+          "w2"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/main project\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/main project\",\"pane_id\":\"w2:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e69e40c534\",\"workspace_id\":\"w2\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/main project\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/main project\",\"pane_id\":\"w2:p3\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e6a28435b6\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w2\"}],\"type\":\"pane_list\"}}\n",
+        "stderr": ""
+      },
+      "plain-close": {
+        "argv": [
+          "pane",
+          "close",
+          "w2:p3"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:close\",\"result\":{\"type\":\"ok\"}}\n",
+        "stderr": ""
+      },
+      "clean-recovery-action": {
+        "argv": [
+          "plugin",
+          "action",
+          "invoke",
+          "spacetop.sidecar.open"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"action\":{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"contexts\":[\"workspace\"],\"platforms\":[\"macos\"],\"plugin_id\":\"spacetop.sidecar\",\"title\":\"Open Spacetop beside this agent\"},\"context\":{\"correlation_id\":\"cli:plugin\",\"focused_pane_cwd\":\"/private/tmp/s085v3/main project\",\"focused_pane_id\":\"w2:p1\",\"focused_pane_status\":\"unknown\",\"invocation_source\":\"cli\",\"tab_id\":\"w2:t1\",\"tab_label\":\"1\",\"workspace_cwd\":\"/private/tmp/s085v3/main project\",\"workspace_id\":\"w2\",\"workspace_label\":\"other-project\"},\"log\":{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"log_id\":\"plugin-log-7\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791166353326,\"status\":\"running\"},\"type\":\"plugin_action_invoked\"}}\n",
+        "stderr": ""
+      },
+      "clean-recovery-panes": {
+        "argv": [
+          "pane",
+          "list",
+          "--workspace",
+          "w2"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/main project\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/s085v3/main project\",\"pane_id\":\"w2:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e69e40c534\",\"workspace_id\":\"w2\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/s085v3/main project\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/s085v3/main project\",\"label\":\"Spacetop\",\"pane_id\":\"w2:p4\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e6a39a9647\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w2\"}],\"type\":\"pane_list\"}}\n",
+        "stderr": ""
+      },
+      "independent_adversarial_passed": true,
+      "after-adversarial": {
+        "files": {
+          "workflow-b/001.md": "69fc9ffd37b8588e47bc923c8b4bef47222ea9da0c67a2a2a92873306fb2ec54",
+          "workflow-b/README.md": "7179e8419524ca176d67a01d323cea27f1f18674deca8a149f9c47be943b19cb",
+          "workflow-a/001.md": "f3502d34bc6feaf17cb59ebdbcbfd3790329bfd0f28e66780084e77d81231757",
+          "workflow-a/README.md": "77d602269dc2cc78a34362194111c36243eaa4fa12f932afd1be992c7b38b6e6"
+        },
+        "head": "858d0e3e59d9e0ea9df54adf04fab9e83d22f93a\n",
+        "status": " M workflow-a/001.md\n",
+        "index": "61b96a71b7c5f7db683875f9abdf03254cc7c89f19ff89ac7b68a0c041ebfe86"
+      },
+      "unlink": {
+        "argv": [
+          "plugin",
+          "unlink",
+          "spacetop.sidecar"
+        ],
+        "exit": 0,
+        "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"plugin_id\":\"spacetop.sidecar\",\"removed\":true,\"type\":\"plugin_unlinked\"}}\n",
+        "stderr": ""
+      },
+      "stop": {
+        "argv": [
+          "session",
+          "stop",
+          "verify085"
+        ],
+        "exit": 0,
+        "stdout": "stopped session verify085\n",
+        "stderr": ""
+      }
+    },
+    "independent_checks": "Independent verification of product commit af8d1c618158f7ef319134ea221a1c0c97143cc8\nNo product code changed during verification. Already-green deterministic checks were inspected, not rerun.\n\nRaw implementation log: /tmp/spacetop-085-product/cargo-test-final.log\nSHA-256: deaf24ff892d711f7165d445b52e3e3c662f73af1d9c0d04d7a405899027a514\nRaw implementation log: /tmp/spacetop-085-product/lint-final.log\nSHA-256: 3e9649b736a6b534a412f3f0a20b1a09b4805956b37307d578201ec841a6c5da\nRaw implementation log: /tmp/spacetop-085-product/install-final.log\nSHA-256: 928be4904618e1f297ca97819bdc79d4f8d8b5133393b23c10ec85a7ca9e9fcd\n\nFull cargo test log independently summed: 695 passed, 0 failed, 4 ignored.\nBoth no_write_git_calls and no_terminal_deps guardrails and ten helper tests are present and passing.\nClippy final log: Finished dev profile, no errors or warnings.\nFormatting: retained implementation checks.txt records cargo fmt --check exit 0.\nInstalled spacetop SHA-256: ba5f8ede6d5235d3ad37d210cdab1eee84adfdaabed43a97cfe2aaa6b536e20e\nInstalled spacetop-herdr SHA-256: b70e8ba45daf0b93c116542e459d80ea1787e49e1b8e741b9d6b0a74a18dfdfa\nBoth installed hashes independently match target/release artifacts.\nIndependent verify_scenario.py: exit 0; retained raw output verify-proof.json.\nFinal isolated root /private/tmp/s085v3; named session verify085 stopped; plugin unlinked; temporary auth removed.\n",
+    "evidence_map": "# Task 085 evidence\n\n`live-proof.json` contains the final real Herdr 0.9.3 / Codex 0.160.0 scenario's\nraw command results. The client received actual Ctrl+B,v bytes (`0276`) through\na PTY. No model prompt was sent. Isolated HOME, XDG config/state, Codex home and\nnamed session were used; the temporary auth copy was removed and the owned\nsession stopped. No captain layout/config was changed.\n\n- AC-1: `first-input`, `agent-start`, `agent-screen`, `first-layout` and\n  `first-process`: agent w1:p1 remains focused; w1:p2 is at x=77 to its right.\n- AC-2: `first-process` retains the single argv path with spaces/metacharacters;\n  `first-screen` shows two workflows and the INVOKING-WORKTREE marker.\n- AC-3: `reuse-panes/layout` retain two panes and focus w1:p2; `close` and\n  `reopen-panes` replace it with w1:p3; workspace two gets w2:p2 while w1:p3\n  remains in workspace one.\n- AC-4: `before`/`after` include Markdown hashes, Git HEAD/index hash/status;\n  `readonly_equal=true`, `crafted_path_executed=false`. No sync key was used.\n- AC-5: `initial-plugins` starts empty, `link` uses the final manifest, all final\n  action log entries exit zero, `unlink` and `stop` show cleanup. Config syntax\n  is retained. Focused tests exercise actionable failures.\n- AC-6: test/check output is in `checks.txt`. Independent acceptance review is\n  owed by the workflow's verify stage; implementation evidence does not replace\n  that review.\n\n`plan-jev-request.json` and `plan-jev-response.json` retain the FO-owned plan\njudgment supplied to the implementation worker. No extra JEV call was made.\n\nReproduce on supported macOS with Git, Python 3, Herdr and Codex on PATH:\n\n```sh\ncargo build -p spacetop --bins\npython3 plugins/herdr/evidence/085/live_scenario.py \\\n  --codex-auth /absolute/path/to/your/auth.json\n```\n\nThe optional auth argument copies only that file into the temporary agent home\nand removes the copy in cleanup. Never add credentials to this evidence folder.\nNo prompts are sent to Codex. `--bin-dir /absolute/installed/bin` can exercise\ninstalled binaries. `--root /absolute/fresh/tmp/path` keeps a chosen artifact\nhome; reusing a populated root is rejected. This runner controls only its own\nnamed session, uses a clean non-login zsh, registers/removes the plugin in its\nisolated registry, and stops its own session. Socket/PTY access may require\nexecution outside a restrictive sandbox. Product use needs neither Python nor\nthis runner.\n\nTwo host details learned from exercising the APIs: split/right accepts\n`--target-pane` and rejects a simultaneous `--workspace`; `pane report-metadata`\nreturns empty stdout on success. Tests and the final helper follow both facts.\nDisplay tokens truncate long values, so reuse checks full pane cwd rather than\nstoring a project path in a token. An early failed scenario also caught malformed test fixture YAML; the retained\nfinal fixtures use `stages.states` and the TUI showed their actual content.\n\n\n## Independent verification (2026-10-05)\n\nJudgment: **Approve** for product commit `af8d1c6`. No actionable product defect\nwas found. This technical verification does not publish a PR or replace the\ncaptain's workflow gate. `verify-proof.json` retains the independent final raw\ncommands, layout, screens, process argv, failure logs and read-only snapshots.\n`verify-checks.txt` records inspected check logs and installed binary hashes.\n\n| Criterion | Verdict | Independently checked evidence |\n|---|---|---|\n| AC-1 | PASSED | Actual Codex 0.160.0 pane, `0276` shortcut input, right split at x=77, caller w1:p1 focused, installed Spacetop foreground process. |\n| AC-2 | PASSED | Linked worktree path with spaces and shell characters remains one argv argument; two workflow tabs and INVOKING-WORKTREE content appear. Helper tests cover focused subdirectories, non-Git and invalid context. |\n| AC-3 | PASSED | Reuse keeps two panes and focuses w1:p2; close/reopen yields w1:p3; other workspace uses its own w2:p2. New live challenges reject a changed project and forged token on an ordinary pane without adding panes; removal then recovers as w2:p4. |\n| AC-4 | PASSED | Final before/after/adversarial snapshots have identical workflow hashes, Git HEAD/index/status. Crafted path never executes. Existing write-safety and terminal dependency guardrails passed in the inspected full test log. |\n| AC-5 | PASSED | Fresh isolated registry starts empty; final manifest and documented configurable key syntax work with installed binaries. Stale-project and forged-owner failures log exit 1 with guidance; setup, support, binary prerequisites, selection and removal docs match actual helper behavior. |\n| AC-6 | PASSED | Actual diff and tests reviewed; raw full test log totals 695 passed, 0 failed, 4 ignored; final clippy and installation logs are green, retained formatting result is exit 0. Independent runtime finished exit 0. |\n\nReproduce the independent extension with the same declared prerequisites as the\noriginal runner:\n\n```sh\npython3 plugins/herdr/evidence/085/verify_scenario.py \\\n  --bin-dir /absolute/installed/bin \\\n  --root /tmp/short-fresh-proof \\\n  --codex-auth /absolute/path/to/your/auth.json\n```\n\nThe extension uses shell commands only in its own temporary shell pane to\nchallenge changed-project reuse. It sends no agent prompt. The final owned\nsession `verify085` was stopped, plugin unlinked, and temporary auth removed.\nProduct code was not changed. Already-green deterministic checks were inspected\nrather than rerun.\n\nVerification setup failures were separate from product behavior: the sandbox\nblocked sockets; a long temporary path exceeded macOS Unix socket capacity;\none verifier read an asynchronous action log too early; another used the wrong\nordinary-pane close syntax. The final run corrects those verifier issues and\nretains all completed failures and recovery results. Keep temporary socket paths\nshort. This proof covers macOS/Herdr 0.9.3 only; later APIs and other platforms\nremain the documented residual risk. No JEV call was made by the verifier.\n",
+    "boundary": "Judge whether external evidence supports each AC within macOS Herdr 0.9.3 verified scope. Do not infer universal host/platform support. Captain remains gate approver. Keys and credentials are excluded."
+  },
+  "questions": {
+    "ac_1": {
+      "type": "choice",
+      "instructions": "Does the independent raw proof, checks and evidence map support task AC-1: shortcut opens right of caller and initial focus remains caller? Inspect concrete external evidence rather than accepting report assertions.",
+      "criteria": {
+        "supports": "Evidence supports this AC within the declared supported local platform/API scope.",
+        "contradicts": "Concrete evidence falsifies the AC or reveals a material safety/user-value regression.",
+        "insufficient": "Missing external evidence prevents accepting this AC."
+      }
+    },
+    "ac_2": {
+      "type": "choice",
+      "instructions": "Does the independent raw proof, checks and evidence map support task AC-2: invoking linked worktree, spaces/metacharacters and multi-workflow data are selected? Inspect concrete external evidence rather than accepting report assertions.",
+      "criteria": {
+        "supports": "Evidence supports this AC within the declared supported local platform/API scope.",
+        "contradicts": "Concrete evidence falsifies the AC or reveals a material safety/user-value regression.",
+        "insufficient": "Missing external evidence prevents accepting this AC."
+      }
+    },
+    "ac_3": {
+      "type": "choice",
+      "instructions": "Does the independent raw proof, checks and evidence map support task AC-3: repeated shortcut reuses only correct workspace pane; close/reopen and forged-owner/stale-project cases are safe? Inspect concrete external evidence rather than accepting report assertions.",
+      "criteria": {
+        "supports": "Evidence supports this AC within the declared supported local platform/API scope.",
+        "contradicts": "Concrete evidence falsifies the AC or reveals a material safety/user-value regression.",
+        "insufficient": "Missing external evidence prevents accepting this AC."
+      }
+    },
+    "ac_4": {
+      "type": "choice",
+      "instructions": "Does the independent raw proof, checks and evidence map support task AC-4: workflow/Git bytes and state remain unchanged, and project paths do not execute shell text? Inspect concrete external evidence rather than accepting report assertions.",
+      "criteria": {
+        "supports": "Evidence supports this AC within the declared supported local platform/API scope.",
+        "contradicts": "Concrete evidence falsifies the AC or reveals a material safety/user-value regression.",
+        "insufficient": "Missing external evidence prevents accepting this AC."
+      }
+    },
+    "ac_5": {
+      "type": "choice",
+      "instructions": "Does the independent raw proof, checks and evidence map support task AC-5: documented fresh install, shortcut, support/removal and failure paths are actionable? Inspect concrete external evidence rather than accepting report assertions.",
+      "criteria": {
+        "supports": "Evidence supports this AC within the declared supported local platform/API scope.",
+        "contradicts": "Concrete evidence falsifies the AC or reveals a material safety/user-value regression.",
+        "insufficient": "Missing external evidence prevents accepting this AC."
+      }
+    },
+    "ac_6": {
+      "type": "choice",
+      "instructions": "Does the independent raw proof, checks and evidence map support task AC-6: independent actual-host and command evidence cover all criteria and required checks are green? Inspect concrete external evidence rather than accepting report assertions.",
+      "criteria": {
+        "supports": "Evidence supports this AC within the declared supported local platform/API scope.",
+        "contradicts": "Concrete evidence falsifies the AC or reveals a material safety/user-value regression.",
+        "insufficient": "Missing external evidence prevents accepting this AC."
+      }
+    }
+  }
+}

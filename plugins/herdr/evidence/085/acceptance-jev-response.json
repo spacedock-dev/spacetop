@@ -1,0 +1,69 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "ac_6": {
+      "type": "choice",
+      "choice": "supports",
+      "confidence": 0.91,
+      "probabilities": {
+        "supports": 0.9299999999999999,
+        "contradicts": 0.04,
+        "insufficient": 0.03
+      }
+    },
+    "ac_1": {
+      "type": "choice",
+      "choice": "supports",
+      "confidence": 1.0,
+      "probabilities": {
+        "supports": 1.0,
+        "contradicts": 0.0,
+        "insufficient": 0.0
+      }
+    },
+    "ac_2": {
+      "type": "choice",
+      "choice": "supports",
+      "confidence": 0.87,
+      "probabilities": {
+        "supports": 0.91,
+        "contradicts": 0.08,
+        "insufficient": 0.01
+      }
+    },
+    "ac_3": {
+      "type": "choice",
+      "choice": "supports",
+      "confidence": 0.97,
+      "probabilities": {
+        "supports": 0.98,
+        "contradicts": 0.02,
+        "insufficient": 0.0
+      }
+    },
+    "ac_4": {
+      "type": "choice",
+      "choice": "supports",
+      "confidence": 0.8,
+      "probabilities": {
+        "supports": 0.87,
+        "contradicts": 0.12,
+        "insufficient": 0.01
+      }
+    },
+    "ac_5": {
+      "type": "choice",
+      "choice": "supports",
+      "confidence": 0.83,
+      "probabilities": {
+        "supports": 0.89,
+        "contradicts": 0.01,
+        "insufficient": 0.1
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 20362,
+    "output_tokens": 255
+  }
+}
