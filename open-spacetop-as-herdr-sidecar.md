@@ -144,3 +144,32 @@ The riskiest host path works on macOS with Herdr 0.9.3: an action receives the i
 ### Summary
 
 The final optional Herdr integration opens the invoking Git worktree to the right without taking first focus, reuses a plugin-owned inspector per workspace, and reports actionable errors without workflow writes. Actual host exercise corrected split-target CLI usage, empty metadata stdout handling and long display-token truncation; only the final installed-binary green proof feeds verification. HOME/XDG/agent homes and the named live session were isolated, the plugin was unlinked, the session stopped, and the temporary auth copy removed.
+
+
+## Stage Report: verify
+
+- DONE: Independently check every AC against the actual manifest/helper diff, launcher cases, read-only guardrails, installed setup and retained command artifacts.
+  Reviewed product commit af8d1c6, all ten actual-helper tests, manifest/installation/docs and retained raw full test/lint/install logs; independent evidence is committed as db050f1 under plugins/herdr/evidence/085/.
+- DONE: Challenge the runtime claims in a clean isolated real-agent shortcut scenario: right split and initial focus, project/worktree and space paths, repeated reuse, closed-pane recovery and workspace isolation.
+  Independent Herdr 0.9.3/Codex 0.160.0 installed-binary run exited 0; verify-proof.json retains actual PTY shortcut bytes, process/layout/screen results and new live stale-project/forged-ordinary-pane challenges plus recovery.
+- DONE: Verify formatting, cargo test and make lint evidence is green for the final commit; record actionable findings with workflow dispositions and a per-AC PASSED or REJECTED verdict.
+  Product code remains af8d1c6; inspected raw test log totals 695 passed/0 failed/4 ignored, clippy logs are clean, retained fmt result is exit 0, installed hashes match release artifacts. Evidence-only db050f1 passes git diff --check; deterministic checks were not rerun solely for a second opinion.
+
+### Per-AC verdicts
+
+- AC-1: PASSED — Real agent w1:p1, Ctrl+B,v bytes 0276, right-side w1:p2 at x=77, first focus remains on caller, installed Spacetop appears in foreground process argv. Changing direction, target or first focus fails launcher/live assertions.
+- AC-2: PASSED — Linked worktree with spaces/metacharacters remains one --workflow-dir argv value; screen shows two workflows and INVOKING-WORKTREE content. Context tests reject relative/missing/non-Git cwd and keep focused subdirectory/worktree precedence; a main/plugin fallback falsifies this evidence.
+- AC-3: PASSED — Reuse focuses w1:p2 without adding a pane, close/reopen produces w1:p3, workspace two owns w2:p2. New real-host challenges log exit 1 for changed project and a forged token on plain w2:p3, keep pane counts/focus safe, then recover as w2:p4 after removal; accidental duplicates or cross-workspace reuse fail these checks.
+- AC-4: PASSED — Workflow bytes, Git HEAD/index/status match before, after baseline and after adversarial exercises; no crafted-path execution or sync key. Actual guardrail tests passed; new Git writes/core terminal dependencies would fail them. Locks remain outside the project in isolated user state.
+- AC-5: PASSED — Fresh registry starts empty and final documented manifest/keybinding work with both installed binaries. Missing binary/context/API tests fail with next actions; actual stale-project/forged-owner logs are actionable. Support/selection/removal docs match code and cleanup; no global config/layout changed.
+- AC-6: PASSED — Independent diff/runtime review and inspected full test/lint/install evidence support all criteria; verify-proof.json/verify-checks.txt and README retain exact commands, hashes and conclusions. No product change or PR publication occurred in verification.
+
+### Findings and disposition
+
+No actionable product defect found. Judgment: Approve technical verification; no revise assignment required. Captain approval and FO-owned JEV judgment remain workflow decisions, and no JEV call was made by this worker.
+
+Residual risk: verified platform/API is macOS with Herdr 0.9.3; other platforms and later host APIs remain unverified as documented. Verification-only setup failures were isolated socket permission/path-length limits, an early asynchronous-log read, and incorrect plain-pane close syntax; the final corrected run passed, unlinked the plugin, stopped only session verify085 and removed its temporary auth copy.
+
+### Summary
+
+All six ACs passed independent verification of the final product commit, with new runtime evidence beyond the author's scenario. The added adversarial checks ruled out stale-project reuse and ordinary-pane metadata spoofing while preserving workflow/Git state; ready for the captain's verify gate, with no product fix requested.
