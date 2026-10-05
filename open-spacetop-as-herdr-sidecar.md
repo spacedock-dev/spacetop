@@ -169,7 +169,7 @@ The final optional Herdr integration opens the invoking Git worktree to the righ
 
 ### Findings and disposition
 
-No actionable product defect found. Judgment: Approve technical verification; no revise assignment required. Captain approval and FO-owned JEV judgment remain workflow decisions, and no JEV call was made by this worker.
+No actionable product defect found. Judgment: Approve technical verification; no revise assignment required. Captain approval remains a workflow decision. FO supplied its completed jev-1.13.0 acceptance review: all six AC choices supports, confidence 1.00/0.87/0.97/0.80/0.83/0.91; acceptance-jev-request.json and acceptance-jev-response.json retain the supplied evidence. No JEV call was made by this worker.
 
 Residual risk: verified platform/API is macOS with Herdr 0.9.3; other platforms and later host APIs remain unverified as documented. Verification-only setup failures were isolated socket permission/path-length limits, an early asynchronous-log read, and incorrect plain-pane close syntax; the final corrected run passed, unlinked the plugin, stopped only session verify085 and removed its temporary auth copy.
 
