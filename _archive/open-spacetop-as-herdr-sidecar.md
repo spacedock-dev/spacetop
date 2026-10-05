@@ -1,18 +1,18 @@
 ---
 title: Open Spacetop as a Herdr sidecar plugin
-status: verify
+status: done
 source: Captain request on 2026-10-02; https://herdr.dev/docs/plugins/
 kind: feature
 risk: medium
 milestone: v1-maintenance
 proof: Launcher integration tests and an isolated live Herdr shortcut/right-split scenario
 started: 2026-10-05T01:42:46Z
-completed:
-verdict:
+completed: 2026-10-05T02:36:58Z
+verdict: PASSED
 worktree: .worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar
 issue:
 pr: pr-merge:86
-mod-block: merge:pr-merge
+mod-block:
 id: 085
 gates:
     version: 1
@@ -35,7 +35,8 @@ gates:
                 reason: Captain approved the presented verify Briefing; six ACs passed independent verification and FO JEV review.
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+archived: 2026-10-05T02:36:59Z
 ---
 
 When an agent runs a Spacedock workflow under Herdr, let the user open Spacetop beside that agent with a keyboard shortcut. The right-side terminal pane must inspect the invoking agent's repository or worktree, without requiring the user to start another terminal or navigate to the project manually.
