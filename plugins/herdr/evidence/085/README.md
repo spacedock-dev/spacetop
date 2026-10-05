@@ -91,3 +91,10 @@ ordinary-pane close syntax. The final run corrects those verifier issues and
 retains all completed failures and recovery results. Keep temporary socket paths
 short. This proof covers macOS/Herdr 0.9.3 only; later APIs and other platforms
 remain the documented residual risk. No JEV call was made by the verifier.
+
+
+The FO subsequently supplied its completed `jev-1.13.0` acceptance judgment.
+`acceptance-jev-request.json` and `acceptance-jev-response.json` retain that
+request/response without API keys or auth files. All six choices are `supports`;
+confidence for AC-1 through AC-6 is 1.00, 0.87, 0.97, 0.80, 0.83, 0.91.
+This is the FO-owned semantic review, not an additional verifier model call.
