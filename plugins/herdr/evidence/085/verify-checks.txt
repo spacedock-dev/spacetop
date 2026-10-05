@@ -1,0 +1,19 @@
+Independent verification of product commit af8d1c618158f7ef319134ea221a1c0c97143cc8
+No product code changed during verification. Already-green deterministic checks were inspected, not rerun.
+
+Raw implementation log: /tmp/spacetop-085-product/cargo-test-final.log
+SHA-256: deaf24ff892d711f7165d445b52e3e3c662f73af1d9c0d04d7a405899027a514
+Raw implementation log: /tmp/spacetop-085-product/lint-final.log
+SHA-256: 3e9649b736a6b534a412f3f0a20b1a09b4805956b37307d578201ec841a6c5da
+Raw implementation log: /tmp/spacetop-085-product/install-final.log
+SHA-256: 928be4904618e1f297ca97819bdc79d4f8d8b5133393b23c10ec85a7ca9e9fcd
+
+Full cargo test log independently summed: 695 passed, 0 failed, 4 ignored.
+Both no_write_git_calls and no_terminal_deps guardrails and ten helper tests are present and passing.
+Clippy final log: Finished dev profile, no errors or warnings.
+Formatting: retained implementation checks.txt records cargo fmt --check exit 0.
+Installed spacetop SHA-256: ba5f8ede6d5235d3ad37d210cdab1eee84adfdaabed43a97cfe2aaa6b536e20e
+Installed spacetop-herdr SHA-256: b70e8ba45daf0b93c116542e459d80ea1787e49e1b8e741b9d6b0a74a18dfdfa
+Both installed hashes independently match target/release artifacts.
+Independent verify_scenario.py: exit 0; retained raw output verify-proof.json.
+Final isolated root /private/tmp/s085v3; named session verify085 stopped; plugin unlinked; temporary auth removed.
