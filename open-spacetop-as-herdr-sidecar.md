@@ -122,3 +122,25 @@ A temporary manifest/action was linked to a new headless Herdr **0.9.3** session
 ### Summary
 
 The riskiest host path works on macOS with Herdr 0.9.3: an action receives the invoking project separately from plugin cwd, and a real Spacetop pane can open to the right without taking focus. The plan keeps integration in a separate Rust helper and manifest, preserves read-only boundaries, and makes keyboard routing, ownership-safe reuse, spaces/worktrees and concurrency explicit implementation proof obligations. This stage does not claim the six product acceptance criteria are already passed.
+
+
+## Stage Report: implement
+
+- DONE: Deliver the Herdr manifest and Rust helper with correct invoking-worktree argv context, right-split/no-focus first open, workspace-safe pane reuse and clear failures.
+  Commit af8d1c6 adds the optional manifest/helper; typed context, live workspace/tab validation, argv-only project launch, plugin-owned focus checks and bounded external-state locking preserve the existing TUI/core boundaries.
+- DONE: Prove the six ACs with launcher boundary tests and an isolated real-agent shortcut scenario covering reuse, close/reopen, workspace isolation, spaces/worktrees and read-only state.
+  Ten actual-helper tests plus final installed-binary Herdr 0.9.3/Codex 0.160.0 proof map AC-1 through AC-6 in plugins/herdr/evidence/085/README.md; independent verify-stage acceptance review remains pending.
+  Split/right/no-focus tests fail if target/direction/focus argv changes; the real Ctrl+B,v PTY input yielded agent w1:p1 focused and inspector w1:p2 at x=77 with Spacetop process argv and recognizable two-workflow screen.
+  Context tests fail for relative/missing/non-Git cwd, wrong tab/workspace, broken API, wrong owner, stale project, duplicate tokens or missing executable; linked-worktree/subdirectory/space paths must remain one argv argument.
+  Reuse/concurrency/close tests fail if a second pane opens; installed long-path proof exposed Herdr's 80-character token truncation, so the final regression models that host limit and requires full recorded pane cwd identity.
+  Final live proof reuses w1:p2, reopens as w1:p3 after close, creates separate w2:p2, and retains identical workflow hashes/Git HEAD/index/status; crafted path execution remained false and no sync key was sent.
+- DONE: Update installation/support/removal docs, run applicable cargo formatting/test and make lint checks, and commit task-only deliverables with the implementation stage report.
+  README links plugin setup/support/failures/removal; make install actually delivered both release binaries to a temporary BINDIR. cargo fmt --check, cargo test (695 passed, 4 ignored), make lint and git diff --check passed; checks.txt retains results.
+- DONE: Retain the supplied FO JEV request/response as task review evidence.
+  plugins/herdr/evidence/085/plan-jev-request.json and plan-jev-response.json preserve the supplied judgment; this worker made no additional JEV calls.
+- SKIPPED: PR publication and independent acceptance judgment.
+  Captain verify-gate approval is required before PR publication; FO owns semantic JEV review and independent verifier dispatch. No PR was created.
+
+### Summary
+
+The final optional Herdr integration opens the invoking Git worktree to the right without taking first focus, reuses a plugin-owned inspector per workspace, and reports actionable errors without workflow writes. Actual host exercise corrected split-target CLI usage, empty metadata stdout handling and long display-token truncation; only the final installed-binary green proof feeds verification. HOME/XDG/agent homes and the named live session were isolated, the plugin was unlinked, the session stopped, and the temporary auth copy removed.
