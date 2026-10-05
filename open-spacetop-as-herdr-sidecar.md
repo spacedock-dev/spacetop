@@ -1,12 +1,12 @@
 ---
 title: Open Spacetop as a Herdr sidecar plugin
-status: plan
+status: shape
 source: Captain request on 2026-10-02; https://herdr.dev/docs/plugins/
 kind: feature
 risk: medium
 milestone: v1-maintenance
 proof: Launcher integration tests and an isolated live Herdr shortcut/right-split scenario
-started: 2026-10-05T01:40:29Z
+started:
 completed:
 verdict:
 worktree:
