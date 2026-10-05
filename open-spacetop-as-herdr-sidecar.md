@@ -155,6 +155,9 @@ The final optional Herdr integration opens the invoking Git worktree to the righ
 - DONE: Verify formatting, cargo test and make lint evidence is green for the final commit; record actionable findings with workflow dispositions and a per-AC PASSED or REJECTED verdict.
   Product code remains af8d1c6; inspected raw test log totals 695 passed/0 failed/4 ignored, clippy logs are clean, retained fmt result is exit 0, installed hashes match release artifacts. Evidence-only db050f1 passes git diff --check; deterministic checks were not rerun solely for a second opinion.
 
+- FAILED: Push the verification report to origin/spacedock-state/spacetop-dev.
+  Automatic approval review rejected the exact push twice because the report contains local paths/pane metadata and did not accept the delegated destination authorization. Both origins were verified as git@github.com:spacedock-dev/spacetop.git; report commit ca368ff remains local. No bypass attempted; destination-specific captain approval is required for remote sync.
+
 ### Per-AC verdicts
 
 - AC-1: PASSED — Real agent w1:p1, Ctrl+B,v bytes 0276, right-side w1:p2 at x=77, first focus remains on caller, installed Spacetop appears in foreground process argv. Changing direction, target or first focus fails launcher/live assertions.
