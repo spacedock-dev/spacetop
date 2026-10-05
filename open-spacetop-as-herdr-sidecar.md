@@ -1,6 +1,6 @@
 ---
 title: Open Spacetop as a Herdr sidecar plugin
-status: plan
+status: implement
 source: Captain request on 2026-10-02; https://herdr.dev/docs/plugins/
 kind: feature
 risk: medium
@@ -9,7 +9,7 @@ proof: Launcher integration tests and an isolated live Herdr shortcut/right-spli
 started: 2026-10-05T01:42:46Z
 completed:
 verdict:
-worktree:
+worktree: .worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar
 issue:
 pr:
 mod-block:
