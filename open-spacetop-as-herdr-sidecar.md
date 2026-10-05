@@ -14,6 +14,17 @@ issue:
 pr:
 mod-block:
 id: 085
+gates:
+    version: 1
+    records:
+        - id: gate:085:verify
+          stage: verify
+          attempts:
+            - id: gate-attempt:085-verify-1
+              briefing:
+                id: briefing:085:verify:attempt-1:revision-1
+                digest: sha256:52ddf618f296c25506434a3e4b53749f368a7c4ddb0f9a2783b8acf8c5321038
+                room-ref: ./open-spacetop-as-herdr-sidecar/review/verify/briefing-1
 ---
 
 When an agent runs a Spacedock workflow under Herdr, let the user open Spacetop beside that agent with a keyboard shortcut. The right-side terminal pane must inspect the invoking agent's repository or worktree, without requiring the user to start another terminal or navigate to the project manually.

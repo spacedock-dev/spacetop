@@ -1,0 +1,24 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:085:verify:attempt-1:revision-1",
+  "question": "Approve task 085 verification and publish its Herdr sidecar implementation as a GitHub PR?",
+  "artifacts": [
+    {
+      "id": "artifact:085:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/5952be727660ea4b51c4c148f01d0240d51c0c6f/open-spacetop-as-herdr-sidecar.md",
+      "rev": "sha256:b1706ff6a8be4c41b4ba3e3c220f246d637fed9fc72889e91af5387cdc22e861",
+      "mediaType": "text/markdown",
+      "summary": "Six acceptance criteria passed independent verification and FO JEV review. Real Codex shortcut opens Spacetop right of the invoking worktree, preserves initial focus, reuses workspace-owned panes and recovers after close. 695 tests passed, 4 ignored; formatting, lint and isolated install are green. Verified on macOS with Herdr 0.9.3. Report sync recovered under captain destination approval. Product and review evidence commits are af8d1c6, db050f1 and ab7273a."
+    }
+  ],
+  "context": [
+    {
+      "type": "Reference",
+      "id": "reference:085:verify:attempt-1:revision-1:item-2",
+      "uri": "git-root://main/f3edc779456d120f52bd39e752224365272ede47/docs/spacetop-dev/README.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:fe0f9d25b139e70020e8277a725eefd4e7a1fa477b151b9485d1f020b8ab428d"
+    }
+  ]
+}
