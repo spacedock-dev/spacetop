@@ -327,3 +327,7 @@ Filesystem refresh invalidates room bindings and rechecks an open item. Removed
 or tampered sources lose the preview; immutable missing Git objects can be
 retried with explicit item selection. The watcher includes contained split-root
 state and archives, canonical room files and selected safe local dependencies.
+
+### Herdr sidecar
+
+Open Spacetop beside an agent with a Herdr shortcut. See the [Herdr plugin setup](plugins/herdr/README.md) for installation, project selection, reuse, support and removal.

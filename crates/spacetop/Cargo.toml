@@ -1,5 +1,6 @@
 [package]
 name = "spacetop"
+default-run = "spacetop"
 version.workspace = true
 edition.workspace = true
 

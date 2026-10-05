@@ -1,0 +1,306 @@
+{
+  "before": {
+    "files": {
+      "workflow-b/001.md": "69fc9ffd37b8588e47bc923c8b4bef47222ea9da0c67a2a2a92873306fb2ec54",
+      "workflow-b/README.md": "7179e8419524ca176d67a01d323cea27f1f18674deca8a149f9c47be943b19cb",
+      "workflow-a/001.md": "f3502d34bc6feaf17cb59ebdbcbfd3790329bfd0f28e66780084e77d81231757",
+      "workflow-a/README.md": "77d602269dc2cc78a34362194111c36243eaa4fa12f932afd1be992c7b38b6e6"
+    },
+    "head": "e229cfab651498c602266f7fc8d7fcc078eb9077\n",
+    "status": " M workflow-a/001.md\n",
+    "index": "8d72cbd59ad85553640e1f34d5ac7f72ae445d7182b36c0f95bf71eecf1d2121"
+  },
+  "initial-plugins": {
+    "argv": [
+      "plugin",
+      "list"
+    ],
+    "exit": 0,
+    "stdout": "No plugins installed.\n",
+    "stderr": ""
+  },
+  "workspace": {
+    "argv": [
+      "workspace",
+      "create",
+      "--cwd",
+      "/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)",
+      "--label",
+      "agent-worktree",
+      "--focus"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:workspace:create\",\"result\":{\"root_pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":40},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e518937441\",\"workspace_id\":\"w1\"},\"tab\":{\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"1\",\"number\":1,\"pane_count\":1,\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\"},\"type\":\"workspace_created\",\"workspace\":{\"active_tab_id\":\"w1:t1\",\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"agent-worktree\",\"number\":1,\"pane_count\":1,\"tab_count\":1,\"workspace_id\":\"w1\"}}}\n",
+    "stderr": ""
+  },
+  "link": {
+    "argv": [
+      "plugin",
+      "link",
+      "/Users/kent/Dev/InfuseAI/GitHub/spacetop/.worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar/plugins/herdr"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"plugin\":{\"actions\":[{\"command\":[\"spacetop-herdr\",\"open\"],\"contexts\":[\"workspace\"],\"id\":\"open\",\"title\":\"Open Spacetop beside this agent\"}],\"enabled\":true,\"manifest_path\":\"/Users/kent/Dev/InfuseAI/GitHub/spacetop/.worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar/plugins/herdr/herdr-plugin.toml\",\"min_herdr_version\":\"0.9.3\",\"name\":\"Spacetop sidecar\",\"panes\":[{\"command\":[\"spacetop-herdr\",\"pane\"],\"id\":\"inspector\",\"placement\":\"split\",\"title\":\"Spacetop\"}],\"platforms\":[\"macos\"],\"plugin_id\":\"spacetop.sidecar\",\"plugin_root\":\"/Users/kent/Dev/InfuseAI/GitHub/spacetop/.worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar/plugins/herdr\",\"source\":{\"kind\":\"local\"},\"version\":\"0.1.0\"},\"type\":\"plugin_linked\"}}\n",
+    "stderr": ""
+  },
+  "agent-start": {
+    "argv": [
+      "agent",
+      "start",
+      "sidecar-proof",
+      "--kind",
+      "codex",
+      "--pane",
+      "w1:p1",
+      "--timeout",
+      "15000",
+      "--",
+      "--no-alt-screen"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:agent:start\",\"result\":{\"agent\":{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"interactive_ready\":true,\"name\":\"sidecar-proof\",\"pane_id\":\"w1:p1\",\"revision\":0,\"state_change_seq\":0,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e518937441\",\"workspace_id\":\"w1\"},\"argv\":[\"codex\",\"--no-alt-screen\"],\"type\":\"agent_started\"}}\n",
+    "stderr": ""
+  },
+  "agent-before": {
+    "argv": [
+      "agent",
+      "get",
+      "sidecar-proof"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:agent:get\",\"result\":{\"agent\":{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"interactive_ready\":true,\"name\":\"sidecar-proof\",\"pane_id\":\"w1:p1\",\"revision\":0,\"state_change_seq\":0,\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e518937441\",\"workspace_id\":\"w1\"},\"type\":\"agent_info\"}}\n",
+    "stderr": ""
+  },
+  "agent-screen": {
+    "argv": [
+      "pane",
+      "read",
+      "w1:p1",
+      "--source",
+      "visible"
+    ],
+    "exit": 0,
+    "stdout": "kent@Kents-Mac-mini invoking worktree spaces ; $(touch NEVER) % codex --no-alt-screen\n\n  >_ OpenAI Codex (v0.160.0)\n     /private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\n\n  Welcome to the command line, Neo.\n\n\n\u203a Ask Codex to do anything\n",
+    "stderr": ""
+  },
+  "first-input": {
+    "hex": "0276",
+    "meaning": "Ctrl+B then v to Herdr client PTY"
+  },
+  "first-log": {
+    "argv": [
+      "plugin",
+      "log"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165945062,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165944785,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+    "stderr": ""
+  },
+  "first-panes": {
+    "argv": [
+      "pane",
+      "list",
+      "--workspace",
+      "w1"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":1,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e518937441\",\"workspace_id\":\"w1\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"label\":\"Spacetop\",\"pane_id\":\"w1:p2\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e51e380202\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w1\"}],\"type\":\"pane_list\"}}\n",
+    "stderr": ""
+  },
+  "first-layout": {
+    "argv": [
+      "pane",
+      "layout",
+      "--pane",
+      "w1:p1"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:pane:layout\",\"result\":{\"layout\":{\"area\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p1\",\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p1\",\"rect\":{\"height\":47,\"width\":77,\"x\":0,\"y\":0}},{\"focused\":false,\"pane_id\":\"w1:p2\",\"rect\":{\"height\":47,\"width\":77,\"x\":77,\"y\":0}}],\"splits\":[{\"direction\":\"right\",\"id\":\"split_0_root\",\"ratio\":0.5,\"rect\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0}}],\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\",\"zoomed\":false},\"type\":\"pane_layout\"}}\n",
+    "stderr": ""
+  },
+  "first-process": {
+    "argv": [
+      "pane",
+      "process-info",
+      "--pane",
+      "w1:p2"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:pane:process_info\",\"result\":{\"process_info\":{\"foreground_process_group_id\":66102,\"foreground_processes\":[{\"argv\":[\"/private/tmp/spacetop-085-install/spacetop\",\"--workflow-dir\",\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\"],\"argv0\":\"spacetop\",\"cmdline\":\"/private/tmp/spacetop-085-install/spacetop --workflow-dir /private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"name\":\"spacetop\",\"pid\":66104},{\"argv\":[\"spacetop-herdr\",\"pane\"],\"argv0\":\"spacetop-herdr\",\"cmdline\":\"spacetop-herdr pane\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"name\":\"spacetop-herdr\",\"pid\":66102}],\"pane_id\":\"w1:p2\",\"shell_pid\":66102},\"type\":\"pane_process_info\"}}\n",
+    "stderr": ""
+  },
+  "first-screen": {
+    "argv": [
+      "pane",
+      "read",
+      "w1:p2",
+      "--source",
+      "visible"
+    ],
+    "exit": 0,
+    "stdout": " workflow-a | workflow-b\nWorkflow [active]  archived: (press a)  [sort: id] (press s) \u2026R)/workflow-a\nWorkflow \u2014 [active] \u2014 archived: (press a)\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n                       \u25b6 implement(1) \u2500\u2500\u25ba done(0) \u25a0\n\n\n\n\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\nTasks  \u00b7  1\n\u25b8 implement  001    WORKTREE-085-A INVOKING-WORKTREE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n?: help  q: quit  \u2190/\u2192: switch workflow  P: pick workflow  \u23ce: toggle preview\n",
+    "stderr": ""
+  },
+  "reuse-input": {
+    "hex": "0276",
+    "meaning": "Ctrl+B then v to Herdr client PTY"
+  },
+  "reuse-log": {
+    "argv": [
+      "plugin",
+      "log"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165945062,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165944785,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165946031,\"log_id\":\"plugin-log-2\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165946005,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+    "stderr": ""
+  },
+  "reuse-panes": {
+    "argv": [
+      "pane",
+      "list",
+      "--workspace",
+      "w1"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":1,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e518937441\",\"workspace_id\":\"w1\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"label\":\"Spacetop\",\"pane_id\":\"w1:p2\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e51e380202\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w1\"}],\"type\":\"pane_list\"}}\n",
+    "stderr": ""
+  },
+  "reuse-layout": {
+    "argv": [
+      "pane",
+      "layout",
+      "--pane",
+      "w1:p1"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:pane:layout\",\"result\":{\"layout\":{\"area\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p2\",\"panes\":[{\"focused\":false,\"pane_id\":\"w1:p1\",\"rect\":{\"height\":47,\"width\":77,\"x\":0,\"y\":0}},{\"focused\":true,\"pane_id\":\"w1:p2\",\"rect\":{\"height\":47,\"width\":77,\"x\":77,\"y\":0}}],\"splits\":[{\"direction\":\"right\",\"id\":\"split_0_root\",\"ratio\":0.5,\"rect\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0}}],\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\",\"zoomed\":false},\"type\":\"pane_layout\"}}\n",
+    "stderr": ""
+  },
+  "close": {
+    "argv": [
+      "plugin",
+      "pane",
+      "close",
+      "w1:p2"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"pane_id\":\"w1:p2\",\"type\":\"plugin_pane_closed\"}}\n",
+    "stderr": ""
+  },
+  "return-agent": {
+    "argv": [
+      "pane",
+      "focus",
+      "--direction",
+      "left",
+      "--pane",
+      "w1:p1"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:pane:focus\",\"result\":{\"focus\":{\"changed\":false,\"focused_pane_id\":\"w1:p1\",\"layout\":{\"area\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0},\"focused_pane_id\":\"w1:p1\",\"panes\":[{\"focused\":true,\"pane_id\":\"w1:p1\",\"rect\":{\"height\":47,\"width\":154,\"x\":0,\"y\":0}}],\"splits\":[],\"tab_id\":\"w1:t1\",\"workspace_id\":\"w1\",\"zoomed\":false},\"reason\":\"no_neighbor\",\"source_pane_id\":\"w1:p1\"},\"type\":\"pane_focus_direction\"}}\n",
+    "stderr": ""
+  },
+  "reopen-input": {
+    "hex": "0276",
+    "meaning": "Ctrl+B then v to Herdr client PTY"
+  },
+  "reopen-log": {
+    "argv": [
+      "plugin",
+      "log"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165945062,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165944785,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165946031,\"log_id\":\"plugin-log-2\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165946005,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165947332,\"log_id\":\"plugin-log-3\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165947298,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+    "stderr": ""
+  },
+  "reopen-panes": {
+    "argv": [
+      "pane",
+      "list",
+      "--workspace",
+      "w1"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":9,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e518937441\",\"workspace_id\":\"w1\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"label\":\"Spacetop\",\"pane_id\":\"w1:p3\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e520628533\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w1\"}],\"type\":\"pane_list\"}}\n",
+    "stderr": ""
+  },
+  "workspace-two": {
+    "argv": [
+      "workspace",
+      "create",
+      "--cwd",
+      "/private/tmp/spacetop-085-installed-final/main project",
+      "--label",
+      "other-project",
+      "--focus"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:workspace:create\",\"result\":{\"root_pane\":{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/main project\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/main project\",\"pane_id\":\"w2:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":47},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e5215cd594\",\"workspace_id\":\"w2\"},\"tab\":{\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"1\",\"number\":1,\"pane_count\":1,\"tab_id\":\"w2:t1\",\"workspace_id\":\"w2\"},\"type\":\"workspace_created\",\"workspace\":{\"active_tab_id\":\"w2:t1\",\"agent_status\":\"unknown\",\"focused\":true,\"label\":\"other-project\",\"number\":2,\"pane_count\":1,\"tab_count\":1,\"workspace_id\":\"w2\"}}}\n",
+    "stderr": ""
+  },
+  "workspace-two-log": {
+    "argv": [
+      "plugin",
+      "log"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"logs\":[{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165945062,\"log_id\":\"plugin-log-1\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165944785,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165946031,\"log_id\":\"plugin-log-2\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165946005,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165947332,\"log_id\":\"plugin-log-3\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165947298,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"},{\"action_id\":\"open\",\"command\":[\"spacetop-herdr\",\"open\"],\"exit_code\":0,\"finished_unix_ms\":1791165948561,\"log_id\":\"plugin-log-4\",\"plugin_id\":\"spacetop.sidecar\",\"started_unix_ms\":1791165948529,\"status\":\"succeeded\",\"stderr\":\"\",\"stdout\":\"\"}],\"type\":\"plugin_log_list\"}}\n",
+    "stderr": ""
+  },
+  "workspace-two-panes": {
+    "argv": [
+      "pane",
+      "list",
+      "--workspace",
+      "w2"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/main project\",\"focused\":true,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/main project\",\"pane_id\":\"w2:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e5215cd594\",\"workspace_id\":\"w2\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/main project\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/main project\",\"label\":\"Spacetop\",\"pane_id\":\"w2:p2\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w2:t1\",\"terminal_id\":\"term_65d0e5218eaf15\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w2\"}],\"type\":\"pane_list\"}}\n",
+    "stderr": ""
+  },
+  "workspace-one-final": {
+    "argv": [
+      "pane",
+      "list",
+      "--workspace",
+      "w1"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:pane:list\",\"result\":{\"panes\":[{\"agent\":\"codex\",\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"pane_id\":\"w1:p1\",\"revision\":0,\"scroll\":{\"max_offset_from_bottom\":9,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e518937441\",\"workspace_id\":\"w1\"},{\"agent_status\":\"unknown\",\"cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"focused\":false,\"foreground_cwd\":\"/private/tmp/spacetop-085-installed-final/invoking worktree spaces ; $(touch NEVER)\",\"label\":\"Spacetop\",\"pane_id\":\"w1:p3\",\"revision\":1,\"scroll\":{\"max_offset_from_bottom\":0,\"offset_from_bottom\":0,\"viewport_rows\":45},\"tab_id\":\"w1:t1\",\"terminal_id\":\"term_65d0e520628533\",\"tokens\":{\"spacetop_sidecar\":\"v1\"},\"workspace_id\":\"w1\"}],\"type\":\"pane_list\"}}\n",
+    "stderr": ""
+  },
+  "after": {
+    "files": {
+      "workflow-b/001.md": "69fc9ffd37b8588e47bc923c8b4bef47222ea9da0c67a2a2a92873306fb2ec54",
+      "workflow-b/README.md": "7179e8419524ca176d67a01d323cea27f1f18674deca8a149f9c47be943b19cb",
+      "workflow-a/001.md": "f3502d34bc6feaf17cb59ebdbcbfd3790329bfd0f28e66780084e77d81231757",
+      "workflow-a/README.md": "77d602269dc2cc78a34362194111c36243eaa4fa12f932afd1be992c7b38b6e6"
+    },
+    "head": "e229cfab651498c602266f7fc8d7fcc078eb9077\n",
+    "status": " M workflow-a/001.md\n",
+    "index": "8d72cbd59ad85553640e1f34d5ac7f72ae445d7182b36c0f95bf71eecf1d2121"
+  },
+  "readonly_equal": true,
+  "crafted_path_executed": false,
+  "version": "herdr 0.9.3",
+  "unlink": {
+    "argv": [
+      "plugin",
+      "unlink",
+      "spacetop.sidecar"
+    ],
+    "exit": 0,
+    "stdout": "{\"id\":\"cli:plugin\",\"result\":{\"plugin_id\":\"spacetop.sidecar\",\"removed\":true,\"type\":\"plugin_unlinked\"}}\n",
+    "stderr": ""
+  },
+  "stop": {
+    "argv": [
+      "session",
+      "stop",
+      "spacetop-sidecar-proof"
+    ],
+    "exit": 0,
+    "stdout": "stopped session spacetop-sidecar-proof\n",
+    "stderr": ""
+  }
+}

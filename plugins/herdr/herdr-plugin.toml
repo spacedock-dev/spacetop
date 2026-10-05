@@ -1,0 +1,17 @@
+id = "spacetop.sidecar"
+name = "Spacetop sidecar"
+version = "0.1.0"
+min_herdr_version = "0.9.3"
+platforms = ["macos"]
+
+[[actions]]
+id = "open"
+title = "Open Spacetop beside this agent"
+contexts = ["workspace"]
+command = ["spacetop-herdr", "open"]
+
+[[panes]]
+id = "inspector"
+title = "Spacetop"
+placement = "split"
+command = ["spacetop-herdr", "pane"]

@@ -1,0 +1,12 @@
+onboarding = false
+[terminal]
+default_shell = "/bin/zsh"
+shell_mode = "non_login"
+[keys]
+prefix = "ctrl+b"
+[[keys.command]]
+key = "prefix+v"
+type = "plugin_action"
+command = "spacetop.sidecar.open"
+[experimental]
+allow_nested = true

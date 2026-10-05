@@ -7,7 +7,7 @@ export SENTRY_DSN
 .PHONY: build bootstrap lint clean install uninstall
 
 build: lint
-	SENTRY_DSN="$(SENTRY_DSN)" cargo build --release
+	SENTRY_DSN="$(SENTRY_DSN)" cargo build --release -p spacetop --bins
 
 bootstrap:
 	@command -v rustup >/dev/null 2>&1 || { \
@@ -27,6 +27,7 @@ clean:
 install: build
 	install -d "$(BINDIR)"
 	install -m 755 "target/release/$(BIN_NAME)" "$(BINDIR)/$(BIN_NAME)"
+	install -m 755 "target/release/spacetop-herdr" "$(BINDIR)/spacetop-herdr"
 
 uninstall:
-	rm -f "$(BINDIR)/$(BIN_NAME)"
+	rm -f "$(BINDIR)/$(BIN_NAME)" "$(BINDIR)/spacetop-herdr"

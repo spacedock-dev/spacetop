@@ -1,0 +1,29 @@
+{
+  "model": "jev-1.13.0",
+  "answers": {
+    "plan_ready": {
+      "type": "choice",
+      "choice": "ready",
+      "confidence": 1.0,
+      "probabilities": {
+        "ready": 1.0,
+        "revise": 0.0,
+        "hold": 0.0
+      }
+    },
+    "spike_support": {
+      "type": "choice",
+      "choice": "supports",
+      "confidence": 0.99,
+      "probabilities": {
+        "contradicts": 0.0,
+        "insufficient": 0.0,
+        "supports": 1.0
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 9057,
+    "output_tokens": 82
+  }
+}
