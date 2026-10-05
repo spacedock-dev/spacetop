@@ -11,7 +11,7 @@ completed:
 verdict:
 worktree: .worktrees/spacedock-ensign-open-spacetop-as-herdr-sidecar
 issue:
-pr: "#86"
+pr: pr-merge:86
 mod-block: merge:pr-merge
 id: 085
 gates:
