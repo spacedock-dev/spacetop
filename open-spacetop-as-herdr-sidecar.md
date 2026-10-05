@@ -25,6 +25,17 @@ gates:
                 id: briefing:085:verify:attempt-1:revision-1
                 digest: sha256:52ddf618f296c25506434a3e4b53749f368a7c4ddb0f9a2783b8acf8c5321038
                 room-ref: ./open-spacetop-as-herdr-sidecar/review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:085:verify:1
+                briefing: briefing:085:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-05T02:20:29.974268Z"
+                decision: approve
+                reason: Captain approved the presented verify Briefing; six ACs passed independent verification and FO JEV review.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 When an agent runs a Spacedock workflow under Herdr, let the user open Spacetop beside that agent with a keyboard shortcut. The right-side terminal pane must inspect the invoking agent's repository or worktree, without requiring the user to start another terminal or navigate to the project manually.
