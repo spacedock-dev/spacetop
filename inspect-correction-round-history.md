@@ -196,3 +196,45 @@ The backend prerequisite now exists: `WorkflowIndex::correction_rounds(&Entity) 
 ### Summary
 
 Independent verification recommends **request changes** for F1 and F2, both proposed material findings grounded in executed missing-path probes. The typed schema, bounded read-only evidence and same-Briefing query contract have substantial existing proof, but the delivered navigation/rendering does not yet satisfy the full refresh/provenance contract; no gate approval or merge was performed.
+
+## Stage Report: implement (cycle 1)
+
+- DONE: Implement the recorded typed correction pointer, safe retained-round discovery, strict Briefing/JSONL decoding and same-Briefing relationship query contract, reusing existing evidence primitives without weakening gate safety or inventing relationships.
+  Preserved the existing core implementation and task 088 boundary; product correction commit `e46270387660287d849a44e03103eaa636711b4c` changes only app selection, UI preview headers, their regressions and nearby docs.
+- DONE: Deliver deterministic history browsing, actor/rationale/includes detail, current versus historical provenance and coherent refresh across all four acceptance criteria; preserve read-only behavior and task 088 ownership boundaries.
+  F1 now stores optional source/target/direction identity, preserves reordered edges, clears removed edges with a notice and blocks implicit substitution; F2 fixes provenance outside scrollable artifact bytes.
+- DONE: After implementation, run required final checks including real notify coverage, actual terminal history/relationship/invalid-data scenarios and unchanged-file proof; update docs, commit product changes and record falsifiable per-criterion evidence. Keep operational correction records in state, not new product evidence directories.
+  Final checks and actual PTY evidence below passed; README and browser docs updated. Canonical input files remain temporary, with no product evidence directory, round publication, entity migration, frontmatter edit, gate approval or merge.
+
+### Feedback Cycles
+
+- Cycle 1, F1: **High / Material -> fix**, exactly as FO authorized. Removed ordinal clamping; full source/target/direction identity is now the navigation selection. Removed edges require explicit j/k or arrow reselection.
+- Cycle 1, F2: **Medium / Material -> fix**, exactly as FO authorized. Current/retained provenance, stage/cycle and read-only status remain in a fixed preview header, independently of item SHA-256 verification.
+- No finding was reclassified or declined; no acceptance criterion or task 088 ownership was changed.
+
+### Acceptance evidence
+
+- AC-1: Existing typed pointer/discovery/strict-decoding implementation remains unchanged; the final full suite includes the numeric-cycle/current-pointer/reviewer oracle and core safety tests. Dropping cycles, weakening binding, or substituting last Resolution for reviewer still fails those tests.
+- AC-2: `gate_room_history_removed_relationship_requires_explicit_reselection` truncates the real fixture log after selection, refreshes twice and presses Enter: selection stays absent and the finding remains open until explicit reselection. Ordinal replacement or automatic first-edge fallback fails.
+- AC-3: `gate_room_history_relationship_survives_log_reordering_by_identity` moves the disposition ahead of the reviewer and checks the same source/target/direction at its new index, then opens it. PTY additionally traversed finding -> disposition -> closing Resolution and Back; no new relationship semantics were introduced.
+- AC-4: `gate_room_correction_preview_keeps_current_and_retained_identity_when_narrow` opens verified bytes for both provenances at 40x12, 80x24 and 150x50, then scrolls/toggles wrap. Losing provenance, stage/cycle, verification or artifact text fails. Normal and ASCII 40x12 actual previews also retain these facts.
+
+### Commands and terminal proof
+
+- Passed final `cargo fmt && cargo test && make lint && cargo test -p spacetop-core -- --ignored && cargo build -p spacetop`: 738 normal tests passed, 6 intentionally ignored; all 6 real-backend ignored tests passed; clippy with warnings denied and build passed. Output: `artifact://294`.
+- Actual `cargo run -p spacetop -- --workflow-dir <disposable workflow>` PTYs, normal and `SPACETOP_ASCII=1`, both exited 0; captured history ordering, second stage, partial-JSONL diagnostic, real response chain/Back, and narrow current/retained artifact previews.
+- A separate mutation PTY reordered then removed the selected disposition. Live notify refresh retained the same edge after reorder, explicitly cleared it after removal, refused Enter on the adjacent reviewer, then opened that reviewer only after explicit j selection. The original log was restored.
+- Inspection-only inventory: all 13 fixture regular-file SHA-256 values unchanged; tracked/untracked Git status empty. Inventory and Git status also matched after deliberate mutations were restored. XDG config/state were absolute external directories.
+- Raw output, actions, 78 screen frames, mutation scripts, inventories and both exits: `/tmp/spacetop-081-cycle1-terminal-evidence.json`; SHA-256 `d76d18726a91011b018ed2a19cc6732fc65bf7b6df3c0e433e47ddc1e08573a8`. Capture uses Python standard-library PTYs and isolated `pyte==0.8.2`; no product dependency.
+- Disposable proof root: `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-081-cycle1-52viv899`. Prior report's broader safety coverage remains applicable; no stronger production polling claim is made.
+
+### Canonical correction inputs for FO publication
+
+- Briefing: `/tmp/spacetop-081-cycle1-round-inputs/briefing.json`; review log: `/tmp/spacetop-081-cycle1-round-inputs/briefing.review.jsonl`; receipt: `/tmp/spacetop-081-cycle1-round-inputs/receipt.json`.
+- Prepared against installed upstream Spacedock 0.27.3 `operation.go` Briefing fields, `review.go` complete-line/same-Briefing/prior-includes rules, `model.go` Resolution rules and `round.go` answered-log rule. Eight records include both findings, reviewer revise, both FO dispositions, both worker responses and closing advisory revise; no approval fabricated.
+- Briefing JCS digest: `sha256:af4fc0cc529ede12b4cd0a43d0d0b07e02ddb7eb09dfc877df1a239a13ed8784`. Artifacts bind exact rejected-source bytes to immutable commit-qualified raw GitHub URLs; upstream accepts URI schemes without fetching. Remote availability was not verified.
+- Findings/dispositions are explicitly transcribed from the review/dispatch, timestamped at preparation rather than inventing their original timestamps. Upstream recorder was not invoked; FO owns round publication and flat-to-folder migration.
+
+### Summary
+
+Addressed exactly the two authorized material findings in product commit `e462703`. Identity-preserving relationship refresh and narrow preview provenance now have falsifiable app/render tests and actual terminal proof; all final checks passed. Canonical correction inputs are ready for FO handling, with independent verification and gate decisions still outside this worker's authority.
