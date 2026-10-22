@@ -117,10 +117,16 @@ never fixed/approved. A reviewer including a finding is not a follow-up response
 
 Refresh watches review JSONL and directory creation/rename/deletion as well as
 Briefings and safe artifact coordinates. It retains surviving full identities,
-clears artifact previews, revalidates record details, and reports removed
-selections rather than opening an adjacent row. Explicit opens revalidate both
-Briefing digest and selected record/item. Current/provenance/trust labels remain
-visible on narrow terminals and use ASCII-compatible text.
+including a relationship's source, target and direction rather than its list
+position. A removed relationship clears selection with an explicit notice;
+Enter cannot open a replacement until you select another relationship with
+j/k or the arrows. Refresh clears artifact previews, revalidates record details,
+and reports removed selections rather than opening an adjacent row. Explicit
+opens revalidate both Briefing digest and selected record/item.
+Artifact previews retain a fixed header with current/retained provenance,
+stage/cycle and read-only status separately from item SHA-256 verification.
+These labels remain visible while scrolling or toggling wrap on narrow
+terminals and use ASCII-compatible text.
 
 
 ## Finding work that needs attention

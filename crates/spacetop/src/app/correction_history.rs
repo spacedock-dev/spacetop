@@ -8,6 +8,26 @@ pub enum HistorySelection {
     Record(ReviewRecordIdentity),
     Item { round: RoundIdentity, id: String },
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelationshipSelection {
+    source: ReviewRecordIdentity,
+    target: ReviewRecordIdentity,
+    direction: RelationshipDirection,
+}
+impl RelationshipSelection {
+    fn matches(&self, edge: &RecordedRelationship) -> bool {
+        self.source == edge.source && self.target == edge.target && self.direction == edge.direction
+    }
+}
+impl From<&RecordedRelationship> for RelationshipSelection {
+    fn from(edge: &RecordedRelationship) -> Self {
+        Self {
+            source: edge.source.clone(),
+            target: edge.target.clone(),
+            direction: edge.direction,
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HistoryBrowser {
     pub facts: CorrectionHistory,
@@ -15,7 +35,7 @@ pub struct HistoryBrowser {
     pub selection: Option<HistorySelection>,
     pub records_focus: bool,
     pub stack: Vec<ReviewRecordIdentity>,
-    pub relationship: usize,
+    pub relationship: Option<RelationshipSelection>,
     pub preview: Option<String>,
     pub notice: Option<String>,
     initialized: bool,
@@ -75,7 +95,18 @@ impl HistoryBrowser {
                     .retain(|id| self.facts.correction_record(id).is_some());
             }
         }
-        self.relationship = self.relationship.min(self.edges().len().saturating_sub(1));
+        if self
+            .relationship
+            .as_ref()
+            .is_some_and(|selected| !self.edges().iter().any(|edge| selected.matches(edge)))
+        {
+            self.relationship = None;
+            if !self.stack.is_empty() {
+                self.notice = Some(
+                    "Selected relationship disappeared; select a relationship explicitly".into(),
+                );
+            }
+        }
     }
     fn selections(&self) -> Vec<HistorySelection> {
         let Some(round) = self.selected_round() else {
@@ -114,7 +145,7 @@ impl HistoryBrowser {
                     self.selection = Some(HistorySelection::Record(
                         self.stack.last().cloned().unwrap_or(id),
                     ));
-                    self.relationship = 0;
+                    self.relationship = self.edges().first().map(RelationshipSelection::from);
                 } else {
                     return true;
                 }
@@ -134,10 +165,18 @@ impl HistoryBrowser {
             return;
         }
         if !self.stack.is_empty() {
-            self.relationship = self
+            let edges = self.edges();
+            let index = self
                 .relationship
-                .saturating_add_signed(delta)
-                .min(self.edges().len().saturating_sub(1));
+                .as_ref()
+                .and_then(|selected| edges.iter().position(|edge| selected.matches(edge)));
+            self.relationship = edges
+                .get(
+                    index
+                        .map_or(0, |i| i.saturating_add_signed(delta))
+                        .min(edges.len().saturating_sub(1)),
+                )
+                .map(RelationshipSelection::from);
         } else if self.records_focus {
             let selections = self.selections();
             let index = self
@@ -180,7 +219,15 @@ impl HistoryBrowser {
             self.notice = Some("Entity disappeared".into());
             return;
         };
-        if let Some(edge) = self.edges().get(self.relationship) {
+        if !self.stack.is_empty() {
+            let edges = self.edges();
+            let Some(edge) = self
+                .relationship
+                .as_ref()
+                .and_then(|selected| edges.iter().find(|edge| selected.matches(edge)))
+            else {
+                return;
+            };
             if edge.validation != RelationshipValidation::Valid {
                 self.notice = Some("Invalid relationship: target is not navigable".into());
                 return;
@@ -192,7 +239,7 @@ impl HistoryBrowser {
             };
             if self.revalidate_record(state, &entity, &target) {
                 self.stack.push(target);
-                self.relationship = 0;
+                self.relationship = self.edges().first().map(RelationshipSelection::from);
             }
             return;
         }
@@ -201,7 +248,7 @@ impl HistoryBrowser {
                 if self.stack.is_empty() && self.revalidate_record(state, &entity, &id) =>
             {
                 self.stack.push(id);
-                self.relationship = 0;
+                self.relationship = self.edges().first().map(RelationshipSelection::from);
             }
             Some(HistorySelection::Item { round, id }) => {
                 let Some(round) = self.facts.correction_round(&round) else {
@@ -341,10 +388,14 @@ impl HistoryBrowser {
                         text.push_str("Relationships unavailable: incomplete/invalid evidence.\n")
                     }
                     CorrectionRelationships::Recorded(edges) => {
-                        for (index, edge) in edges.iter().enumerate() {
+                        for edge in &edges {
                             text.push_str(&format!(
                                 "{} includes {:?} {:?} {:?}: {} -> {}\n",
-                                if index == self.relationship { ">" } else { " " },
+                                if self.relationship.as_ref().is_some_and(|s| s.matches(edge)) {
+                                    ">"
+                                } else {
+                                    " "
+                                },
                                 edge.direction,
                                 edge.role,
                                 edge.validation,
@@ -555,6 +606,78 @@ pub(crate) mod tests {
         press(&mut app, KeyCode::Esc);
         assert!(matches!(app.mode(), AppMode::Overview(_)));
     }
+    #[test]
+    fn gate_room_history_removed_relationship_requires_explicit_reselection() {
+        let (_temp, snapshot) = setup();
+        let root = snapshot.definition.root.clone();
+        let mut app = App::from_snapshot(root.clone(), snapshot.clone());
+        for key in [
+            KeyCode::Char('B'),
+            KeyCode::Char('h'),
+            KeyCode::Tab,
+            KeyCode::Enter,
+            KeyCode::Down,
+        ] {
+            press(&mut app, key);
+        }
+        let selected = browser(&app).relationship.clone().unwrap();
+        assert_eq!(selected.source.id, "annotation:decline-duplicate-member");
+        let source = browser(&app).stack.clone();
+        let log = root.join("sample/review/implementation/round-1/briefing.review.jsonl");
+        let original = fs::read_to_string(&log).unwrap();
+        fs::write(
+            &log,
+            original.lines().take(3).collect::<Vec<_>>().join("\n") + "\n",
+        )
+        .unwrap();
+        app.reload_from_snapshot(snapshot.clone());
+        assert!(browser(&app).relationship.is_none());
+        assert!(browser(&app)
+            .notice
+            .as_ref()
+            .unwrap()
+            .contains("Selected relationship disappeared"));
+        // Repeated refresh and Enter must not implicitly select the remaining reviewer edge.
+        app.reload_from_snapshot(snapshot);
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(browser(&app).stack, source);
+        assert!(browser(&app).relationship.is_none());
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(
+            browser(&app).stack.last().unwrap().id,
+            "resolution:roborev-3j-round-1"
+        );
+    }
+
+    #[test]
+    fn gate_room_history_relationship_survives_log_reordering_by_identity() {
+        let (_temp, snapshot) = setup();
+        let root = snapshot.definition.root.clone();
+        let mut app = App::from_snapshot(root.clone(), snapshot.clone());
+        for key in [
+            KeyCode::Char('B'),
+            KeyCode::Char('h'),
+            KeyCode::Tab,
+            KeyCode::Enter,
+            KeyCode::Down,
+        ] {
+            press(&mut app, key);
+        }
+        let selected = browser(&app).relationship.clone().unwrap();
+        let log = root.join("sample/review/implementation/round-1/briefing.review.jsonl");
+        let original = fs::read_to_string(&log).unwrap();
+        let mut lines = original.lines().collect::<Vec<_>>();
+        lines.swap(2, 3);
+        fs::write(&log, lines.join("\n") + "\n").unwrap();
+        app.reload_from_snapshot(snapshot);
+        assert_eq!(browser(&app).relationship.as_ref(), Some(&selected));
+        assert!(selected.matches(&browser(&app).edges()[0]));
+        assert!(browser(&app).notice.is_none());
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(browser(&app).stack.last(), Some(&selected.source));
+    }
+
     #[test]
     fn gate_room_history_refresh_invalidates_preview_and_preserves_or_removes_identity() {
         let (_temp, snapshot) = setup();

@@ -6,18 +6,8 @@ use ratatui::{
 
 pub(super) fn render(frame: &mut Frame<'_>, browser: &GateBrowser) {
     let area = frame.area();
-    let layout = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Min(0),
-        Constraint::Length(1),
-    ])
-    .split(area);
     let status = if browser.history_mode {
-        if browser.history.preview.is_some() {
-            "Item SHA-256 verified"
-        } else {
-            browser.history.status()
-        }
+        browser.history.status()
     } else if browser.preview.is_some() {
         "Item SHA-256 verified"
     } else if browser.view.verified() {
@@ -25,8 +15,30 @@ pub(super) fn render(frame: &mut Frame<'_>, browser: &GateBrowser) {
     } else {
         "UNVERIFIED"
     };
+    let mut header = format!("{status} | read-only");
+    if browser.history_mode && browser.history.preview.is_some() {
+        if let Some(round) = browser.history.selected_round() {
+            header.push_str(&format!(
+                "\nStage: {} | Cycle: {}",
+                round.identity.stage, round.identity.cycle
+            ));
+        }
+        header.push_str("\nItem SHA-256 verified");
+    }
+    // Keep provenance outside the scrollable artifact, independent of byte verification.
+    let header = if browser.history_mode && browser.history.preview.is_some() {
+        wrap_content(&header, area.width)
+    } else {
+        vec![header]
+    };
+    let layout = Layout::vertical([
+        Constraint::Length(header.len().min(u16::MAX as usize) as u16),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .split(area);
     frame.render_widget(
-        Paragraph::new(format!("{status} | read-only")).style(
+        Paragraph::new(header.into_iter().map(Line::raw).collect::<Vec<_>>()).style(
             Style::default().fg(
                 if (!browser.history_mode && browser.view.verified())
                     || (browser.history_mode
@@ -293,6 +305,50 @@ mod correction_tests {
             .map(|c| c.symbol())
             .collect()
     }
+    #[test]
+    fn gate_room_correction_preview_keeps_current_and_retained_identity_when_narrow() {
+        let (_temp, mut snapshot) = setup();
+        for current in [true, false] {
+            if !current {
+                snapshot.items[0].review_round = spacetop_core::domain::ReviewPointer::Absent;
+            }
+            let mut app = App::from_snapshot(snapshot.definition.root.clone(), snapshot.clone());
+            press(&mut app, KeyCode::Char('B'));
+            press(&mut app, KeyCode::Char('h'));
+            if !current {
+                // The fallback is the last stage; deliberately browse retained implementation/1.
+                for _ in 0..3 {
+                    press(&mut app, KeyCode::Up);
+                }
+            }
+            press(&mut app, KeyCode::Tab);
+            for _ in 0..5 {
+                press(&mut app, KeyCode::Down);
+            }
+            press(&mut app, KeyCode::Enter);
+            for (width, height) in [(40, 12), (80, 24), (150, 50)] {
+                for key in [KeyCode::PageDown, KeyCode::Char('w')] {
+                    press(&mut app, key);
+                    let output = text(&app, width, height);
+                    for phrase in [
+                        if current {
+                            "CURRENT bound"
+                        } else {
+                            "RETAINED identity verified"
+                        },
+                        "Stage: implementation | Cycle: 1",
+                        "Item SHA-256 verified",
+                        "read-only",
+                        "candidate 90aea55",
+                        "Esc: back",
+                    ] {
+                        assert!(output.contains(phrase), "missing {phrase}: {output}");
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn gate_room_correction_actor_time_rationale_includes_and_trust_at_all_sizes() {
         let (_temp, snapshot) = setup();

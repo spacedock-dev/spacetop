@@ -394,6 +394,10 @@ Without a pointer the latest ordered round is selected but never labeled current
 `Tab` switches rounds/records, `j/k` selects, and `Enter` opens a record, a
 selected recorded includes relationship, or verified artifact bytes. `Esc`/`q`
 returns through the record navigation stack to the original selection.
+Relationship selection follows source/target/direction identity across refresh;
+if an edge disappears, select another explicitly before Enter can open it.
+Artifact previews keep current/retained provenance and stage/cycle visible,
+separately from item SHA-256 verification, including on narrow terminals.
 
 Annotation body/target/kind and Resolution actor/time/reason are recorded facts,
 not inferred outcomes. Includes resolve only to earlier records in the same
