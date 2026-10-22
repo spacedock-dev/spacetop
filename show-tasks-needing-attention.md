@@ -1,6 +1,6 @@
 ---
 title: Show tasks that need attention
-status: verify
+status: implement
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
