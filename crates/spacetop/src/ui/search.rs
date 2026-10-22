@@ -4,10 +4,10 @@ use ratatui::{
     style::{Color, Modifier},
     widgets::{Block, Borders, Clear, Paragraph},
 };
-use spacetop_core::query::EntityQuery;
 
 use crate::app::{
-    matching_commands, OverviewSession, SearchMode, SearchState, SEARCH_VISIBLE_RESULT_LIMIT,
+    matching_commands, search_results, OverviewSession, SearchMode, SearchState,
+    SEARCH_VISIBLE_RESULT_LIMIT,
 };
 
 pub(super) fn render_overlay(
@@ -32,12 +32,7 @@ pub(super) fn render_overlay(
 
     match state.mode() {
         SearchMode::Search => {
-            let active = session.active_state();
-            let rows = active.index().query(EntityQuery {
-                scope: active.current_query_scope(),
-                text: Some(state.query().to_string()),
-                ..EntityQuery::default()
-            });
+            let rows = search_results(session, state);
             if rows.is_empty() {
                 lines.push(Line::from("No matches"));
             } else {

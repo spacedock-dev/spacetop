@@ -1,0 +1,20 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:086:verify:round-1",
+  "question": "Does the correction to rejected snapshot fa4fe005f179f939aadb4235849db9067a98eaa3 resolve FO-authorized material finding V-1 without weakening AC-1 or AC-2?",
+  "artifacts": [
+    {
+      "id": "artifact:rejected-search-renderer",
+      "uri": "git:fa4fe005f179f939aadb4235849db9067a98eaa3:crates/spacetop/src/ui/search.rs",
+      "rev": "sha256:36768c8f3cc85cc365372e8c77cf3c9471aab1f805bd98d4d365972fd561deb0",
+      "mediaType": "text/plain"
+    },
+    {
+      "id": "artifact:correction-terminal-proof",
+      "uri": "git:6cda5cd4f74fa818cb32edf41caaca3964f83e63:docs/evidence/attention-086-correction-1/terminal.json",
+      "rev": "sha256:42b42c5bad361365b2f193c48ebbd99337bdf470371b44d6bd8c224cc249add5",
+      "mediaType": "application/json"
+    }
+  ]
+}

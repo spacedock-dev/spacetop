@@ -2840,3 +2840,169 @@ fn durable_gates_reload_projection_without_runtime_and_preserve_selection_and_ar
         Some(GateReadiness::Consumed)
     );
 }
+
+fn attention_app() -> App {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/attention");
+    let state = OverviewState::load(root.clone()).unwrap();
+    App::from_snapshot(root, state.snapshot())
+}
+
+fn palette(app: &mut App, command: &str) {
+    app.handle_key(key(KeyCode::Char(':')));
+    for ch in command.chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+}
+
+#[test]
+fn attention_palette_search_sort_reload_and_archive_share_visible_rows() {
+    let mut app = attention_app();
+    palette(&mut app, "needs-attention");
+    assert!(app.as_overview().unwrap().needs_attention);
+    assert!(app
+        .visible_items()
+        .iter()
+        .all(|e| spacetop_core::index::WorkflowIndex::attention_reason(e).is_some()));
+    assert!(!app
+        .visible_items()
+        .iter()
+        .any(|e| e.id == "ordinary" || e.id == "old"));
+    let selected = app.selected_item().unwrap().path;
+    app.handle_key(key(KeyCode::Char('s')));
+    assert_eq!(app.selected_item().unwrap().path, selected);
+    app.handle_key(key(KeyCode::Char('/')));
+    for ch in "Ordinary idle".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    let AppMode::Search { underlying, state } = app.mode() else {
+        panic!("search");
+    };
+    assert!(super::search_results(underlying, state).is_empty());
+    app.handle_key(key(KeyCode::Enter));
+    assert!(matches!(app.mode(), AppMode::Overview(_)));
+    assert_eq!(app.selected_item().unwrap().path, selected);
+    let mut snapshot = app.snapshot();
+    let changed = snapshot
+        .items
+        .iter_mut()
+        .find(|e| e.path == selected)
+        .unwrap();
+    changed.status = "implement".into();
+    changed.gates = Default::default();
+    changed.gate_preparation = Default::default();
+    app.reload_from_snapshot(snapshot);
+    assert_ne!(app.selected_item().unwrap().path, selected);
+    assert!(app.visible_items().iter().all(|e| e.path != selected));
+    assert!(app.as_overview().unwrap().needs_attention);
+    palette(&mut app, "all-tasks");
+    assert!(!app.as_overview().unwrap().needs_attention);
+    assert!(app.visible_items().iter().any(|e| e.id == "ordinary"));
+    assert!(app.visible_items().iter().any(|e| e.path == selected));
+    palette(&mut app, "needs-attention");
+    app.handle_key(key(KeyCode::Char('a')));
+    assert_eq!(app.view_scope(), ViewScope::Archived);
+    assert!(!app.as_overview().unwrap().needs_attention);
+    app.handle_key(key(KeyCode::Char('a')));
+    assert!(app.visible_items().iter().any(|e| e.id == "ordinary"));
+    assert!(!app.take_pending_sync());
+    assert!(app.take_pending_open_file().is_none());
+}
+
+#[test]
+fn attention_broken_selection_is_stable_and_cannot_open_other_evidence() {
+    let mut app = attention_app();
+    app.handle_key(key(KeyCode::End));
+    assert!(matches!(
+        app.as_overview().unwrap().selected_row(),
+        Some(super::SelectedRow::Broken(_))
+    ));
+    palette(&mut app, "needs-attention");
+    app.handle_key(key(KeyCode::Char('s')));
+    app.reload_from_snapshot(app.snapshot());
+    assert!(matches!(
+        app.as_overview().unwrap().selected_row(),
+        Some(super::SelectedRow::Broken(_))
+    ));
+    app.handle_key(key(KeyCode::Char('B')));
+    assert!(matches!(app.mode(), AppMode::Overview(_)));
+    let mut snapshot = app.snapshot();
+    snapshot.items.clear();
+    app.reload_from_snapshot(snapshot.clone());
+    assert_eq!(app.as_overview().unwrap().row_count(), 1);
+    snapshot.parse_errors.clear();
+    app.reload_from_snapshot(snapshot);
+    assert_eq!(app.as_overview().unwrap().row_count(), 0);
+    app.handle_key(key(KeyCode::Down));
+    palette(&mut app, "all-tasks");
+    assert!(!app.as_overview().unwrap().needs_attention);
+}
+
+#[test]
+fn attention_evidence_roundtrip_missing_bytes_and_reload_keep_focus() {
+    let (temp, mut snapshot) = super::gate_room::tests::setup();
+    // The test room already has a verified binding; make its current attempt a review.
+    if let spacetop_core::domain::GateData::Valid { document, .. } = &mut snapshot.items[0].gates {
+        let attempt = document.records[0].attempts.last_mut().unwrap();
+        attempt.resolution = None;
+        attempt.application = None;
+    }
+    snapshot.definition.stages.push(StageDefinition {
+        name: "validation".into(),
+        initial: false,
+        gate: true,
+        terminal: false,
+        fresh: false,
+        feedback_to: None,
+        concurrency: None,
+        worktree: false,
+    });
+    let mut app = App::from_snapshot(snapshot.definition.root.clone(), snapshot.clone());
+    palette(&mut app, "needs-attention");
+    let selected = app.selected_item().unwrap().path;
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Char('B')));
+    app.handle_key(key(KeyCode::Tab));
+    app.handle_key(key(KeyCode::Enter));
+    let AppMode::GateRoom { browser, .. } = app.mode() else {
+        panic!("browser");
+    };
+    assert_eq!(
+        browser.preview.as_deref(),
+        Some("Exact candidate review.\n")
+    );
+    std::fs::remove_file(temp.path().join("room/gate-review.md")).unwrap();
+    app.reload_from_snapshot(snapshot);
+    let AppMode::GateRoom { browser, .. } = app.mode() else {
+        panic!("browser");
+    };
+    assert!(browser.preview.is_none());
+    assert!(browser.notice.is_some());
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.as_overview().unwrap().needs_attention);
+    assert_eq!(app.selected_item().unwrap().path, selected);
+    assert!(!app.take_pending_sync());
+    assert!(app.take_pending_open_file().is_none());
+}
+
+#[test]
+fn attention_focus_is_transient_per_workflow_and_palette_cancel_is_inert() {
+    let (session, _holder, _roots) = multi_session(2);
+    let mut app = App::from_session(session);
+    palette(&mut app, "needs-attention");
+    app.handle_key(key(KeyCode::Right));
+    app.take_pending_switch().unwrap();
+    app.materialize_active();
+    assert!(!app.as_overview().unwrap().needs_attention);
+    app.handle_key(key(KeyCode::Left));
+    let switch = app.take_pending_switch().unwrap();
+    assert!(!switch.needs_first_load);
+    assert!(app.as_overview().unwrap().needs_attention);
+    app.handle_key(key(KeyCode::Char(':')));
+    app.handle_key(key(KeyCode::Esc));
+    assert!(app.as_overview().unwrap().needs_attention);
+    let saved = app.as_overview().unwrap().to_workflow_session();
+    let mut restored = OverviewState::empty(app.workflow_dir().into());
+    restored.apply_session(&saved);
+    assert!(!restored.needs_attention);
+}

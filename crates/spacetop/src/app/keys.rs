@@ -410,7 +410,7 @@ pub(crate) fn handle_overview_key_with_keymap(
             state.cycle_sort_mode();
             OverviewKeyAction::None
         }
-        KeyCode::Char('B') if !state.preview_open() => OverviewKeyAction::OpenGateRoom,
+        KeyCode::Char('B') => OverviewKeyAction::OpenGateRoom,
         KeyCode::Char('D') if !state.preview_open() => OverviewKeyAction::OpenDefinition,
         code if keymap.search.matches(code) && !state.preview_open() => {
             OverviewKeyAction::OpenSearch

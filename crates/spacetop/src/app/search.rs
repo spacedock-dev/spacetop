@@ -10,6 +10,8 @@ pub enum CommandAction {
     Activity,
     Timeline,
     Relations,
+    NeedsAttention,
+    AllTasks,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +38,14 @@ pub const COMMAND_ENTRIES: &[CommandEntry] = &[
     CommandEntry {
         label: "relations",
         action: CommandAction::Relations,
+    },
+    CommandEntry {
+        label: "needs-attention",
+        action: CommandAction::NeedsAttention,
+    },
+    CommandEntry {
+        label: "all-tasks",
+        action: CommandAction::AllTasks,
     },
 ];
 

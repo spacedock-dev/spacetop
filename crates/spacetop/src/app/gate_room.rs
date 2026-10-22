@@ -270,7 +270,10 @@ impl GateBrowser {
             if let Some(resolution) = &attempt.resolution {
                 text.push_str(&format!(
                     "Recorded {:?} by {} at {}\nReason: {}\n",
-                    resolution.decision, resolution.by, resolution.at, resolution.reason
+                    resolution.decision,
+                    resolution.by,
+                    resolution.at,
+                    recorded_reason(&resolution.reason)
                 ));
                 if let Some(conn) = &resolution.conn {
                     text.push_str(&format!(
@@ -320,6 +323,14 @@ impl GateBrowser {
     }
 }
 
+pub(crate) fn recorded_reason(reason: &str) -> &str {
+    if reason.trim().is_empty() {
+        "No reason recorded"
+    } else {
+        reason
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -327,6 +338,12 @@ pub(crate) mod tests {
     use crossterm::event::{KeyEvent, KeyModifiers};
     use spacetop_core::{domain::*, parser};
     use std::{fs, path::PathBuf};
+    #[test]
+    fn blank_reason_is_explicit_without_inventing_a_blocker() {
+        assert_eq!(recorded_reason(""), "No reason recorded");
+        assert_eq!(recorded_reason("  "), "No reason recorded");
+        assert_eq!(recorded_reason("Keep exact reason"), "Keep exact reason");
+    }
     pub(crate) fn setup() -> (tempfile::TempDir, WorkflowSnapshot) {
         let temp = tempfile::tempdir().unwrap();
         let root = fs::canonicalize(temp.path()).unwrap();

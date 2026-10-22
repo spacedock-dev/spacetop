@@ -60,6 +60,14 @@ pub struct ActivityEvent {
 }
 
 impl WorkflowIndex {
+    pub fn attention_reason(entity: &Entity) -> Option<crate::domain::AttentionReason> {
+        crate::domain::AttentionReason::from_gate(
+            &entity.gates,
+            entity.gate_readiness,
+            &entity.gate_preparation,
+        )
+    }
+
     pub fn from_sources(sources: WorkflowSources) -> Self {
         let definition = sources.active.definition;
         let mut active = sources.active.items;
@@ -487,6 +495,7 @@ impl WorkflowIndex {
 
 fn matches_field(entity: &Entity, filter: &FieldFilter) -> bool {
     match filter {
+        FieldFilter::NeedsAttention => WorkflowIndex::attention_reason(entity).is_some(),
         FieldFilter::GateReadiness(expected) => entity
             .gate_readiness
             .is_some_and(|actual| actual.label() == expected.label()),

@@ -32,7 +32,7 @@ curl -fsSL https://github.com/spacedock-dev/spacetop/releases/latest/download/in
 - Parse workflow metadata and markdown work item frontmatter.
 - Browse work items by status, stage, or file.
 - Preview the selected item's markdown body and stage reports.
-- Surface useful workflow signals such as pending gates, blocked items, stale items, and active work.
+- Find tasks with recorded attention reasons, without guessing urgency from age or activity.
 
 ## Status
 
@@ -93,6 +93,32 @@ The existing `?` help popup also explains status vocabulary and any current
 storage warning. Use Up/Down (or `k`/`j`), PgUp/PgDn, Home/End to scroll help;
 `?` or Esc closes it. These keys do not move the task selection while help is
 open. Reopening help starts at the top.
+
+Use the command palette (`:` by default, or your configured command key) and
+choose `needs-attention` for a focused active-task list. Each row explains its
+inclusion: review requested, recorded hold or follow-up, request preparation or
+replacement needed, approval awaiting advance/merge, or invalid/missing or
+unverified information. `all-tasks` restores the normal list; `a` leaves focus
+and opens archives. Focus is per workflow tab and is not saved between sessions.
+Sorting, search, mouse selection and refresh all use the focused rows.
+The search popup excludes tasks outside that focus, and Enter selects the task
+highlighted in the popup.
+In search and the palette, type the full query (including j/k); use Up/Down
+to select a result and Esc to cancel.
+
+Enter opens the selected report/details; `B` opens its review evidence. In the
+browser, Tab selects inventory, Up/Down or j/k selects an item, Enter opens
+verified bytes, and Esc returns through the item/browser to the same task.
+Full reasons and exact diagnostics remain in the scrollable preview when rows
+are too narrow. Broken task rows show their filename and parse diagnostic.
+
+Missing or unverified information is **not** a recorded blocker. Only current
+durable hold decisions establish that category. Empty optional metadata, prose,
+old timestamps, idle or unavailable activity and absent processes do not qualify.
+An unresolved room does not hide a known review request; the evidence browser
+reports its failure without substituting task text as verified evidence.
+An empty focused list means no recorded reasons in the loaded state, not that
+missing progress storage is healthy. Storage warnings remain visible.
 
 Only the latest attempt for the current gated nonterminal stage supplies current
 readiness. Consumed and superseded approvals keep their spent labels. Other-stage

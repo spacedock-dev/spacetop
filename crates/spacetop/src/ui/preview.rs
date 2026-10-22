@@ -131,7 +131,16 @@ pub(super) fn render_preview(
         }
     };
 
-    let gate_body = gate_detail_body(&state.index().gate_details(&item));
+    let mut gate_body = String::new();
+    if state.needs_attention {
+        if let Some(reason) = spacetop_core::index::WorkflowIndex::attention_reason(&item) {
+            let (category, meaning) = attention_explanation(reason);
+            gate_body = format!(
+                "### {category}\n\n{meaning}\n\nEnter: report/details; B: review evidence\n\n"
+            );
+        }
+    }
+    gate_body.push_str(&gate_detail_body(&state.index().gate_details(&item)));
     let mut header_lines = build_preview_header_lines(&item, state, inner.width, placement);
     let divider_line = header_lines.pop().unwrap_or_else(|| Line::from(""));
     let divider_height = wrapped_lines_height(std::slice::from_ref(&divider_line), inner.width);
@@ -178,20 +187,11 @@ pub(super) fn render_preview(
     // of the plain markdown body. Otherwise fall back to the normal markdown
     // rendering path.
     let display_body = format!("{gate_body}{}", item.body);
-    let diff_lines: Option<Vec<Line<'static>>> = item.main_body.as_deref().map(|main| {
-        let mut lines = cached_markdown(
-            &item.path,
-            &gate_body,
-            state.preview_wrap(),
-            body_inner.width,
-        );
-        lines.extend(diff::render_diff_lines_with_width(
-            main,
-            &item.body,
-            body_inner.width,
-        ));
+    let render_diff = |main: &str, width: u16| {
+        let mut lines = cached_markdown(&item.path, &gate_body, state.preview_wrap(), width);
+        lines.extend(diff::render_diff_lines_with_width(main, &item.body, width));
         lines
-    });
+    };
 
     // First pass: determine content height for overflow detection.
     // In the diff path, derive height directly from `diff_lines.len()` to
@@ -206,6 +206,10 @@ pub(super) fn render_preview(
     } else {
         body_inner.width.max(MARKDOWN_NO_WRAP_RENDER_WIDTH)
     };
+    let diff_lines = item
+        .main_body
+        .as_deref()
+        .map(|main| render_diff(main, render_width));
     let (content_height_full, body_lines_full) = if let Some(lines) = diff_lines.as_ref() {
         (lines.len() as u16, None)
     } else {
@@ -236,7 +240,13 @@ pub(super) fn render_preview(
     } else {
         body_area.width.max(MARKDOWN_NO_WRAP_RENDER_WIDTH)
     };
-    let body_lines = if let Some(lines) = diff_lines {
+    let body_lines = if let Some(main) = item
+        .main_body
+        .as_deref()
+        .filter(|_| show_scrollbar && state.preview_wrap())
+    {
+        render_diff(main, render_width_second_pass)
+    } else if let Some(lines) = diff_lines {
         lines
     } else if show_scrollbar && state.preview_wrap() {
         // Re-render only when the wrap-mode scrollbar narrows the render
@@ -527,6 +537,24 @@ fn wrapped_lines_height(lines: &[Line<'_>], width: u16) -> u16 {
         .sum()
 }
 
+pub(super) fn attention_explanation(
+    reason: spacetop_core::domain::AttentionReason,
+) -> (&'static str, &'static str) {
+    use spacetop_core::domain::{AttentionReason::*, GateReadiness as R};
+    let (category, readiness) = match reason {
+        ReviewRequested => ("Review requested", R::AwaitingCaptain),
+        RecordedBlocker => ("Recorded blocker", R::Held),
+        RecordedFollowUp => ("Recorded follow-up", R::FeedbackPending),
+        PreparationNeeded => ("Request preparation needed", R::NeedsPreparation),
+        ReplacementNeeded => ("Request replacement needed", R::WithdrawnAwaitingPrepare),
+        AdvancePending => ("Recorded next step", R::ApprovedAwaitingAdvance),
+        MergePending => ("Recorded next step", R::ApprovedAwaitingMerge),
+        InvalidInformation => ("Invalid information", R::Invalid),
+        MissingOrUnverifiedInformation => ("Missing or unverified information", R::Validating),
+    };
+    (category, gate_explanation(readiness).0)
+}
+
 fn gate_explanation(
     readiness: spacetop_core::domain::GateReadiness,
 ) -> (&'static str, &'static str) {
@@ -638,9 +666,10 @@ fn gate_detail_body(details: &spacetop_core::domain::GateDetails) -> String {
                             "  Recorded decision: {decision} / {} / {}",
                             resolution.by, resolution.at
                         ));
-                        if !resolution.reason.is_empty() {
-                            lines.push(format!("  Reason: {}", resolution.reason));
-                        }
+                        lines.push(format!(
+                            "  Reason: {}",
+                            crate::app::gate_room::recorded_reason(&resolution.reason)
+                        ));
                         if let Some(conn) = &resolution.conn {
                             lines.push(format!(
                                 "  Recorded conn citation: {} / {}",

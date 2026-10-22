@@ -15,7 +15,7 @@ use spacetop_core::entity_identity::entity_slug;
 pub use spacetop_core::index::StageCount;
 use spacetop_core::index::WorkflowIndex;
 use spacetop_core::parser::ParseError;
-use spacetop_core::query::{EntityQuery, EntitySort, QueryScope};
+use spacetop_core::query::{EntityQuery, EntitySort, FieldFilter, QueryScope};
 use spacetop_core::session_state::{WorkflowScope, WorkflowSession};
 use spacetop_core::sources::{ArchiveSnapshot, WorkflowSources};
 
@@ -209,6 +209,7 @@ pub struct OverviewState {
     pub index: WorkflowIndex,
     pub selected_index: usize,
     pub view_scope: ViewScope,
+    pub needs_attention: bool,
     pub archived_done_count: Option<usize>,
     pub archive_loaded: bool,
     pub archive_error: Option<String>,
@@ -291,6 +292,7 @@ impl OverviewState {
             index,
             selected_index: 0,
             view_scope: ViewScope::Active,
+            needs_attention: false,
             archived_done_count: None,
             archive_loaded: false,
             archive_error: None,
@@ -352,6 +354,7 @@ impl OverviewState {
             index,
             selected_index: 0,
             view_scope: ViewScope::Active,
+            needs_attention: false,
             archived_done_count: None,
             archive_loaded: false,
             archive_error: None,
@@ -392,9 +395,7 @@ impl OverviewState {
     }
 
     pub fn reload_from_index(&mut self, mut index: WorkflowIndex) {
-        let prior_slug = self
-            .selected_item()
-            .and_then(|entity| entity_slug(&entity.path));
+        let prior_path = self.selected_path();
 
         index.retain_session_activity_from(&self.index);
         self.index = index;
@@ -409,22 +410,7 @@ impl OverviewState {
             self.ensure_archive_loaded();
         }
 
-        let len = self.row_count();
-        if len == 0 {
-            self.set_scope_index(0);
-        } else if let Some(slug) = prior_slug {
-            let visible = self.visible_items();
-            if let Some(pos) = visible
-                .iter()
-                .position(|entity| entity_slug(&entity.path).as_deref() == Some(slug.as_str()))
-            {
-                self.set_scope_index(pos);
-            } else if self.selected_index() >= len {
-                self.set_scope_index(len - 1);
-            }
-        } else if self.selected_index() >= len {
-            self.set_scope_index(len - 1);
-        }
+        self.restore_selected_path(prior_path);
 
         self.reset_preview_scroll();
         self.last_refresh_error = None;
@@ -603,6 +589,60 @@ impl OverviewState {
         self.view_scope
     }
 
+    pub fn attention_filters(&self) -> Vec<FieldFilter> {
+        if self.needs_attention {
+            vec![FieldFilter::NeedsAttention]
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn list_row_height(&self) -> usize {
+        if self.needs_attention {
+            2
+        } else {
+            1
+        }
+    }
+
+    fn selected_path(&self) -> Option<PathBuf> {
+        self.selected_row().map(|row| match row {
+            SelectedRow::Item(item) => item.path,
+            SelectedRow::Broken(error) => error.path,
+        })
+    }
+
+    fn restore_selected_path(&mut self, path: Option<PathBuf>) {
+        if let Some(path) = path {
+            let items = self.visible_items();
+            let position = items
+                .iter()
+                .position(|item| {
+                    item.path == path
+                        || entity_slug(&item.path)
+                            .is_some_and(|slug| Some(slug) == entity_slug(&path))
+                })
+                .or_else(|| {
+                    self.parse_errors()
+                        .iter()
+                        .position(|error| error.path == path)
+                        .map(|position| items.len() + position)
+                });
+            if let Some(position) = position {
+                self.set_scope_index(position);
+            }
+        }
+        self.clamp_selection();
+    }
+
+    pub fn set_attention_focus(&mut self, enabled: bool) {
+        let path = self.selected_path();
+        self.view_scope = ViewScope::Active;
+        self.needs_attention = enabled;
+        self.restore_selected_path(path);
+        self.reset_preview_scroll();
+    }
+
     pub fn apply_config_defaults(&mut self, config: &SpacetopConfig) {
         self.sort_mode = match config.defaults.sort {
             DefaultSort::Id => SortMode::Id,
@@ -646,7 +686,7 @@ impl OverviewState {
             scope: self.current_query_scope(),
             status: None,
             text: None,
-            field_filters: Vec::new(),
+            field_filters: self.attention_filters(),
             sort: match self.view_scope {
                 ViewScope::Archived => EntitySort::ArchiveDefault,
                 ViewScope::Active => match self.sort_mode {
@@ -677,53 +717,12 @@ impl OverviewState {
     /// current selection by core entity slug across the re-sort, mirroring the
     /// reload_from_snapshot pattern. No-op if there are no active items.
     pub fn cycle_sort_mode(&mut self) {
-        let active_items = self.active_items();
-        if active_items.is_empty() {
-            self.selected_index = 0;
-            return;
-        }
-
-        let prior_slug = self
-            .active_items()
-            .get(self.selected_index)
-            .and_then(|item| entity_slug(&item.path));
-
+        let path = self.selected_path();
         self.sort_mode = match self.sort_mode {
             SortMode::Id => SortMode::Status,
             SortMode::Status => SortMode::Id,
         };
-
-        let items = self.active_items();
-        let len = items.len();
-        if len == 0 {
-            self.selected_index = 0;
-            return;
-        }
-        if let Some(slug) = prior_slug {
-            if let Some(pos) = items
-                .iter()
-                .position(|item| entity_slug(&item.path).as_deref() == Some(slug.as_str()))
-            {
-                self.selected_index = pos;
-                return;
-            }
-        }
-        if self.selected_index >= len {
-            self.selected_index = len - 1;
-        }
-    }
-
-    fn active_items(&self) -> Vec<Entity> {
-        self.index.query(EntityQuery {
-            scope: QueryScope::Active,
-            status: None,
-            text: None,
-            field_filters: Vec::new(),
-            sort: match self.sort_mode {
-                SortMode::Id => EntitySort::Id,
-                SortMode::Status => EntitySort::Status,
-            },
-        })
+        self.restore_selected_path(path);
     }
 
     pub fn archived_items(&self) -> Vec<Entity> {
@@ -774,6 +773,9 @@ impl OverviewState {
     }
 
     pub(crate) fn toggle_scope(&mut self) {
+        if self.needs_attention {
+            self.set_attention_focus(false);
+        }
         self.view_scope = match self.view_scope {
             ViewScope::Active => {
                 self.ensure_archive_loaded();
