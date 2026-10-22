@@ -308,3 +308,99 @@ plain-language explanations with precise facts still inspectable. The plan
 preserves runtime suppression and read-only behavior, identifies the missing
 live coordinator surface without inventing one, and defines falsifiable
 automated and real-terminal/new-reader acceptance evidence.
+
+## Implementation walkthrough evidence
+
+The actual TUI was driven through a PTY at 80x24 and 40x12, with a 20x6 help
+check. Inputs included Home plus j/k to select the fixture rows, Enter, PgDn,
+w twice, q to close preview, ? / End / Home / Esc for help, and B for recorded
+evidence. The narrow walkthrough exposed a zero-height gate body; implementation
+now reserves scrollable body space before fixed metadata. At 40x12, PgDn exposes
+`Waiting for your` / `decision.` while the canonical label remains in the body.
+
+Storage fixtures were created under
+`/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-087-ebpsqyzl`;
+no live workflow checkout was changed. The following commands recreate the
+same fixture shapes from the worktree root, using only local Git/file operations:
+
+```sh
+ROOT=$(mktemp -d)
+for CASE in attached detached wrong missing unverified; do
+  WF="$ROOT/$CASE"
+  mkdir -p "$WF"
+  printf '%s\n' '---' 'commissioned-by: spacedock@0.27.3' \
+    'state: .spacedock-state' 'state-branch: spacedock-state/demo' \
+    'stages:' '  states:' '    - name: implement' '---' \
+    '# Storage walkthrough' > "$WF/README.md"
+  [ "$CASE" = missing ] && continue
+  STATE="$WF/.spacedock-state"
+  mkdir -p "$STATE"
+  printf '%s\n' '---' 'id: active' 'title: Ordinary readable task' \
+    'status: implement' '---' 'Readable task body.' > "$STATE/active.md"
+  [ "$CASE" = unverified ] && continue
+  git -C "$STATE" init --initial-branch spacedock-state/demo
+  git -C "$STATE" add active.md
+  git -C "$STATE" -c user.name='Spacetop Test' \
+    -c user.email=spacetop@example.invalid commit -m fixture
+  [ "$CASE" != detached ] || git -C "$STATE" checkout --detach
+  [ "$CASE" != wrong ] || git -C "$STATE" switch -c wrong-state
+done
+# Run separately for each CASE after building; set terminal dimensions as above.
+CASE=missing
+HOME="$ROOT/home" XDG_CONFIG_HOME="$ROOT/config" \
+  XDG_STATE_HOME="$ROOT/session-$CASE" \
+  target/debug/spacetop --workflow-dir "$ROOT/$CASE"
+# Gate cases use the same isolated environment and this workflow path:
+# target/debug/spacetop --workflow-dir tests/fixtures/durable-gates
+```
+
+Observed: pending says `Waiting for your decision.`; merge says approval is
+recorded and merging is pending; invalid says readiness cannot be trusted.
+Consumed, superseded, hold, withdrawn, advance and historical rows retained their
+distinct meanings and recorded details. Help's glossary distinguishes FO from
+the Git stage-change Activity view and states the unknown action destination.
+Missing state shows zero loaded tasks plus the missing-files warning; attached
+state has no topology warning; detached, wrong-branch and failed Git-probe cases
+retain readable tasks with warnings and full technical details in help.
+At 20x6, the fixed `?/Esc: close` hint stayed visible through PgDn/End/Home,
+and reopening returned to the warning's top. No new-reader paraphrases were
+obtained; these observations are agent-operated terminal evidence only.
+
+Read-only proof compared all fixture markdown SHA-256 values and Git HEADs
+before/after preview, help and room inspection: unchanged. The code checkout
+HEAD was `f1c087d5c0b61dd830548d5fc5f9d1dea16a0a61`; all three temporary state
+repositories remained at `f7763c3048e8d064ac286800f39496b67953ffe4`.
+`list --json` and `export --json` agreed on all 12 readiness values;
+`list --gate-readiness approved-awaiting-merge --json` returned only `merge`.
+Initial REA PTY captures were followed by direct Python PTY/pyte captures after
+the capture provider reported an ownership-cleanup error. Final direct runs
+exited 0. Raw session evidence is available to this handoff at
+`local://task087-terminal-evidence.json`; pyte was temporary external tooling,
+not a project dependency.
+
+## Stage Report: implement
+
+- DONE: Implement the recorded plain-language gate, storage, and contextual help explanations while preserving canonical labels, machine-readable values, unknown states, runtime suppression, and read-only boundaries.
+  Code commit `67755d2` on `spacedock-ensign/explain-status-in-plain-language`; typed explanations, scrollable contextual help, warning-first footer, and narrow-preview body reservation are implemented without changing core projection or schemas.
+- DONE: Prove the changed paths with focused behavioral checks and an actual terminal walkthrough; run final required formatting, tests, and make lint once edits are complete, and report any unavailable new-reader evidence honestly.
+  Final `cargo fmt && cargo test && make lint` succeeded: 705 tests passed across 21 suites, 4 ignored; Clippy ran all targets/features with warnings denied. Actual PTY observations and reproducible setup are above.
+- DONE: Update affected user documentation and record acceptance-criterion evidence and committed implementation changes in the stage report.
+  README and `docs/gate-room-browser.md` explain gate meanings, FO, history versus live activity, help scrolling, storage warnings, unknown destinations and read-only limits.
+- DONE: AC-1 automated and actual-terminal state distinction evidence.
+  `all_readiness_meanings_preserve_labels_even_without_records`, `no_readiness_does_not_invent_health_or_hide_invalid_data`, rendered gate/diff/preparation scenarios and the glossary test fail if pending, spent, held or unknown states become ready/completed; 80x24/40x12 walkthroughs observed their distinct meanings.
+- DONE: AC-2 precise facts and machine contracts.
+  `contextual_help_preserves_every_topology_problem_and_unicode_evidence` exercises every typed unverified problem at 120x40, 80x24, 40x12 and 20x6 and fails if exact diagnostics become unreachable; existing durable-gate JSON/filter and core authority tests passed, plus actual list/export/filter comparison above.
+- DONE: AC-3 safe guidance and inspection boundaries.
+  Gate/help assertions reject in-app approval/advance implications; actual wrong-branch/missing/probe-failure help directs repair outside Spacetop, room inspection displays unauthenticated recorded attribution, and fixture bytes/HEADs stayed unchanged.
+- DONE: Layout, input isolation and runtime suppression regression evidence.
+  `help_scrolls_without_acting_and_reopens_at_top` pins scroll bounds/reset, unchanged selection/index/scope and no sync request; `short_gate_preview_keeps_explanation_reachable_by_scrolling` catches the 40x12 zero-body failure. Existing task-row/header runtime-suppression and read-only/core guardrails passed.
+- SKIPPED: New-reader comprehension and paraphrase evidence for AC-1/AC-3.
+  No human reader was available; the first officer explicitly directed recording this limitation for captain review. Agent observations and string assertions are not substituted for that human proof.
+
+### Summary
+
+Implemented and committed the complete presentation change, including exact
+wrapped-help scroll bounds via the existing Ratatui rendered-line-info feature
+(no new project dependency). Final required checks and real-terminal scenarios
+passed after correcting the narrow preview and test-harness issues; human
+new-reader comprehension remains outstanding, so AC-1 is not fully proven.
