@@ -23,6 +23,17 @@ review-round:
         id: briefing:086:verify:round-1
         digest: sha256:48d24505983bfeef743bc9c7ed9bd6294336541b66ed277609e79656fcfddf50
         room-ref: ./review/verify/round-1
+gates:
+    version: 1
+    records:
+        - id: gate:086:verify
+          stage: verify
+          attempts:
+            - id: gate-attempt:086-verify-1
+              briefing:
+                id: briefing:086:verify:attempt-1:revision-1
+                digest: sha256:2dcbaf35c277e066881628efe4cad69b0aa60ec026958b3760908c86ec7b5e2a
+                room-ref: ./review/verify/briefing-1
 ---
 
 Help a person unfamiliar with the project find work that needs attention and understand why it appears.

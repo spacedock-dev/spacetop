@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:086:verify:attempt-1:revision-1",
+  "question": "Approve task 086 for PR publication accepting the outstanding unfamiliar-person walkthrough, or hold for that evidence?",
+  "artifacts": [
+    {
+      "id": "artifact:086:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/88f6442eb2951bb8cfc6d0489327fa7c5ea7bcf4/show-tasks-needing-attention/index.md",
+      "rev": "sha256:7b01407f0112f26d4929989653a3f273f4d0504d57c3dc2f0ddc0cc44fa2b16f",
+      "mediaType": "text/markdown",
+      "summary": "Needs attention view implemented with explicit recorded reasons and read-only evidence navigation. Independent verification found search identity defect V-1; correction 6cda5cd and retained round verify/1 resolve it, and re-review reports no remaining material technical findings. Recorded final checks: 717 tests, lint/build and exact terminal inventory proof. AC-2 unfamiliar-person evidence remains unavailable and requires a captain decision; it is not claimed as passed."
+    }
+  ]
+}
