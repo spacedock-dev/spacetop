@@ -1,7 +1,7 @@
 ---
 id: 081
 title: Inspect correction-round history
-status: plan
+status: implement
 source: "Captain-requested Spacedock release compatibility survey, 2026-10-01"
 kind: feature
 risk: medium
@@ -11,7 +11,7 @@ started: 2026-10-22T14:52:31Z
 completed:
 verdict:
 score: 0.85
-worktree:
+worktree: .worktrees/spacedock-ensign-inspect-correction-round-history
 issue:
 pr:
 mod-block:
