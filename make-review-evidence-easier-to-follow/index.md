@@ -12,8 +12,8 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-make-review-evidence-easier-to-follow
 issue:
-pr:
-mod-block:
+pr: "#90"
+mod-block: merge:pr-merge
 id: 088
 review-round:
     id: round:088:verify:1
