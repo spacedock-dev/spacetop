@@ -1,19 +1,19 @@
 ---
 title: Explain status labels in plain language
-status: verify
+status: done
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
 milestone: usability
 proof: "Behavior scenarios and a live terminal walkthrough; see acceptance criteria and proof plan."
 started: 2026-10-22T09:48:59Z
-completed:
-verdict:
+completed: 2026-10-22T13:27:20Z
+verdict: PASSED
 score:
 worktree: .worktrees/spacedock-ensign-explain-status-in-plain-language
 issue:
-pr: "#87"
-mod-block: merge:pr-merge
+pr: pr-merge:87
+mod-block:
 id: 087
 gates:
     version: 1
@@ -36,7 +36,8 @@ gates:
                 reason: Captain requested Create PR and then approve after explicit disclosure that AC-1 and AC-3 human new-reader evidence remains outstanding. Approval accepts that limitation for PR publication; no human walkthrough is claimed.
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+archived: 2026-10-22T13:27:20Z
 ---
 
 Help new users understand workflow status and where they can act without learning Spacedock terminology first.
