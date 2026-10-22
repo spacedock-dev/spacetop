@@ -327,3 +327,45 @@ Independent re-verification resolves both authorized correction findings but rec
 ### Summary
 
 Corrected only the authorized F3 compatibility boundary in product commit `362a936`, preserving F1/F2. Actual published correction history is now inspectable with its original binding and all eight records; committed regression coverage, final checks and terminal proofs retain safety and relationship boundaries. Canonical cycle-2 inputs are ready for independent verification and FO publication.
+
+## Stage Report: verify (cycle 2)
+
+- DONE: Independently verify all four acceptance criteria and typed correction-round schema compatibility, exact identity/provenance, safe bounded reads, partial-data handling and same-Briefing relationship semantics; report concrete material defects.
+  Independently reviewed `362a936014bb024a152ababcd8a9ebb02b18a1c3` against rejected `e462703`, upstream 0.27.3 and the published rooms; F3 is resolved, F1/F2 remain resolved, and no new material defect was found.
+- DONE: Review recorded 735-test, lint and six real-watcher results plus actual terminal navigation/refresh evidence without repeating green checks; exercise only missing or insufficiently proven changed-path claims.
+  Inspected original artifacts `263`/`255` and current `339` (740 normal tests, six ignored then six real-backend passes, successful warnings-denied clippy/build); only the newly published two-room/current-pointer transition received a fresh executable probe.
+- DONE: Record per-criterion evidence and verdict, including task 088 consumer relationship readiness, preserving read-only and no-authentication/no-inferred-approval boundaries; do not implement fixes or approve the gate.
+  All four criteria PASS below; no product edit, frontmatter mutation, publication, gate action or merge was performed.
+
+### Findings
+
+- **F3 — resolved.** `parser/correction_history.rs:49-54,88-100,118-120` accepts the recorded nonempty ID and binds exact ID/JCS digest; `correction_history.rs:250-276` adopts the manifest ID without synthesizing grammar. This matches upstream `internal/gates/round.go:70-71,100-102,191-192`.
+  New read-only probe observes retained verify/1 with exact `briefing:081:implement:round-1`, eight records and original digest `sha256:af4fc0cc529ede12b4cd0a43d0d0b07e02ddb7eb09dfc877df1a239a13ed8784`; current verify/2 has exact `briefing:081:implement:round-2`, four records and `sha256:766287b3014674caa54d49514341f292c61802b1879dc163fc208a418a1aae58`. Both have no diagnostics and remain advisory Revise/Answered.
+- **F1 — remains resolved.** Full source/target/direction selection and explicit removal invalidation remain in `app/correction_history.rs:11-29,98-109,222-244`; recorded passing removal/reorder tests fail under ordinal substitution. ASCII PTY frames show notify removing the selected response, Enter retaining the finding rather than opening the adjacent reviewer, and restoration not automatically selecting an edge.
+- **F2 — remains resolved.** Fixed provenance header remains in `ui/gate_room.rs:18-32`; current and retained 40x12 normal/ASCII artifact frames display provenance, stage/cycle, read-only and separate item SHA-256 status. The passing narrow-preview regression fails if byte verification replaces round provenance.
+
+### Per-criterion verdicts
+
+| Criterion | Verdict | Evidence and falsification |
+| --- | --- | --- |
+| AC-1 | PASS | Passing unchanged-upstream and differing-stage/opaque-ID regressions plus the new actual two-room probe preserve exact IDs, stage/cycle, reviewer and dispositions; deriving an ID from entity/stage/cycle or dropping either room fails. The unchanged upstream task/3j pointer also parses successfully in the new probe. |
+| AC-2 | PASS | Existing numeric-order/current/stale/mismatch/prefix tests and PTY cycle 1/2/10 navigation remain green. The new probe temporarily selects historical round1 only in memory: eight unchanged records become current while newer round2 stays retained; selecting newest instead fails. F1/F2 retain refresh/provenance proof. |
+| AC-3 | PASS | Actual round1 record #1–#8 detail frames show actor/time/body/reason/includes and finding -> FO disposition -> Back. The new probe validates every edge endpoint against its own full room identity in both published logs; cross-room resolution fails. Existing same-Briefing chain tests reject inferred transitive/prose/adjacent-round links and distinguish reviewer evidence from follow-up. |
+| AC-4 | PASS | Current artifact `339` includes partial/invalid JSONL, legacy/stale pointers, flat/folder/archive/split-root/worktree origins, bounds, symlinks/nonregular replacement, exact Git/read-only, app/render and all six real-backend checks. Removing prefix stops, safe-root/descriptor bounds or refresh invalidation falsifies these tests; PTYs additionally show partial-tail diagnostics, narrow/ASCII headers and notify invalidation. |
+
+### Evidence and limits
+
+- New probe receipt: `/tmp/spacetop-081-cycle2-reverify-evidence.json`, SHA-256 `0126d79828848b8d77c25fa8557b9737027320724f95682cef597307afc1a724`; contains stdin Rust source, exact commands, zero compile/run exits and all observed record/edge counts. It links the existing core build; the temporary executable was removed.
+- Inspected terminal receipt: `/tmp/spacetop-081-cycle2-terminal-evidence.json`, independently hashed `e1973b2efe06fc25b2b2572d31347341334f2f469e0c95009fd65fc1ab642ccf`; four zero-exit sessions include an explicitly unsuccessful symlink-root attempt before canonical-path success. Its actual workflow and disposable inspection inventories are unchanged.
+- Published round1 raw SHA-256 values still match that receipt: Briefing `b2cff26e7f260d211889ca93b788e52588f6eae04132cacd443572bc6d27d380`, JSONL `4c729399068136238c616441a1f4bcc426ae0260432fdae82fa1dc0d68e2315f`. Neither round was renamed or republished.
+- Existing green suites, formatter, build and terminal navigation were not rerun. Formatting is implementer-recorded; this reviewer inspected retained check output and exercised only the post-publication compatibility gap. No upstream recorder/validator was invoked.
+
+### Task 088 consumer readiness and judgment
+
+Task 088 may consume `WorkflowIndex::correction_rounds` and `CorrectionHistory::{correction_round, correction_record, correction_relationships}` for recorded same-Briefing response navigation, with full origin/stage/cycle/Briefing identity, edge role/direction/ordinal/validity and incomplete-evidence diagnostics. Unbound shared flat-entity rooms intentionally remain ambiguous with no records; retained folder rooms do not claim a historical pointer digest. Cross-Briefing links or semantic fixed/declined classifications remain unsupported without an explicit upstream schema; attribution is not authentication, Answered is not approval, and no missing relationship implies completion.
+
+Code-review judgment: **Approve the reviewed changes**; verification is PASS with no outstanding material findings. This is not captain gate approval or authorization to mutate workflow state; FO/captain retain routing and merge authority.
+
+### Summary
+
+Independent cycle-2 verification resolves F3 against the unchanged upstream pointer and both actually published correction rooms while preserving the F1/F2 fixes. All four acceptance criteria pass with existing green evidence plus a narrowly scoped new read-only compatibility probe; task 088's recorded-relationship dependency is ready within the stated schema boundaries.
