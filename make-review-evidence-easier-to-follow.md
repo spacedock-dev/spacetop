@@ -121,3 +121,34 @@ Capture command, fixture revision, dimensions, key sequence and observed text/sc
 ### Summary
 
 Completed the source-grounded implementation and proof plan for all of task 088, including direct canonical-report navigation and honest evidence-failure presentation. Full implementation is not ready until task 081 supplies typed correction-round records and authoritative response relationships; AC-3 remains intact and no 081 work was performed.
+
+## Stage Report: implement
+
+- DONE: AC-1 — The review question and main report are easy to reach.
+  Code commit `65093ee`: question/explicit absence leads gate and round content; `r` selects only the canonical `artifact:gate-review` Artifact, preserves supporting selection on Back, and revalidates the exact opened identity on refresh. Core `main_report` and app `direct_report_preserves_support_selection_and_refreshes_exact_preview_identity` fail if order, a filename, a Reference or a replacement item becomes the report.
+- DONE: AC-2 — Evidence failures explain their effect.
+  Exhaustive typed room explanations retain exact diagnostic detail and recorded decisions; failed/non-UTF-8 bytes have no verified preview. App failure cases cover missing/tampered/blank/unidentified/binary/unsafe/unsupported/oversized evidence; Ratatui and actual terminal runs show the question first and recorded Approve independently. Invalid review logs explain prefix limitations without discrediting an independently bound question.
+- DONE: AC-3 — Corrections lead to recorded responses.
+  Browser-local `f` filters detail to task081's typed incoming FollowUp edges; Enter follows disposition/closing records and Back restores the full source identity, filter and selected edge. Response tests cover multiple targets, refresh, unrelated cycle-2 prose/IDs, partial cycle-10 evidence and a dangling validation target; they fail if reviewer evidence, another Briefing or a nearby record becomes a response. No response, unknown evidence and recorded response remain distinct; none means fixed/approved.
+- DONE: AC-4 — Existing evidence safety stays intact.
+  Existing core safe-root/path/size/digest/replacement/exact-Git and no-write/core-dependency tests pass; new report opens still call `gate_room_item`, round artifacts still call `correction_history::read_item`. Actual inspection with isolated absolute XDG roots left all 72 workflow files unchanged, including archive, round and untracked files: zero additions, removals or digest changes; no sync/action was invoked.
+- DONE: Implement question-first review navigation and direct canonical-report access with clear missing/invalid evidence explanations, preserving exact recorded decisions and verified reader boundaries.
+  README, gate-room guidance, footer, app/render tests and reusable `tests/fixtures/review-evidence` setup/expectations accompany `65093ee`; no new dependency, scanner, write control or task089 work.
+- DONE: Integrate all AC-3 correction-to-recorded-response navigation using merged task081 APIs and full identities; distinguish no recorded response from unknown evidence, preserve Back/refresh provenance, and never infer cross-Briefing links or completion.
+  Readiness: the historical planning hold is satisfied by merged task081 PR89 (`dc8589a`). Implementation consumes `WorkflowIndex::correction_rounds`, `CorrectionHistory` record/relationship queries and the owning round reader, preserving opaque Briefing IDs, selected-edge identity and current/retained provenance. Historical plan/report text is unchanged.
+- DONE: After edits run final required tests/formatting/lint, actual terminal complete/missing/tampered/multi-round/narrow scenarios and full unchanged-file inventory proof; update docs and record DONE/FAILED AC-n evidence bullets and committed stage report.
+  Final `cargo fmt`, `cargo test` (749 passed, 6 ignored), `make lint` and `cargo build -p spacetop` passed. Explicit real-notify test `cargo test -p spacetop-core --test gate_rooms room_artifact_changes_removal_creation_and_state_replacement_refresh -- --ignored` passed; actual separate replacement run invalidated the preview and refused tampered bytes while retaining recorded Approve.
+
+### Terminal proof
+
+Fixture setup: `python3 tests/fixtures/review-evidence/setup.py <canonical-temp-root>/workflow`; disposable fixture commit `eb70b27443f34ea8f369c03c2d70d3ab6a56c0fd`. Actual debug binary ran under a macOS PTY with `TERM=xterm-256color`, `SPACETOP_ASCII=1`, isolated XDG config/state, and pyte 0.8.2 screen capture (local proof-only dependency).
+
+Complete: `B,r,Esc,Tab,j,Enter` showed question, canonical report, then entity-snapshot bytes. Missing/blank/tampered/no-designation/unsupported entities showed distinct failures and exact recorded Approve. History: `B,h,Tab,Enter,f,Enter,Enter,Esc,Esc` followed job-592 → decline disposition → closing Resolution → source; cycle 2 had no linked response despite repeated prose, cycle 10 retained known links with unknown additional responses, and validation showed the non-navigable dangling ID.
+
+Actual runs at 150x50, 100x40, 80x24, 40x12 and 20x6 retained usable question/absence and Back navigation; current/retained labels stayed visible. All terminal processes exited 0. Noncanonical macOS `/var` was correctly refused as a symlink; the documented setup canonicalizes to `/private/var` without weakening readers.
+
+Operational evidence is local, not product documentation: `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/task088-proof-3mtkv0uz/` contains final screen/key JSON and ANSI captures, run metadata, before/after complete inventories, `no-write-result.json`, `proof-summary.json`, and the separate refresh-replacement capture. The no-write comparison preceded deliberate fixture mutation.
+
+### Summary
+
+Implemented all four acceptance criteria in product commit `65093ee`. Reviewers can reach the canonical report directly and follow only recorded same-Briefing responses without losing context or confusing evidence failure, log closure, gate approval or execution authority; required checks and actual read-only terminal proof passed.
