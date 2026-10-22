@@ -153,3 +153,46 @@ Completed a source-grounded implementation and proof plan for all four acceptanc
 ### Summary
 
 Implemented all four acceptance criteria with typed, bounded, read-only correction history and explicit same-Briefing relationship navigation. Current pointer provenance, incomplete evidence, artifact verification and advisory closure remain separate facts; no cross-round response, finding completion or gate approval is inferred. Product and operational evidence are committed/referenced without approving a gate, merging work, or implementing task 088.
+
+## Stage Report: verify
+
+- DONE: Independently verify all four acceptance criteria and typed correction-round schema compatibility, exact identity/provenance, safe bounded reads, partial-data handling and same-Briefing relationship semantics; report concrete material defects.
+  Independently reviewed product commit `9a3c37f` against its parent, the specified contract, implementation/tests and retained execution evidence; found two reproducible navigation/presentation defects below.
+- DONE: Review recorded 735-test, lint and six real-watcher results plus actual terminal navigation/refresh evidence without repeating green checks; exercise only missing or insufficiently proven changed-path claims.
+  Inspected artifacts `263`/`255` and actual PTY screens/actions; ran only two previously uncovered app/TestBackend probes, whose observations reproduce F1/F2 (artifact `281`).
+- DONE: Record per-criterion evidence and verdict, including task 088 consumer relationship readiness, preserving read-only and no-authentication/no-inferred-approval boundaries; do not implement fixes or approve the gate.
+  Criterion verdicts and the concrete consumer API are recorded below; no production changes, frontmatter changes, gate action or merge action were made.
+- SKIPPED: Repeat full builds/tests/lint/formatters, implement corrections, or retain temporary verification scaffolding.
+  Existing green checks were not repeated; the temporary two-probe test source was removed after recording observations.
+
+### Findings and proposed classifications
+
+- **F1 — High / material — selected response silently changes to another relationship after refresh.** `crates/spacetop/src/app/correction_history.rs:18,78,183-197` stores the selected relationship as an ordinal, clamps it after replacing facts, then opens the new edge at that ordinal. This violates identity-preserving refresh and the requirement to report removed selections rather than open an adjacent record; task 088 must not reuse this behavior.
+  Reproducer using the committed sample: B, h, Tab, Enter, j selects the incoming `annotation:decline-duplicate-member` response to job-592. Replace round-1's log with its first three complete newline-terminated records and refresh. Observed `selected_before=annotation:decline-duplicate-member; selected_after=resolution:roborev-3j-round-1; notice=None`; Enter opens that reviewer Resolution. Retain the selected edge by full source/target/direction identity and explicitly invalidate a removed edge instead of retargeting it.
+- **F2 — Medium / material — opening an artifact loses current/retained provenance on narrow terminals.** `crates/spacetop/src/ui/gate_room.rs:15-20,47-118` replaces the provenance banner with `Item SHA-256 verified` and omits the round column below width 70; `app/correction_history.rs:296-299` also replaces all contextual content with artifact text. Thus digest verification is visible but the current-versus-historical distinction required by AC-2 and the rendering plan is not.
+  Reproducer: on the unchanged sample use B, h, Tab, j five times, Enter at 40x12. The actual TestBackend screen contains `Item SHA-256 verified | read-only` and the candidate text, but no CURRENT, RETAINED, stage or cycle. Preserve round provenance separately from item-byte verification while previewing; add current and retained narrow-preview coverage.
+
+### Per-criterion verdicts
+
+| Criterion | Verdict | Inspected evidence and falsification |
+| --- | --- | --- |
+| AC-1 | PASS | Strict duplicate-safe pointer/Briefing/log decoding, unchanged v0.27.3 fixture digest, stage ordering and numeric 1/2/10 ordering, first reviewer verdict, actor/body and advisory closure are covered by the 12 core integration tests and observed PTY screens. Dropping round 2, sorting lexically or using the closing Resolution as reviewer would fail those assertions. |
+| AC-2 | FAIL | Current older pointer, retained/no-pointer fallback, missing target, malformed/mismatched evidence and valid-prefix visibility are evidenced; however F2 removes the promised provenance during narrow artifact inspection, and F1 silently substitutes a removed relationship selection. |
+| AC-3 | PASS for typed record/relationship semantics; navigation correction required | Real job-592 -> disposition -> closing Resolution edges, source/target identities, reviewer-evidence versus follow-up roles, physical order, Back navigation and negative controls for repeated IDs/prose in another round are exercised. No inferred cross-Briefing edge or finding-completion/approval classification was found. F1 affects navigation after evidence replacement, not the validity of the core edge graph. |
+| AC-4 | FAIL pending F1/F2 | Existing tests and real PTY evidence establish origins, legacy cases, unsafe-path/size/digest/exact-Git refusal, partial-tail recovery, round rename/add/delete and artifact invalidation. The new probes falsify identity-preserving relationship refresh and narrow-preview provenance, which existing tests did not exercise. |
+
+### Verification evidence and limits
+
+- Artifact `263` contains the focused checks, the full 735-pass/6-ignored run and successful `cargo clippy --all-targets --all-features -- -D warnings`; artifact `255` contains six passing real-backend checks. Formatting is recorded by the implementer; no formatter was rerun.
+- Read the actual navigation, actor/rationale/includes, missing/legacy/partial, narrow/ASCII and mutation screens in `/tmp/spacetop-081-proof-evidence.json`; its independently recomputed SHA-256 is `7f4c02ca865f730743cbb150a5e99c1900c4104da6f4e1512e834d20b3235015`. The receipt includes raw PTY bytes, 52 frames, both zero exits and the unchanged 13-file inspection inventory.
+- Real notify evidence shows partial append -> completed Annotation -> atomic replacement, selected-round removal, new-round discovery/deletion and artifact-preview invalidation. Poll evidence is narrower: `watcher_fs.rs:173-203` exercises a direct PollWatcher with `compare_contents(true)`, not the production fallback's default configuration or end-to-end app reload; do not describe it as full production polling proof.
+- Additional execution: `cargo test -p spacetop --test correction_history_verify -- --nocapture` ran two temporary probes (`removed_selected_relationship_retargets_to_reviewer`, `artifact_preview_hides_round_provenance_on_narrow_terminal`). Both passed assertions documenting the defects, not acceptance assertions; artifact `281` preserves the observed identities and 40x12 screen. The reproducible fixture/key/mutation procedures above remain after probe removal.
+- Read-only boundary: safe-root/descriptor-relative no-follow regular-file reads, 2 MiB bounds, discovery caps, exact local Git blobs and digest checks remain shared with gate rooms. Main/state evidence origin survives worktree body merges; historical rows do not claim a pointer digest. Existing guards and inspection inventory provide exercised no-write evidence; recorded actor/decision text is neither authentication nor approval authority.
+
+### Task 088 consumer readiness
+
+The backend prerequisite now exists: `WorkflowIndex::correction_rounds(&Entity) -> CorrectionHistory`, then `CorrectionHistory::{correction_round, correction_record, correction_relationships}`; the consumer owns/caches the bounded snapshot. Relationships carry full source/target identities, direction, includes ordinal, validity and reviewer-evidence/follow-up role; invalid edges and partial-log diagnostics remain available on each round. Task 088 can consume same-Briefing inverse includes without another parser, and use `correction_history::read_item` for contained round-relative evidence. It must not equate a response or Answered with fixed/approved, treat reviewer evidence as a response, invent cross-round links, or inherit F1's ordinal-based selection; integration readiness is conditional on correcting the shared UI defects, not a gate/merge decision.
+
+### Summary
+
+Independent verification recommends **request changes** for F1 and F2, both proposed material findings grounded in executed missing-path probes. The typed schema, bounded read-only evidence and same-Briefing query contract have substantial existing proof, but the delivered navigation/rendering does not yet satisfy the full refresh/provenance contract; no gate approval or merge was performed.
