@@ -7,17 +7,17 @@ fn footer_renders_stable_split_root_topology_diagnostics() {
     let cases = [
         (
             StateCheckoutDisposition::Detached,
-            "State detached; snapshot may be stale",
+            "Progress files are not on a branch; this view may be out of date.",
         ),
         (
             StateCheckoutDisposition::WrongBranch {
                 actual_branch: "wrong-state".to_string(),
             },
-            "State on branch wrong-state; expected spacedock-state/demo",
+            "Progress files are on a different branch.",
         ),
         (
             StateCheckoutDisposition::Missing,
-            "State checkout missing; no state loaded",
+            "Progress files are missing; no task state was loaded.",
         ),
         (
             StateCheckoutDisposition::Unverified {
@@ -25,7 +25,7 @@ fn footer_renders_stable_split_root_topology_diagnostics() {
                     error: "not a Git checkout".to_string(),
                 },
             },
-            "State topology unverified: Git top-level probe failed: not a Git checkout; sync blocked",
+            "Spacetop could not verify the progress-file checkout; state sync is blocked.",
         ),
     ];
     for (disposition, expected) in cases {
@@ -42,10 +42,10 @@ fn footer_renders_stable_split_root_topology_diagnostics() {
 }
 
 #[test]
-fn footer_explains_external_state_is_readable_but_not_repaired_or_synced() {
+fn help_explains_external_state_is_readable_but_not_repaired_or_synced() {
     use spacetop_core::domain::{StateCheckoutDisposition, StateTopologyProblem, WorkflowStorage};
 
-    let app = app_with_storage(WorkflowStorage::SplitRoot {
+    let mut app = app_with_storage(WorkflowStorage::SplitRoot {
         entity_dir: PathBuf::from("/tmp/workflow/.spacedock-state"),
         expected_branch: "spacedock-state/workflow".to_string(),
         disposition: StateCheckoutDisposition::Unverified {
@@ -54,13 +54,11 @@ fn footer_explains_external_state_is_readable_but_not_repaired_or_synced() {
             },
         },
     });
-    let mut terminal = Terminal::new(TestBackend::new(320, 24)).expect("terminal");
-    terminal.draw(|frame| render(frame, &app)).expect("render");
-    let rendered = buffer_text(terminal.backend().buffer());
-
+    let rendered = collect_help_text(&mut app, 80, 24);
+    let compact: String = rendered.chars().filter(|c| !c.is_whitespace()).collect();
     assert!(
-        rendered.contains(
-            "State checkout resolves outside workflow at /tmp/external-state; snapshot is readable, sync is blocked. Materialize it at /tmp/workflow/.spacedock-state; Spacetop will not repair it"
+        compact.contains(
+            &"State checkout resolves outside workflow at /tmp/external-state; snapshot is readable, sync is blocked. Materialize it at /tmp/workflow/.spacedock-state; Spacetop will not repair it".chars().filter(|c| !c.is_whitespace()).collect::<String>()
         ),
         "rendered={rendered}"
     );
@@ -82,7 +80,121 @@ fn footer_has_no_topology_warning_for_attached_or_single_root() {
         let mut terminal = Terminal::new(TestBackend::new(240, 24)).expect("terminal");
         terminal.draw(|frame| render(frame, &app)).expect("render");
         let rendered = buffer_text(terminal.backend().buffer());
-        assert!(!rendered.contains("State "), "rendered={rendered}");
+        assert!(
+            !rendered.contains("Progress files") && !rendered.contains("?: details"),
+            "rendered={rendered}"
+        );
+    }
+}
+
+fn collect_help_text(app: &mut App, width: u16, height: u16) -> String {
+    app.toggle_help();
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+    let mut text = String::new();
+    loop {
+        terminal
+            .draw(|frame| {
+                crate::ui::help::render_help_popup(frame, frame.area(), app);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let screen = buffer_text(buffer);
+        assert!(
+            screen.contains("?/Esc: close"),
+            "{width}x{height}: {screen}"
+        );
+        let popup_width = width.min(64);
+        let left = (width - popup_width) / 2;
+        let last = app.help_scroll.get() == app.help_max_scroll.get();
+        // Collect each wrapped row exactly once, excluding borders and hint.
+        let end_row = if last { height - 2 } else { 2 };
+        for y in 1..end_row {
+            let mut x = left + 1;
+            while x < left + popup_width - 1 {
+                let symbol = buffer[(x, y)].symbol();
+                text.push_str(symbol);
+                x += unicode_width::UnicodeWidthStr::width(symbol).max(1) as u16;
+            }
+            text.push('\n');
+        }
+        if last {
+            break;
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    }
+    app.close_help();
+    text
+}
+
+#[test]
+fn contextual_help_preserves_every_topology_problem_and_unicode_evidence() {
+    use spacetop_core::domain::{
+        StateCheckoutDisposition::Unverified, StateTopologyProblem::*, WorkflowStorage,
+    };
+    let path = PathBuf::from("/tmp/進度/very-long-progress-directory/記録/state-checkout");
+    let error = "permission denied: probe evidence".to_string();
+    let problems = [
+        OutsideDefinition {
+            resolved_state: path.clone(),
+        },
+        DefinitionPathResolution {
+            path: path.clone(),
+            error: error.clone(),
+        },
+        StatePathResolution {
+            path: path.clone(),
+            error: error.clone(),
+        },
+        GitTopLevelProbe {
+            error: error.clone(),
+        },
+        EmptyGitTopLevel,
+        GitTopLevelResolution {
+            path: path.clone(),
+            error: error.clone(),
+        },
+        CheckoutRootMismatch {
+            actual_top: path.clone(),
+        },
+        BranchProbe { error },
+        EmptyBranch,
+    ];
+    for problem in problems {
+        for (width, height) in [(120, 40), (80, 24), (40, 12), (20, 6)] {
+            let mut app = app_with_storage(WorkflowStorage::SplitRoot {
+                entity_dir: path.clone(),
+                expected_branch: "spacedock-state/demo".into(),
+                disposition: Unverified {
+                    problem: problem.clone(),
+                },
+            });
+            let diagnostic = app.as_overview().unwrap().topology_diagnostic().unwrap();
+            let rendered = collect_help_text(&mut app, width, height);
+            let compact: String = rendered.chars().filter(|c| !c.is_whitespace()).collect();
+            let precise: String = diagnostic
+                .to_string()
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            assert!(compact.contains(&precise), "{width}x{height}: {rendered}");
+            assert!(compact.contains("Ycannotrepair"), "{rendered}");
+        }
+    }
+}
+
+#[test]
+fn warning_footer_keeps_details_hint_visible_on_narrow_terminals() {
+    use spacetop_core::domain::{StateCheckoutDisposition, WorkflowStorage};
+    for (width, height) in [(120, 40), (80, 24), (40, 12), (20, 6)] {
+        let app = app_with_storage(WorkflowStorage::SplitRoot {
+            entity_dir: PathBuf::from("/missing"),
+            expected_branch: "expected".into(),
+            disposition: StateCheckoutDisposition::Missing,
+        });
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let text = buffer_text(terminal.backend().buffer());
+        assert!(text.contains("?: details"), "{width}x{height}: {text}");
     }
 }
 

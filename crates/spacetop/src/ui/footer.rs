@@ -42,16 +42,24 @@ pub(super) fn render_status_footer(
         spans.push(Span::styled(label.clone(), style));
     }
 
-    let para = Paragraph::new(Line::from(spans)).alignment(Alignment::Center);
+    let storage_warning = matches!(
+        session.active_state().storage(),
+        spacetop_core::domain::WorkflowStorage::SplitRoot { disposition, .. }
+            if !matches!(disposition, spacetop_core::domain::StateCheckoutDisposition::Attached)
+    );
+    let alignment = if storage_warning || !warnings.is_empty() {
+        Alignment::Left
+    } else {
+        Alignment::Center
+    };
+    let para = Paragraph::new(Line::from(spans)).alignment(alignment);
     frame.render_widget(para, area);
 }
 
 /// Build the ordered footer pills for the active session, each paired with
-/// its foreground color. The first pill is the sync-status pill (`Syncing…`
-/// / `✓ Synced …` / `⚠ Sync failed: …` / `Sync unavailable: …`) colored by
-/// outcome when a sync has been attempted, followed by the parse-error
-/// count (`⚠ N broken`, red) when any per-entity parse failures are present;
-/// the remainder are the static key hints, which stay neutral white.
+/// its foreground color. Storage warnings and their help hint come first,
+/// followed by copy feedback, other warnings, sync status and parse-error
+/// counts. Ordinary key hints follow these diagnostics.
 #[allow(dead_code)]
 pub(crate) fn status_footer_hints(session: &OverviewSession) -> Vec<(String, Color)> {
     status_footer_hints_with_keymap(session, &ResolvedKeymap::default(), &[])
@@ -73,6 +81,12 @@ fn status_footer_hints_with_keymap_and_copy(
 ) -> Vec<(String, Color)> {
     let preview_open = session.active_state().preview_open();
     let mut hints: Vec<(String, Color)> = Vec::new();
+    if let Some(diagnostic) = session.active_state().topology_diagnostic() {
+        hints.push((
+            format!("?: details | {}", diagnostic.explanation()),
+            Color::Yellow,
+        ));
+    }
     match copy_feedback {
         Some(CopyFeedback::Succeeded) => {
             hints.push(("\u{2713} ID copied".to_string(), Color::Green));
@@ -84,9 +98,6 @@ fn status_footer_hints_with_keymap_and_copy(
     }
     for warning in warnings {
         hints.push((format!("\u{26A0} {warning}"), Color::Yellow));
-    }
-    if let Some(diagnostic) = session.active_state().topology_diagnostic() {
-        hints.push((format!("\u{26A0} {diagnostic}"), Color::Yellow));
     }
     let sync_status = session.active_state().sync_status();
     if let Some(label) = sync_pill_label(sync_status) {
