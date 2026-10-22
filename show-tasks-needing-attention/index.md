@@ -276,3 +276,32 @@ Verification verdict: request changes for High defect V-1; the stage review is c
 ### Summary
 
 Fixed only authorized V-1 by sharing the focused search projection across rendering and activation, with a rendered identity regression and successful exact terminal/byte-inventory proof. Product and canonical correction artifacts are committed; unfamiliar-person AC-2 evidence remains unavailable, and round publication, gate action and merge remain with the first officer.
+
+## Stage Report: verify (cycle 1)
+
+- DONE: Independently review the attention projection, focused row identity, reason rendering and report/evidence navigation against all task acceptance criteria and no-guessing/read-only boundaries; report concrete material defects.
+  Reviewed corrected `6cda5cd` and evidence commit `6d74b25`, not rejected `fa4fe00`; no remaining material technical defect found. Standards and spec review were performed inline because subagent spawning is unavailable.
+- DONE: Assess recorded 716-test, lint, build and actual PTY byte-inventory evidence without repeating green checks; exercise changed-path claims only where evidence is missing or insufficient.
+  Correction supersedes the original count: `artifact://175` records 717 passing tests, four ignored, successful clippy and build; formatting is recorded by the implementation report. Inspected retained terminal captures and compared stored before/after inventories; no missing changed-path claim warranted another execution.
+- DONE: Record explicit per-criterion coverage and verdict, keeping unavailable unfamiliar-person evidence separate from technical defects and never waiving it or claiming it occurred.
+  Technical verdict: pass corrected implementation; full acceptance remains incomplete solely for unavailable AC-2 unfamiliar-person evidence. This is a verification outcome, not gate approval or permission to merge.
+- DONE: Resolve V-1 — focused popup and activation identify the same row.
+  `app.rs:1352-1359` supplies scope/text/attention filtering to popup rendering (`ui/search.rs:35`), navigation bounds and activation; the visible-result cap is shared. No duplicate unfiltered render query remains.
+  `ui/tests.rs:558-577` renders the popup after two Down inputs, rejects consumed/normal/superseded, and asserts the subsequent preview is #feedback / feedback.md / feedback-pending; restoring the old renderer makes these assertions fail. Its recorded execution passed.
+- DONE: AC-1 — focused membership and honest reasons.
+  Reviewed exhaustive typed readiness mapping and invalid-data precedence in `domain/attention.rs`, exact fixture membership in core `tests/attention.rs`, existing reason/render coverage, and the corrected popup. Missing/unverified diagnostics remain distinct from recorded holds; no prose or optional-field guesses were added.
+- DONE: AC-2 — selected-task navigation technical coverage.
+  `docs/evidence/attention-086-correction-1/terminal.json` records the exact 100x24 rejection sequence highlighting feedback and opening #feedback with feedback.md and feedback-pending, exiting 0; it closes the previously uncovered rendered-row identity failure.
+  Existing `local://attention-086-terminal.json` captures show SHA-256-verified `Exact candidate review.`, explicit Missing room/artifact diagnostics and `Preview invalidated: Missing` after deliberate deletion. Prior narrow-terminal and app/browser evidence remains applicable because correction changes only search projection reuse.
+- SKIPPED: AC-2 — unfamiliar-person comprehension acceptance.
+  No uncoached unfamiliar participant's actions, explanation or missing-evidence interpretation are available. Agent PTY and automated regression evidence do not satisfy this requirement; AC-2 overall remains incomplete, not failed due to a remaining code defect and not waived.
+- DONE: AC-3 — runtime silence never means blocked work.
+  The classifier accepts only gate data/readiness/preparation; core integration crosses runtime states, old/recent timestamps and unavailable scans while asserting identical membership/reasons. A runtime-only inclusion would break that assertion; correction adds no runtime inputs.
+- DONE: AC-4 — inspection remains read-only.
+  Stored correction inventories compare equal for all 25 workflow files, seven worktree Git files and 12 common Git control paths; original independent navigation inventories also match all 26 workflow and 52 Git files. Recorded write-safety/core-boundary tests pass; correction introduces no I/O, writer, approval, dispatch or evidence-root change.
+- SKIPPED: Repeat green checks, modify product code, republish verify/1, or approve/transition/merge.
+  Recorded tests and exact terminal evidence cover the corrected claim; no reruns or product fixes were necessary. Existing published round/frontmatter is left untouched; only this body report is appended.
+
+### Summary
+
+Independent correction verification finds V-1 resolved by the shared search projection, with consumer-visible regression and exact terminal evidence supporting technical acceptance. No remaining material technical findings were identified in the corrected scope; full task acceptance remains incomplete until the explicitly required unfamiliar-person AC-2 exercise is actually recorded.
