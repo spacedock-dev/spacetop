@@ -555,6 +555,29 @@ fn attention_palette(app: &mut App) {
 }
 
 #[test]
+fn attention_search_highlight_opens_the_same_task_and_excludes_unfocused_rows() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/attention");
+    let snapshot = OverviewState::load(root.clone()).unwrap().snapshot();
+    let mut app = App::from_snapshot(root, snapshot);
+    attention_palette(&mut app);
+    app.handle_key(key(KeyCode::Char('/')));
+    app.handle_key(key(KeyCode::Down));
+    app.handle_key(key(KeyCode::Down));
+
+    let text = render_text(&app, 100, 24);
+    assert!(text.contains("> feedback"), "{text}");
+    for excluded in ["consumed", "normal", "superseded"] {
+        assert!(!text.contains(excluded), "{excluded}: {text}");
+    }
+    app.handle_key(key(KeyCode::Enter));
+    app.handle_key(key(KeyCode::Enter));
+    let preview = render_text(&app, 100, 24);
+    assert!(preview.contains("#feedback"), "{preview}");
+    assert!(preview.contains("feedback.md"), "{preview}");
+    assert!(preview.contains("feedback-pending"), "{preview}");
+}
+
+#[test]
 fn attention_renders_distinct_reasons_and_preserves_narrow_preview_navigation() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/attention");
     let mut snapshot = OverviewState::load(root.clone()).unwrap().snapshot();

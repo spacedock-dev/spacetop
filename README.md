@@ -101,6 +101,8 @@ replacement needed, approval awaiting advance/merge, or invalid/missing or
 unverified information. `all-tasks` restores the normal list; `a` leaves focus
 and opens archives. Focus is per workflow tab and is not saved between sessions.
 Sorting, search, mouse selection and refresh all use the focused rows.
+The search popup excludes tasks outside that focus, and Enter selects the task
+highlighted in the popup.
 In search and the palette, type the full query (including j/k); use Up/Down
 to select a result and Esc to cancel.
 

@@ -1349,7 +1349,7 @@ fn search_result_len(session: &OverviewSession, state: &SearchState) -> usize {
     len.min(SEARCH_VISIBLE_RESULT_LIMIT)
 }
 
-fn search_results(session: &OverviewSession, state: &SearchState) -> Vec<Entity> {
+pub(crate) fn search_results(session: &OverviewSession, state: &SearchState) -> Vec<Entity> {
     let active = session.active_state();
     active.index().query(EntityQuery {
         scope: active.current_query_scope(),
