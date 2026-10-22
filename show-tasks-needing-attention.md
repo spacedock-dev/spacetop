@@ -170,3 +170,40 @@ Proof status at planning: no task 086 actual-terminal walkthrough has been perfo
 ### Summary
 
 Planned a focused read-only attention view from existing typed facts, with distinct review, recorded hold/follow-up, preparation and invalid/unverified-information reasons. The implementation path reuses task 087 explanations and current query/browser conventions, specifies negative and integration tests, and preserves the actual-terminal and unavailable new-reader proof obligations without claiming feature acceptance.
+
+## Stage Report: implement
+
+- DONE: Implement the recorded typed attention projection and focused query-backed view with visible reasons, consistent selection/search/reload behavior, and navigation to existing report and safe gate evidence surfaces.
+  Product commit `fa4fe00` on `spacedock-ensign/show-tasks-needing-attention` implements the allocation-free core reason projection, `NeedsAttention` filter, per-tab transient palette focus, two-line reasons and existing report/browser routes.
+- DONE: Preserve read-only, canonical-state, runtime-suppression, no-guessing, invalid-information and missing-evidence boundaries; reuse task 087 explanations without duplicate conventions.
+  Attention presentation reuses `gate_explanation`; precise labels, diagnostic strings and verified-byte readers remain authoritative. Blank decision reasons explicitly say “No reason recorded”; no schema, runtime detector, evidence root or workflow-write capability was added.
+- DONE: After edits, run final formatting, cargo test and make lint; exercise actual terminal navigation and byte-inventory safety; update docs and commit implementation plus criterion evidence, explicitly noting unavailable human proof.
+  Final `cargo fmt`, `cargo test` (716 passed, four existing ignored tests, 22 suites), `make lint` and `cargo build -p spacetop` passed; final command output is `artifact://150`. README, browser guidance and representative fixtures are committed.
+- DONE: AC-1 — classify every supported reason and exclude unsupported guesses.
+  `domain::attention::tests::current_facts_are_exhaustive_and_invalid_data_takes_precedence` fails on any wrong readiness mapping, diagnostic-presence rule or invalid-data precedence; core `tests/attention.rs` checks exact fixture membership, compound query filters and clean-repository preparation proof.
+- DONE: AC-1 — preserve focused row identity across navigation and refresh.
+  `attention_palette_search_sort_reload_and_archive_share_visible_rows` proves a task remains in all-tasks but disappears from focus when its recorded reason is removed; broken-row, tab and continuation-click tests reject hidden selections, focus leakage and incorrect mouse mapping.
+- DONE: AC-2 — exercise report/evidence navigation and honest failures, without claiming human comprehension.
+  Real PTY at 80x24: `:needs-attention`, `/3k`, Enter, B, Tab, Enter displayed “Review requested: Waiting for your decision.” and SHA-256-verified bytes `Exact candidate review.`; Esc returned through item/browser to the same task.
+  Observed binding: gate `gate:docs-dev:3k:validation`, attempt `gate-attempt:3k-validation-1`, Briefing `briefing:docs-dev:3k:validation:attempt-1:revision-1`; the report is the selected task body, not a guessed external path.
+  `/missing-room` then B displayed `UNVERIFIED` with `Missing`; `/missing-artifact` then B/Tab/Enter retained the verified inventory but displayed `Missing`, never substituted task text. A separate deliberate-deletion run produced `Preview invalidated: Missing` after the watcher refreshed.
+- DONE: AC-3 — keep runtime silence, age and activity out of membership.
+  Core integration crosses idle/running/runtime-human-gate, old/recent timestamps and unavailable scan reports with unchanged facts; membership and reasons stay identical. Actual `ordinary` and `old` tasks appeared in all-tasks but not attention; review/hold inclusion did not require session activity.
+- DONE: AC-4 — prove inspection-only navigation leaves workflow storage unchanged.
+  Before/after complete relative-path + SHA-256 inventories matched for all 26 representative workflow files (including rooms, archive and an untracked control) and separately all 52 `.git` files, including index/refs; no additions/deletions or byte changes. No Y, editor, dispatch, transition or approval action was used.
+  Missing-state definition inventory also matched and its absent state root stayed absent. Existing `no_write_git_calls`, `no_terminal_deps`, durable-gate and room regressions passed in the full suite.
+- DONE: Exercise actual narrow terminals and contextual failure states.
+  At 40x12 and 20x6, Space reached “Waiting for your decision.”, B/Tab/Enter opened the verified report, and help scrolling/Esc returned safely; attention layout now reserves reason space rather than letting the graph consume it.
+  Actual all-tasks/archive exits, status sorting, excluded-task search, independent workflow tabs and missing-state empty focus were exercised. The latter retained “Progress files are missing; no task state was loaded” and help's warning that an empty list is not proof of no tasks.
+  TestBackend cases cover every reason, wrap on/off, tiny scrolling, empty-state escape, continuation-line mouse selection and worktree-diff reachability. The diff test caught and fixed scrollbar-width rewrapping that previously made the final diff lines unreachable.
+- DONE: Retain reproducible terminal setup and observations.
+  Platform: Darwin 27.0.0 arm64; debug binary from `fa4fe00`; fixture copied from `tests/fixtures/attention` into a temporary local Git repository, committed as `c5e6f6f1b4353886077083416084fc4531c5d920`; HOME/XDG config/state directories were separate absolute sibling directories.
+  Launch: `target/debug/spacetop --workflow-dir <canonical temporary workflow>`, TERM=xterm-256color, SPACETOP_ASCII=1. Captures, input-step labels and complete inventories: `local://attention-086-terminal.json` (116 real PTY observations); inventory-manifest SHA-256 `1b8e7202030333a1026773dac3e5d9c50b043b707a1a30491456417b8029a4cc`.
+- SKIPPED: AC-2 unfamiliar-person comprehension exercise.
+  No unfamiliar participant or human walkthrough result was available in this assignment. The agent-driven PTY and automated tests are not human evidence; AC-2's human criterion remains incomplete for the first officer/captain and is neither waived nor marked passed.
+- SKIPPED: Ignored watcher suite and gate/merge actions.
+  Watcher implementation was unchanged; normal refresh was exercised in the real PTY. This stage has no gate approval, transition or merge authority.
+
+### Summary
+
+Implemented the complete recorded attention projection and read-only focused UI in `fa4fe00`, including shared explanations, consistent navigation, verified evidence and explicit missing-data failures. Automated checks and actual-terminal byte-inventory proof passed; the separately required unfamiliar-person AC-2 proof remains unavailable and must be resolved before claiming full acceptance.
