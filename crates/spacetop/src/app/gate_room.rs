@@ -10,6 +10,8 @@ pub enum RoomFocus {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct GateBrowser {
+    pub history_mode: bool,
+    pub history: super::correction_history::HistoryBrowser,
     pub entity_path: PathBuf,
     pub workflow_dir: PathBuf,
     pub dependencies: Vec<PathBuf>,
@@ -29,7 +31,9 @@ impl GateBrowser {
         let selected = spacetop_core::gates::selected_attempt(&entity.gates, &entity.status)
             .map(|(r, a)| (r.id.clone(), a.id.clone()));
         let mut browser = Self {
-            entity_path: entity.path,
+            history_mode: false,
+            history: Default::default(),
+            entity_path: entity.evidence_origin.unwrap_or(entity.path),
             workflow_dir: state.workflow_dir.clone(),
             dependencies: Vec::new(),
             attempts: Vec::new(),
@@ -69,19 +73,22 @@ impl GateBrowser {
                 ..Default::default()
             })
             .into_iter()
-            .find(|e| e.path == self.entity_path);
+            .find(|e| e.evidence_origin.as_deref().unwrap_or(&e.path) == self.entity_path);
         let prior_selection = self.selected.clone();
         let had_preview = self.preview.take().is_some();
         let Some(entity) = entity else {
             self.dependencies.clear();
             self.attempts.clear();
             self.selected = None;
+            self.history.refresh(Default::default());
             self.view = GateRoomView::failed(RoomDiagnostic::new(
                 RoomProblem::Missing,
                 "selected entity disappeared",
             ));
             return;
         };
+        self.history
+            .refresh(state.index().correction_rounds(&entity));
         self.attempts = state
             .index()
             .gate_attempts(&entity)
@@ -118,6 +125,12 @@ impl GateBrowser {
                 )
             })
             .unwrap_or_default();
+        self.dependencies
+            .extend(spacetop_core::correction_history::dependencies(
+                state.index().definition(),
+                &entity,
+                &self.history.facts,
+            ));
         self.item = self
             .view
             .briefing
@@ -149,6 +162,23 @@ impl GateBrowser {
     }
     /// Returns true only when the browser itself should close.
     pub fn key(&mut self, code: KeyCode, state: &OverviewState) -> bool {
+        if code == KeyCode::Char('h') {
+            self.history_mode = !self.history_mode;
+            self.scroll = 0;
+            return false;
+        }
+        if self.history_mode {
+            match code {
+                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
+                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
+                KeyCode::Char('w') => self.wrap = !self.wrap,
+                _ => {
+                    self.scroll = 0;
+                    return self.history.key(code, state, &self.entity_path);
+                }
+            }
+            return false;
+        }
         match code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 if self.preview.take().is_some() {
@@ -214,7 +244,7 @@ impl GateBrowser {
                 ..Default::default()
             })
             .into_iter()
-            .find(|e| e.path == self.entity_path)
+            .find(|e| e.evidence_origin.as_deref().unwrap_or(&e.path) == self.entity_path)
         else {
             self.refresh(state);
             return;
@@ -249,6 +279,9 @@ impl GateBrowser {
         self.scroll = 0;
     }
     pub fn content(&self) -> String {
+        if self.history_mode {
+            return self.history.content();
+        }
         if let Some(preview) = &self.preview {
             return preview.clone();
         }

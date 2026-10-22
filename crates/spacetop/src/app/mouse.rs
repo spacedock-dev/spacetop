@@ -262,6 +262,8 @@ mod tests {
 
     fn entity(id: &str, title: &str, body: &str) -> Entity {
         Entity {
+            review_round: Default::default(),
+            evidence_origin: None,
             gates: Default::default(),
             gate_preparation: Default::default(),
             gate_readiness: None,

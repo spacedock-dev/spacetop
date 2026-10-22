@@ -165,7 +165,7 @@ fn positive_suffix(s: &str, prefix: &str) -> bool {
         matches!(n.as_bytes().first(), Some(b'1'..=b'9')) && n.bytes().all(|c| c.is_ascii_digit())
     })
 }
-fn add_item(
+pub(super) fn add_item(
     v: &Value,
     kind: RoomItemKind,
     ids: &mut HashSet<String>,

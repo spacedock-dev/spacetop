@@ -95,6 +95,8 @@ fn app_with_storage(storage: spacetop_core::domain::WorkflowStorage) -> App {
 
 fn item(id: &str, title: &str, body: &str) -> Entity {
     Entity {
+        review_round: Default::default(),
+        evidence_origin: None,
         gates: Default::default(),
         gate_preparation: Default::default(),
         gate_readiness: None,
@@ -243,6 +245,8 @@ fn p3_snapshot() -> WorkflowSnapshot {
     snapshot.items[0].pr = Some("https://example.test/pulls/50".to_string());
     snapshot.items[0].worktree = Some(".worktrees/p3".to_string());
     snapshot.items.push(Entity {
+        review_round: Default::default(),
+        evidence_origin: None,
         gates: Default::default(),
         gate_preparation: Default::default(),
         gate_readiness: None,

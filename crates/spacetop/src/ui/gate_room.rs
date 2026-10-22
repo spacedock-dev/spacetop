@@ -6,68 +6,122 @@ use ratatui::{
 
 pub(super) fn render(frame: &mut Frame<'_>, browser: &GateBrowser) {
     let area = frame.area();
-    let layout = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Min(0),
-        Constraint::Length(1),
-    ])
-    .split(area);
-    let status = if browser.preview.is_some() {
+    let status = if browser.history_mode {
+        browser.history.status()
+    } else if browser.preview.is_some() {
         "Item SHA-256 verified"
     } else if browser.view.verified() {
         "Bound Briefing verified"
     } else {
         "UNVERIFIED"
     };
+    let mut header = format!("{status} | read-only");
+    if browser.history_mode && browser.history.preview.is_some() {
+        if let Some(round) = browser.history.selected_round() {
+            header.push_str(&format!(
+                "\nStage: {} | Cycle: {}",
+                round.identity.stage, round.identity.cycle
+            ));
+        }
+        header.push_str("\nItem SHA-256 verified");
+    }
+    // Keep provenance outside the scrollable artifact, independent of byte verification.
+    let header = if browser.history_mode && browser.history.preview.is_some() {
+        wrap_content(&header, area.width)
+    } else {
+        vec![header]
+    };
+    let layout = Layout::vertical([
+        Constraint::Length(header.len().min(u16::MAX as usize) as u16),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .split(area);
     frame.render_widget(
-        Paragraph::new(format!("{status} | read-only")).style(Style::default().fg(
-            if browser.view.verified() {
-                Color::Green
-            } else {
-                Color::Yellow
-            },
-        )),
+        Paragraph::new(header.into_iter().map(Line::raw).collect::<Vec<_>>()).style(
+            Style::default().fg(
+                if (!browser.history_mode && browser.view.verified())
+                    || (browser.history_mode
+                        && browser
+                            .history
+                            .selected_round()
+                            .is_some_and(|r| r.briefing.is_some()))
+                {
+                    Color::Green
+                } else {
+                    Color::Yellow
+                },
+            ),
+        ),
         layout[0],
     );
     let content = browser.content();
     let body = if area.width >= 70 {
         let columns = Layout::horizontal([Constraint::Percentage(30), Constraint::Percentage(70)])
             .split(layout[1]);
-        let selected = browser
-            .attempts
-            .iter()
-            .position(|(r, a)| {
-                browser
-                    .selected
-                    .as_ref()
-                    .is_some_and(|(g, t)| g == &r.id && t == &a.id)
-            })
-            .unwrap_or(0);
-        let start = selected.saturating_sub(columns[0].height.saturating_sub(2) as usize);
-        let attempts = browser
-            .attempts
-            .iter()
-            .skip(start)
-            .map(|(r, a)| {
-                format!(
-                    "{} {} / {}",
-                    if browser
+        let selected = if browser.history_mode {
+            browser
+                .history
+                .facts
+                .rounds
+                .iter()
+                .position(|r| browser.history.round.as_ref() == Some(&r.identity))
+                .unwrap_or(0)
+        } else {
+            browser
+                .attempts
+                .iter()
+                .position(|(r, a)| {
+                    browser
                         .selected
                         .as_ref()
                         .is_some_and(|(g, t)| g == &r.id && t == &a.id)
-                    {
-                        ">"
-                    } else {
-                        " "
-                    },
-                    r.stage,
-                    a.id
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+                })
+                .unwrap_or(0)
+        };
+        let start = selected.saturating_sub(columns[0].height.saturating_sub(2) as usize);
+        let attempts = if browser.history_mode {
+            browser
+                .history
+                .round_lines()
+                .lines()
+                .skip(start)
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            browser
+                .attempts
+                .iter()
+                .skip(start)
+                .map(|(r, a)| {
+                    format!(
+                        "{} {} / {}",
+                        if browser
+                            .selected
+                            .as_ref()
+                            .is_some_and(|(g, t)| g == &r.id && t == &a.id)
+                        {
+                            ">"
+                        } else {
+                            " "
+                        },
+                        r.stage,
+                        a.id
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
         frame.render_widget(
-            Paragraph::new(format!("Attempts\n{attempts}")).wrap(Wrap { trim: false }),
+            Paragraph::new(format!(
+                "{}\n{attempts}",
+                if browser.history_mode {
+                    "Correction rounds"
+                } else {
+                    "Attempts"
+                }
+            ))
+            .wrap(Wrap { trim: false }),
             columns[0],
         );
         columns[1]
@@ -88,10 +142,19 @@ pub(super) fn render(frame: &mut Frame<'_>, browser: &GateBrowser) {
         body,
     );
     let footer = if area.width < 35 {
-        "Esc: back | PgUp/Dn".into()
+        "Esc: back | h mode".into()
+    } else if browser.history_mode {
+        format!(
+            "Esc: back | h gates | Tab: {} | j/k | Enter detail/link | PgUp/Dn | w",
+            if browser.history.records_focus {
+                "rounds"
+            } else {
+                "records"
+            }
+        )
     } else {
         format!(
-            "Esc: back | Tab: {:?} | j/k select | Enter item | PgUp/Dn | w wrap",
+            "Esc: back | h history | Tab: {:?} | j/k select | Enter item | PgUp/Dn | w wrap",
             if browser.focus == RoomFocus::Attempts {
                 RoomFocus::Items
             } else {
@@ -220,5 +283,110 @@ mod unicode_tests {
         app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
         let mut terminal = Terminal::new(TestBackend::new(20, 6)).unwrap();
         terminal.draw(|f| crate::ui::render(f, &app)).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod correction_tests {
+    use crate::app::{correction_history::tests::setup, App};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{backend::TestBackend, Terminal};
+    fn press(app: &mut App, key: KeyCode) {
+        app.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
+    }
+    fn text(app: &App, width: u16, height: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|f| crate::ui::render(f, app)).unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect()
+    }
+    #[test]
+    fn gate_room_correction_preview_keeps_current_and_retained_identity_when_narrow() {
+        let (_temp, mut snapshot) = setup();
+        for current in [true, false] {
+            if !current {
+                snapshot.items[0].review_round = spacetop_core::domain::ReviewPointer::Absent;
+            }
+            let mut app = App::from_snapshot(snapshot.definition.root.clone(), snapshot.clone());
+            press(&mut app, KeyCode::Char('B'));
+            press(&mut app, KeyCode::Char('h'));
+            if !current {
+                // The fallback is the last stage; deliberately browse retained implementation/1.
+                for _ in 0..3 {
+                    press(&mut app, KeyCode::Up);
+                }
+            }
+            press(&mut app, KeyCode::Tab);
+            for _ in 0..5 {
+                press(&mut app, KeyCode::Down);
+            }
+            press(&mut app, KeyCode::Enter);
+            for (width, height) in [(40, 12), (80, 24), (150, 50)] {
+                for key in [KeyCode::PageDown, KeyCode::Char('w')] {
+                    press(&mut app, key);
+                    let output = text(&app, width, height);
+                    for phrase in [
+                        if current {
+                            "CURRENT bound"
+                        } else {
+                            "RETAINED identity verified"
+                        },
+                        "Stage: implementation | Cycle: 1",
+                        "Item SHA-256 verified",
+                        "read-only",
+                        "candidate 90aea55",
+                        "Esc: back",
+                    ] {
+                        assert!(output.contains(phrase), "missing {phrase}: {output}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn gate_room_correction_actor_time_rationale_includes_and_trust_at_all_sizes() {
+        let (_temp, snapshot) = setup();
+        let mut app = App::from_snapshot(snapshot.definition.root.clone(), snapshot);
+        press(&mut app, KeyCode::Char('B'));
+        press(&mut app, KeyCode::Char('h'));
+        press(&mut app, KeyCode::Tab);
+        press(&mut app, KeyCode::Enter);
+        let output = text(&app, 150, 50);
+        for phrase in [
+            "CURRENT bound",
+            "Cycle: 1",
+            "Reviewer verdict: Some(Revise)",
+            "Actor: software:roborev",
+            "2026-07-20T01:00:00Z",
+            "Annotation body:",
+            "includes Incoming",
+            "FollowUp",
+            "annotation:decline-duplicate-member",
+            "Esc: back",
+        ] {
+            assert!(output.contains(phrase), "missing {phrase}: {output}");
+        }
+        for (width, height) in [(80, 24), (40, 12), (20, 6)] {
+            let output = text(&app, width, height);
+            assert!(output.contains("CURRENT bound"));
+            assert!(output.contains("Esc: back"));
+        }
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Enter);
+        let output = text(&app, 150, 50);
+        assert!(output.contains("Actor: actor:ensign"));
+        assert!(output.contains("correct-but-disproportionate"));
+        assert!(output.contains("Recorded includes:"));
+        assert!(output.contains("resolution:ensign-3j-round-1"));
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::Enter);
+        assert!(text(&app, 150, 50).contains("Reason: triage: 0 material fixed; 2 declined"));
     }
 }

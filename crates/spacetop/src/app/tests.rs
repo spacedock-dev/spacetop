@@ -1057,6 +1057,8 @@ fn snapshot_with_items(count: usize) -> WorkflowSnapshot {
         },
         items: (0..count)
             .map(|index| Entity {
+                review_round: Default::default(),
+                evidence_origin: None,
                 gates: Default::default(),
                 gate_preparation: Default::default(),
                 gate_readiness: None,
@@ -1109,6 +1111,8 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
             .iter()
             .enumerate()
             .map(|(index, p)| Entity {
+                review_round: Default::default(),
+                evidence_origin: None,
                 gates: Default::default(),
                 gate_preparation: Default::default(),
                 gate_readiness: None,
@@ -1135,6 +1139,8 @@ fn snapshot_with_paths(paths: &[&str]) -> WorkflowSnapshot {
 
 fn item_at(path: PathBuf, id: &str, title: &str, status: &str) -> Entity {
     Entity {
+        review_round: Default::default(),
+        evidence_origin: None,
         gates: Default::default(),
         gate_preparation: Default::default(),
         gate_readiness: None,

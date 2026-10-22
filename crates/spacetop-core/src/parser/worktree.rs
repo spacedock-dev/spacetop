@@ -190,6 +190,14 @@ fn content_hash(path: &Path) -> Option<[u8; 20]> {
 fn merge_main_frontmatter_with_worktree_body(main_item: &Entity, wt_item: Entity) -> Entity {
     let wt_path = wt_item.path.clone();
     Entity {
+        review_round: main_item.review_round.clone(),
+        evidence_origin: Some(
+            main_item
+                .evidence_origin
+                .as_ref()
+                .unwrap_or(&main_item.path)
+                .clone(),
+        ),
         gates: main_item.gates.clone(),
         gate_preparation: main_item.gate_preparation.clone(),
         gate_readiness: main_item.gate_readiness,
@@ -214,6 +222,26 @@ fn merge_main_frontmatter_with_worktree_body(main_item: &Entity, wt_item: Entity
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn correction_history_merge_preserves_main_pointer_and_physical_origin() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("main.md");
+        let worktree = dir.path().join("worktree.md");
+        fs::write(&main, "---\nid: e\ntitle: Main\nstatus: implementation\nreview-round: invalid\n---\nMain body").unwrap();
+        fs::write(
+            &worktree,
+            "---\nid: e\ntitle: Worktree\nstatus: implementation\n---\nChanged body",
+        )
+        .unwrap();
+        let main = parse_work_item(&main, &["implementation".into()], None).unwrap();
+        let worktree = parse_work_item(&worktree, &["implementation".into()], None).unwrap();
+        let merged = merge_main_frontmatter_with_worktree_body(&main, worktree.clone());
+        assert_eq!(merged.review_round, main.review_round);
+        assert_eq!(merged.evidence_origin.as_ref(), Some(&main.path));
+        assert_eq!(merged.path, worktree.path);
+        assert_eq!(merged.body, worktree.body);
+    }
 
     #[test]
     fn worktree_roots_orders_deterministically_with_claude_after_plain() {

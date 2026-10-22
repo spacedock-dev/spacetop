@@ -125,6 +125,13 @@ Keep module boundaries clear and testable:
   local Git-blob evidence reads. App `gate_room.rs` owns browser navigation and
   cached evidence; UI `gate_room.rs` only renders it. Recorded attribution and
   binding verification never authenticate a person or authorize gate writes.
+- `domain/correction_history.rs` owns advisory pointers, rounds, records and
+  includes identities; `parser/correction_history.rs` owns strict pointer,
+  Briefing and prefix-preserving JSONL decoding. Core `correction_history.rs`
+  owns bounded discovery and shares safe evidence readers with gate rooms.
+  `query.rs` resolves only same-Briefing recorded relationships. App
+  `correction_history.rs` caches snapshots and typed navigation stacks; `h`
+  toggles history inside the existing `B` browser.
 - `crates/spacetop-core/src/state_checkout.rs` owns the two-backend storage
   classifier and read-only Git probes for attached, detached, wrong-branch,
   missing, and typed-unverified split-root state checkouts, plus the explicit

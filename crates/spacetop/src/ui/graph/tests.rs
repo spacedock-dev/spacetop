@@ -2402,6 +2402,8 @@ fn dag_multi_row_chain_is_horizontally_centered_on_research_fixture() {
 #[allow(dead_code)]
 fn make_item(id: &str, status: &str, title: &str) -> Entity {
     Entity {
+        review_round: Default::default(),
+        evidence_origin: None,
         gates: Default::default(),
         gate_preparation: Default::default(),
         gate_readiness: None,

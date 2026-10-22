@@ -35,7 +35,7 @@ pub fn safe_root(definition: &WorkflowDefinition) -> Result<PathBuf> {
     }
     Ok(canonical)
 }
-fn reject_symlinks(path: &Path) -> Result<()> {
+pub(crate) fn reject_symlinks(path: &Path) -> Result<()> {
     // Check every component of the original absolute path, including the root.
     let mut current = PathBuf::new();
     for component in path.components() {
@@ -80,7 +80,9 @@ fn resolve_room(root: &Path, entity: &Entity, attempt: &GateAttempt) -> Result<P
         ));
     }
     let parent = entity
-        .path
+        .evidence_origin
+        .as_ref()
+        .unwrap_or(&entity.path)
         .parent()
         .ok_or_else(|| problem(RoomProblem::UnsafePath, "missing entity parent"))?;
     reject_symlinks(parent)?;
@@ -213,7 +215,7 @@ pub fn read_item(
 }
 
 #[cfg(unix)]
-fn read_file(root: &Path, path: &Path) -> Result<Vec<u8>> {
+pub(crate) fn read_file(root: &Path, path: &Path) -> Result<Vec<u8>> {
     read_file_checked(root, path, || {})
 }
 #[cfg(unix)]
@@ -251,7 +253,13 @@ fn read_file_checked(root: &Path, path: &Path, before_read: impl FnOnce()) -> Re
             OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
             Mode::empty(),
         )
-        .map_err(|e| problem(RoomProblem::Symlink, format!("unsafe directory: {e}")))?;
+        .map_err(|e| {
+            if e == rustix::io::Errno::NOENT {
+                io_problem(e.into())
+            } else {
+                problem(RoomProblem::Symlink, format!("unsafe directory: {e}"))
+            }
+        })?;
     }
     let fd = openat(
         &directory,
@@ -313,7 +321,7 @@ fn read_file_checked(root: &Path, path: &Path, before_read: impl FnOnce()) -> Re
     Ok(bytes)
 }
 #[cfg(not(unix))]
-fn read_file(_root: &Path, _path: &Path) -> Result<Vec<u8>> {
+pub(crate) fn read_file(_root: &Path, _path: &Path) -> Result<Vec<u8>> {
     Err(problem(
         RoomProblem::UnsupportedRoot,
         "race-safe evidence reads require Unix descriptor APIs",
@@ -393,7 +401,7 @@ fn git_top(root: &Path, run: &impl Fn(&Path, &[&str]) -> Result<Vec<u8>>) -> Res
     }
     Ok(top)
 }
-fn read_git_item(definition: &WorkflowDefinition, uri: &str) -> Result<Vec<u8>> {
+pub(crate) fn read_git_item(definition: &WorkflowDefinition, uri: &str) -> Result<Vec<u8>> {
     read_git_item_with(definition, uri, &git)
 }
 fn read_git_item_with(

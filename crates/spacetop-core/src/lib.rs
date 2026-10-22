@@ -1,4 +1,5 @@
 pub mod config;
+pub mod correction_history;
 pub mod discovery;
 pub mod domain;
 pub mod editor;
