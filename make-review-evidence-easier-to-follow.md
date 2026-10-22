@@ -152,3 +152,38 @@ Operational evidence is local, not product documentation: `/private/var/folders/
 ### Summary
 
 Implemented all four acceptance criteria in product commit `65093ee`. Reviewers can reach the canonical report directly and follow only recorded same-Briefing responses without losing context or confusing evidence failure, log closure, gate approval or execution authority; required checks and actual read-only terminal proof passed.
+
+## Stage Report: verify
+
+- DONE: AC-1 — The review question and main report are easy to reach.
+  Reviewed `65093ee`; selector/app tests in final check output `artifact://405` reject first-item/Reference substitution. Independent 40x12 PTY opened the canonical report with a different supporting item selected, preserved the canonical preview through inventory reorder/rebinding, and opened the original distinct supporting bytes after Back/Enter.
+- FAILED: AC-2 — Evidence failures explain their effect.
+  F1 below reproduces a false whole-Briefing trust failure when only the previously opened report identity disappears from a newly verified inventory; the same screen says “Bound Briefing verified.” Existing missing/tampered/binary cases and recorded decisions are covered, but do not exercise this distinction.
+- DONE: AC-3 — Corrections lead to recorded responses.
+  Existing response tests and wide terminal captures prove same-Briefing linked/unresolved/unrelated/invalid-prefix cases. Independent 40x12 PTY added a second typed incoming response: selection, Enter, Back and a watched refresh retained its exact identity; paging exposed its body and edge. Filter toggles were exercised: they reset selection to the first eligible edge, but did not infer a response or cross a Briefing boundary.
+- DONE: AC-4 — Existing evidence safety stays intact.
+  Inspected final exact-Git, safe-read, no-write and terminal-free test output; shortcuts still use the owning core readers. Compared the actual saved before/after inventories: all 72 path/digest entries match, including archive/round/untracked files. New PTY removal scenario invalidated the preview instead of substituting support bytes; no approval, sync or workflow action was invoked.
+- DONE: Independently verify all four ACs for question-first/canonical-report navigation, honest failures, recorded correction responses and existing safety boundaries; report concrete material defects only.
+  Verdict: request changes for F1, proposed Medium/material because it contradicts the evidence-trust contract in AC-2; no safety-boundary bypass found. Standards axis: typed ownership/read-only boundaries retained. Spec axis: AC-2 is not complete.
+- DONE: Inspect recorded 749-test/lint/build/notify and actual terminal/72-file proof without repeating green checks; exercise missing claims, especially exact selection identity across report open/Back/refresh and response filter changes in narrow layouts.
+  Read actual final output `artifact://405` (749 passed, six ignored, clippy with `-D warnings`, build) and `artifact://392` (real notify test passed); inspected final narrow/wide screens, replacement capture and inventory files, then exercised only the additional scenarios below.
+- DONE: Record verdict and DONE/FAILED AC-n bullets with evidence citations for structured scanning, plus checklist accounting. No code fixes or gate approval; preserve no-inferred-response/approval and typed task081 ownership.
+  This body-only report records the verification outcome; no product files or entity frontmatter changed, no merge or gate action performed, and no second correction scanner introduced.
+- SKIPPED: Re-running already-green formatting, full tests, lint, build and notify checks.
+  Assignment explicitly requires reuse of existing command evidence; the independent work used the built binary and new terminal scenarios, not duplicate suite runs.
+
+### Findings
+
+F1 — **Medium; proposed material; AC-2.** `crates/spacetop/src/app/gate_room.rs:425-426` maps every `BindingMismatch` to “The Briefing does not match the recorded request; its question and inventory cannot be trusted.” However, `crates/spacetop-core/src/gate_room.rs:182-187` also emits that kind for an absent item *after successfully verifying the Briefing*. Refresh of an open report consequently displays this false explanation beneath “Bound Briefing verified,” the verified question, and “Main report not identified; supporting items remain available.” Reviewers cannot tell whether only the report disappeared or the whole evidence room failed trust.
+
+Reproduce with the committed fixture setup: add a valid distinct supporting Artifact and rebind the compact sorted-JSON digest; open `complete` with `B,Tab,r`; remove only `artifact:gate-review` from the inventory and update the recorded Briefing digest, retaining the supporting Artifact; wait for refresh. The captured “Removed canonical identity invalidates preview without substitution” screen shows the contradiction and exact detail `BindingMismatch: item disappeared`. This requires a typed/context-aware distinction between missing selected-item identity and failed room binding, plus an app/render regression asserting that a valid question/inventory is not discredited. Do not parse diagnostic prose or weaken the reader.
+
+### Evidence and limitations
+
+Original implementation proof: `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/task088-proof-3mtkv0uz/`; actual final command logs are retained as session artifacts 405 and 392. Narrow 20x6 captures show question/provenance prefixes, not a complete response body; the new paged 40x12 capture supplies that missing observation.
+
+Independent proof: `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/task088-independent-verify-o1fp19w8/`, files `report-identity-40x12.{json,ansi}` and `response-identity-40x12.{json,ansi}`. Command: worktree `target/debug/spacetop --workflow-dir <proof>/workflow`, actual macOS PTY, pyte 0.8.2, ASCII mode, isolated absolute XDG roots. These are deliberate fixture-mutation scenarios, not a new no-write claim. Report run exited 0; the response harness terminated its still-open nested browser during cleanup (exit -15), not an application crash or a successful graceful-exit claim.
+
+### Summary
+
+Independent verification of `65093ee` is complete; request changes for one reproduced material failure-explanation defect. AC-1, AC-3 and AC-4 have supporting evidence; AC-2 needs the selected-item/whole-Briefing distinction corrected and specifically verified before acceptance.
