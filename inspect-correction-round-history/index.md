@@ -246,3 +246,45 @@ Independent verification recommends **request changes** for F1 and F2, both prop
 ### Summary
 
 Addressed exactly the two authorized material findings in product commit `e462703`. Identity-preserving relationship refresh and narrow preview provenance now have falsifiable app/render tests and actual terminal proof; all final checks passed. Canonical correction inputs are ready for FO handling, with independent verification and gate decisions still outside this worker's authority.
+
+## Stage Report: verify (cycle 1)
+
+- DONE: Independently verify all four acceptance criteria and typed correction-round schema compatibility, exact identity/provenance, safe bounded reads, partial-data handling and same-Briefing relationship semantics; report concrete material defects.
+  Reviewed corrected product `e46270387660287d849a44e03103eaa636711b4c`, the F1/F2 delta, core contracts and upstream 0.27.3; F1/F2 are resolved, but the newly published real round exposes material schema incompatibility F3 below.
+- DONE: Review recorded 735-test, lint and six real-watcher results plus actual terminal navigation/refresh evidence without repeating green checks; exercise only missing or insufficiently proven changed-path claims.
+  Inspected original artifacts `263`/`255`, corrected `294` (738 normal passes, six ignored-backend passes, clippy/build success), and both terminal receipts; executed only the previously uncovered actual-published-pointer/unchanged-upstream-pointer probe.
+- DONE: Record per-criterion evidence and verdict, including task 088 consumer relationship readiness, preserving read-only and no-authentication/no-inferred-approval boundaries; do not implement fixes or approve the gate.
+  Per-criterion verdicts and consumer constraints follow; only this report is changed, with no product fixes, frontmatter edits, round publication, gate approval or merge.
+
+### Findings
+
+- **F1 — resolved.** `app/correction_history.rs:11-29,98-109,167-179,222-244` retains source/target/direction rather than ordinal, clears removed relationships and refuses Enter without explicit reselection.
+  The passing removal test refreshes twice and refuses adjacent-reviewer substitution; the reorder test preserves identity at its new index. Cycle-1 PTY frames show reorder, removal notice, unchanged finding after Enter, then reviewer opening only after explicit j; reverting to ordinal clamping falsifies both.
+- **F2 — resolved.** `ui/gate_room.rs:9-57` keeps round provenance, stage/cycle and read-only in a fixed artifact header, independently of item-byte verification.
+  The passing current/retained preview test covers 40x12, 80x24, 150x50 plus scroll/wrap; normal and ASCII PTYs visibly retain all labels and artifact text at 40x12. Replacing provenance with the digest banner falsifies these assertions.
+- **F3 — High / proposed material — valid upstream-published rounds are rejected by an invented Briefing-ID grammar.** `crates/spacetop-core/src/parser/correction_history.rs:52-56,92-96` requires `briefing:<entity>:<room-stage>:round-<cycle>`; `crates/spacetop-core/src/correction_history.rs:122-126` synthesizes the same ID for discovery. Upstream `internal/gates/round.go:100-102,175-195` instead copies the manifest ID and requires a nonempty pointer Briefing ID, binding the exact ID plus digest on read at `57-82`.
+  The already-recorded task081 `verify/1` pointer binds `briefing:081:implement:round-1` with digest `af4fc0cc529ede12b4cd0a43d0d0b07e02ddb7eb09dfc877df1a239a13ed8784`. An executed read-only probe against current core returns pointer `Invalid`, then `verify/1` as `Retained`, `has_briefing=false`, `records=0`, `IdentityMismatch`; its eight valid records become inaccessible.
+  The same probe rejects the unchanged vendored upstream `recorded-entity.md` (`id: task`, Briefing `briefing:3j:implementation:round-1`). The fixture README explicitly normalizes that valid upstream identity difference away, so current compatibility tests cannot detect this defect. This is an existing implementation/plan assumption exposed by real publication, not a regression introduced by the F1/F2 correction.
+  Required correction: preserve exact bound upstream Briefing identities instead of deriving them from entity/stage/cycle; retain origin/room namespace, digest, same-Briefing, safe-root and ambiguous-flat-origin safeguards. Add the unchanged upstream pointer and actual differing-stage publication as compatibility regressions; do not rename or republish immutable evidence to accommodate the parser.
+
+### Per-criterion verdicts
+
+| Criterion | Verdict | Evidence and falsification |
+| --- | --- | --- |
+| AC-1 | FAIL: F3 | Numeric 1/2/10 and stage ordering, first reviewer verdict and follow-up projection pass for normalized fixtures, but the actual current upstream pointer yields no records. Accepting the unchanged published ID rather than the synthesized ID changes this probe's result. |
+| AC-2 | FAIL: F3; F1/F2 resolved | Removal/reorder and narrow-preview regressions now pass; missing/stale pointers and malformed/partial logs remain explicit. The valid actual current pointer is nevertheless mislabeled invalid/retained and cannot be browsed. |
+| AC-3 | PASS for decoded same-Briefing semantics; blocked for F3 rooms | The real finding -> disposition -> closing Resolution chain and Back, actor/time/body/reason, reviewer-evidence versus follow-up roles, and repeated-ID/unlinked negative controls remain covered. Cross-round/prose-derived links or a transitive shortcut fail existing assertions; F3 prevents these records from reaching the API for the published round. |
+| AC-4 | FAIL on compatibility coverage; other inspected coverage passes | Core safety tests cover origins, legacy data, partial prefixes, malformed bindings, traversal/symlink/nonregular/size limits and exact Git blobs; watcher/PTY evidence covers replacement/deletion and preview invalidation. The normalized identity oracle misses actual upstream pointers; F1/F2 refresh/rendering gaps are now closed. |
+
+### Evidence, boundaries and task 088 readiness
+
+- New executed probe: `/tmp/spacetop-081-cycle1-reverify-evidence.json` preserves stdin Rust source, exact compile/run commands, zero exits and observed failures. It links the existing core build without rerunning green suites; the temporary executable was removed. No upstream recorder/validator was invoked by this reviewer; upstream acceptance is grounded in existing publication and inspected recorder/readback source.
+- Independently recomputed receipt SHA-256 values match: cycle-1 `/tmp/spacetop-081-cycle1-terminal-evidence.json` = `d76d18726a91011b018ed2a19cc6732fc65bf7b6df3c0e433e47ddc1e08573a8`; original `/tmp/spacetop-081-proof-evidence.json` = `7f4c02ca865f730743cbb150a5e99c1900c4104da6f4e1512e834d20b3235015`.
+- The corrected receipt has 78 frames, both zero exits and identical 13-file inspection/restored-mutation inventories with empty Git status. Early compile-buffer frames are not proof; the later ready/redrawn frames establish the claimed behavior. Formatting remains implementer-recorded, not rerun.
+- Safe reads remain descriptor-relative/no-follow/regular-file checked, capped at 2 MiB with bounded discovery; explicit opens revalidate evidence and exact local Git blobs without fetch. The no-write/no-terminal guard results remain green. Poll evidence still uses `compare_contents(true)` directly, not a full exercise of production fallback defaults.
+- Task 088 can reuse `WorkflowIndex::correction_rounds` and `CorrectionHistory::{correction_round, correction_record, correction_relationships}`, full origin/round/Briefing record identities, inverse includes, edge validity/roles and `correction_history::read_item`; F1/F2 no longer block those navigation primitives. **End-to-end consumer readiness remains blocked by F3**, since the actual upstream round exposes no records.
+- Task 088 still owns its question-first/report UX. Relationships remain same-Briefing recorded edges only; Answered, incoming responses, actor text and closing revise never authenticate a person, prove findings fixed or authorize approval. Unsupported cross-Briefing/semantic-response requirements remain outside this schema.
+
+### Summary
+
+Independent re-verification resolves both authorized correction findings but recommends **request changes** for new High/material F3, with concrete execution against the already-published round and the unchanged upstream pointer. The product cannot yet claim complete upstream round compatibility or task 088 readiness; no fixes, approval, merge or republishing were performed.
