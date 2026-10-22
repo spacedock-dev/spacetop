@@ -239,3 +239,32 @@ Implemented the complete recorded attention projection and read-only focused UI 
 ### Summary
 
 Verification verdict: request changes for High defect V-1; the stage review is complete but task acceptance is not. After the focused-search renderer/activation mismatch is fixed and its regression demonstrated, AC-2 still requires the separately unavailable unfamiliar-person walkthrough; neither a technical fix nor captain gate handling may silently count agent evidence as that human result.
+
+## Stage Report: implement (cycle 1)
+
+- DONE: Implement the recorded typed attention projection and focused query-backed view with visible reasons, consistent selection/search/reload behavior, and navigation to existing report and safe gate evidence surfaces.
+  Correction `6cda5cd4f74fa818cb32edf41caaca3964f83e63` makes the popup consume the same `app::search_results` projection as navigation bounds and activation; unrelated attention behavior remains unchanged.
+- DONE: Preserve read-only, canonical-state, runtime-suppression, no-guessing, invalid-information and missing-evidence boundaries; reuse task 087 explanations without duplicate conventions.
+  No domain, runtime, evidence-reader, explanation or writer changes; exact inspection run preserved all 25 workflow files, 7 worktree Git files and 12 common Git control paths/hashes.
+- DONE: After edits, run final formatting, cargo test and make lint; exercise actual terminal navigation and byte-inventory safety; update docs and commit implementation plus criterion evidence, explicitly noting unavailable human proof.
+  `cargo fmt && cargo test && make lint && cargo build -p spacetop` passed (`artifact://175`): 717 tests passed, 4 ignored; README documents popup/selection identity.
+- DONE: Add consumer-visible focused-search regression.
+  `attention_search_highlight_opens_the_same_task_and_excludes_unfocused_rows` renders the real popup, asserts highlighted feedback and absence of consumed/normal/superseded, then presses Enter twice and asserts #feedback, feedback.md and feedback-pending; restoring the unfiltered renderer fails it.
+- DONE: Repeat the exact real-terminal scenario.
+  Actual binary at 100x24, TERM=xterm-256color, ASCII, external temporary HOME/XDG: `:needs-attention`, Enter, `/`, Down, Down, Enter, Enter highlights feedback and opens feedback; Esc exits 0. Captures and full inventories: `docs/evidence/attention-086-correction-1/terminal.json` in the code worktree.
+- SKIPPED: Unfamiliar-person AC-2 comprehension acceptance.
+  No uncoached unfamiliar participant is available; agent terminal evidence is technical proof only and does not satisfy or waive the separate human requirement.
+- DONE: Retain canonical correction Briefing and review JSONL with finding and worker resolution.
+  Commit `6d74b25` retains inputs under the code worktree `docs/evidence/attention-086-correction-1/{briefing.json,briefing.review.jsonl}`; schemas follow installed `internal/gates/{operation,review,round}.go` and `testdata/advisory-round`.
+- SKIPPED: Publish round, change entity layout/frontmatter, approve gate or merge.
+  FO owns publication. Installed recorder requires folder-form `show-tasks-needing-attention/index.md`; move the existing entity and rewrite any `room-ref: ./show-tasks-needing-attention/` to `room-ref: ./` in the same FO commit. These inputs use exact Git URI/digest artifacts, so require no relative artifact relocation.
+
+### Feedback Cycles
+
+- Cycle 1 / verify / rejected snapshot `fa4fe005f179f939aadb4235849db9067a98eaa3`: V-1 High, FO-classified Material, disposition fix. Shared projection resolves AC-1 focused membership and AC-2 highlighted-task navigation without weakening criteria; 1 fixed, 0 declined.
+- Canonical inputs: `/Users/kent/Dev/InfuseAI/GitHub/spacetop/.worktrees/spacedock-ensign-show-tasks-needing-attention/docs/evidence/attention-086-correction-1/briefing.json` and adjacent `briefing.review.jsonl`; leave `gate record --round verify/1` to FO after folder conversion.
+- Capture tooling note: REA capture returned cleanup-incomplete and supplied no usable evidence; the retained successful run uses standard-library Python PTY with a controlling terminal and externally installed pyte decoder. Earlier harness exit-key writes encountered EIO after normal exit; retained run ends at Esc and exits cleanly.
+
+### Summary
+
+Fixed only authorized V-1 by sharing the focused search projection across rendering and activation, with a rendered identity regression and successful exact terminal/byte-inventory proof. Product and canonical correction artifacts are committed; unfamiliar-person AC-2 evidence remains unavailable, and round publication, gate action and merge remain with the first officer.
