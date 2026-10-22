@@ -26,6 +26,17 @@ gates:
                 id: briefing:087:verify:attempt-1:revision-1
                 digest: sha256:f523638932b546c6f6db7d760ae219b9f06027b61f6c4326380de363a57a8a30
                 room-ref: ./explain-status-in-plain-language/review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:087:verify:1
+                briefing: briefing:087:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-22T13:23:05.920442Z"
+                decision: approve
+                reason: Captain requested Create PR and then approve after explicit disclosure that AC-1 and AC-3 human new-reader evidence remains outstanding. Approval accepts that limitation for PR publication; no human walkthrough is claimed.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Help new users understand workflow status and where they can act without learning Spacedock terminology first.
