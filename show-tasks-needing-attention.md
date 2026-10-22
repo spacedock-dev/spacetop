@@ -1,6 +1,6 @@
 ---
 title: Show tasks that need attention
-status: plan
+status: implement
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
@@ -10,7 +10,7 @@ started: 2026-10-22T13:28:21Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-show-tasks-needing-attention
 issue:
 pr:
 mod-block:
