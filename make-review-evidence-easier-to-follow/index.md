@@ -34,6 +34,17 @@ gates:
                 id: briefing:088:verify:attempt-1:revision-1
                 digest: sha256:83474a0ca9add80972534b4a70b25f652099ab1607db5043cbbf58bf259e028e
                 room-ref: ./review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:088:verify:1
+                briefing: briefing:088:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-22T23:46:54.507297Z"
+                decision: approve
+                reason: Captain approved the presented task 088 verify gate for PR publication after all four acceptance criteria passed independent review and F1 was corrected.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Help reviewers understand the question, read the main report, and follow the supporting evidence without searching through files.
