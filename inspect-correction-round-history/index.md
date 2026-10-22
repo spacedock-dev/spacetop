@@ -288,3 +288,42 @@ Addressed exactly the two authorized material findings in product commit `e46270
 ### Summary
 
 Independent re-verification resolves both authorized correction findings but recommends **request changes** for new High/material F3, with concrete execution against the already-published round and the unchanged upstream pointer. The product cannot yet claim complete upstream round compatibility or task 088 readiness; no fixes, approval, merge or republishing were performed.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Implement the recorded typed correction pointer, safe retained-round discovery, strict Briefing/JSONL decoding and same-Briefing relationship query contract, reusing existing evidence primitives without weakening gate safety or inventing relationships.
+  Product commit `362a936014bb024a152ababcd8a9ebb02b18a1c3` preserves opaque recorded Briefing IDs, exact pointer ID/JCS digest binding and origin/stage/cycle namespaces; no gate decoder or relationship semantics changed.
+- DONE: Deliver deterministic history browsing, actor/rationale/includes detail, current versus historical provenance and coherent refresh across all four acceptance criteria; preserve read-only behavior and task 088 ownership boundaries.
+  Actual published verify/1 now opens all eight records as CURRENT bound; F1/F2 app/UI code remains unchanged and final tests plus terminal removal/preview proofs preserve those fixes.
+- DONE: After implementation, run required final checks including real notify coverage, actual terminal history/relationship/invalid-data scenarios and unchanged-file proof; update docs, commit product changes and record falsifiable per-criterion evidence. Keep operational correction records in state, not new product evidence directories.
+  Updated browser/fixture docs; final checks passed (`artifact://339`), terminal and canonical-input receipts remain under `/tmp`; no round publication, frontmatter change, gate or merge action.
+
+### Feedback Cycles
+
+- Cycle 2, F3: **High / Material -> FIX**, exactly as FO authorized. The upstream recorder copies arbitrary nonempty manifest IDs; removed the invented entity/stage/cycle Briefing grammar and synthesis rather than renaming immutable evidence.
+- Preserve safeguards: folder-form retained rooms use structural entity ownership and the manifest ID; shared flat-entity candidates without the exact current pointer remain explicitly ambiguous with no exposed records. Origin/stage/cycle remain part of each record/relationship identity; ID and digest mismatches still fail closed.
+- F1/F2 remain resolved; task 088 and cross-Briefing/semantic-response inference remain out of scope. The earlier plan's derived Briefing identity assumption is superseded by this authorized compatibility correction.
+
+### Acceptance evidence
+
+- AC-1: `unchanged_upstream_pointer_binds_manifest_not_entity_name` uses the unchanged upstream entity task/Briefing 3j pair and verifies current and retained records; deriving IDs from entity names fails it. `differing_stage_and_opaque_ids_bind_exactly_without_cross_room_edges` covers verify/1 binding implement/round-1 and opaque text with eight records; deriving from stage or cycle fails.
+- AC-2: The same regressions reject changed pointer IDs; existing digest/partial-prefix/stale-pointer tests retain explicit failures. Actual task081 terminal frames open records #1 through #8 under CURRENT verify/1 and follow finding -> FO disposition -> Back; rejecting or relabeling the published binding fails this proof.
+- AC-3: Existing same-Briefing relationship oracle plus the differing-stage regression retain exact source/target namespaces; actor/body/reason/includes remain visible in actual and disposable terminal runs. Cross-room linking or inferred transitive responses fails these assertions.
+- AC-4: Extended flat/folder/archive/split-root/worktree origin test refuses unbound shared flat rooms even for the same entity ID. Existing safe-root/symlink/nonregular/size/exact-Git, F1 relationship removal/reorder and F2 current/retained preview tests all pass; weakened ownership, adjacent-edge substitution or lost narrow provenance fails.
+
+### Commands and terminal proof
+
+- Passed final `cargo fmt && cargo test && make lint && cargo test -p spacetop-core -- --ignored && cargo build -p spacetop`: 740 normal tests passed, six intentionally ignored; all six real-backend ignored tests passed; clippy warnings denied and build passed. Output: `artifact://339`.
+- `/tmp/spacetop-081-cycle2-terminal-evidence.json` contains raw PTY bytes, commands, actions and frames: actual task081, disposable multi-stage/cycle/partial-JSONL/relationship browsing, normal and ASCII 40x12 current/retained artifact previews, notify-driven removed-edge invalidation and Enter refusal. All four captured sessions exited zero; one initial disposable run explicitly demonstrated symlink-root rejection before rerunning with the canonical temp path.
+- Actual entity and immutable room file inventory was byte-identical before/after inspection. Disposable inspection inventory also matched; the only deliberate mutation truncated the disposable log to three complete records and was restored byte-for-byte. No operational evidence was added to product docs.
+- Read-only compiled core probe in `/tmp/spacetop-081-cycle2-round-inputs/receipt.json` confirms actual `CurrentPointer`, exact `briefing:081:implement:round-1`, original `sha256:af4fc0cc529ede12b4cd0a43d0d0b07e02ddb7eb09dfc877df1a239a13ed8784`, eight records and no diagnostics. Temporary probe executable removed.
+
+### Canonical correction inputs for FO publication
+
+- Briefing: `/tmp/spacetop-081-cycle2-round-inputs/briefing.json`; log: `/tmp/spacetop-081-cycle2-round-inputs/briefing.review.jsonl`; receipt: `/tmp/spacetop-081-cycle2-round-inputs/receipt.json`.
+- Four actual-schema records retain F3, reviewer revise, the exact FO Material/FIX disposition and the committed worker response. The core decoder verifies same-Briefing/prior-includes and Answered closure; canonical digest is `sha256:766287b3014674caa54d49514341f292c61802b1879dc163fc208a418a1aae58`.
+- FO owns publication once as verify/2. This worker did not invoke upstream recording or validation, republish round 1, change immutable bytes, claim approval, or merge.
+
+### Summary
+
+Corrected only the authorized F3 compatibility boundary in product commit `362a936`, preserving F1/F2. Actual published correction history is now inspectable with its original binding and all eight records; committed regression coverage, final checks and terminal proofs retain safety and relationship boundaries. Canonical cycle-2 inputs are ready for independent verification and FO publication.
