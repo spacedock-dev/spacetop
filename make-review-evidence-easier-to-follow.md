@@ -1,6 +1,6 @@
 ---
 title: Make review evidence easier to follow
-status: plan
+status: implement
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
@@ -10,7 +10,7 @@ started: 2026-10-22T14:47:06Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-make-review-evidence-easier-to-follow
 issue:
 pr:
 mod-block:
