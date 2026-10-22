@@ -338,6 +338,18 @@ To remove the installed binary:
 make uninstall
 ```
 
+To remove compiled files and build caches:
+
+```bash
+make clean
+```
+
+This runs `cargo clean`, removing debug and release artifacts, including
+incremental compilation caches, from Cargo's target directory (`target/` by
+default, or the configured `CARGO_TARGET_DIR`). It does not remove installed
+binaries or Cargo's shared dependency download cache. The next build recompiles
+dependencies.
+
 ### Gate Briefings and recorded decisions
 
 See [the gate-room contract](docs/gate-room-browser.md) for format and safety details.

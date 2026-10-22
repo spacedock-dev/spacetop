@@ -21,6 +21,7 @@ lint:
 		exit 1; }
 	cargo clippy --all-targets --all-features -- -D warnings
 
+# Remove debug/release artifacts and incremental caches; keep installed binaries.
 clean:
 	cargo clean
 
