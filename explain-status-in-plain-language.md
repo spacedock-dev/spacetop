@@ -15,6 +15,17 @@ issue:
 pr:
 mod-block:
 id: 087
+gates:
+    version: 1
+    records:
+        - id: gate:087:verify
+          stage: verify
+          attempts:
+            - id: gate-attempt:087-verify-1
+              briefing:
+                id: briefing:087:verify:attempt-1:revision-1
+                digest: sha256:f523638932b546c6f6db7d760ae219b9f06027b61f6c4326380de363a57a8a30
+                room-ref: ./explain-status-in-plain-language/review/verify/briefing-1
 ---
 
 Help new users understand workflow status and where they can act without learning Spacedock terminology first.

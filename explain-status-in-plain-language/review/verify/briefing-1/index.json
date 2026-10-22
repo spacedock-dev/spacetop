@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:087:verify:attempt-1:revision-1",
+  "question": "Approve task 087 for PR publication with the disclosed new-reader walkthrough still outstanding?",
+  "artifacts": [
+    {
+      "id": "artifact:087:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/dd65689c43caa89dbd30c82cd466fb85b671348f/explain-status-in-plain-language.md",
+      "rev": "sha256:ced39ac7581b4e56b423fe7beee6c0f3c7d7f8e04d1042d82d84ea5536ee1e87",
+      "mediaType": "text/markdown",
+      "summary": "Implementation 67755d2 passed 705 tests and lint, with actual-terminal evidence and no material independent-review defects. New-reader comprehension evidence remains absent. The captain explicitly requested Create PR and then approve after disclosure of that limitation."
+    }
+  ]
+}
