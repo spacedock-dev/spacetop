@@ -14,7 +14,27 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         .map(|s| s.active_state().preview_open())
         .unwrap_or(false);
     let keymap = app.keymap();
-    let mut lines = vec![
+    let mut lines = Vec::new();
+    if let Some(diagnostic) = app
+        .as_session()
+        .and_then(|session| session.active_state().topology_diagnostic())
+    {
+        lines.extend([
+            Line::from("Progress files"),
+            Line::from(diagnostic.explanation()),
+            Line::from(diagnostic.guidance()),
+            Line::from("Technical details:"),
+            Line::from(diagnostic.to_string()),
+        ]);
+        if let crate::app::StateTopologyDiagnostic::Unverified { declared_path, .. } = &diagnostic {
+            lines.push(Line::from(format!(
+                "Configured state location: {}",
+                declared_path.display()
+            )));
+        }
+        lines.push(Line::from(""));
+    }
+    lines.extend([
         Line::from(Span::styled(
             "Spacetop keymap",
             Style::default().add_modifier(Modifier::BOLD),
@@ -34,7 +54,7 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         key_line("Y", "sync verified workflow state (fast-forward)"),
         key_line("?", "toggle this help popup"),
         key_line("Esc", "close help"),
-    ];
+    ]);
     if preview_open {
         lines.push(key_line("Space / PgDn", "page preview down"));
         lines.push(key_line("b / PgUp", "page preview up"));
@@ -86,37 +106,61 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
     lines.push(key_line("Wheel", "scroll panel under cursor"));
     lines.push(key_line("Drag divider", "resize list/preview split"));
     lines.push(key_line("Shift+drag", "native terminal text selection"));
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "press ? or Esc to close",
-        Style::default().add_modifier(Modifier::DIM),
-    )));
+    lines.extend([
+        Line::from(""),
+        Line::from("Status vocabulary"),
+        Line::from("awaiting-captain: waiting for your decision."),
+        Line::from("approved-awaiting-merge: approval is recorded; merging is still pending."),
+        Line::from("FO (first officer) means workflow coordinator: the agent that coordinates workflow steps."),
+        Line::from("A recorded running · FO value identifies that handler; it does not mean the task is complete or ready for your decision."),
+        Line::from("Idle or missing activity does not prove task completion or coordinator health."),
+        Line::from("The Activity view shows recorded stage changes, not current coordinator status."),
+        Line::from("Decide in your Spacedock workflow session, not in Spacetop. The action destination is not known here; check with your workflow coordinator."),
+        Line::from("B inspects recorded evidence only. It does not authenticate recorded actors. Spacetop cannot approve requests, move tasks, merge work or repair checkouts."),
+    ]);
 
-    // Size to content: line count + top/bottom borders, clamped to the screen.
-    // Replaces the old hand-counted height constants, which silently clipped
-    // the bottom of the popup whenever a keybind row was added.
     let popup_w = area.width.min(64);
-    let popup_h = (lines.len() as u16 + 2).min(area.height);
-    let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
-    let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let content_height = paragraph.line_count(popup_w.saturating_sub(2));
+    let popup_h = content_height
+        .saturating_add(3)
+        .min(usize::from(area.height)) as u16;
     let popup = Rect {
-        x,
-        y,
+        x: area.x + area.width.saturating_sub(popup_w) / 2,
+        y: area.y + area.height.saturating_sub(popup_h) / 2,
         width: popup_w,
         height: popup_h,
     };
-
-    let paragraph = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .title("Help")
-                .borders(Borders::ALL)
-                .style(Style::default().bg(Color::Black).fg(Color::White)),
-        )
-        .wrap(Wrap { trim: false });
-
+    let block = Block::default()
+        .title("Help")
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black).fg(Color::White));
+    let inner = block.inner(popup);
+    let body = Rect {
+        height: inner.height.saturating_sub(1),
+        ..inner
+    };
+    let max_scroll = content_height
+        .saturating_sub(usize::from(body.height))
+        .min(usize::from(u16::MAX));
+    let scroll = app.help_scroll.get().min(max_scroll);
+    app.help_scroll.set(scroll);
+    app.help_max_scroll.set(max_scroll);
+    app.help_page_height.set(usize::from(body.height));
     frame.render_widget(Clear, popup);
-    frame.render_widget(paragraph, popup);
+    frame.render_widget(block, popup);
+    frame.render_widget(paragraph.scroll((scroll as u16, 0)), body);
+    if inner.height > 0 {
+        let hint = Rect {
+            y: inner.y + inner.height - 1,
+            height: 1,
+            ..inner
+        };
+        frame.render_widget(
+            Paragraph::new("?/Esc: close | Up/Down PgUp/PgDn Home/End: scroll"),
+            hint,
+        );
+    }
 }
 
 fn key_line(key: &str, description: &str) -> Line<'static> {

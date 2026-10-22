@@ -52,10 +52,7 @@ fn help_popup_renders_keymap_in_overview_mode() {
         rendered.contains("PageDown       page list down"),
         "help should describe PageDown as list paging when preview is closed"
     );
-    assert!(
-        rendered.contains("press ? or Esc to close"),
-        "missing close hint"
-    );
+    assert!(rendered.contains("?/Esc: close"), "missing close hint");
 }
 
 /// AC-1 (task 041): the help popup lists the new `D` keybind that
@@ -260,8 +257,7 @@ fn dashboard_status_footer_lists_help_affordance() {
 
 #[test]
 fn dashboard_footer_lists_p3_capability_hints_when_preview_closed() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
-    let app = App::load(root).expect("workflow should load");
+    let app = App::from_snapshot(PathBuf::from("/tmp/p3-footer"), p3_snapshot());
     let mut terminal = Terminal::new(TestBackend::new(180, 24)).expect("terminal");
     terminal
         .draw(|frame| render(frame, &app))
@@ -735,4 +731,62 @@ fn help_popup_includes_arrow_keys_in_multi_session() {
         !rendered.contains("switch to next workflow"),
         "single help must not include cycle hint"
     );
+}
+
+#[test]
+fn help_scrolls_without_acting_and_reopens_at_top() {
+    for (width, height) in [(120, 40), (80, 24), (40, 12), (20, 6)] {
+        let mut app = app_with_items(vec![item("001", "One", "body"), item("002", "Two", "body")]);
+        let original = app.as_overview().unwrap().clone();
+        app.toggle_help();
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let max = app.help_max_scroll.get();
+        assert!(max > 0);
+        for key in [KeyCode::Down, KeyCode::PageDown, KeyCode::End] {
+            app.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
+        }
+        assert_eq!(app.help_scroll.get(), max);
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        assert!(buffer_text(terminal.backend().buffer()).contains("?/Esc: close"));
+        for key in [KeyCode::Up, KeyCode::PageUp, KeyCode::Home] {
+            app.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
+        }
+        assert_eq!(app.help_scroll.get(), 0);
+        for key in ['Y', 'B', 'a', 'q'] {
+            app.handle_key(KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE));
+        }
+        assert!(!app.should_quit());
+        assert!(!app.take_pending_sync());
+        let current = app.as_overview().unwrap();
+        assert_eq!(current.selected_index, original.selected_index);
+        assert_eq!(current.view_scope, original.view_scope);
+        assert_eq!(current.preview_scroll, original.preview_scroll);
+        assert_eq!(current.index, original.index);
+        app.handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+        assert_eq!(app.help_scroll.get(), 0);
+    }
+}
+
+#[test]
+fn help_glossary_distinguishes_coordinator_history_and_action_limits() {
+    let mut app = app_with_items(vec![item("001", "Help", "body")]);
+    app.toggle_help();
+    let mut terminal = Terminal::new(TestBackend::new(120, 80)).unwrap();
+    terminal.draw(|frame| render(frame, &app)).unwrap();
+    let text: String = buffer_text(terminal.backend().buffer())
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '│')
+        .collect();
+    for phrase in [
+        "FO(firstofficer)meansworkflowcoordinator",
+        "notcurrentcoordinatorstatus",
+        "doesnotprovetaskcompletion",
+        "actiondestinationisnotknown",
+        "notauthenticaterecordedactors",
+    ] {
+        assert!(text.contains(phrase), "{phrase}: {text}");
+    }
 }

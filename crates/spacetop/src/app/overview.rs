@@ -112,6 +112,27 @@ pub enum StateTopologyDiagnostic {
     },
 }
 
+impl StateTopologyDiagnostic {
+    pub fn explanation(&self) -> &'static str {
+        match self {
+            Self::Missing => "Progress files are missing; no task state was loaded.",
+            Self::Detached => "Progress files are not on a branch; this view may be out of date.",
+            Self::WrongBranch { .. } => "Progress files are on a different branch.",
+            Self::Unverified { .. } => {
+                "Spacetop could not verify the progress-file checkout; state sync is blocked."
+            }
+        }
+    }
+
+    pub fn guidance(&self) -> &'static str {
+        match self {
+            Self::Missing => "An empty list is not proof there are no tasks. Ask the workflow owner to check the configured state location outside Spacetop. Y cannot repair the state checkout.",
+            Self::Detached | Self::WrongBranch { .. } | Self::Unverified { .. } =>
+                "State sync is unavailable. Ask the workflow owner to check the progress-file checkout outside Spacetop. Readable files do not prove freshness or safe sync. Y cannot repair the state checkout.",
+        }
+    }
+}
+
 impl fmt::Display for StateTopologyDiagnostic {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

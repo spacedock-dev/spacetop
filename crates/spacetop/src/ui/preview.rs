@@ -131,11 +131,15 @@ pub(super) fn render_preview(
         }
     };
 
+    let gate_body = gate_detail_body(&state.index().gate_details(&item));
     let mut header_lines = build_preview_header_lines(&item, state, inner.width, placement);
     let divider_line = header_lines.pop().unwrap_or_else(|| Line::from(""));
     let divider_height = wrapped_lines_height(std::slice::from_ref(&divider_line), inner.width);
+    // Keep recorded facts and their explanation reachable even when the fixed
+    // metadata would otherwise consume the entire short preview pane.
+    let body_reserve = if gate_body.is_empty() { 0 } else { 3 };
     let metadata_height = wrapped_lines_height(&header_lines, inner.width)
-        .min(inner.height.saturating_sub(divider_height));
+        .min(inner.height.saturating_sub(divider_height + body_reserve));
     let header_area = Rect {
         x: inner.x,
         y: inner.y,
@@ -173,7 +177,6 @@ pub(super) fn render_preview(
     // root (main) copy, render a unified diff between the two bodies instead
     // of the plain markdown body. Otherwise fall back to the normal markdown
     // rendering path.
-    let gate_body = gate_detail_body(&state.index().gate_details(&item));
     let display_body = format!("{gate_body}{}", item.body);
     let diff_lines: Option<Vec<Line<'static>>> = item.main_body.as_deref().map(|main| {
         let mut lines = cached_markdown(
@@ -524,10 +527,73 @@ fn wrapped_lines_height(lines: &[Line<'_>], width: u16) -> u16 {
         .sum()
 }
 
+fn gate_explanation(
+    readiness: spacetop_core::domain::GateReadiness,
+) -> (&'static str, &'static str) {
+    use spacetop_core::domain::GateReadiness::*;
+    match readiness {
+        Validating => (
+            "Readiness for review has not been established.",
+            "Inspect the recorded details and ask your workflow coordinator to check them.",
+        ),
+        NeedsPreparation => (
+            "Checks passed; the review request still needs to be prepared.",
+            "Ask your workflow coordinator to prepare the request in your workflow session.",
+        ),
+        AwaitingCaptain => (
+            "Waiting for your decision.",
+            "Review the request with your workflow coordinator. Decide in your Spacedock workflow session, not in Spacetop.",
+        ),
+        WithdrawnAwaitingPrepare => (
+            "The review request was withdrawn; a new request is needed.",
+            "Ask your workflow coordinator to prepare a new request in your workflow session.",
+        ),
+        FeedbackPending => (
+            "Changes were requested; follow-up is pending.",
+            "Discuss the requested changes with your workflow coordinator in your workflow session.",
+        ),
+        Held => (
+            "A hold was recorded; this request is paused.",
+            "Discuss the hold with your workflow coordinator in your workflow session.",
+        ),
+        ApprovedAwaitingAdvance => (
+            "Approval is recorded; the move to the next stage is still pending.",
+            "Continue through your workflow's advance process; Spacetop cannot move or merge this task.",
+        ),
+        ApprovedAwaitingMerge => (
+            "Approval is recorded; merging is still pending.",
+            "Continue through your workflow's merge process; Spacetop cannot move or merge this task.",
+        ),
+        Consumed => (
+            "This approval was already used; it is not a new pending approval.",
+            "Inspect the recorded history; this does not establish task completion.",
+        ),
+        Superseded => (
+            "This approval was superseded; it is no longer pending.",
+            "Inspect the recorded history; this does not establish a new approval.",
+        ),
+        Invalid => (
+            "Gate information is invalid or unsupported; readiness cannot be trusted.",
+            "Inspect the recorded details and ask your workflow coordinator to check them.",
+        ),
+    }
+}
+
 /// All recorded attempts remain inspectable; current authority is explicit.
 fn gate_detail_body(details: &spacetop_core::domain::GateDetails) -> String {
     use spacetop_core::domain::GateData;
     let mut lines = Vec::new();
+    if let Some(readiness) = details.readiness {
+        let (meaning, guidance) = gate_explanation(readiness);
+        lines.push(format!("### Gate: {}", readiness.label()));
+        lines.push(format!("\n{meaning}\n\n{guidance}\n"));
+        lines.push(
+            "The action destination is not known here. Check with your workflow coordinator.\n"
+                .to_string(),
+        );
+    } else if !matches!(details.data, GateData::Absent) {
+        lines.push("No current gate readiness applies.\n".to_string());
+    }
     match &details.data {
         GateData::Absent => {}
         GateData::Invalid { diagnostics } => {
@@ -569,7 +635,7 @@ fn gate_detail_body(details: &spacetop_core::domain::GateDetails) -> String {
                             spacetop_core::domain::GateDecision::Hold => "hold",
                         };
                         lines.push(format!(
-                            "  Decision: {decision} / {} / {}",
+                            "  Recorded decision: {decision} / {} / {}",
                             resolution.by, resolution.at
                         ));
                         if !resolution.reason.is_empty() {
@@ -589,7 +655,7 @@ fn gate_detail_body(details: &spacetop_core::domain::GateDetails) -> String {
                             spacetop_core::domain::GateApplicationState::Superseded => "superseded",
                         };
                         lines.push(format!(
-                            "  Application: {state} / target {}",
+                            "  Application: {state} / recorded target {}",
                             application.target_stage
                         ));
                     }
@@ -702,5 +768,102 @@ mod cache_tests {
         let path = PathBuf::from("/w/task-001.md");
         let out = cache.get_or_render(&path, "body", true, 42, dummy);
         assert_eq!(out, vec![Line::from("w42".to_string())]);
+    }
+}
+
+#[cfg(test)]
+mod explanation_tests {
+    use super::*;
+    use spacetop_core::domain::{GateData, GateDetails, GatePreparation, GateReadiness::*};
+
+    #[test]
+    fn all_readiness_meanings_preserve_labels_even_without_records() {
+        for (readiness, meaning) in [
+            (Validating, "Readiness for review has not been established."),
+            (
+                NeedsPreparation,
+                "Checks passed; the review request still needs to be prepared.",
+            ),
+            (AwaitingCaptain, "Waiting for your decision."),
+            (
+                WithdrawnAwaitingPrepare,
+                "The review request was withdrawn; a new request is needed.",
+            ),
+            (
+                FeedbackPending,
+                "Changes were requested; follow-up is pending.",
+            ),
+            (Held, "A hold was recorded; this request is paused."),
+            (
+                ApprovedAwaitingAdvance,
+                "Approval is recorded; the move to the next stage is still pending.",
+            ),
+            (
+                ApprovedAwaitingMerge,
+                "Approval is recorded; merging is still pending.",
+            ),
+            (
+                Consumed,
+                "This approval was already used; it is not a new pending approval.",
+            ),
+            (
+                Superseded,
+                "This approval was superseded; it is no longer pending.",
+            ),
+            (
+                Invalid,
+                "Gate information is invalid or unsupported; readiness cannot be trusted.",
+            ),
+        ] {
+            let details = GateDetails {
+                readiness: Some(readiness),
+                data: GateData::Absent,
+                preparation: GatePreparation {
+                    proven: false,
+                    diagnostics: vec!["unproven source".into()],
+                },
+                selected_gate: None,
+                selected_attempt: None,
+                stage: "review".into(),
+            };
+            let body = gate_detail_body(&details);
+            assert!(body.contains(readiness.label()), "{body}");
+            assert!(body.contains(meaning), "{body}");
+            assert!(
+                body.contains("action destination is not known here"),
+                "{body}"
+            );
+            assert!(
+                body.contains("Preparation proof: unproven source"),
+                "{body}"
+            );
+            if matches!(readiness, ApprovedAwaitingAdvance | ApprovedAwaitingMerge) {
+                assert!(body.contains("Spacetop cannot move or merge this task"));
+            }
+            if readiness == AwaitingCaptain {
+                assert!(body.contains("Decide in your Spacedock workflow session, not in Spacetop"));
+            }
+        }
+    }
+
+    #[test]
+    fn no_readiness_does_not_invent_health_or_hide_invalid_data() {
+        let mut details = GateDetails {
+            readiness: None,
+            data: GateData::Absent,
+            preparation: GatePreparation::default(),
+            selected_gate: None,
+            selected_attempt: None,
+            stage: "done".into(),
+        };
+        assert_eq!(gate_detail_body(&details), "");
+        details.data = GateData::Invalid {
+            diagnostics: vec!["unsupported version".into()],
+        };
+        let body = gate_detail_body(&details);
+        assert!(body.contains("No current gate readiness applies"));
+        assert!(body.contains("Invalid recorded gates"));
+        assert!(body.contains("unsupported version"));
+        assert!(!body.contains("Waiting for your decision"));
     }
 }

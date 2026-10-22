@@ -62,11 +62,13 @@ checkout twice.
 A split-root checkout then has a separate runtime disposition. Attached means
 it holds the expected `state-branch:` (or the default
 `spacedock-state/<workflow-name>`) and needs no warning. Detached and
-wrong-branch checkouts remain fully readable, but the footer warns that their
-snapshot may be stale or names the actual and expected branches. Missing state
-shows an empty list together with “State checkout missing; no state loaded.” A
-Git probe failure shows “State topology unverified” and explains that sync is
-blocked instead of claiming the workflow is healthy.
+wrong-branch checkouts remain readable. The footer gives a short plain-language
+warning; press `?` for its meaning, safe next steps, and the full technical
+diagnostic, including available branch, path and probe-error facts. Missing state
+says “Progress files are missing; no task state was loaded.” An empty list in
+this case is not proof there are no tasks. Unverified state is not evidence of a
+healthy or up-to-date workflow. Ask the workflow owner to check the configured
+state location outside Spacetop: `Y` cannot repair the checkout.
 
 The product contract remains read-only by default: Spacedock markdown files are
 the source of truth, and state-changing features must be explicit and auditable.
@@ -77,6 +79,20 @@ requiring a session log. Compact list labels include `[gate:captain]`,
 scrollable recorded attempts, briefing bindings, decisions, application targets,
 and warnings. A recorded approval is an inspection fact, not authenticated
 permission for Spacetop to execute it.
+
+The scrollable preview explains each precise label. `awaiting-captain` means
+waiting for your decision; `approved-awaiting-merge` means approval is recorded
+but merging is still pending. `validating` means review readiness has not been
+established, not that a worker is currently running. `not-applicable` means a
+recorded hold; `consumed` and `superseded` do not prove task completion.
+Decide in your Spacedock workflow session, not in Spacetop. The action
+destination is not known here; check with your workflow coordinator. Room
+references, recorded actors and target stages are not runnable action routes.
+
+The existing `?` help popup also explains status vocabulary and any current
+storage warning. Use Up/Down (or `k`/`j`), PgUp/PgDn, Home/End to scroll help;
+`?` or Esc closes it. These keys do not move the task selection while help is
+open. Reopening help starts at the top.
 
 Only the latest attempt for the current gated nonterminal stage supplies current
 readiness. Consumed and superseded approvals keep their spent labels. Other-stage
@@ -97,9 +113,14 @@ or merges a gate.
 
 Entity activity has three values: `idle`, `running`, and `human-gate`.
 `running` identifies its handler as `running · worker` or `running · FO`.
+FO (first officer) means workflow coordinator: the agent that coordinates
+workflow steps. A recorded `running · FO` value identifies that handler; it
+does not mean the task is complete or ready for your decision. Idle or missing
+activity does not prove completion or coordinator health.
 Task rows and preview headers omit inferred runtime activity, session attribution
 and last-activity timestamps. Workflow stages and durable gates remain visible.
-The activity backend, headless schemas and dedicated activity feed are unchanged.
+The Activity view shows recorded Git stage changes, not current coordinator
+status. Help explains the terminology; it is not a live coordinator indicator.
 Detection fails closed:
 only exact structured worker, first-officer, terminal, and approve/reject gate
 records create activity. Process names, mtimes, workflow stages, ordinary path

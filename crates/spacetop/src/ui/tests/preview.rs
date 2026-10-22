@@ -698,3 +698,82 @@ fn durable_gates_preview_shows_current_historical_and_invalid_details_and_scroll
         assert!(app.as_overview().unwrap().preview_open());
     }
 }
+
+#[test]
+fn gate_meanings_render_before_markdown_and_worktree_diffs() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/durable-gates");
+    let snapshot = spacetop_core::parser::load_workflow_dir(&root, &root).unwrap();
+    for (id, meaning) in [
+        ("pending", "Waiting for your decision."),
+        ("merge", "Approval is recorded; merging is still pending."),
+        ("advance", "move to the next stage is still pending."),
+        ("held", "A hold was recorded; this request is paused."),
+        ("withdrawn", "a new request is needed."),
+        ("feedback", "Changes were requested; follow-up is pending."),
+        ("invalid", "readiness cannot be trusted."),
+        ("consumed", "not a new pending approval."),
+        ("superseded", "it is no longer pending."),
+        ("historical", "No current gate readiness applies."),
+        ("legacy", "Readiness for review has not been established."),
+    ] {
+        for diff in [false, true] {
+            for wrap in [false, true] {
+                let mut selected = snapshot.clone();
+                selected.items.retain(|e| e.id == id);
+                if diff {
+                    selected.items[0].main_body = Some("Original body\n".into());
+                }
+                let mut app = App::from_snapshot(root.clone(), selected);
+                app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                if !wrap {
+                    app.handle_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+                }
+                let mut terminal = Terminal::new(TestBackend::new(260, 55)).unwrap();
+                terminal.draw(|frame| render(frame, &app)).unwrap();
+                let text = buffer_text(terminal.backend().buffer());
+                assert!(
+                    text.contains(meaning),
+                    "{id} diff={diff} wrap={wrap}: {text}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn prepared_gate_without_records_explains_request_is_still_needed() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/durable-gates");
+    let mut snapshot = spacetop_core::parser::load_workflow_dir(&root, &root).unwrap();
+    snapshot.items.retain(|e| e.id == "legacy");
+    snapshot.items[0].gate_preparation.proven = true;
+    let mut app = App::from_snapshot(root, snapshot);
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let mut terminal = Terminal::new(TestBackend::new(260, 55)).unwrap();
+    terminal.draw(|frame| render(frame, &app)).unwrap();
+    let text = buffer_text(terminal.backend().buffer());
+    assert!(text.contains("gate: needs-preparation"), "{text}");
+    assert!(
+        text.contains("Checks passed; the review request still needs to be prepared."),
+        "{text}"
+    );
+    assert!(!text.contains("Waiting for your decision."), "{text}");
+}
+
+#[test]
+fn short_gate_preview_keeps_explanation_reachable_by_scrolling() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/durable-gates");
+    let mut snapshot = spacetop_core::parser::load_workflow_dir(&root, &root).unwrap();
+    snapshot.items.retain(|e| e.id == "pending");
+    let mut app = App::from_snapshot(root, snapshot);
+    app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let mut terminal = Terminal::new(TestBackend::new(40, 12)).unwrap();
+    let mut observed = String::new();
+    for _ in 0..15 {
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        observed.push_str(&buffer_text(terminal.backend().buffer()));
+        app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+    }
+    assert!(observed.contains("Waiting for your"), "{observed}");
+    assert!(observed.contains("decision."), "{observed}");
+    assert!(observed.contains("awaiting-captain"), "{observed}");
+}

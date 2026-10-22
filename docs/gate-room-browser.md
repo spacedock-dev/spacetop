@@ -30,6 +30,14 @@ Recorded decisions are frontmatter facts. A valid room binding authenticates
 neither the recorded actor nor a conn quote. Included annotations remain
 recorded ids; correction-round log resolution is outside this browser.
 
+The task preview explains gate readiness in plain language alongside the
+canonical label and recorded details. Waiting for your decision is different
+from approval awaiting merge. `B` only inspects evidence; it does not approve
+requests or authenticate their recorded actors. Make decisions in your
+Spacedock workflow session. Spacetop does not know the action destination from a
+room reference, actor string or recorded target stage; ask your workflow
+coordinator when the destination is unknown.
+
 Safe local evidence roots are the workflow's canonical entity root, including
 archives, contained within its canonical definition root. No root is inferred
 from worktrees, HOME, the current directory, events or URI text. Symlink

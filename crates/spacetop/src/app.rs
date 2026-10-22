@@ -242,6 +242,9 @@ pub struct App {
     runtime_warnings: Vec<String>,
     should_quit: bool,
     help_open: bool,
+    pub(crate) help_scroll: Cell<usize>,
+    pub(crate) help_max_scroll: Cell<usize>,
+    pub(crate) help_page_height: Cell<usize>,
     pending_switch: Option<WorkflowSwitch>,
     pending_overlay_open: bool,
     pending_open_file: Option<PathBuf>,
@@ -387,6 +390,9 @@ impl App {
             runtime_warnings: Vec::new(),
             should_quit: false,
             help_open: false,
+            help_scroll: Cell::new(0),
+            help_max_scroll: Cell::new(0),
+            help_page_height: Cell::new(1),
             pending_switch: None,
             pending_overlay_open: false,
             pending_open_file: None,
@@ -432,6 +438,7 @@ impl App {
 
     pub fn toggle_help(&mut self) {
         self.help_open = !self.help_open;
+        self.help_scroll.set(0);
     }
 
     pub fn close_help(&mut self) {
@@ -902,7 +909,7 @@ impl App {
             }
             AppMode::Overview(_) => {}
             AppMode::Picker(state) => match key.code {
-                KeyCode::Char('?') => self.help_open = true,
+                KeyCode::Char('?') => self.toggle_help(),
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
                 KeyCode::Down | KeyCode::Char('j') => state.select_next(),
                 KeyCode::Up | KeyCode::Char('k') => state.select_previous(),
@@ -918,7 +925,7 @@ impl App {
                 _ => {}
             },
             AppMode::Definition { underlying, scroll } => match key.code {
-                KeyCode::Char('?') => self.help_open = true,
+                KeyCode::Char('?') => self.toggle_help(),
                 KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('D') => {
                     let restored = std::mem::replace(
                         underlying,
@@ -957,7 +964,7 @@ impl App {
             | AppMode::Relations {
                 underlying, scroll, ..
             } => match key.code {
-                KeyCode::Char('?') => self.help_open = true,
+                KeyCode::Char('?') => self.toggle_help(),
                 KeyCode::Esc | KeyCode::Char('q') => {
                     let restored = std::mem::replace(
                         underlying,
@@ -995,7 +1002,7 @@ impl App {
                 _ => {}
             },
             AppMode::PickerOverlay { underlying, picker } => match key.code {
-                KeyCode::Char('?') => self.help_open = true,
+                KeyCode::Char('?') => self.toggle_help(),
                 KeyCode::Esc | KeyCode::Char('q') => {
                     // Restore the underlying session — discard the picker.
                     let restored = std::mem::replace(
@@ -1143,16 +1150,29 @@ impl App {
         if !self.help_open {
             return false;
         }
-        if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc) {
-            self.help_open = false;
-        }
+        let scroll = self.help_scroll.get();
+        let page = self.help_page_height.get().max(1);
+        let next = match key.code {
+            KeyCode::Char('?') | KeyCode::Esc => {
+                self.close_help();
+                return true;
+            }
+            KeyCode::Up | KeyCode::Char('k') => scroll.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => scroll.saturating_add(1),
+            KeyCode::PageUp => scroll.saturating_sub(page),
+            KeyCode::PageDown => scroll.saturating_add(page),
+            KeyCode::Home => 0,
+            KeyCode::End => self.help_max_scroll.get(),
+            _ => scroll,
+        };
+        self.help_scroll.set(next.min(self.help_max_scroll.get()));
         true
     }
 
     fn apply_overview_key_action(&mut self, action: OverviewKeyAction) {
         match action {
             OverviewKeyAction::None => {}
-            OverviewKeyAction::OpenHelp => self.help_open = true,
+            OverviewKeyAction::OpenHelp => self.toggle_help(),
             OverviewKeyAction::Quit => self.should_quit = true,
             OverviewKeyAction::Switch(workflow_switch) => {
                 self.id_click_candidate = None;
@@ -1285,7 +1305,7 @@ impl App {
                 AppMode::Search { underlying, state }
             }
             KeyCode::Char('?') => {
-                self.help_open = true;
+                self.toggle_help();
                 AppMode::Search { underlying, state }
             }
             KeyCode::Down | KeyCode::Char('j') => {
