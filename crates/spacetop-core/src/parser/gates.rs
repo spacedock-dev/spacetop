@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 // Preserve duplicate-key refusal before filtering compatibility fields. Value's
 // normal map conversion can lose duplicate keys; recurse through this visitor.
-struct UniqueValue(Value);
+pub(super) struct UniqueValue(pub(super) Value);
 impl<'de> Deserialize<'de> for UniqueValue {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct UniqueVisitor;
@@ -191,7 +191,7 @@ fn validate(doc: &GateDocument) -> Result<(), String> {
 }
 // RFC3339 UTC validation without a new time dependency. Validate calendar and
 // clock ranges too; a suffix alone is not timestamp proof.
-fn utc_timestamp(value: &str) -> bool {
+pub(super) fn utc_timestamp(value: &str) -> bool {
     let value = value
         .strip_suffix('Z')
         .or_else(|| value.strip_suffix("+00:00"));
@@ -287,7 +287,7 @@ fn validate_attempt(attempt: &GateAttempt, path: &str) -> Result<(), String> {
     }
     Ok(())
 }
-fn validate_resolution(
+pub(super) fn validate_resolution(
     resolution: &GateResolution,
     briefing_id: &str,
     path: &str,

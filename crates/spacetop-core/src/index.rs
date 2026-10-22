@@ -398,6 +398,11 @@ impl WorkflowIndex {
         })
     }
 
+    /// Bounded evidence snapshot. The browser caches it until a workflow refresh.
+    pub fn correction_rounds(&self, entity: &Entity) -> crate::domain::CorrectionHistory {
+        crate::correction_history::load(&self.definition, entity)
+    }
+
     pub fn gate_attempts<'a>(
         &self,
         entity: &'a Entity,
@@ -534,6 +539,8 @@ mod tests {
 
     fn entity(id: &str, title: &str, status: &str) -> Entity {
         Entity {
+            review_round: Default::default(),
+            evidence_origin: None,
             gates: Default::default(),
             gate_preparation: Default::default(),
             gate_readiness: None,

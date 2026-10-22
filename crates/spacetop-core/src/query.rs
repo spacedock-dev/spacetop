@@ -1,4 +1,81 @@
+use crate::domain::{
+    CorrectionHistory, CorrectionRelationships, CorrectionRound, RecordedRelationship,
+    RelationshipDirection, RelationshipKind, RelationshipValidation, ReviewRecord,
+    ReviewRecordIdentity, RoundIdentity,
+};
 use serde::{Deserialize, Serialize};
+
+impl CorrectionHistory {
+    pub fn correction_round(&self, identity: &RoundIdentity) -> Option<&CorrectionRound> {
+        self.rounds.iter().find(|r| &r.identity == identity)
+    }
+
+    pub fn correction_record(&self, identity: &ReviewRecordIdentity) -> Option<&ReviewRecord> {
+        self.correction_round(&identity.round)?
+            .records
+            .iter()
+            .find(|r| &r.identity == identity)
+    }
+
+    /// Only physical includes edges within one validated Briefing/log namespace.
+    /// Incoming reviewer evidence is not a response; roles preserve that distinction.
+    pub fn correction_relationships(
+        &self,
+        identity: &ReviewRecordIdentity,
+    ) -> CorrectionRelationships {
+        let Some(round) = self.correction_round(&identity.round) else {
+            return CorrectionRelationships::Unavailable;
+        };
+        if self.correction_record(identity).is_none() {
+            return CorrectionRelationships::Unavailable;
+        }
+        let mut edges = Vec::new();
+        for record in &round.records {
+            for (ordinal, included) in record.includes.iter().enumerate() {
+                let target = ReviewRecordIdentity {
+                    round: round.identity.clone(),
+                    id: included.clone(),
+                };
+                let direction = if &record.identity == identity {
+                    RelationshipDirection::Outgoing
+                } else if &target == identity {
+                    RelationshipDirection::Incoming
+                } else {
+                    continue;
+                };
+                edges.push(RecordedRelationship {
+                    source: record.identity.clone(),
+                    target,
+                    kind: RelationshipKind::RecordedIncludes,
+                    direction,
+                    role: crate::parser::correction_history::relationship_role(round, record),
+                    ordinal: ordinal + 1,
+                    validation: RelationshipValidation::Valid,
+                });
+            }
+        }
+        for edge in &round.invalid_relationships {
+            if &edge.source == identity || &edge.target == identity {
+                let mut edge = edge.clone();
+                edge.direction = if &edge.source == identity {
+                    RelationshipDirection::Outgoing
+                } else {
+                    RelationshipDirection::Incoming
+                };
+                edges.push(edge);
+            }
+        }
+        if edges.is_empty() {
+            if round.completeness == crate::domain::ReviewCompleteness::Invalid {
+                CorrectionRelationships::Unavailable
+            } else {
+                CorrectionRelationships::NoRecordedRelationship
+            }
+        } else {
+            CorrectionRelationships::Recorded(edges)
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntityQuery {

@@ -109,3 +109,96 @@ fn archive_rename_and_new_file_trigger_refresh() {
         "expected at least one RefreshSignal after archive rename + new file"
     );
 }
+
+#[test]
+#[ignore = "exercises real notify review-log append/rename/new-round/delete events"]
+fn correction_history_changes_trigger_real_notify_refresh() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let room = dir.path().join("sample/review/implementation/round-1");
+    fs::create_dir_all(&room).unwrap();
+    let log = room.join("briefing.review.jsonl");
+    fs::write(&log, "{}\n").unwrap();
+    let (_watcher, rx) = WorkflowWatcher::start(dir.path(), WatcherConfig::default()).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    let settle = || {
+        std::thread::sleep(Duration::from_millis(400));
+        while rx.try_recv().is_ok() {}
+    };
+    settle();
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&log)
+        .unwrap()
+        .write_all(b"{")
+        .unwrap();
+    assert!(
+        rx.recv_timeout(Duration::from_secs(3)).is_ok(),
+        "partial append"
+    );
+    settle();
+    fs::OpenOptions::new()
+        .append(true)
+        .open(&log)
+        .unwrap()
+        .write_all(b"}\n")
+        .unwrap();
+    assert!(
+        rx.recv_timeout(Duration::from_secs(3)).is_ok(),
+        "tail completion"
+    );
+    settle();
+    let temporary = room.join("replacement.tmp");
+    fs::write(&temporary, "{}\n").unwrap();
+    fs::rename(&temporary, &log).unwrap();
+    assert!(
+        rx.recv_timeout(Duration::from_secs(3)).is_ok(),
+        "atomic rename"
+    );
+    settle();
+    let next = dir.path().join("sample/review/implementation/round-2");
+    fs::create_dir(&next).unwrap();
+    fs::write(next.join("briefing.review.jsonl"), "{}\n").unwrap();
+    assert!(rx.recv_timeout(Duration::from_secs(3)).is_ok(), "new round");
+    settle();
+    fs::remove_dir_all(next).unwrap();
+    assert!(
+        rx.recv_timeout(Duration::from_secs(3)).is_ok(),
+        "round deletion"
+    );
+}
+
+#[test]
+#[ignore = "exercises the real notify polling backend on review JSONL"]
+fn correction_history_poll_backend_observes_log_replacement() {
+    use notify::{Config, PollWatcher, RecursiveMode, Watcher};
+    let dir = tempfile::tempdir().unwrap();
+    let room = dir.path().join("review/implementation/round-1");
+    fs::create_dir_all(&room).unwrap();
+    let log = room.join("briefing.review.jsonl");
+    fs::write(&log, "{}\n").unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut watcher = PollWatcher::new(
+        move |event| {
+            let _ = tx.send(event);
+        },
+        Config::default()
+            .with_poll_interval(Duration::from_millis(100))
+            .with_compare_contents(true),
+    )
+    .unwrap();
+    watcher.watch(dir.path(), RecursiveMode::Recursive).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    while rx.try_recv().is_ok() {}
+    fs::write(&log, "{\"changed\":true}\n").unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(4);
+    loop {
+        let event = rx
+            .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .expect("poll event")
+            .unwrap();
+        if event.paths.contains(&log) {
+            break;
+        }
+    }
+}

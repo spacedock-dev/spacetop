@@ -204,7 +204,11 @@ pub(crate) fn is_relevant(path: &Path) -> bool {
         if ext_lc == "md"
             || matches!(
                 name,
-                "index.json" | "gate-briefing.json" | "briefing.json" | "request.json"
+                "index.json"
+                    | "gate-briefing.json"
+                    | "briefing.json"
+                    | "request.json"
+                    | "briefing.review.jsonl"
             )
         {
             return true;
@@ -558,5 +562,31 @@ mod tests {
         }
         let _ = handle.join();
         drop(rx);
+    }
+}
+
+#[cfg(test)]
+mod correction_history_tests {
+    use super::*;
+    #[test]
+    fn review_log_and_rename_invalidate_but_access_does_not() {
+        let log =
+            PathBuf::from("/workflow/entity/review/implementation/round-10/briefing.review.jsonl");
+        assert!(is_relevant(&log));
+        assert!(event_is_relevant(
+            &Event::new(EventKind::Modify(notify::event::ModifyKind::Name(
+                notify::event::RenameMode::Both
+            )))
+            .add_path(log.clone())
+        ));
+        assert!(event_is_relevant(
+            &Event::new(EventKind::Remove(notify::event::RemoveKind::File)).add_path(log.clone())
+        ));
+        assert!(!event_is_relevant(
+            &Event::new(EventKind::Access(notify::event::AccessKind::Any)).add_path(log)
+        ));
+        assert!(!is_relevant(Path::new(
+            "/workflow/briefing.review.jsonl.tmp"
+        )));
     }
 }

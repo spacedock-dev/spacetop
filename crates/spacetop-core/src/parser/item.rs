@@ -44,6 +44,8 @@ fn parse_work_item_contents(
     }
 
     Ok(Entity {
+        review_round: super::correction_history::parse_pointer(frontmatter, &id),
+        evidence_origin: Some(path.to_path_buf()),
         gates: super::gates::parse(frontmatter),
         gate_preparation: Default::default(),
         gate_readiness: None,

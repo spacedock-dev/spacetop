@@ -1,5 +1,7 @@
 mod attention;
 pub use attention::AttentionReason;
+mod correction_history;
+pub use correction_history::*;
 mod gate_room;
 pub use gate_room::*;
 mod gates;
@@ -275,6 +277,11 @@ pub struct StageDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entity {
     #[serde(default)]
+    pub review_round: ReviewPointer,
+    /// Physical authority remains main/state when a worktree supplies the body.
+    #[serde(default)]
+    pub evidence_origin: Option<PathBuf>,
+    #[serde(default)]
     pub gates: GateData,
     #[serde(default)]
     pub gate_preparation: GatePreparation,
@@ -542,6 +549,8 @@ mod tests {
     #[test]
     fn entity_serializes_for_headless_export() {
         let entity = Entity {
+            review_round: Default::default(),
+            evidence_origin: None,
             gates: Default::default(),
             gate_preparation: Default::default(),
             gate_readiness: None,

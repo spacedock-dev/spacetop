@@ -367,8 +367,8 @@ Question/inventory verification uses duplicate-free RFC 8785/JCS JSON and
 SHA-256; selected artifact bytes use raw SHA-256. Recorded decisions, actors,
 timestamps, reasons, conn citations, annotation ids, withdrawals and application
 states remain visible when room evidence fails. Binding verification does not
-authenticate a person or the quoted grant. Included annotation ids are references;
-this view does not resolve correction-round history.
+authenticate a person or the quoted grant. Gate annotation ids remain recorded
+references; browser-local `h` switches to typed correction-round history.
 
 Evidence reads stay inside the canonical workflow entity/state root. Symlink
 components, traversal, encoded local paths, unsupported external state roots and
@@ -386,6 +386,24 @@ Filesystem refresh invalidates room bindings and rechecks an open item. Removed
 or tampered sources lose the preview; immutable missing Git objects can be
 retried with explicit item selection. The watcher includes contained split-root
 state and archives, canonical room files and selected safe local dependencies.
+
+In correction history, rounds follow workflow stage order (unknown stages
+lexically afterward), then numeric cycle order. The valid `review-round`
+pointer is explicitly **current**, even when newer retained rounds exist.
+Without a pointer the latest ordered round is selected but never labeled current.
+`Tab` switches rounds/records, `j/k` selects, and `Enter` opens a record, a
+selected recorded includes relationship, or verified artifact bytes. `Esc`/`q`
+returns through the record navigation stack to the original selection.
+
+Annotation body/target/kind and Resolution actor/time/reason are recorded facts,
+not inferred outcomes. Includes resolve only to earlier records in the same
+Briefing/log; inverse links expose recorded follow-ups, not cross-round responses.
+The first Resolution is the reviewer verdict. An answered advisory round does
+not approve a gate or prove a finding fixed. Missing, malformed, mismatched and
+partial evidence remains explicit; valid JSONL prefixes stay inspectable.
+Legacy entities may have retained rounds without a pointer or no history at all.
+See the [reproducible correction fixture](tests/fixtures/correction_history/README.md).
+
 
 ### Herdr sidecar
 

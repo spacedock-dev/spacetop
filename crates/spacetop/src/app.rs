@@ -11,6 +11,7 @@ use spacetop_core::parser::ParseError;
 use spacetop_core::query::EntityQuery;
 use spacetop_core::session_state::{SessionState, WorkflowSessionKey};
 
+pub mod correction_history;
 pub mod gate_room;
 mod history_worker;
 mod keys;

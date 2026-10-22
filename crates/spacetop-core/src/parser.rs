@@ -1,3 +1,4 @@
+pub mod correction_history;
 pub mod gate_room;
 use std::fs;
 use std::fs::DirEntry;

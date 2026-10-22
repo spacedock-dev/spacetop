@@ -68,6 +68,8 @@ fn path_line_stays_visible_for_long_paths() {
     //     /repo/docs/wf, so strip_prefix yields "039-foo.md" — short and
     //     visible on the same row as the "path:" label.
     let in_root = Entity {
+        review_round: Default::default(),
+        evidence_origin: None,
         gates: Default::default(),
         gate_preparation: Default::default(),
         gate_readiness: None,
