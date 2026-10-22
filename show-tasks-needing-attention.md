@@ -207,3 +207,35 @@ Planned a focused read-only attention view from existing typed facts, with disti
 ### Summary
 
 Implemented the complete recorded attention projection and read-only focused UI in `fa4fe00`, including shared explanations, consistent navigation, verified evidence and explicit missing-data failures. Automated checks and actual-terminal byte-inventory proof passed; the separately required unfamiliar-person AC-2 proof remains unavailable and must be resolved before claiming full acceptance.
+
+## Stage Report: verify
+
+- DONE: Independently review the attention projection, focused row identity, reason rendering and report/evidence navigation against all task acceptance criteria and no-guessing/read-only boundaries; report concrete material defects.
+  Reviewed `0f7f38e...fa4fe00`, owning app/query/render paths, fixtures and assertions; found one High technical defect, V-1 below. No implementation edits, approval or merge performed.
+- DONE: Assess recorded 716-test, lint, build and actual PTY byte-inventory evidence without repeating green checks; exercise changed-path claims only where evidence is missing or insufficient.
+  Inspected `artifact://150` successful suite/guardrail, clippy and build output and `local://attention-086-terminal.json` captures/inventories; accepted recorded formatting evidence without rerunning green checks. Ran only the missing focused-search display/activation scenario.
+- DONE: Record explicit per-criterion coverage and verdict, keeping unavailable unfamiliar-person evidence separate from technical defects and never waiving it or claiming it occurred.
+  AC-1 and AC-2 have the technical failure below; AC-3 and AC-4 pass reviewed evidence. AC-2 additionally has a separate unavailable human-acceptance obligation.
+- FAILED: V-1 — High technical defect: focused search renders a different row set from the one Enter activates.
+  `crates/spacetop/src/app.rs:1352-1358` newly filters search activation by attention, but `crates/spacetop/src/ui/search.rs:35-40` still renders the unfiltered query; displayed indices therefore identify different tasks.
+  Independent actual PTY reproduction against the existing `fa4fe00` debug binary: launch `target/debug/spacetop --workflow-dir tests/fixtures/attention`, then `:needs-attention`, Enter, `/`, Down, Down, Enter, Enter. Search highlights `consumed`; the opened preview identifies `#feedback`, `feedback.md`, and `feedback-pending` instead.
+  Observed at 100x24, TERM=xterm-256color, SPACETOP_ASCII=1, with temporary absolute HOME/XDG roots outside the workflow; output retained in `artifact://164`. The same unfiltered popup is visible in the author's “missing room diagnostic” PTY capture.
+  Impact: users can open another task's report/evidence than the highlighted search result, and excluded tasks remain visible in focused search. Align renderer and activation with one filtered result set; add a rendered-search-to-Enter identity regression, including a nonqualifying row before a qualifying row.
+- FAILED: AC-1 — focused inclusion and row identity.
+  Core classification, invalid-data precedence, diagnostic-presence distinction and main-list reasons pass reviewed tests; overall criterion fails because focused search shows nonqualifying rows and disagrees with activation (V-1).
+- FAILED: AC-2 — selected-task navigation technical coverage.
+  Successful verified-byte navigation, missing room/artifact failures, refresh invalidation and narrow-screen reachability have app/TestBackend/PTY evidence; V-1 breaks the selected-result-to-report path and prevents technical acceptance.
+- SKIPPED: AC-2 — unfamiliar-person comprehension acceptance.
+  No unfamiliar participant's uncoached actions/paraphrase are available. This is an outstanding acceptance-evidence gap, not a second code defect; agent PTY evidence cannot satisfy or waive it.
+- DONE: AC-3 — runtime silence never means blocked work.
+  `domain/attention.rs` accepts only gate facts/readiness/preparation; core `tests/attention.rs:84-118` crosses runtime states, timestamps and unavailable scans against invariant membership. Introducing activity-based inclusion would fail this assertion.
+- DONE: AC-4 — inspection remains read-only.
+  Reviewed inventories compare equal for all 26 workflow and 52 Git paths/hashes, including additions/deletions; write-safety/core-boundary guardrails passed. Navigation tests assert no pending sync/editor request; no new writer, evidence-root expansion or action capability appears in the diff.
+- DONE: Assess remaining integration and presentation evidence.
+  Sort/reload/archive/broken-row/tab tests preserve focused identity; continuation-click, reason categories, tiny preview and worktree-diff tests cover their claims. Existing search test at `app/tests.rs:2874-2884` asserts only the internal filtered query, not the popup, explaining why V-1 escaped 716 green tests.
+- SKIPPED: Repeat builds, full suites, lint, formatters, and implementation fixes.
+  Existing green checks were sufficient for their stated claims; this stage exercised only missing search integration proof and leaves remediation to implementation.
+
+### Summary
+
+Verification verdict: request changes for High defect V-1; the stage review is complete but task acceptance is not. After the focused-search renderer/activation mismatch is fixed and its regression demonstrated, AC-2 still requires the separately unavailable unfamiliar-person walkthrough; neither a technical fix nor captain gate handling may silently count agent evidence as that human result.
