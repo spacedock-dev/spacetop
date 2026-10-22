@@ -187,3 +187,34 @@ Independent proof: `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/tas
 ### Summary
 
 Independent verification of `65093ee` is complete; request changes for one reproduced material failure-explanation defect. AC-1, AC-3 and AC-4 have supporting evidence; AC-2 needs the selected-item/whole-Briefing distinction corrected and specifically verified before acceptance.
+
+## Stage Report: implement (cycle 1)
+
+- DONE: AC-1 — The review question and main report are easy to reach.
+  Commit `2d4054924bc7954648d45635fea56bf7a05065fa` preserves canonical report/Back selection; full tests and actual 150x50/80x24/40x12/20x6 runs open the exact report and supporting item. Existing identity regression fails if an adjacent item replaces the report.
+- DONE: AC-2 — Evidence failures explain their effect.
+  Authorized F1 Medium/material → FIX: core now emits typed `SelectedItemMissing` only after binding verification. New core and app/Ratatui regressions preserve the verified question/decision on report removal, invalidate preview without substitution, and retain untrusted messaging for true request/digest mismatches; reclassifying removal as `BindingMismatch` makes them fail.
+- DONE: AC-3 — Corrections lead to recorded responses.
+  No relationship code changed. Full suite and actual multi-round PTY follow finding → disposition → closing Resolution → Back; cycle 2 remains unlinked and cycle 10 reports unknown additional responses. Existing tests fail if prose, nearby records or another Briefing becomes a response.
+- DONE: AC-4 — Existing evidence safety stays intact.
+  Full core safe-read/exact-Git/no-write/terminal-free checks pass; actual inspection leaves all 72 workflow files unchanged, including archive, round and untracked files. The separate deliberate removal/rebind and invalid-request run never substitutes supporting bytes or preserves a failed preview.
+- DONE: Implement question-first review navigation and direct canonical-report access with clear missing/invalid evidence explanations, preserving exact recorded decisions and verified reader boundaries.
+  F1-only correction in `2d40549` adds the domain distinction, core producer, app explanation, core/app/render tests and nearby browser guidance; no diagnostic-string matching, reader relaxation or unrelated feature change.
+- DONE: Integrate all AC-3 correction-to-recorded-response navigation using merged task081 APIs and full identities; distinguish no recorded response from unknown evidence, preserve Back/refresh provenance, and never infer cross-Briefing links or completion.
+  Prior implementation remains intact; current full-suite and terminal evidence above exercise its typed same-Briefing links and explicit missing/unknown outcomes.
+- DONE: After edits run final required tests/formatting/lint, actual terminal complete/missing/tampered/multi-round/narrow scenarios and full unchanged-file inventory proof; update docs and record DONE/FAILED AC-n evidence bullets and committed stage report.
+  Final `cargo fmt`, `cargo test` (751 passed, 6 ignored), `make lint` and `cargo build -p spacetop` pass (raw output `artifact://434`); explicit ignored `room_artifact_changes_removal_creation_and_state_replacement_refresh` passes (1 test). All five actual PTY runs exit 0.
+
+### Correction and terminal evidence
+
+Proof root: `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/task088-cycle1-w2x2l1cw/`. `proof-summary.json`, paired `inventory-before.json`/`inventory-after.json`, and `no-write-result.json` record zero additions, removals or digest changes across all 72 files (excluding only `.git`).
+
+`wide-inspection.{json,ansi}` covers complete/supporting, blank/missing/tampered/unidentified/unsupported evidence and linked/unlinked/partial multi-round navigation; `narrow-{80x24,40x12,20x6}.{json,ansi}` preserve question and Back usability. Actual binary: worktree `target/debug/spacetop --workflow-dir <proof-root>/workflow`, macOS PTY, ASCII mode, isolated absolute XDG roots; pyte 0.8.2 is a local proof-only screen decoder.
+
+`removed-item-refresh.{json,ansi}` exercises `B,Tab,r` with a distinct support Artifact, removes only `artifact:gate-review` and rebinds the digest, then observes `SelectedItemMissing` with verified question/decision/inventory and no preview. Explicit Enter opens support; a subsequent genuine request binding mismatch yields UNVERIFIED and the trust warning while preserving the decision. These deliberate mutations occur after, and outside, the no-write comparison.
+
+Canonical round inputs, prepared from installed upstream 0.27.3 Briefing/Annotation/Resolution and closed-log contracts, are `<proof-root>/round1-inputs/briefing.json` and `<proof-root>/round1-inputs/briefing.review.jsonl`. The five entries transcribe F1, reviewer revise verdict and FO FIX disposition, then record this worker's response and advisory closing Resolution; artifacts pin exact rejected/fixed Git commits. No entity move, frontmatter edit, round publication, gate approval or merge was performed; the FO owns publication of verify/1.
+
+### Summary
+
+F1 is fixed with a typed distinction between an absent selected item and a failed room binding, preserving the verified question and recorded decision without claiming a verified preview. All required final checks and actual terminal scenarios pass; operational evidence and canonical round inputs remain local, and the correction is ready for independent re-review.
