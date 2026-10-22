@@ -34,6 +34,17 @@ gates:
                 id: briefing:086:verify:attempt-1:revision-1
                 digest: sha256:2dcbaf35c277e066881628efe4cad69b0aa60ec026958b3760908c86ec7b5e2a
                 room-ref: ./review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:086:verify:1
+                briefing: briefing:086:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-22T14:35:18.247401Z"
+                decision: approve
+                reason: Captain approved the presented task 086 verify gate for PR publication with AC-2 unfamiliar-person walkthrough explicitly outstanding. Technical verification and corrected V-1 are accepted; no human evidence is claimed.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Help a person unfamiliar with the project find work that needs attention and understand why it appears.
