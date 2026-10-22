@@ -53,3 +53,120 @@ Verified by: Before-and-after workflow file comparison during the walkthrough an
 - Required commands for implementation: cargo fmt, cargo test, and make lint. Use existing safety checks for the affected surfaces.
 - Manual check: Run the actual terminal UI with representative normal, missing-data, and failure cases. Record evidence for each acceptance criterion.
 - Docs update: Update README and relevant user guidance for the delivered behavior. Keep workflow files read-only during product use.
+
+## Implementation plan
+
+### Baseline and boundaries
+
+- Plan against `main` at `0f7f38e` (merged task 087). Its gate explanations are in `crates/spacetop/src/ui/preview.rs::gate_explanation`; topology explanations are in `app/overview.rs::StateTopologyDiagnostic`. Reuse that wording and preserve canonical readiness labels.
+- This stage changes only task 086's body in the shared state checkout. No product edits, task transitions, approvals, builds, tests, formatting, or terminal acceptance runs are part of this planning delivery.
+- The product remains a read-only inspector. Attention is a projection of recorded workflow facts and explicit verification diagnostics, not urgency, priority, elapsed time, or worker health.
+- Keep the existing two-crate boundary, query spine, safe evidence reader, and task preview. No dependencies, new workflow schema, runtime detection changes, background evidence scan, CLI flags, or session/config schema changes are needed.
+
+### Qualifying facts and exact inclusion rules
+
+Add a small terminal-free `AttentionReason` enum and pure projection from an entity's existing `GateData`, `GateReadiness`, and `GatePreparation`. Return an optional reason without allocating or copying the entity, report body, or diagnostics. Keep facts and reasons distinct: the reason identifies the category; the existing gate details retain the full underlying evidence.
+
+| Existing typed fact | Attention reason and user-facing meaning | Evidence destination |
+| --- | --- | --- |
+| Current `AwaitingCaptain` | Review requested: "Waiting for your decision." | Current gate/attempt, recorded briefing reference, and `B` browser. |
+| Current `Held` with the selected hold decision | Recorded blocker: "A hold was recorded; this request is paused." | Selected resolution, recorded reason, actor and timestamp; a blank reason remains "No reason recorded", not an invented explanation. |
+| Current `FeedbackPending` | Recorded follow-up: "Changes were requested; follow-up is pending." | Selected revise decision and its recorded reason. Do not call a requested revision a hold. |
+| Current `NeedsPreparation` | Request preparation needed: "Checks passed; the review request still needs to be prepared." | Preparation proof and task report. This is not a submitted review request. |
+| Current `WithdrawnAwaitingPrepare` | Request replacement needed: "The review request was withdrawn; a new request is needed." | Selected withdrawal and recorded reason. Do not present the withdrawn request as awaiting a decision. |
+| Current `ApprovedAwaitingAdvance` | Recorded next step: "Approval is recorded; the move to the next stage is still pending." | Selected approval and application target; not a new review request. |
+| Current `ApprovedAwaitingMerge` | Recorded next step: "Approval is recorded; merging is still pending." | Selected approval and application target; not proof of remote PR state or task completion. |
+| `GateData::Invalid`, or `GateReadiness::Invalid` | Invalid information: "Gate information is invalid or unsupported; readiness cannot be trusted." | Existing parser/readiness diagnostics and raw recorded details, including on an otherwise ungated stage. |
+| Current `Validating` with nonempty preparation diagnostics | Missing or unverified information: "Readiness for review has not been established." | Exact preparation diagnostic and report. Never label this a recorded blocker. |
+| An active `EntityParseError` | Invalid task information; show the existing broken-file row with its filename and diagnostic, not a fabricated task ID/title/status. | Existing broken-row preview. |
+
+Projection precedence is invalid gate data/readiness first, then the current readiness mapping. Preparation diagnostics qualify only the validating case, not an unrelated past attempt. A single current reason is sufficient for these mutually exclusive readiness states; all underlying diagnostic lines remain visible in the selected preview.
+
+Important limits:
+
+- `GatePreparation.diagnostics` currently carries strings, not typed failure subcategories (`gate_proof.rs:46-59`). Use presence only and display the exact diagnostic; never substring-match to claim specifically "report missing" when Git verification, topology, tracking, or cleanliness could have failed. The category explicitly says missing **or unverified** information.
+- `Validating` alone, default/empty preparation, absent gate data on an ungated/terminal task, `Consumed`, `Superseded`, and no applicable current readiness do not qualify. A historical hold, review, or revision does not qualify the current task. An independent invalid-data diagnostic still qualifies.
+- Optional issue/PR/worktree/source/score fields being empty do not qualify. No rule asserts that every task owes those fields.
+- A generic `blocked` field, `mod-block`, or prose containing "blocked"/"FAILED" is not a supported blocker source in the current typed `Entity`. Do not introduce a second schema or scan prose to fabricate one; the existing selected durable hold is the supported recorded blocker.
+- No session status, `HumanGate` runtime event, last activity timestamp, process probe, age, unavailable activity scan, or filesystem silence enters the reason function. No runtime badge is restored to list rows or preview headers.
+- Workflow-level missing/detached/wrong-branch/unverified storage remains the existing contextual warning/help, not a fake task reason attached to every row. An empty attention view with missing state is not evidence that no work needs attention.
+- Gate-room verification is lazy today. An unresolved room cannot remove a known review request, and opening a browser must not silently change list membership. Missing room/artifact evidence is shown by the browser's typed diagnostics; this task does not scan every artifact or create a new background evidence index.
+
+### Focused view and navigation contract
+
+Use the existing overview list as a focused mode, not a new duplicate list or modal:
+
+1. Add `needs-attention` and `all-tasks` to the existing command palette (`:` by default; respect configured command binding). The former activates the active-task focus; the latter restores the normal active list. Add discoverable entries to help and a mode label in the list/footer. Avoid claiming the unreserved `N` key, which users can already assign through keybinding config.
+2. Store the focus per `OverviewState`, separate from `ViewScope`. Entering it selects active scope; `a` exits the focus and opens archives. Returning from archives is the ordinary active list. Do not serialize this transient focus into `WorkflowSession`, change defaults, or disturb another workflow tab.
+3. Have `visible_items()` pass `FieldFilter::NeedsAttention` through `WorkflowIndex::query`. Expose the typed reason through the index/core projection for renderers; no UI match on raw YAML, status-name strings, or runtime state. Existing active parse-error rows remain selectable because invalid task information qualifies.
+4. Keep ID/status sorting, with no priority ordering. Preserve selection by stable path/slug when entering/leaving focus or refreshing; if the selected task stops qualifying, clamp to the next valid row or empty state. Audit sort, search, row count, selection, mouse hit testing, preview, and reload together: all must use the same focused row set. Search results in this mode must not select excluded tasks behind the filter.
+5. Each attention row displays a plain-language reason, not just a colored badge. Use a readable continuation line or equivalent bounded layout; keep title, ID and canonical stage. The selected preview begins with the full reason and the existing scrollable gate details. Preserve wrapping, worktree-diff previews, and precise recorded identifiers.
+6. Retain `Enter` for the task/report preview and `B` for gate evidence. Show the explicit hint "Enter: report/details; B: review evidence" where applicable. The report is the existing task body, not a guessed external report path. Broken rows use `Enter` for their filename/parse diagnostic and must not open another task's browser.
+7. `B` keeps current selected-attempt semantics. In the browser, `Tab` selects inventory, Up/Down or j/k selects an item, `Enter` opens verified bytes, and Esc returns through item/browser to the same attention selection. Historical fallback remains labeled historical and cannot be advertised as current evidence.
+8. No current attempt, unreadable/missing room, invalid binding, unsupported reference, missing Git object, non-text artifact, or disappearing entity gets a success fallback. Keep the existing diagnostic and allow returning to report/details. Never launch arbitrary reference URLs, open an editor as the acceptance path, fetch objects, repair state, or interpret an actor/room reference as an action destination.
+9. Empty-state copy is "No tasks with recorded attention reasons in the loaded state", with an `all-tasks` escape. Retain parse/load/topology warnings and task 087's warning that missing progress files are not a healthy empty workflow.
+
+### Owned modules and ordered implementation
+
+| Step | Owner/files | Change and lowest practical proof |
+| --- | --- | --- |
+| 1. Pin the classifier contract | New small core `domain/attention.rs`, exported from `domain/mod.rs`; core unit tests | Implement the exhaustive allocation-free reason mapping above from existing typed inputs. Do not change readiness calculation, canonical labels, gate parsing, or entity serialization. Table-test every inclusion/exclusion and invalid-data precedence. |
+| 2. Connect the query spine | `crates/spacetop-core/src/query.rs`, `index.rs` | Add `FieldFilter::NeedsAttention` and an index reason accessor using the same projection. Query tests cover each reason, combinations with status/text/sort/scope, and no qualifying fact. Existing parse-error accessors remain the typed source for broken rows. No CLI filter flag is requested. |
+| 3. Add focused app state | `crates/spacetop/src/app/overview.rs`, `app/search.rs`, `app/keys.rs`, `app.rs`, `app/tests.rs` | Wire the two palette actions and transient per-workflow focus; align all selection/search/reload/sort paths with the filtered rows. Exercise active/archive transitions, independent tabs, broken rows, empty view, and removal of the selected reason on reload. Preserve configurable bindings and existing popup input isolation. |
+| 4. Reuse explanation presentation | `crates/spacetop/src/ui/preview.rs`, `ui/list.rs`, `ui/footer.rs`, `ui/help.rs`, and owning UI tests | Move the existing gate explanation match to a small shared UI helper if needed, migrate every existing caller, and reuse it for attention rows/preview. Do not maintain a second gate vocabulary or move terminal copy into parser logic. Add full reason labels, mode/escape/help hints, and narrow-screen rendering. |
+| 5. Connect existing evidence paths | `crates/spacetop/src/app/gate_room.rs` and its tests; existing core `gate_room.rs`/tests unchanged unless a directly affected callsite requires adjustment | Reuse `WorkflowIndex::gate_room`/`gate_room_item`, existing verified-byte loading, and refresh invalidation. Test opening from focus and returning to the same task, unavailable evidence, and reload while the browser is open. No rendering I/O or expanded safe roots. |
+| 6. Add reproducible fixtures and user guidance | `tests/fixtures/` alongside durable-gates patterns; `README.md`, `docs/gate-room-browser.md` | Provide a representative workflow with each reason, a nonqualifying control, malformed task, valid bound report/artifact, and missing-evidence variants. Document activation/escape, reason limits, navigation, missing versus blocked, and external workflow-session action boundary. |
+| 7. Final verification and evidence report | Implementation worker after all edits land; independent verify stage reviews evidence | Run the commands and walkthrough below once the implementation is complete, record actual outcomes, and retain the separate new-reader proof obligation. |
+
+Fixture prerequisite, not a product spike: extend/reuse `tests/fixtures/durable-gates` and the temporary verified-room builders in `crates/spacetop-core/tests/gate_rooms.rs`. Existing durable-gates rows are sufficient for readiness cases but are not proof that their external room references resolve. Supply an actually valid Briefing v1 binding with correct digest and local report/artifact bytes for the successful navigation path. Use temporary local Git repositories for preparation-proof clean/missing-report cases so proof does not depend on a developer's checkout dirtiness. Do not embed machine-specific home paths.
+
+### Acceptance evidence and falsification matrix
+
+| Acceptance criterion | Required evidence | Regression that must fail |
+| --- | --- | --- |
+| AC-1: every inclusion has a recorded reason | Pure core mapping and query cases for every table row, app reason/row alignment, TestBackend rendering of each category | Including an ordinary task, confusing missing/unverified information with a hold, labeling approval as a review request, or rendering a reason for the wrong selected row. |
+| AC-1: missing/invalid facts are honest | Invalid gates on gated and ungated stages, malformed task rows, nonempty versus empty preparation diagnostics, absent optional fields | Turning default/absent metadata into a blocker; hiding an invalid row; inferring a specific missing file from arbitrary diagnostic text. |
+| AC-2: navigation and understandable evidence | App/browser tests plus actual terminal path from palette to review task to report and verified inventory bytes; missing-room and missing-artifact paths; separate unfamiliar-person exercise | Opening another row's evidence, presenting historical evidence as current, showing stale verified bytes after deletion, or offering an unavailable destination as success. |
+| AC-3: no runtime inference | Cross-product of unchanged workflow facts with idle, running, runtime human-gate, old/recent timestamps and unavailable scan results; no-reason tasks stay excluded and held/review tasks stay included | Any activity-only change alters membership or its reason. Process absence cannot be an input to the classifier. |
+| AC-4: read-only inspection | App assertions for no sync/dispatch/transition request from attention/palette/browser/help inputs; existing write-safety/core-boundary guardrails; actual before/after workflow content inventory | Changing workflow bytes, creating a workflow file, issuing an agent or approval action, broadening Git commands or evidence roots, or writing config/session state into the workflow. |
+| Focus integration | App tests for sort/search/mouse/keyboard, reload removing/reordering reasons, broken-only list, tabs, archive exit and palette cancellation | Selection index refers to unfiltered rows, hidden search results open, focus leaks between workflows, or empty view traps the user. |
+| Presentation | TestBackend at 80x24 and 40x12, minimal 20x6 escape/scroll case; wrap on/off and worktree-diff body | No reason is legible/reachable, precise recorded facts disappear, or help/browser keys leak into underlying actions. |
+
+Implementation-stage commands, executed from the product worktree after edits:
+
+```sh
+cargo fmt
+cargo test
+make lint
+```
+
+The full suite must include `crates/spacetop-core/tests/no_write_git_calls.rs`, `crates/spacetop-core/tests/no_terminal_deps.rs`, existing durable-gate/room regressions, app tests, and affected UI tests. Record command outcomes and falsifiable assertions, not a pass count alone. Run `cargo test -- --ignored` only if implementation changes watcher behavior; this plan does not require such a change. A planning-only state report does not warrant Rust checks.
+
+### Actual-terminal and new-reader proof protocol
+
+The following is required implementation evidence, not an assertion that it has happened:
+
+1. Build/use the actual updated binary (`cargo build -p spacetop`, then `target/debug/spacetop --workflow-dir <representative-workflow>`). Copy the committed fixture to a temporary location if preparing a Git proof case. Put HOME/XDG config and session roots in separate temporary absolute directories outside the workflow. Record the code commit, fixture setup, platform, terminal sizes and input sequence.
+2. Before launch, record the full relative-path inventory and byte hashes for every file in the representative definition and state roots, including rooms, artifacts, untracked files and archive files. After exiting, compare both inventories and hashes; this must detect additions/deletions as well as changed bytes. Exclude `.git` internals explicitly, not workflow files; separately confirm no Git refs/index or write commands were changed by inspection. A tracked-only `git diff` is insufficient.
+3. At 80x24, use `:` then `needs-attention`; find the review row, read why it appears, press `Enter` and inspect recorded details/report. Use `B`, `Tab`, item selection and `Enter` to open the bound report/artifact. Record visible title/reason, gate/attempt identity, actual evidence content and return path. Check held, revision, preparation, withdrawn, approval-next-step and invalid/missing-information rows against their distinct facts.
+4. Repeat with a review request whose room is missing and one with a valid inventory but missing artifact. Record the displayed failure rather than substituting task text as verified evidence. Remove/change an already-open artifact in the disposable fixture between captures to exercise existing refresh invalidation; this deliberate fixture mutation belongs to a separate run and must not contaminate AC-4's no-write comparison.
+5. Confirm a normal idle task and an old/no-session task do not appear. Keep review/hold inclusion independent of detected runtime activity. Exercise `all-tasks`, archive exit, sorting, search, workflow tabs, empty results, and a missing state checkout warning. Repeat reason/evidence/help reachability at 40x12 and escape/scroll behavior at 20x6; record observed results, not just screenshots.
+6. In a separate uncontaminated inspection-only run, execute only navigation/help/preview keys, exit, and perform the before/after comparison from step 2. Do not press the sanctioned sync action `Y`, launch an external editor, or deliberately mutate fixture files in this run.
+7. Ask a person unfamiliar with the project, without coaching, to find work awaiting review, explain its inclusion, open the report/supporting evidence, and explain the missing-evidence case. Record their actual actions and paraphrase, any help required, and whether they understand that decisions happen outside Spacetop. Only identify the participant with their consent. An agent-driven PTY run or string assertion cannot satisfy this human criterion.
+
+Proof status at planning: no task 086 actual-terminal walkthrough has been performed, and no task 086 new-reader result is available in the assignment/state. Task 087's archived reports explicitly lacked human comprehension evidence; its merge and its recorded PTY run do not prove task 086. Implementation must supply its own terminal evidence. If no unfamiliar person is available, record AC-2 human evidence as unavailable/incomplete and carry it to the first officer/captain; do not waive, mark passed, or quietly weaken the explicit acceptance criterion.
+
+## Stage Report: plan
+
+- DONE: Map existing typed workflow facts to explicit attention reasons for review requests, recorded blockers, and missing or invalid information; exclude runtime silence, age, process absence, and unsupported guesses.
+  The qualifying-facts table maps current durable readiness, selected hold/revise records, preparation diagnostics and broken-task errors; exclusions prohibit prose/schema guesses and all activity-only membership.
+- DONE: Plan the focused Needs attention view and navigation to reports or evidence using existing query/app/UI conventions and task 087 explanations, preserving read-only behavior and clear missing-evidence handling.
+  The focus/navigation contract uses the existing palette, WorkflowIndex query, report preview and verified B browser; task 087 at `0f7f38e` supplies wording, and unavailable evidence fails visibly without writes or fallback reads.
+- DONE: Record implementation ownership, acceptance-criterion evidence and negative scenarios, actual terminal proof, and any unavailable new-reader proof without inventing or waiving it.
+  Owned modules, ordered steps, AC falsification matrix, exact final commands and real-terminal/hash-comparison protocol are above; current terminal/new-reader evidence is explicitly unavailable, not claimed complete.
+- SKIPPED: Execute implementation checks and task 086 terminal/new-reader acceptance walkthrough.
+  Planning-only assignment: no product implementation exists in this stage; implementation and human acceptance proof remain explicit obligations, including AC-2's unfamiliar-person requirement.
+
+### Summary
+
+Planned a focused read-only attention view from existing typed facts, with distinct review, recorded hold/follow-up, preparation and invalid/unverified-information reasons. The implementation path reuses task 087 explanations and current query/browser conventions, specifies negative and integration tests, and preserves the actual-terminal and unavailable new-reader proof obligations without claiming feature acceptance.
