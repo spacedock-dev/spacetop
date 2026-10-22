@@ -12,8 +12,8 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-explain-status-in-plain-language
 issue:
-pr:
-mod-block:
+pr: "#87"
+mod-block: merge:pr-merge
 id: 087
 gates:
     version: 1
