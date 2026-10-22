@@ -13,8 +13,8 @@ verdict:
 score: 0.85
 worktree: .worktrees/spacedock-ensign-inspect-correction-round-history
 issue:
-pr:
-mod-block:
+pr: "#89"
+mod-block: merge:pr-merge
 review-round:
     id: round:081:verify:2
     stage: verify
