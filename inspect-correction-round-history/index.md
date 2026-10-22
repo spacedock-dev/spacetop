@@ -15,6 +15,14 @@ worktree: .worktrees/spacedock-ensign-inspect-correction-round-history
 issue:
 pr:
 mod-block:
+review-round:
+    id: round:081:verify:1
+    stage: verify
+    cycle: 1
+    briefing:
+        id: briefing:081:implement:round-1
+        digest: sha256:af4fc0cc529ede12b4cd0a43d0d0b07e02ddb7eb09dfc877df1a239a13ed8784
+        room-ref: ./review/verify/round-1
 ---
 
 Make recorded correction cycles inspectable without searching through entity folders. Spacedock retains review-round pointers plus immutable Briefing and review JSONL records.
