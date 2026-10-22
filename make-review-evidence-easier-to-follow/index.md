@@ -226,3 +226,34 @@ Canonical round inputs, prepared from installed upstream 0.27.3 Briefing/Annotat
 ### Summary
 
 F1 is fixed with a typed distinction between an absent selected item and a failed room binding, preserving the verified question and recorded decision without claiming a verified preview. All required final checks and actual terminal scenarios pass; operational evidence and canonical round inputs remain local, and the correction is ready for independent re-review.
+
+## Stage Report: verify (cycle 1)
+
+- DONE: AC-1 — The review question and main report are easy to reach.
+  Reviewed `65093ee...2d40549`: navigation is unchanged. Current `wide-inspection.json` and all three narrow captures show question-first canonical report/Back/support navigation; passing `direct_report_preserves_support_selection_and_refreshes_exact_preview_identity` rejects adjacent-item substitution. Prior independent 40x12 reorder/Back proof remains applicable.
+- DONE: AC-2 — Evidence failures explain their effect.
+  F1 is corrected: `read_item` verifies binding before emitting typed `SelectedItemMissing`; actual request/digest failures retain their original diagnostics. Passing core `removed_item_is_distinct_from_invalid_briefing_binding` and app/render `refreshed_report_distinguishes_removed_item_from_untrusted_briefing` fail if removal discredits the question, retains a verified preview, substitutes support, or hides genuine binding failure.
+- DONE: AC-3 — Corrections lead to recorded responses.
+  No task081 relationship/parser/navigation code changed. Current wide captures show finding → disposition → closing Resolution → Back, cycle-2 unresolved and cycle-10 unknown additional responses; recorded response tests pass. Prior independent paged 40x12 proof preserves the second response through Back/refresh and shows filter toggles reset to the first eligible edge, not an inferred or cross-Briefing response.
+- DONE: AC-4 — Existing evidence safety stays intact.
+  Safe readers remain unchanged apart from the post-verification diagnostic kind; exact-Git/path/size/digest/no-write/terminal-free tests pass in `artifact://434`. Independently compared saved before/after inventories: all 72 path/digest entries identical. Removed preview opens surviving support only after explicit Enter; recorded Approve grants no action.
+- DONE: Independently verify all four ACs for question-first/canonical-report navigation, honest failures, recorded correction responses and existing safety boundaries; report concrete material defects only.
+  Verdict: verification passes; F1 closed, no remaining material findings. Standards: typed domain ownership, read-only boundaries and nearby docs conform. Spec: AC-1 through AC-4 supported; correction is limited to the authorized failure distinction.
+- DONE: Inspect recorded 751-test/lint/build/notify and actual terminal/72-file proof without repeating green checks; exercise missing claims, especially exact selection identity across report open/Back/refresh and response filter changes in narrow layouts.
+  Inspected final suite/lint/build output `artifact://434`, recorded notify completion provenance in `history://ReviewEvidenceCorrection` (1 passed, 13 filtered, 0.44s), current PTY screens and inventories, and prior independent identity/filter captures. No uncovered behavior scenario remained after this inspection.
+- DONE: Record verdict and DONE/FAILED AC-n bullets with evidence citations for structured scanning, plus checklist accounting. No code fixes or gate approval; preserve no-inferred-response/approval and typed task081 ownership.
+  Body-only verification report; no product changes, frontmatter edits, round republishing, gate action or merge. Published verify/1 remains untouched.
+- SKIPPED: Re-running already-green formatting, tests, lint, build, notify and terminal scenarios.
+  Assignment requires recorded evidence reuse; no new execution was needed for this narrowly typed correction. Formatting is recorded by the implementation report/proof summary; suite/lint/build have raw output, notify has the worker's recorded completion provenance.
+
+### Evidence and limitations
+
+Current proof root: `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/task088-cycle1-w2x2l1cw/`. Inspected `removed-item-refresh.json`: exact report opens; removal/rebind leaves “Bound Briefing verified,” question, recorded Approve and `SelectedItemMissing` without preview; explicit Enter opens distinct support; subsequent genuine request mismatch shows UNVERIFIED, unavailable question and trust warning while retaining the decision.
+
+Also inspected `wide-inspection.json`, `narrow-{80x24,40x12,20x6}.json`, `inventory-before.json`, `inventory-after.json` and `proof-summary.json`. All five recorded PTY runs exit 0. At 20x6 only the question prefix fits; full explanation/body claims rely on wider/paged evidence, not that tiny screen.
+
+Prior independent identity/filter proof: `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/task088-independent-verify-o1fp19w8/{report,response}-identity-40x12.json`. Its obsolete removal warning is the rejected F1 evidence, superseded by the cycle-1 removal capture; its response harness cleanup exit -15 is not counted as a graceful exit. Operational captures remain local evidence, not product documentation.
+
+### Summary
+
+Independent re-review of `2d4054924bc7954648d45635fea56bf7a05065fa` passes all four acceptance criteria. The correction distinguishes a missing selected item from actual binding failure without weakening verification or changing response ownership; no material findings remain, and captain/gate/merge decisions remain with the first officer.
