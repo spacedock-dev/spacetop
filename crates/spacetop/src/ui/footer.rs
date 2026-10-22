@@ -109,6 +109,16 @@ fn status_footer_hints_with_keymap_and_copy(
     if broken_count > 0 {
         hints.push((format!("\u{26A0} {broken_count} broken"), Color::Red));
     }
+    if session.active_state().needs_attention {
+        hints.push((
+            format!("Needs attention | {} all-tasks", keymap.command.label()),
+            Color::Yellow,
+        ));
+        hints.push((
+            "Enter: report/details; B: review evidence".to_string(),
+            Color::White,
+        ));
+    }
     hints.push(("?: help".to_string(), Color::White));
     hints.push(("q: quit".to_string(), Color::White));
     if !preview_open && session.is_multi() {

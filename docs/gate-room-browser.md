@@ -67,3 +67,30 @@ safe-I/O tests, app gate-room tests and Ratatui TestBackend tests. The unchanged
 Spacedock v0.27.3 fixture pins JCS interoperability. Run `cargo test`, `make lint`
 and `cargo test -- --ignored` for real notify refresh coverage. Test repositories
 are temporary and do not require user configuration or upstream checkout paths.
+
+## Finding work that needs attention
+
+Open the command palette (`:` by default) and select `needs-attention`.
+The focused list uses recorded gate facts and exact verification diagnostics,
+not runtime silence, timestamps or guessed priority. A hold is a recorded blocker;
+requested changes, unprepared requests, pending application of an approval and
+missing or unverified information have different explanations.
+
+Use Enter for the task's report/details and `B` for the selected gate attempt.
+Tab switches to inventory; Up/Down or j/k selects evidence; Enter reads verified
+bytes. Esc returns to the browser and then the same focused task. Missing rooms,
+artifacts, unsupported references or invalid bindings stay explicit failures.
+They never remove a known request or fall back to unverified report bytes.
+Historical fallback is labeled historical, not current evidence.
+
+`all-tasks` in the palette restores the ordinary active list. `a` exits focus
+and opens archives. Broken rows expose their parse diagnostic, not another
+task's gate browser. Decisions still happen in your Spacedock workflow session.
+
+The `tests/fixtures/attention` workflow includes a correctly bound local report,
+missing-room and missing-artifact cases, distinct recorded reasons, negative
+controls and a malformed task. Copy it into a disposable Git repository and
+commit it for deterministic preparation proof. Keep config/session roots
+outside the fixture; inventory every workflow file before and after an
+inspection-only walkthrough, including untracked and archive files. Do not
+include deliberate fixture mutation or the explicit `Y` sync action in that run.

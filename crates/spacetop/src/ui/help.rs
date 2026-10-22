@@ -108,6 +108,11 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
     lines.push(key_line("Shift+drag", "native terminal text selection"));
     lines.extend([
         Line::from(""),
+        Line::from("  needs-attention: focus recorded reasons; all-tasks: leave focus"),
+        Line::from("  Enter: report/details; B: review evidence"),
+        Line::from("  Missing or unverified information is not a recorded blocker."),
+        Line::from("  Activity, age and process absence never imply attention."),
+        Line::from("  a leaves attention focus and opens archives."),
         Line::from("Status vocabulary"),
         Line::from("awaiting-captain: waiting for your decision."),
         Line::from("approved-awaiting-merge: approval is recorded; merging is still pending."),

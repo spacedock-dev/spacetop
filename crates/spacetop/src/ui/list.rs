@@ -46,6 +46,7 @@ pub(super) fn render_task_list(
 ) {
     let scope = state.view_scope();
     let title = match scope {
+        ViewScope::Active if state.needs_attention => "Needs attention",
         ViewScope::Active => "Tasks",
         ViewScope::Archived => "Archived",
     };
@@ -54,7 +55,12 @@ pub(super) fn render_task_list(
     frame.render_widget(block, area);
 
     let visible_items = state.visible_items();
-    let item_count = visible_items.len();
+    let item_count = visible_items.len()
+        + if state.needs_attention {
+            state.parse_errors().len()
+        } else {
+            0
+        };
     let phase_width = phase_col_width(&visible_items);
     let id_width = id_col_width(&visible_items, inner.width, phase_width);
     let items = build_task_list_items(state, &visible_items, phase_width, id_width);
@@ -93,7 +99,9 @@ pub(super) fn render_task_list(
         return;
     };
 
-    state.task_page_size.set(list_area.height.max(1) as usize);
+    state
+        .task_page_size
+        .set((usize::from(list_area.height) / state.list_row_height()).max(1));
 
     let mut list_state = ListState::default().with_selected(if items.is_empty() {
         None
@@ -115,10 +123,9 @@ pub(super) fn render_task_list(
     let list_offset = list_state.offset();
     state.list_offset.set(list_offset);
 
-    let visible_entity_rows = visible_items
-        .len()
-        .saturating_sub(list_offset)
-        .min(usize::from(list_area.height));
+    let visible_entity_rows = (visible_items.len().saturating_sub(list_offset)
+        * state.list_row_height())
+    .min(usize::from(list_area.height));
     if visible_entity_rows > 0 {
         state.id_column_rect.set(Rect {
             x: list_area
@@ -189,9 +196,11 @@ fn build_task_list_items(
         let empty_text = match (scope, state.archive_error()) {
             (ViewScope::Archived, Some(err)) => format!("archive load failed: {err}"),
             (ViewScope::Archived, None) => "No archived items found.".to_string(),
+            (ViewScope::Active, _) if state.needs_attention =>
+                "No tasks with recorded attention reasons in the loaded state\nUse all-tasks in the command palette.".to_string(),
             (ViewScope::Active, _) => "No work items found.".to_string(),
         };
-        return vec![ListItem::new(Line::from(empty_text))];
+        return vec![ListItem::new(empty_text)];
     }
     let selected_index = state.selected_index();
 
@@ -247,8 +256,7 @@ fn build_task_list_items(
                 Span::styled(item.title.clone(), title_style),
             ];
 
-            let gate = state.index().gate_details(item);
-            if let Some(readiness) = gate.readiness {
+            if let Some(readiness) = item.gate_readiness.filter(|_| !state.needs_attention) {
                 spans.insert(
                     6,
                     Span::styled(format!("[gate:{}] ", gate_list_label(readiness)), dim_style),
@@ -264,7 +272,14 @@ fn build_task_list_items(
                 spans.push(Span::styled(glyph, title_style));
             }
 
-            ListItem::new(Line::from(spans))
+            let mut lines = vec![Line::from(spans)];
+            if state.needs_attention {
+                if let Some(reason) = spacetop_core::index::WorkflowIndex::attention_reason(item) {
+                    let (category, meaning) = super::preview::attention_explanation(reason);
+                    lines.push(Line::from(format!("  {category}: {meaning}")));
+                }
+            }
+            ListItem::new(lines)
         })
         .collect();
 
@@ -276,7 +291,19 @@ fn build_task_list_items(
     for (offset, err) in broken.iter().enumerate() {
         let index = items_len + offset;
         let is_selected = index == selected_index;
-        rendered.push(broken_list_item(err, is_selected));
+        let mut row = broken_list_item(err, is_selected);
+        if state.needs_attention {
+            row = ListItem::new(vec![
+                Line::from(format!(
+                    "{} broken: {}",
+                    if is_selected { "▸" } else { " " },
+                    err.path.file_name().unwrap_or_default().to_string_lossy()
+                )),
+                Line::from("  Invalid task information; Enter: diagnostic"),
+            ])
+            .style(Style::default().fg(Color::Red));
+        }
+        rendered.push(row);
     }
 
     rendered

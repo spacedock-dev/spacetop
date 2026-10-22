@@ -54,7 +54,7 @@ pub(crate) fn overview_hit(state: &OverviewState, column: u16, row: u16) -> Over
     }
     let rows = state.list_rows_rect.get();
     if rows.contains(pos) {
-        let index = state.list_offset.get() + usize::from(row - rows.y);
+        let index = state.list_offset.get() + usize::from(row - rows.y) / state.list_row_height();
         if index < state.row_count() {
             return OverviewHit::ListRow(index);
         }
@@ -67,6 +67,9 @@ fn entity_id_at(state: &OverviewState, column: u16, row: u16) -> Option<String> 
     if !state.id_column_rect.get().contains(position) {
         return None;
     }
+    if usize::from(row - state.list_rows_rect.get().y) % state.list_row_height() != 0 {
+        return None;
+    }
     entity_id_at_row(state, row)
 }
 
@@ -75,7 +78,7 @@ fn entity_id_at_row(state: &OverviewState, row: u16) -> Option<String> {
     if row < rows.y || row >= rows.y.saturating_add(rows.height) {
         return None;
     }
-    let index = state.list_offset.get() + usize::from(row - rows.y);
+    let index = state.list_offset.get() + usize::from(row - rows.y) / state.list_row_height();
     state
         .visible_items()
         .get(index)

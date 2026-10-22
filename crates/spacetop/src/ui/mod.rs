@@ -167,11 +167,16 @@ fn render_overview(
         area
     };
 
-    // Vertical layout inside the active workflow panel: header bar (1),
-    // graph ribbon (7), main content fills the rest, status footer (1 line).
+    // Keep attention reasons reachable on short screens rather than giving
+    // the graph all available rows. The ordinary overview retains its layout.
+    let graph_height = if state.needs_attention {
+        7.min(dashboard_area.height.saturating_sub(7))
+    } else {
+        7
+    };
     let constraints = vec![
         Constraint::Length(1),
-        Constraint::Length(7),
+        Constraint::Length(graph_height),
         Constraint::Min(0),
         Constraint::Length(1),
     ];
@@ -194,8 +199,13 @@ fn render_overview(
     state.content_rect.set(content_area);
     if state.preview_open() {
         let placement = preview_placement(dashboard_area);
-        let (list_area, preview_area) =
-            split_content(content_area, placement, state.split_percent(placement));
+        let (list_area, preview_area) = if state.needs_attention && content_area.width < 40 {
+            // At phone-sized widths, Enter gives the report the available pane;
+            // Enter again restores the focused list, with the same selection.
+            (Rect::default(), content_area)
+        } else {
+            split_content(content_area, placement, state.split_percent(placement))
+        };
         state.preview_rect.set(preview_area);
         list::render_task_list(frame, list_area, config, state);
         preview::render_preview(frame, preview_area, state, placement);

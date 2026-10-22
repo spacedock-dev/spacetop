@@ -1308,12 +1308,12 @@ impl App {
                 self.toggle_help();
                 AppMode::Search { underlying, state }
             }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Down => {
                 let len = search_result_len(&underlying, &state);
                 state.select_next(len);
                 AppMode::Search { underlying, state }
             }
-            KeyCode::Up | KeyCode::Char('k') => {
+            KeyCode::Up => {
                 state.select_previous();
                 AppMode::Search { underlying, state }
             }
@@ -1354,6 +1354,7 @@ fn search_results(session: &OverviewSession, state: &SearchState) -> Vec<Entity>
     active.index().query(EntityQuery {
         scope: active.current_query_scope(),
         text: Some(state.query().to_string()),
+        field_filters: active.attention_filters(),
         ..EntityQuery::default()
     })
 }
@@ -1388,8 +1389,14 @@ fn activate_search(mut session: OverviewSession, state: SearchState) -> AppMode 
     }
 }
 
-fn command_mode_or_overview(session: OverviewSession, action: CommandAction) -> AppMode {
+fn command_mode_or_overview(mut session: OverviewSession, action: CommandAction) -> AppMode {
     match action {
+        CommandAction::NeedsAttention | CommandAction::AllTasks => {
+            session
+                .active_state_mut()
+                .set_attention_focus(action == CommandAction::NeedsAttention);
+            AppMode::Overview(session)
+        }
         CommandAction::Metrics => AppMode::Metrics {
             underlying: session,
             scroll: 0,

@@ -545,3 +545,139 @@ fn runtime_display_state(
         });
     state
 }
+
+fn attention_palette(app: &mut App) {
+    app.handle_key(key(KeyCode::Char(':')));
+    for ch in "needs-attention".chars() {
+        app.handle_key(key(KeyCode::Char(ch)));
+    }
+    app.handle_key(key(KeyCode::Enter));
+}
+
+#[test]
+fn attention_renders_distinct_reasons_and_preserves_narrow_preview_navigation() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/attention");
+    let mut snapshot = OverviewState::load(root.clone()).unwrap().snapshot();
+    snapshot
+        .items
+        .iter_mut()
+        .find(|e| e.id == "preparation")
+        .unwrap()
+        .gate_preparation = spacetop_core::domain::GatePreparation {
+        proven: true,
+        diagnostics: vec![],
+    };
+    let state = OverviewState::from_snapshot(root.clone(), snapshot.clone());
+    for entity in state
+        .visible_items()
+        .into_iter()
+        .filter(|e| WorkflowIndex::attention_reason(e).is_some())
+    {
+        let reason = WorkflowIndex::attention_reason(&entity).unwrap();
+        let (category, meaning) = super::preview::attention_explanation(reason);
+        let mut one = snapshot.clone();
+        one.items = vec![entity];
+        one.parse_errors.clear();
+        let mut app = App::from_snapshot(root.clone(), one);
+        attention_palette(&mut app);
+        let text = render_text(&app, 140, 24);
+        assert!(text.contains(category), "{text}");
+        assert!(text.contains(meaning), "{text}");
+        app.handle_key(key(KeyCode::Enter));
+        for (width, height) in [(80, 24), (40, 12), (20, 6)] {
+            let _ = render_text(&app, width, height);
+            app.handle_key(key(KeyCode::Char(' ')));
+            let _ = render_text(&app, width, height);
+            app.handle_key(key(KeyCode::Char('w')));
+            let _ = render_text(&app, width, height);
+            app.handle_key(key(KeyCode::Char('w')));
+            app.handle_key(key(KeyCode::Char('g')));
+            app.handle_key(key(KeyCode::Char('?')));
+            let _ = render_text(&app, width, height);
+            app.handle_key(key(KeyCode::End));
+            let _ = render_text(&app, width, height);
+            app.handle_key(key(KeyCode::Esc));
+            assert!(!app.help_open());
+            assert!(app.as_overview().unwrap().needs_attention);
+            assert!(!app.take_pending_sync());
+        }
+    }
+}
+
+#[test]
+fn attention_continuation_mouse_targets_same_task_and_empty_view_has_escape() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/attention");
+    let state = OverviewState::load(root.clone()).unwrap();
+    let mut app = App::from_snapshot(root, state.snapshot());
+    attention_palette(&mut app);
+    let _ = render_text(&app, 80, 24);
+    let state = app.as_overview().unwrap();
+    let rect = state.list_rows_rect.get();
+    let first = state.list_offset.get();
+    let expected = state.visible_items()[first].path.clone();
+    app.handle_mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: rect.x,
+        row: rect.y + 1,
+        modifiers: KeyModifiers::NONE,
+    });
+    assert_eq!(app.selected_item().unwrap().path, expected);
+    let mut snapshot = app.snapshot();
+    snapshot.items.clear();
+    snapshot.parse_errors.clear();
+    app.reload_from_snapshot(snapshot);
+    if app.as_overview().unwrap().preview_open() {
+        app.handle_key(key(KeyCode::Enter));
+    }
+    let text = render_text(&app, 100, 24);
+    assert!(
+        text.contains("No tasks with recorded attention reasons in the loaded state"),
+        "{text}"
+    );
+    assert!(text.contains("all-tasks"), "{text}");
+    assert!(
+        !text.contains("stateUse"),
+        "empty message and escape need separate lines"
+    );
+}
+
+#[test]
+fn tiny_attention_preview_reserves_scrollable_reason_space() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/attention");
+    let mut snapshot = OverviewState::load(root.clone()).unwrap().snapshot();
+    snapshot.items.retain(|e| e.id == "3k");
+    snapshot.parse_errors.clear();
+    let mut app = App::from_snapshot(root, snapshot);
+    attention_palette(&mut app);
+    app.handle_key(key(KeyCode::Enter));
+    for (width, height) in [(40, 12), (20, 6)] {
+        app.handle_key(key(KeyCode::Char('g')));
+        let mut observed = String::new();
+        for _ in 0..8 {
+            observed.push_str(&render_text(&app, width, height));
+            app.handle_key(key(KeyCode::Char(' ')));
+        }
+        assert!(observed.contains("Waiting for your"), "{observed}");
+        assert!(observed.contains("decision."), "{observed}");
+        assert!(app.as_overview().unwrap().preview_viewport_height.get() > 0);
+    }
+}
+
+#[test]
+fn attention_keeps_reason_ahead_of_worktree_diff() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/attention");
+    let mut snapshot = OverviewState::load(root.clone()).unwrap().snapshot();
+    snapshot.items.retain(|e| e.id == "3k");
+    snapshot.parse_errors.clear();
+    snapshot.items[0].main_body = Some("Original candidate report\n".into());
+    snapshot.items[0].body = "Updated candidate report\n".into();
+    let mut app = App::from_snapshot(root, snapshot);
+    attention_palette(&mut app);
+    app.handle_key(key(KeyCode::Enter));
+    let initial = render_text(&app, 100, 24);
+    assert!(initial.contains("Waiting for your decision."), "{initial}");
+    app.handle_key(key(KeyCode::Char('G')));
+    let end = render_text(&app, 100, 24);
+    assert!(end.contains("Original candidate report"), "{end}");
+    assert!(end.contains("Updated candidate report"), "{end}");
+}

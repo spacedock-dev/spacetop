@@ -1,3 +1,5 @@
+mod attention;
+pub use attention::AttentionReason;
 mod gate_room;
 pub use gate_room::*;
 mod gates;
