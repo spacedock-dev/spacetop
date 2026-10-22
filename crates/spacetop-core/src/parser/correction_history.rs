@@ -21,9 +21,6 @@ pub fn cycle_number(value: &str) -> Option<u32> {
     }
     value.parse().ok()
 }
-pub fn briefing_id(entity: &str, stage: &str, cycle: u32) -> String {
-    format!("briefing:{entity}:{stage}:round-{cycle}")
-}
 pub fn parse_pointer(frontmatter: &str, entity: &str) -> ReviewPointer {
     let root = match serde_yaml::from_str::<super::gates::UniqueValue>(frontmatter) {
         Ok(root) => root.0,
@@ -52,7 +49,7 @@ pub fn parse_pointer(frontmatter: &str, entity: &str) -> ReviewPointer {
             if !stage_valid(&p.stage)
                 || p.cycle == 0
                 || p.id != format!("round:{entity}:{}:{}", p.stage, p.cycle)
-                || p.briefing.id != briefing_id(entity, &p.stage, p.cycle)
+                || p.briefing.id.is_empty()
                 || p.briefing.room_ref != format!("./review/{}/round-{}", p.stage, p.cycle)
                 || !digest_valid(&p.briefing.digest)
             {
@@ -82,22 +79,21 @@ fn optional_text(value: &Value, key: &str) -> Result<Option<String>, RoomDiagnos
 }
 pub fn decode_briefing(
     bytes: &[u8],
-    identity: &RoundIdentity,
     pointer: Option<&RoundPointer>,
 ) -> Result<(CanonicalBriefing, Vec<LabelReference>, String), RoomDiagnostic> {
     let value = strict_json(bytes)?;
     if text(&value, "type")? != "Briefing" || text(&value, "version")? != "1" {
         return Err(schema("requires Briefing v1"));
     }
-    if text(&value, "id")? != identity.briefing_id {
+    let id = text(&value, "id")?;
+    if pointer.is_some_and(|p| p.briefing.id != id) {
         return Err(RoomDiagnostic::new(
             RoomProblem::IdentityMismatch,
-            "Briefing entity/stage/cycle differs from room candidate",
+            "current pointer does not bind this Briefing ID",
         ));
     }
     let digest = canonical_digest(bytes)?;
-    if pointer.is_some_and(|p| p.briefing.id != identity.briefing_id || p.briefing.digest != digest)
-    {
+    if pointer.is_some_and(|p| p.briefing.digest != digest) {
         return Err(RoomDiagnostic::new(
             RoomProblem::BriefingDigestMismatch,
             "current pointer does not bind this Briefing digest",
@@ -120,7 +116,7 @@ pub fn decode_briefing(
     }
     Ok((
         CanonicalBriefing {
-            id: identity.briefing_id.clone(),
+            id: id.to_owned(),
             question,
             items,
         },

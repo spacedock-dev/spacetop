@@ -85,12 +85,15 @@ order. A valid current pointer is selected even if newer rounds exist; an absent
 or invalid pointer never marks a retained round current. Missing pointer targets
 remain visible UNVERIFIED rows. Main/state evidence origin remains separate from
 a displayed worktree body, and archived entities use their physical archive parent.
-Flat entities sharing a review directory must pass Briefing entity identity checks.
 
-Current rooms require the pointer's exact Briefing ID and JCS digest; retained
-rooms verify entity/stage/cycle identity without inventing a historical pointer
-digest. Discovery visits only immediate review/stage/round-N entries, capped at
-4096 entries and 128 rounds; truncation is a visible diagnostic. Positive cycles
+Current rooms require the pointer's exact Briefing ID and JCS digest. Briefing
+IDs are opaque recorded identities, not derived from the entity, room stage or
+cycle. Folder-form retained rooms take the manifest ID within their owning
+entity's origin/stage/cycle namespace without inventing a historical pointer
+digest. Flat entities share a sibling review directory: only an exact current
+pointer binding attributes a room; other candidates report ambiguous ownership
+and expose no records. Discovery visits only immediate review/stage/round-N
+entries, capped at 4096 entries and 128 rounds; truncation is a visible diagnostic. Positive cycles
 are normalized u32 values. Each file remains limited to 2 MiB. Round artifacts
 may use `..` only while remaining within the entity parent (the real upstream
 fixture uses `../../../candidate.patch`); absolute paths, symlinks, encoded paths,

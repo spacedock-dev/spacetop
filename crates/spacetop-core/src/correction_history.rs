@@ -122,7 +122,7 @@ pub fn load(definition: &WorkflowDefinition, entity: &Entity) -> CorrectionHisto
         let identity = RoundIdentity {
             origin: origin(entity).into(),
             entity_id: entity.id.clone(),
-            briefing_id: decode::briefing_id(&entity.id, &stage, cycle),
+            briefing_id: selected.map(|p| p.briefing.id.clone()).unwrap_or_default(),
             stage,
             cycle,
         };
@@ -247,10 +247,30 @@ fn load_round(
         invalid_relationships: Vec::new(),
     };
     let path = round.room.join("briefing.json");
+    // Folder-form entities own their retained rooms. A flat entity's shared
+    // review directory is ambiguous without its exact current pointer binding.
+    if pointer.is_none()
+        && round
+            .identity
+            .origin
+            .file_name()
+            .is_none_or(|n| n != "index.md")
+    {
+        round.diagnostics.push(ReviewDiagnostic {
+            path,
+            line: None,
+            problem: problem(
+                RoomProblem::IdentityMismatch,
+                "retained room has ambiguous flat-entity ownership; no current pointer binding",
+            ),
+        });
+        return round;
+    }
     let briefing = gate_room::read_file(root, &path)
-        .and_then(|bytes| decode::decode_briefing(&bytes, &round.identity, pointer));
+        .and_then(|bytes| decode::decode_briefing(&bytes, pointer));
     match briefing {
         Ok((briefing, references, digest)) => {
+            round.identity.briefing_id.clone_from(&briefing.id);
             round.briefing = Some(briefing);
             round.references = references;
             round.digest = Some(digest);

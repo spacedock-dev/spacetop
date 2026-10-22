@@ -119,6 +119,111 @@ fn oracle_numeric_order_current_pointer_and_advisory_closure() {
     assert_eq!(facts.rounds[2].completeness, ReviewCompleteness::Invalid);
 }
 #[test]
+fn unchanged_upstream_pointer_binds_manifest_not_entity_name() {
+    let mut setup = Setup::new();
+    fs::copy(
+        fixtures().join("upstream/recorded-entity.md"),
+        &setup.entity.path,
+    )
+    .unwrap();
+    setup.entity =
+        parser::parse_work_item(&setup.entity.path, &["implementation".into()], None).unwrap();
+    assert!(matches!(
+        setup.entity.review_round,
+        ReviewPointer::Valid { .. }
+    ));
+    let facts = setup.load();
+    let round = &facts.rounds[0];
+    assert_eq!(round.identity.entity_id, "task");
+    assert_eq!(
+        round.identity.briefing_id,
+        "briefing:3j:implementation:round-1"
+    );
+    assert_eq!(round.provenance, RoundProvenance::CurrentPointer);
+    assert_eq!(round.records.len(), 5);
+    assert!(round.diagnostics.is_empty());
+    assert_eq!(
+        edges(&facts, &round.records[0])[1].source,
+        round.records[3].identity
+    );
+    setup.entity.review_round = ReviewPointer::Absent;
+    let retained = setup.load();
+    assert_eq!(retained.rounds[0].identity, round.identity);
+    assert_eq!(retained.rounds[0].records, round.records);
+    assert_eq!(retained.rounds[0].provenance, RoundProvenance::Retained);
+}
+
+#[test]
+fn differing_stage_and_opaque_ids_bind_exactly_without_cross_room_edges() {
+    for id in ["briefing:081:implement:round-1", "opaque review identity"] {
+        let mut setup = Setup::new();
+        let old_id = "briefing:3j:implementation:round-1";
+        let bytes = fs::read_to_string(setup.room().join("briefing.json")).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&bytes.replace(old_id, id)).unwrap();
+        setup.briefing(manifest);
+        let log = fs::read_to_string(setup.room().join("briefing.review.jsonl")).unwrap();
+        let mut log = log.replace(old_id, id);
+        for n in 0..3 {
+            log.push_str(
+                &serde_json::json!({
+                    "type": "Resolution", "id": format!("response:{n}"), "briefing": id,
+                    "by": "actor:worker", "at": "2026-10-22T15:50:25Z",
+                    "decision": "revise", "reason": "Recorded response, not gate approval"
+                })
+                .to_string(),
+            );
+            log.push('\n');
+        }
+        setup.log(log.as_bytes());
+        let new_room = setup.root.join("sample/review/verify/round-1");
+        fs::create_dir_all(new_room.parent().unwrap()).unwrap();
+        fs::rename(setup.room(), &new_room).unwrap();
+        if let ReviewPointer::Valid { pointer } = &mut setup.entity.review_round {
+            pointer.id = "round:081:verify:1".into();
+            pointer.stage = "verify".into();
+            pointer.briefing.id = id.into();
+            pointer.briefing.room_ref = "./review/verify/round-1".into();
+            let value = serde_json::json!({"review-round": pointer});
+            assert!(matches!(
+                decode::parse_pointer(&serde_yaml::to_string(&value).unwrap(), "081"),
+                ReviewPointer::Valid { .. }
+            ));
+        }
+        setup.entity.id = "081".into();
+        let facts = setup.load();
+        let round = facts
+            .rounds
+            .iter()
+            .find(|r| r.identity.stage == "verify")
+            .unwrap();
+        assert_eq!(round.identity.briefing_id, id);
+        assert_eq!(round.provenance, RoundProvenance::CurrentPointer);
+        assert_eq!(round.records.len(), 8);
+        assert!(round.diagnostics.is_empty());
+        assert!(
+            edges(&facts, &round.records[0])
+                .iter()
+                .all(|edge| edge.source.round == round.identity
+                    && edge.target.round == round.identity)
+        );
+        if let ReviewPointer::Valid { pointer } = &mut setup.entity.review_round {
+            pointer.briefing.id = "different identity".into();
+        }
+        let mismatched = setup.load();
+        let round = mismatched
+            .rounds
+            .iter()
+            .find(|r| r.identity.stage == "verify")
+            .unwrap();
+        assert!(round.records.is_empty());
+        assert_eq!(
+            round.diagnostics[0].problem.kind,
+            RoomProblem::IdentityMismatch
+        );
+    }
+}
+
+#[test]
 fn same_briefing_relationships_expose_actual_chain_not_prose_or_adjacent_rounds() {
     let setup = Setup::new();
     let facts = setup.load();
@@ -172,7 +277,7 @@ fn pointer_schema_duplicate_keys_cycles_and_legacy_absence() {
             "./review/implementation/round-01",
         ),
         frontmatter.replace("round:3j", "round:other"),
-        frontmatter.replace("briefing:3j", "briefing:other"),
+        frontmatter.replace("briefing:3j:implementation:round-1", "\"\""),
         frontmatter.replace("cycle: 1", "cycle: 1\n  unexpected: true"),
     ] {
         assert!(
@@ -460,6 +565,15 @@ fn flat_folder_archive_split_root_and_worktree_origins_remain_distinct() {
     );
     setup.entity.evidence_origin = Some(setup.root.join("flat.md"));
     assert_eq!(setup.load().rounds.len(), 4);
+    let flat = setup.load();
+    assert_eq!(flat.rounds[0].records.len(), 5);
+    assert!(flat.rounds[1..]
+        .iter()
+        .all(|r| r.records.is_empty()
+            && r.diagnostics[0].problem.kind == RoomProblem::IdentityMismatch));
+    // A flat sibling cannot claim unbound shared rooms, even with the same entity ID.
+    setup.entity.review_round = ReviewPointer::Absent;
+    assert!(setup.load().rounds.iter().all(|r| r.records.is_empty()));
     setup.entity.id = "unrelated".into();
     setup.entity.review_round = ReviewPointer::Absent;
     assert!(setup

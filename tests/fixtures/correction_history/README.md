@@ -4,9 +4,12 @@
 [`internal/gates/testdata/advisory-round`](https://github.com/spacedock-dev/spacedock/tree/v0.27.3/internal/gates/testdata/advisory-round).
 The oracle Briefing's canonical digest is
 `sha256:006c419cc260eac142a2a038037d4d8a8d80156f7b1f7224b3be6eab682a0698`.
-Its `recorded-entity.md` is preserved as source material, not used as a valid
-Spacetop entity: it names task while the Briefing names 3j. The normalized
-`workflow/sample/index.md` binds entity 3j without changing the oracle room.
+Its unchanged `recorded-entity.md` is a compatibility oracle: entity `task` binds
+Briefing `briefing:3j:implementation:round-1`. The parser must preserve that exact
+identity rather than derive it from entity, stage or cycle. The browsing fixture
+`workflow/sample/index.md` uses entity 3j with the same unchanged oracle room.
+Core regressions also cover a verify room binding an implement Briefing, opaque
+IDs, exact pointer mismatches and ambiguous unbound flat-entity rooms.
 No installed Spacedock source or private path is required to run these tests.
 
 `workflow/` is disposable test data. Implementation cycles 1, 2, 10 and validation
