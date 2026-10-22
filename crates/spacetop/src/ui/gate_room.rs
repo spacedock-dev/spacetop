@@ -142,10 +142,15 @@ pub(super) fn render(frame: &mut Frame<'_>, browser: &GateBrowser) {
         body,
     );
     let footer = if area.width < 35 {
-        "Esc: back | h mode".into()
+        if browser.history_mode {
+            "Esc: back | f links"
+        } else {
+            "Esc: back | r report"
+        }
+        .into()
     } else if browser.history_mode {
         format!(
-            "Esc: back | h gates | Tab: {} | j/k | Enter detail/link | PgUp/Dn | w",
+            "Esc: back | h gates | Tab: {} | j/k | Enter link | f responses | PgUp/Dn | w",
             if browser.history.records_focus {
                 "rounds"
             } else {
@@ -154,7 +159,7 @@ pub(super) fn render(frame: &mut Frame<'_>, browser: &GateBrowser) {
         )
     } else {
         format!(
-            "Esc: back | h history | Tab: {:?} | j/k select | Enter item | PgUp/Dn | w wrap",
+            "Esc: back | r report | h history | Tab: {:?} | j/k | Enter item | PgUp/Dn | w",
             if browser.focus == RoomFocus::Attempts {
                 RoomFocus::Items
             } else {
@@ -204,6 +209,28 @@ mod tests {
             .collect::<String>()
     }
     #[test]
+    fn question_leads_report_and_failure_content_at_all_sizes() {
+        let (_temp, snapshot) = setup();
+        let mut app = App::from_snapshot(snapshot.definition.root.clone(), snapshot.clone());
+        app.handle_key(KeyEvent::new(KeyCode::Char('B'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+        for (w, h) in [(80, 24), (40, 12), (20, 6)] {
+            let output = text(&app, w, h);
+            assert!(output.contains("Question:"));
+            assert!(output.contains("Esc: back"));
+        }
+        std::fs::write(
+            snapshot.definition.root.join("room/gate-review.md"),
+            "tampered",
+        )
+        .unwrap();
+        app.reload_from_snapshot(snapshot);
+        let output = text(&app, 100, 40);
+        assert!(output.contains("do not match the recorded SHA-256"));
+        assert!(output.contains("Recorded Approve"));
+        assert!(!output.contains("Item SHA-256 verified"));
+    }
+    #[test]
     fn room_details_and_failure_exit_remain_usable_at_three_sizes() {
         let (_temp, snapshot) = setup();
         let root = snapshot.definition.root.clone();
@@ -232,7 +259,7 @@ mod tests {
         for (w, h) in [(80, 24), (40, 12), (20, 6)] {
             let output = text(&app, w, h);
             assert!(output.contains("UNVERIFIED"));
-            assert!(output.contains("Missing:"));
+            assert!(output.contains("Question unavailable"));
             assert!(output.contains("Esc: back"));
         }
     }

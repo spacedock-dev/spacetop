@@ -64,6 +64,14 @@ pub struct CanonicalBriefing {
     pub question: String,
     pub items: Vec<RoomItem>,
 }
+
+/// The upstream canonical report convention is an Artifact identity, not a filename.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MainReport<'a> {
+    Identified(&'a RoomItem),
+    NotIdentified,
+    Unavailable,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GateRoomView {
     pub format: Option<RoomFormat>,
@@ -80,5 +88,19 @@ impl GateRoomView {
     }
     pub fn verified(&self) -> bool {
         self.briefing.is_some() && self.diagnostics.is_empty()
+    }
+    pub fn main_report(&self) -> MainReport<'_> {
+        if !self.verified() {
+            return MainReport::Unavailable;
+        }
+        self.briefing
+            .as_ref()
+            .and_then(|b| {
+                b.items.iter().find(|item| {
+                    item.kind == RoomItemKind::Artifact && item.id == "artifact:gate-review"
+                })
+            })
+            .map(MainReport::Identified)
+            .unwrap_or(MainReport::NotIdentified)
     }
 }

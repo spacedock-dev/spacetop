@@ -4,9 +4,15 @@
 current stage's selected attempt, or the last recorded attempt when the current
 stage has no record. History is keyed by gate and attempt ids; a reload retains
 the selected identity and focus, and reports when the identity disappears.
-Question/inventory bytes are loaded at open or attempt selection. Artifact and
-Reference bytes are loaded only by Enter in inventory focus, then reverified
-when an open preview refreshes. File content never comes from the render loop.
+The selected question is first in the content, including item previews. Missing
+or unverified question data is explicit. `r` opens the canonical main report:
+the Artifact with exact ID `artifact:gate-review`. A Reference with that ID, a
+filename or the first inventory position cannot designate it. No designation
+says “Main report not identified”; inventory remains browseable with Tab/Enter.
+The shortcut preserves attempt, focus and supporting-item selection on Back.
+Question/inventory bytes load at open or attempt selection. Item bytes load only
+on Enter/r and reverify on preview refresh by the opened identity, not list
+position. File content never comes from the render loop.
 
 Format precedence follows the bound attempt rather than nearby files:
 
@@ -62,6 +68,13 @@ entity rebinding, artifact changes/removal and state directory replacement cause
 reverification. An open item is cleared on failure. Failed Git objects can be
 retried via Enter without fetching.
 
+Failures explain both cause and effect, followed by the exact typed diagnostic.
+Missing files, malformed/mismatched Briefings, unsafe paths, size limits,
+digest mismatches and absent exact Git objects never produce a verified preview.
+A bound Briefing is not a claim that all its items were read or verified.
+Verified non-UTF-8 bytes cannot be shown as a text report. Recorded frontmatter
+decisions remain inspectable independently, including when the room is rejected.
+
 Reproducible proof lives in `spacetop-core/tests/gate_rooms.rs`, core decoder and
 safe-I/O tests, app gate-room tests and Ratatui TestBackend tests. The unchanged
 Spacedock v0.27.3 fixture pins JCS interoperability. Run `cargo test`, `make lint`
@@ -115,8 +128,13 @@ earlier records in the same entity-origin/stage/cycle/Briefing log. Inverse edge
 allow finding -> disposition Annotation -> closing Resolution navigation with
 each intermediate record intact. No cross-round edge is inferred from matching
 IDs, prose, actors or timestamps. Dangling/forward edges are invalid and cannot
-be opened. Absence means no recorded relationship, or unavailable evidence,
-never fixed/approved. A reviewer including a finding is not a follow-up response.
+be opened. In record detail, `f` filters to recorded responses (incoming FollowUp
+edges); press it again for all evidence relationships. Enter follows the selected
+edge; Back restores the source, filter and exact edge, not the first nearby row.
+No recorded response means unresolved in this log, not proof of an unfixed
+correction. Invalid/partial evidence instead reports response unknown, while
+retaining any known prefix responses. A response never implies fixed/approved.
+A reviewer including a finding is not a follow-up response.
 
 Refresh watches review JSONL and directory creation/rename/deletion as well as
 Briefings and safe artifact coordinates. It retains surviving full identities,
@@ -130,6 +148,13 @@ Artifact previews retain a fixed header with current/retained provenance,
 stage/cycle and read-only status separately from item SHA-256 verification.
 These labels remain visible while scrolling or toggling wrap on narrow
 terminals and use ASCII-compatible text.
+
+The question remains first in round detail. Full entity-origin, stage, cycle and
+Briefing provenance accompany records; current/retained preview headers stay
+separate from item verification. The reusable
+`tests/fixtures/review-evidence/setup.py` combines complete/missing/tampered report
+scenarios with the upstream-derived multi-round history. Its README describes
+navigation and the full-file no-write inventory procedure.
 
 
 ## Finding work that needs attention
