@@ -404,3 +404,34 @@ wrapped-help scroll bounds via the existing Ratatui rendered-line-info feature
 (no new project dependency). Final required checks and real-terminal scenarios
 passed after correcting the narrow preview and test-harness issues; human
 new-reader comprehension remains outstanding, so AC-1 is not fully proven.
+
+## Stage Report: verify
+
+- DONE: Independently review implementation against all acceptance criteria and read-only, canonical-label, unknown-state, runtime-suppression, and safe-action boundaries; identify only material defects with concrete evidence.
+  Reviewed `f1c087d...67755d2` across all 11 changed files against the task and repository policies; no material code defects found. No implementation fixes or gate approvals made.
+- DONE: Assess recorded 705-test, lint, and real-terminal evidence without redundantly rerunning owned green checks; exercise any changed-path claim whose evidence is absent or insufficient.
+  Accepted the implement report's final `cargo fmt && cargo test && make lint` (705 passed, 4 ignored), corroborated final-run ordering in the implementation transcript, and inspected raw PTY screen evidence; no uncovered machine-checkable changed-path claim required another run.
+- DONE: Record a verdict and per-criterion coverage, explicitly retaining missing human new-reader comprehension evidence as an unmet acceptance requirement rather than inventing or waiving it.
+  Proposed verdict for FO: verification evidence incomplete / hold completion for human proof; code review is comment-only with no material defects, not gate approval.
+- DONE: AC-1 technical state-distinction coverage.
+  Exhaustive typed meanings in `ui/preview.rs:530-610`, storage explanations in `app/overview.rs:115-133`, and glossary in `ui/help.rs:109-120` preserve unknown/spent-state caveats; gate/diff/wrap and absent-record tests would fail on swapped meanings or invented readiness.
+- FAILED: AC-1 required new-reader comprehension proof.
+  Entity lines 35-37 and 260-266 require actual new-reader explanations; lines 365-367 and 397-398 explicitly record none. Classification proposal: missing human acceptance evidence, not a demonstrated code defect; an agent cannot supply or waive it.
+- DONE: AC-2 precise facts and unchanged machine semantics.
+  Core/parser/query/CLI code is unchanged; canonical readiness remains alongside prose, full topology diagnostics remain scroll-reachable, and recorded list/export/filter evidence retains all 12 fixture results (11 distinct non-null states are not claimed).
+- DONE: AC-2 layout and diagnostic regression coverage.
+  `contextual_help_preserves_every_topology_problem_and_unicode_evidence` checks exact rendered diagnostics for nine unverified variants at four sizes; it fails if wrapping/scrolling loses path/error facts. `short_gate_preview_keeps_explanation_reachable_by_scrolling` catches lost pending-decision text at 40x12.
+- DONE: AC-3 technical action-boundary coverage.
+  Gate/help text explicitly disclaims in-app approval/move/merge/repair and actor authentication, and says the destination is unknown; captured missing/wrong/unverified screens direct users outside Spacetop, not to invented commands.
+- FAILED: AC-3 human understanding of where to act remains unproven.
+  The specified new-reader prompts include unknown destinations and invalid/unverified cases; no actual paraphrases or corrections are present. Classification proposal: same human-proof gap as AC-1, not a second code defect.
+- DONE: Read-only and runtime-suppression boundaries.
+  The diff adds no I/O, workflow writer, runtime projection, or sync eligibility change; recorded fixture bytes/HEADs are unchanged, while `help_scrolls_without_acting_and_reopens_at_top` would fail on selection/scope/index mutation, quit, or a pending sync request.
+- DONE: Assess actual-terminal evidence and documentation.
+  `local://task087-terminal-evidence.json` contains 11 direct PTY walks with exit 0, gate screens at 80x24/40x12, all five storage shapes at 40x12, and missing-state help at 20x6; README and gate-room guidance match the delivered limits.
+- SKIPPED: Repeat builds, formatting, tests, lint, and terminal walkthroughs.
+  Existing green ownership evidence and inspected screen captures cover the changed machine behavior; repeating them would not resolve the only outstanding requirement, human comprehension.
+
+### Summary
+
+Independent standards/spec review found no material implementation defect in `67755d2`; existing automated checks and actual-terminal captures support the technical AC-1/2/3 claims. Overall acceptance remains incomplete because the explicitly required new-reader comprehension and action-location proof is absent: FO should retain that human-evidence blocker and arrange the prescribed walkthrough, without treating this report as approval or a code-fix request.
