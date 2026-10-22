@@ -1,6 +1,6 @@
 ---
 title: Explain status labels in plain language
-status: plan
+status: implement
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
@@ -10,7 +10,7 @@ started: 2026-10-22T09:48:59Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-explain-status-in-plain-language
 issue:
 pr:
 mod-block:
