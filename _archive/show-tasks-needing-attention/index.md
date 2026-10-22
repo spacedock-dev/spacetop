@@ -1,19 +1,19 @@
 ---
 title: Show tasks that need attention
-status: verify
+status: done
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
 milestone: usability
 proof: "Behavior scenarios and a live terminal walkthrough; see acceptance criteria and proof plan."
 started: 2026-10-22T13:28:21Z
-completed:
-verdict:
+completed: 2026-10-22T14:42:10Z
+verdict: PASSED
 score:
 worktree: .worktrees/spacedock-ensign-show-tasks-needing-attention
 issue:
-pr: "#88"
-mod-block: merge:pr-merge
+pr: pr-merge:88
+mod-block:
 id: 086
 review-round:
     id: round:086:verify:1
@@ -44,7 +44,8 @@ gates:
                 reason: Captain approved the presented task 086 verify gate for PR publication with AC-2 unfamiliar-person walkthrough explicitly outstanding. Technical verification and corrected V-1 are accepted; no human evidence is claimed.
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+archived: 2026-10-22T14:42:10Z
 ---
 
 Help a person unfamiliar with the project find work that needs attention and understand why it appears.
