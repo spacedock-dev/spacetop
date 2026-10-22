@@ -1,20 +1,20 @@
 ---
 id: 081
 title: Inspect correction-round history
-status: verify
+status: done
 source: "Captain-requested Spacedock release compatibility survey, 2026-10-01"
 kind: feature
 risk: medium
 milestone: spacedock-0.27-compatibility
 proof: "Round-pointer and JSONL fixtures, query ordering tests, app navigation tests, and TestBackend assertions; dropping earlier rounds or attributing a resolution to another Briefing must fail."
 started: 2026-10-22T14:52:31Z
-completed:
-verdict:
+completed: 2026-10-22T16:46:24Z
+verdict: PASSED
 score: 0.85
 worktree: .worktrees/spacedock-ensign-inspect-correction-round-history
 issue:
-pr: "#89"
-mod-block: merge:pr-merge
+pr: pr-merge:89
+mod-block:
 review-round:
     id: round:081:verify:2
     stage: verify
@@ -44,7 +44,8 @@ gates:
                 reason: Captain approved the presented task 081 verify gate and PR publication. All four criterion verdicts and evidence were directly inspected in the verifier table; structured AC scanner format limitation was disclosed.
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+archived: 2026-10-22T16:46:24Z
 ---
 
 Make recorded correction cycles inspectable without searching through entity folders. Spacedock retains review-round pointers plus immutable Briefing and review JSONL records.
