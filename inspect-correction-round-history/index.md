@@ -23,6 +23,17 @@ review-round:
         id: briefing:081:implement:round-2
         digest: sha256:766287b3014674caa54d49514341f292c61802b1879dc163fc208a418a1aae58
         room-ref: ./review/verify/round-2
+gates:
+    version: 1
+    records:
+        - id: gate:081:verify
+          stage: verify
+          attempts:
+            - id: gate-attempt:081-verify-1
+              briefing:
+                id: briefing:081:verify:attempt-1:revision-1
+                digest: sha256:adb9e26781e500a62322a55dc71536b32cee195804d41f6677fd90fb9cb758a0
+                room-ref: ./review/verify/briefing-1
 ---
 
 Make recorded correction cycles inspectable without searching through entity folders. Spacedock retains review-round pointers plus immutable Briefing and review JSONL records.

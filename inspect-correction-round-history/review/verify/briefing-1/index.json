@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:081:verify:attempt-1:revision-1",
+  "question": "Approve task 081 correction-round history for PR publication?",
+  "artifacts": [
+    {
+      "id": "artifact:081:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/fbaffb60c9c5b21fd05e6c1746f65c1e04537f8e/inspect-correction-round-history/index.md",
+      "rev": "sha256:15eda7bcf35cf580446bfae622539e40681492aa1f29359431cc771a7bd335e7",
+      "mediaType": "text/markdown",
+      "summary": "All four acceptance criteria pass independent cycle-2 verification at 362a936. Corrected selected-relationship refresh, narrow-preview provenance and upstream arbitrary Briefing identity compatibility. Final evidence includes 740 passing tests, lint/build, six real-backend tests, actual terminal navigation and unchanged-file proof. Published rounds retain eight and four records with exact identities; task 088 typed same-Briefing relationship prerequisite is ready within documented limits."
+    }
+  ]
+}
