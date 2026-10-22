@@ -424,6 +424,8 @@ pub(crate) fn evidence_failure(diagnostic: &RoomDiagnostic) -> String {
             "The Briefing is malformed; its question and inventory cannot be trusted.",
         RoomProblem::IdentityMismatch | RoomProblem::BindingMismatch | RoomProblem::RequestDigestMismatch | RoomProblem::BriefingDigestMismatch =>
             "The Briefing does not match the recorded request; its question and inventory cannot be trusted.",
+        RoomProblem::SelectedItemMissing =>
+            "The selected item is no longer in the verified inventory; no preview is available. The Briefing question and remaining inventory stay verified.",
         RoomProblem::ArtifactDigestMismatch =>
             "Item bytes do not match the recorded SHA-256; no verified preview is available.",
         RoomProblem::SizeLimit => "Evidence exceeds the safe size limit; content was not read as verified.",

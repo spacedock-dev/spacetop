@@ -19,6 +19,8 @@ pub enum RoomProblem {
     InvalidSchema,
     IdentityMismatch,
     BindingMismatch,
+    /// The binding verified, but the requested item is absent from its inventory.
+    SelectedItemMissing,
     RequestDigestMismatch,
     BriefingDigestMismatch,
     ArtifactDigestMismatch,

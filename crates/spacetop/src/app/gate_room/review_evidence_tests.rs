@@ -55,6 +55,120 @@ fn direct_report_preserves_support_selection_and_refreshes_exact_preview_identit
 }
 
 #[test]
+fn refreshed_report_distinguishes_removed_item_from_untrusted_briefing() {
+    use crate::app::{App, AppMode};
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    for failure in ["removed", "binding", "digest"] {
+        let (_temp, mut snapshot) = tests::setup();
+        let root = snapshot.definition.root.clone();
+        fs::write(
+            root.join("room/support.md"),
+            "Distinct supporting evidence.\n",
+        )
+        .unwrap();
+        rebind(&mut snapshot, |value| {
+            let mut support = value["artifacts"][0].clone();
+            support["id"] = "artifact:support".into();
+            support["uri"] = "support.md".into();
+            support["rev"] =
+                spacetop_core::parser::gate_room::raw_digest(b"Distinct supporting evidence.\n")
+                    .into();
+            value["artifacts"]
+                .as_array_mut()
+                .unwrap()
+                .insert(0, support);
+        });
+        let mut app = App::from_snapshot(root.clone(), snapshot.clone());
+        for key in [KeyCode::Char('B'), KeyCode::Tab, KeyCode::Char('r')] {
+            app.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
+        }
+        let AppMode::GateRoom { browser, .. } = app.mode() else {
+            panic!()
+        };
+        assert_eq!(
+            browser.preview.as_deref(),
+            Some("Exact candidate review.\n")
+        );
+        let selected = browser.selected.clone();
+        rebind(&mut snapshot, |value| {
+            value["artifacts"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|item| item["id"] != "artifact:gate-review");
+        });
+        if failure != "removed" {
+            let GateData::Valid { document, .. } = &mut snapshot.items[0].gates else {
+                panic!()
+            };
+            let attempt = &mut document.records[0].attempts[1];
+            if failure == "binding" {
+                // A request-backed binding must name a directory, not a Briefing file.
+                attempt.briefing.room_ref = "room/index.json".into();
+                attempt.briefing.request_digest = Some(attempt.briefing.digest.clone());
+            } else {
+                attempt.briefing.digest = format!("sha256:{}", "0".repeat(64));
+            }
+        }
+        app.reload_from_snapshot(snapshot);
+        let AppMode::GateRoom { browser, .. } = app.mode() else {
+            panic!()
+        };
+        assert_eq!(browser.selected, selected);
+        assert_eq!(browser.focus, RoomFocus::Items);
+        assert!(browser.preview.is_none());
+        assert!(browser.preview_item.is_none());
+        assert_eq!(browser.view.verified(), failure == "removed");
+        let content = browser.content();
+        assert!(content.contains("Recorded Approve"));
+        assert!(!content.contains("Distinct supporting evidence."));
+        let mut terminal = Terminal::new(TestBackend::new(180, 50)).unwrap();
+        terminal
+            .draw(|frame| crate::ui::render(frame, &app))
+            .unwrap();
+        let rendered: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(rendered.contains("Recorded Approve"));
+        assert!(!rendered.contains("Item SHA-256 verified"));
+        if failure == "removed" {
+            assert!(content.contains("SelectedItemMissing"));
+            assert!(rendered.contains("Bound Briefing verified"));
+            assert!(rendered.contains("Should this exact candidate"));
+            assert!(rendered.contains("selected item is no longer in the verified inventory"));
+            assert!(!content.contains("cannot be trusted"));
+            assert!(!rendered.contains("cannot be trusted"));
+            assert!(content.contains("Main report not identified"));
+            app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+            let AppMode::GateRoom { browser, .. } = app.mode() else {
+                panic!()
+            };
+            assert_eq!(browser.preview_item.as_deref(), Some("artifact:support"));
+            assert_eq!(
+                browser.preview.as_deref(),
+                Some("Distinct supporting evidence.\n")
+            );
+        } else {
+            assert!(rendered.contains("UNVERIFIED"));
+            assert!(rendered.contains("Question unavailable"));
+            assert!(rendered.contains("cannot be trusted"));
+            assert!(!rendered.contains("Bound Briefing verified"));
+            assert!(content.contains(if failure == "binding" {
+                "BindingMismatch"
+            } else {
+                "BriefingDigestMismatch"
+            }));
+            assert!(!content.contains("SelectedItemMissing"));
+        }
+    }
+}
+
+#[test]
 fn report_absence_failures_and_binary_bytes_never_claim_verified_preview() {
     for case in [
         "missing",
@@ -136,6 +250,7 @@ fn every_typed_failure_has_plain_effect_and_exact_detail() {
         RoomProblem::InvalidSchema,
         RoomProblem::IdentityMismatch,
         RoomProblem::BindingMismatch,
+        RoomProblem::SelectedItemMissing,
         RoomProblem::RequestDigestMismatch,
         RoomProblem::BriefingDigestMismatch,
         RoomProblem::ArtifactDigestMismatch,

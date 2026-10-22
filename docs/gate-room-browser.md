@@ -156,6 +156,12 @@ separate from item verification. The reusable
 scenarios with the upstream-derived multi-round history. Its README describes
 navigation and the full-file no-write inventory procedure.
 
+If refresh removes the opened item from a newly verified inventory, only that
+preview is invalidated. The question, remaining inventory, and recorded decision
+remain inspectable; no adjacent item replaces the preview. A failed request or
+Briefing binding instead leaves the question and inventory unverified. The
+recorded decision remains visible in either case.
+
 
 ## Finding work that needs attention
 
