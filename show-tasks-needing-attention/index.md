@@ -12,8 +12,8 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-show-tasks-needing-attention
 issue:
-pr:
-mod-block:
+pr: "#88"
+mod-block: merge:pr-merge
 id: 086
 review-round:
     id: round:086:verify:1
