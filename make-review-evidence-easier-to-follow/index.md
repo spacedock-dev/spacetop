@@ -23,6 +23,17 @@ review-round:
         id: briefing:task088:verify:round-1
         digest: sha256:1eb23a2f98b76347c3c3dbb6b926a7f9a433b5b0f156acb0c64563e3c554daf6
         room-ref: ./review/verify/round-1
+gates:
+    version: 1
+    records:
+        - id: gate:088:verify
+          stage: verify
+          attempts:
+            - id: gate-attempt:088-verify-1
+              briefing:
+                id: briefing:088:verify:attempt-1:revision-1
+                digest: sha256:83474a0ca9add80972534b4a70b25f652099ab1607db5043cbbf58bf259e028e
+                room-ref: ./review/verify/briefing-1
 ---
 
 Help reviewers understand the question, read the main report, and follow the supporting evidence without searching through files.

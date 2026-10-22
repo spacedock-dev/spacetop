@@ -1,0 +1,15 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:088:verify:attempt-1:revision-1",
+  "question": "Approve task 088 review evidence navigation for PR publication?",
+  "artifacts": [
+    {
+      "id": "artifact:088:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/5cc9c3673dbc984abad80d53d29f30a9913ca32c/make-review-evidence-easier-to-follow/index.md",
+      "rev": "sha256:77b67caa12b622cf003111945dfa3ad9c3d349ec0222713e4b37903e6f446a39",
+      "mediaType": "text/markdown",
+      "summary": "All four acceptance criteria passed independent cycle-1 review at 2d40549. Question-first browser, canonical report shortcut and same-Briefing response navigation preserve identity and read-only safety. Corrected missing selected item versus whole-Briefing trust explanation. Final recorded proof: 751 tests, lint/build, real notify and actual terminal scenarios; 72 workflow files unchanged."
+    }
+  ]
+}
