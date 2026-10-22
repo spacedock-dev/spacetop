@@ -34,6 +34,17 @@ gates:
                 id: briefing:081:verify:attempt-1:revision-1
                 digest: sha256:adb9e26781e500a62322a55dc71536b32cee195804d41f6677fd90fb9cb758a0
                 room-ref: ./review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:081:verify:1
+                briefing: briefing:081:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-22T16:42:04.76572Z"
+                decision: approve
+                reason: Captain approved the presented task 081 verify gate and PR publication. All four criterion verdicts and evidence were directly inspected in the verifier table; structured AC scanner format limitation was disclosed.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Make recorded correction cycles inspectable without searching through entity folders. Spacedock retains review-round pointers plus immutable Briefing and review JSONL records.
