@@ -15,6 +15,14 @@ issue:
 pr:
 mod-block:
 id: 088
+review-round:
+    id: round:088:verify:1
+    stage: verify
+    cycle: 1
+    briefing:
+        id: briefing:task088:verify:round-1
+        digest: sha256:1eb23a2f98b76347c3c3dbb6b926a7f9a433b5b0f156acb0c64563e3c554daf6
+        room-ref: ./review/verify/round-1
 ---
 
 Help reviewers understand the question, read the main report, and follow the supporting evidence without searching through files.
