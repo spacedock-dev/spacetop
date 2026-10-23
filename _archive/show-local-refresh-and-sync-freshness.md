@@ -10,7 +10,7 @@ started: 2026-10-23T08:00:58Z
 completed: 2026-10-23T09:06:20Z
 verdict: PASSED
 score:
-worktree: .worktrees/spacedock-ensign-show-local-refresh-and-sync-freshness
+worktree:
 issue:
 pr: pr-merge:91
 mod-block:
