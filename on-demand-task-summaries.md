@@ -271,3 +271,32 @@ All three dispatched planning obligations are fulfilled. The earlier **FAILED** 
 Implementation is stopped at the requested safety boundary, not complete or verification-ready. Candidate `80245daa4148e4cc3c2b7be29eadc2a23296e2e8` is committed in `.worktrees/spacedock-ensign-on-demand-task-summaries`; reproducible scripts, raw synthetic results and limits are in `tests/fixtures/summary-isolation/README.md` and `evidence/`.
 
 The concrete tradeoff is Claude's required helper creation versus the only tested effective descendant restriction (deny-fork): no tested profile preserves both login and cleanup. Recommend retaining all ACs and moving only to a bounded helper-capable containment design with an explicit login-plus-setsid cleanup test on both release hosts; any new runtime dependency/auth broker requires a concrete captain decision before adoption. The conservative alternative is to defer summaries while retaining this evidence. Do not proceed to UI/live calls, silently cut an adapter/platform, or treat the narrower Codex tool result as full safety readiness.
+
+## Stage Report: implement (cycle 2)
+
+- DONE: Compare three falsifiable no-new-dependency candidates: exact auth-helper capabilities, actual OS descendant lifecycle primitives, and proven CLI tool/customization restrictions combined with narrow OS containment.
+  Candidate comparison, source references, reproduction commands and limits are committed in `0d0f404a22834b1213066ca8cd3505869fd352f1`, `tests/fixtures/summary-isolation/ADVANCE.md`; no complete existing-login boundary is claimed.
+- DONE: Exercise only the smallest evidence-driven differences, preserving prior failures, existing login/model settings, secret boundaries and zero live calls; establish supported-host prerequisites without confusing emulation with CLI proof.
+  Exact read differentials, PID-scoped denial metadata, Darwin syscall controls, synthetic protocol requests and Linux capability probes retain their negatives; no global config, credential value, runtime install or provider inference was used. Ledger remains 0/6.
+- FAILED: Commit the bounded design/probe result and native report with one demonstrated next path or a concrete minimal dependency/broker proposal naming permissions, user flow, platform impact and why existing mechanisms failed.
+  Scoped result is committed, but no complete supported path or necessity for a new component is established. Per FO convergence instruction, return the one exact remaining metadata-only discriminator below rather than falsely declaring every dependency-free path impossible or adopting a speculative broker.
+- DONE: Narrow the auth failure without broad HOME/Keychain grants.
+  Literal HOME/settings reads, alone and together, did not restore Claude login. Correctly observed helper PIDs exposed no new missing read. The strict-profile `security default-keychain -d user` metadata query succeeded, ruling out default-keychain discovery itself; specific item access/recognition remains unresolved. No item value was requested.
+- DONE: Verify actual Darwin lifecycle capability and a concrete syscall-guard bypass.
+  SDK says NOTE_TRACK/NOTE_CHILD unsupported. `process-info-setcontrol` allows direct and spawn-based session escape; denying SYS_setsid/SYS_setpgid blocks direct calls but POSIX_SPAWN_SETSID/SETPGROUP still escape. Also denying SYS_posix_spawn blocks all four canary operations but makes the recorded positive Claude auth reference logged-out. No auth-compatible cancel/timeout/exit cleanup PASS is claimed.
+- DONE: Establish the available Linux surface and its precise limits.
+  Existing amd64-emulated container: user+PID unshare returns EPERM, cgroup.kill exists but cgroup root is read-only, and subreaper registration works. Installed CLIs are arm64 Mach-O. Native x64 artifacts, an existing-login context, and namespace/cgroup permission remain prerequisites, not evidence that Linux is impossible or excluded.
+- DONE: Demonstrate a narrower Claude/Haiku protocol path under strict nofork.
+  `advance-claude-protocol.json`: fake OAuth token/local Messages endpoint, two synthetic requests, forged Bash/Read responses rejected as disabled, CLAUDE.md marker absent, outside files unchanged. This is not existing-login or real-model proof; its computed usage/cost fields arise from canned fake usage, not billable usage.
+- DONE: Preserve Codex configured-provider behavior and inconclusive startup evidence.
+  `advance-codex-config-{control,clear-mcp}.json`: synthetic custom provider preserved without ignoring all user config; exact Luna selection and absent AGENTS.md marker observed. Neither variant activated its MCP startup canary, so MCP clearing is inconclusive; hooks/plugins/managed customization remain unproved.
+- DONE: Correct diagnostic API handling and test the changed fixture boundary.
+  libproc proc_listchildpids returns a PID count, not bytes; corrected sampling captured actual helper PIDs and now has a real one-child regression. Twelve Python fixture tests passed; all scripts parse and git diff --check passed. Already-green Rust checks from 80245da were not repeated for fixture/docs-only changes, as FO directed.
+- SKIPPED: Product UI, connected provider calls, new dependency/broker adoption, final verification and human acceptance.
+  Safety readiness remains unmet. All five ACs remain open; no provider/model fallback, platform reduction, PR/code push, gate/merge or unrelated task changes occurred.
+
+### Summary
+
+Bounded comparison is committed as `0d0f404a22834b1213066ca8cd3505869fd352f1` in the same clean implementation worktree; prior `80245da` evidence is preserved. The working synthetic Claude tool restriction is progress, while existing-login auth, full lifecycle/customization containment and native Linux prerequisites remain unresolved; this report does not complete implement.
+
+The single next local discriminator is a Security.framework query for the statically verified exact CLI service/config identity, requesting only an opaque item reference/status (`kSecReturnData=false`, match one), and recording only OSStatus/presence under the same narrow profile. It can distinguish a specific item lookup/authorization failure from successful default-keychain discovery, without enumerating entries, exposing values or granting the entire database. The service mapping must be verified from nonsecret shipped metadata first; successful metadata would still not prove value access. No new component/permission decision is justified until that remaining branch is classified.
