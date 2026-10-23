@@ -5,11 +5,19 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct SpacetopConfig {
     #[serde(default)]
+    pub summary: SummaryConfig,
+    #[serde(default)]
     pub theme: ThemeConfig,
     #[serde(default)]
     pub keybindings: KeybindingConfig,
     #[serde(default)]
     pub defaults: DefaultsConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SummaryConfig {
+    #[serde(default)]
+    pub provider: crate::summary::SummaryProvider,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

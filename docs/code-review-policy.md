@@ -60,6 +60,11 @@ Check the areas touched by the change, not every rule mechanically.
 - **Read-only contract:** Spacetop must not mutate Spacedock workflow markdown by
   default. The only approved workflow-adjacent write path is explicit sync using
   `git pull --ff-only`.
+- **Explicit summaries:** apply the approved trusted-CLI boundary, not the
+  superseded full-isolation requirement. Check literal bounded stdin, argv,
+  private cwd, tracked cleanup, no app credential handling or workflow writes,
+  truthful native controls and pre-generation transfer/charge/escape disclosure.
+  Keep historical isolation failures and human acceptance gaps visible.
 - **Git safety:** reject broader git writes, implicit commits, branch mutation,
   or shell-outs that can alter workflow state outside the audited sync path.
 - **Config/session safety:** config and session files may only be read or written

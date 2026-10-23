@@ -61,7 +61,7 @@ pub fn capture(
     });
     let input = serde_json::to_vec(&serde_json::json!({
         "authoritative_recorded_facts": authoritative,
-        "selected_source_copy": if entity.worktree_source.is_some() { "worktree; frontmatter is not authoritative" } else { "main" },
+        "selected_source_copy": if entity.worktree_source.is_none() { "main" } else if authority_path != source { "worktree; frontmatter is not authoritative" } else { "worktree-only; recorded facts come from this copy" },
         "selected_source_exact_text": selected,
         "authority_source_exact_text": if authority_path != source { Some(authority_text) } else { None },
         "main_body_when_different": entity.main_body,
@@ -83,7 +83,18 @@ pub fn capture(
     })
 }
 fn read_source(path: &Path) -> Result<String, SummaryError> {
-    let file = std::fs::File::open(path).map_err(|_| SummaryError::Changed)?;
+    // A selected file replaced by a FIFO must not block the UI during capture.
+    // Reject final-component symlinks rather than follow a changed source copy.
+    let fd = rustix::fs::open(
+        path,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::NONBLOCK
+            | rustix::fs::OFlags::CLOEXEC
+            | rustix::fs::OFlags::NOFOLLOW,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|_| SummaryError::Changed)?;
+    let file = std::fs::File::from(fd);
     if !file
         .metadata()
         .map_err(|_| SummaryError::Changed)?

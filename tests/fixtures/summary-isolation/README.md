@@ -1,5 +1,9 @@
 # Summary isolation feasibility fixtures
 
+> Historical strict-isolation evidence. Kent's later trusted-CLI approval
+> supersedes the implementation stop, not these observed failures. Current
+> product contract and acceptance handoff: `docs/summary-verification.md`.
+
 Task 090 is stopped before product/UI implementation. These scripts reproduce
 bounded local evidence; they are **not a production summary runner or a supported
 sandbox**. There is no Spacetop launch path, new user configuration, or runtime

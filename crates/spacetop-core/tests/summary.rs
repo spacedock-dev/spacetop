@@ -136,3 +136,135 @@ fn snapshot_rejects_changed_body_and_authority_and_binds_source_copy() {
     let codex = snapshot::capture(dir.path(), &entity, SummaryProvider::Codex).unwrap();
     assert_ne!(captured.key, codex.key);
 }
+
+#[test]
+fn cancellation_terminates_and_reaps_tracked_process() {
+    use std::sync::{atomic::Ordering, Arc};
+    let dir = tempfile::tempdir().unwrap();
+    let pid_file = dir.path().join("pid");
+    let cancel = Arc::new(AtomicBool::new(false));
+    let signal = Arc::clone(&cancel);
+    let ready = pid_file.clone();
+    let canceller = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while !ready.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        signal.store(true, Ordering::Release);
+    });
+    let mut command = Command::new("/bin/sh");
+    command
+        .args(["-c", "echo $$ > \"$1\"; sleep 30", "fixture"])
+        .arg(&pid_file);
+    let result = process::run(command, b"", &cancel, process::Limits::default());
+    canceller.join().unwrap();
+    assert!(matches!(result, Err(SummaryError::Canceled)));
+    let pid = std::fs::read_to_string(pid_file)
+        .unwrap()
+        .trim()
+        .parse::<i32>()
+        .unwrap();
+    assert_eq!(
+        rustix::process::test_kill_process(rustix::process::Pid::from_raw(pid).unwrap()),
+        Err(rustix::io::Errno::SRCH)
+    );
+}
+
+#[test]
+fn concurrent_pipe_flood_cannot_deadlock_input_or_exceed_limits() {
+    assert!(matches!(
+        run("yes stdout & yes stderr >&2 & wait", &vec![b'x'; 100000]),
+        Err(SummaryError::OutputLimit)
+    ));
+}
+
+#[test]
+fn adapters_keep_exact_restrictions_without_auth_overrides() {
+    let claude = adapters::arguments(SummaryProvider::Claude);
+    let codex = adapters::arguments(SummaryProvider::Codex);
+    assert!(claude.windows(2).any(|pair| pair == ["--tools", ""]));
+    assert!(claude.contains(&"--safe-mode".into()));
+    assert!(claude.contains(&"--strict-mcp-config".into()));
+    assert!(!claude.contains(&"--setting-sources".into()));
+    for feature in [
+        "hooks",
+        "plugins",
+        "apps",
+        "shell_tool",
+        "multi_agent",
+        "view_image",
+    ] {
+        assert!(codex.windows(2).any(|pair| pair == ["--disable", feature]));
+    }
+    assert!(codex
+        .windows(2)
+        .any(|pair| pair == ["--sandbox", "read-only"]));
+    assert!(codex.contains(&"project_doc_max_bytes=0".into()));
+    assert!(!codex.iter().any(|arg| arg.starts_with("model_provider=")));
+}
+
+#[test]
+fn worktree_copy_keeps_main_facts_and_archive_has_distinct_identity() {
+    use spacetop_core::{parser, summary::snapshot};
+    let dir = tempfile::tempdir().unwrap();
+    let main = dir.path().join("main.md");
+    let wt = dir.path().join("worktree.md");
+    std::fs::write(
+        &main,
+        "---\nid: '1'\ntitle: Main title\nstatus: implement\n---\n\nMain report\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &wt,
+        "---\nid: '1'\ntitle: Unsupported claim\nstatus: done\n---\n\nWorktree claims approval\n",
+    )
+    .unwrap();
+    let original = parser::parse_work_item(&main, &["implement".into()], None).unwrap();
+    let mut merged = original.clone();
+    merged.path = wt.clone();
+    merged.worktree_source = Some(wt.clone());
+    merged.main_body = Some(original.body.clone());
+    merged.body = "Worktree claims approval\n".into();
+    let captured = snapshot::capture(dir.path(), &merged, SummaryProvider::Claude).unwrap();
+    let data: serde_json::Value = serde_json::from_slice(&captured.input).unwrap();
+    assert_eq!(data["authoritative_recorded_facts"]["status"], "implement");
+    assert!(data["selected_source_copy"]
+        .as_str()
+        .unwrap()
+        .contains("not authoritative"));
+    assert!(data["selected_source_exact_text"]
+        .as_str()
+        .unwrap()
+        .contains("status: done"));
+    let archive = dir.path().join("_archive");
+    std::fs::create_dir(&archive).unwrap();
+    let archived = archive.join("main.md");
+    std::fs::copy(&main, &archived).unwrap();
+    let entity = parser::parse_work_item(&archived, &["implement".into()], None).unwrap();
+    let archived = snapshot::capture(dir.path(), &entity, SummaryProvider::Claude).unwrap();
+    let main_key = snapshot::capture(dir.path(), &original, SummaryProvider::Claude)
+        .unwrap()
+        .key;
+    assert_ne!(archived.key, main_key);
+    assert_ne!(captured.key, main_key);
+}
+
+#[test]
+fn replaced_source_symlink_is_rejected_before_following_it() {
+    use spacetop_core::{parser, summary::snapshot};
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("task.md");
+    let target = dir.path().join("other.md");
+    std::fs::write(
+        &source,
+        "---\nid: '1'\ntitle: Task\nstatus: implement\n---\n\nBody\n",
+    )
+    .unwrap();
+    let entity = parser::parse_work_item(&source, &["implement".into()], None).unwrap();
+    std::fs::rename(&source, &target).unwrap();
+    std::os::unix::fs::symlink(&target, &source).unwrap();
+    assert_eq!(
+        snapshot::capture(dir.path(), &entity, SummaryProvider::Claude),
+        Err(SummaryError::Changed)
+    );
+}

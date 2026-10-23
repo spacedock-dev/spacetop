@@ -1,5 +1,9 @@
 # Second bounded isolation pass — 2026-10-23
 
+> Historical strict-isolation evidence. Kent's later trusted-CLI approval
+> supersedes the implementation stop, not these observed failures. Current
+> product contract and acceptance handoff: `docs/summary-verification.md`.
+
 There is useful new protocol evidence, but no complete existing-login isolation
 boundary. No production code, UI, account configuration, broker, dependency or
 provider generation was added. Live usage remains 0/6. This does not establish

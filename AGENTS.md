@@ -171,6 +171,12 @@ Keep module boundaries clear and testable:
 - `crates/spacetop-core/src/editor.rs` owns opening selected files in an
   external editor/viewer path; it must not become a workflow-state writer
   without explicit policy change.
+- `crates/spacetop-core/src/summary/` owns typed capture/key, prompt, native
+  adapter argv, output sanitization and bounded trusted-CLI process supervision.
+  App `summary.rs` owns explicit requests/cache/nonces; `summary_worker.rs` owns
+  the cancellable worker; UI `summary.rs` renders plain advisory prose under
+  the existing recorded-fact header. No source-linked evidence or credentials
+  are read by this feature; no workflow/project writes or persistent cache.
 - `crates/spacetop-core/src/config.rs` and
   `crates/spacetop-core/src/session_state.rs` own user config/session models,
   absolute XDG/HOME path resolution, and YAML load/save behavior.

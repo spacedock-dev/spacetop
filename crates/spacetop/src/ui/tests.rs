@@ -19,6 +19,7 @@ mod colors;
 mod overview;
 mod paths;
 mod preview;
+mod summary;
 mod task_list;
 mod worktree;
 

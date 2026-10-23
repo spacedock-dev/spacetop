@@ -15,6 +15,7 @@ mod picker;
 mod preview;
 mod relations;
 mod search;
+mod summary;
 mod tabs;
 mod timeline;
 
@@ -26,9 +27,8 @@ use ratatui::{
     prelude::Frame,
     widgets::{Clear, Paragraph},
 };
-use spacetop_core::config::SpacetopConfig;
 
-use crate::app::{App, AppMode, CopyFeedback, OverviewSession, ResolvedKeymap};
+use crate::app::{App, AppMode, OverviewSession};
 use graph::render_stage_graph;
 use layout::{picker_centered, preview_placement, split_content};
 
@@ -47,8 +47,6 @@ pub fn render_placeholder(frame: &mut Frame<'_>) {
 }
 
 pub fn render(frame: &mut Frame<'_>, app: &App) {
-    let warning_messages = app.warning_messages();
-    let copy_feedback = app.copy_feedback();
     match app.mode() {
         AppMode::GateRoom { browser, .. } => gate_room::render(frame, browser),
         AppMode::Picker(state) => {
@@ -58,28 +56,12 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             picker::render_in(frame, inner, state);
         }
         AppMode::Overview(session) => {
-            render_overview(
-                frame,
-                frame.area(),
-                app.config(),
-                app.keymap(),
-                &warning_messages,
-                session,
-                copy_feedback,
-            );
+            render_overview(frame, frame.area(), app, session);
         }
         AppMode::PickerOverlay { underlying, picker } => {
             // Draw the underlying overview at full width, then overlay a
             // centered picker dialog atop a `Clear` widget.
-            render_overview(
-                frame,
-                frame.area(),
-                app.config(),
-                app.keymap(),
-                &warning_messages,
-                underlying,
-                copy_feedback,
-            );
+            render_overview(frame, frame.area(), app, underlying);
             let inner = picker_centered(frame.area(), picker);
             frame.render_widget(Clear, inner);
             picker::render_in(frame, inner, picker);
@@ -93,15 +75,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             app.set_definition_max_scroll(max_scroll);
         }
         AppMode::Search { underlying, state } => {
-            render_overview(
-                frame,
-                frame.area(),
-                app.config(),
-                app.keymap(),
-                &warning_messages,
-                underlying,
-                copy_feedback,
-            );
+            render_overview(frame, frame.area(), app, underlying);
             search::render_overlay(frame, frame.area(), underlying, state);
         }
         AppMode::Timeline {
@@ -150,15 +124,11 @@ pub(crate) fn assign_stage_colors(
         .collect()
 }
 
-fn render_overview(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    config: &SpacetopConfig,
-    keymap: &ResolvedKeymap,
-    warnings: &[String],
-    session: &OverviewSession,
-    copy_feedback: Option<CopyFeedback>,
-) {
+fn render_overview(frame: &mut Frame<'_>, area: Rect, app: &App, session: &OverviewSession) {
+    let config = app.config();
+    let keymap = app.keymap();
+    let warnings = app.warning_messages();
+    let copy_feedback = app.copy_feedback();
     let state = session.active_state();
     let show_tabs = session.is_multi();
     let dashboard_area = if show_tabs {
@@ -213,7 +183,14 @@ fn render_overview(
         };
         state.preview_rect.set(preview_area);
         list::render_task_list(frame, list_area, config, state);
-        preview::render_preview(frame, preview_area, state, placement);
+        preview::render_preview(
+            frame,
+            preview_area,
+            state,
+            placement,
+            app.summary
+                .presentation(state, config.summary.provider, std::time::Instant::now()),
+        );
     } else {
         state.preview_rect.set(Rect::default());
         list::render_task_list(frame, content_area, config, state);
@@ -225,7 +202,7 @@ fn render_overview(
         footer_area,
         config,
         keymap,
-        warnings,
+        &warnings,
         session,
         copy_feedback,
     );

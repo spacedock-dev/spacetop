@@ -1,5 +1,9 @@
 # Exact-item discriminator: bounded pass closed
 
+> Historical strict-isolation evidence. Kent's later trusted-CLI approval
+> supersedes the implementation stop, not these observed failures. Current
+> product contract and acceptance handoff: `docs/summary-verification.md`.
+
 The one noninteractive metadata query returned `-25300` (`errSecItemNotFound`)
 with no opaque reference. It identified no additional auth capability to grant.
 Auth remains unresolved; helper lifecycle containment remains separately unmet.
