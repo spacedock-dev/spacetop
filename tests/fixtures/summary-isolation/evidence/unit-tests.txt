@@ -1,0 +1,15 @@
+test_auth_environment_preserves_account_metadata_without_invented_overrides (test_probes.SupervisorTests.test_auth_environment_preserves_account_metadata_without_invented_overrides) ... ok
+test_auth_paths_are_all_in_profile (test_probes.SupervisorTests.test_auth_paths_are_all_in_profile) ... ok
+test_both_pipe_caps_are_enforced_during_flood (test_probes.SupervisorTests.test_both_pipe_caps_are_enforced_during_flood) ... ok
+test_cancel_reaps_direct_child (test_probes.SupervisorTests.test_cancel_reaps_direct_child) ... ok
+test_deadline_includes_blocked_stdin (test_probes.SupervisorTests.test_deadline_includes_blocked_stdin) ... ok
+test_killpg_does_not_contain_setsid_child (test_probes.SupervisorTests.test_killpg_does_not_contain_setsid_child) ... ok
+test_missing_executable_is_distinct (test_probes.SupervisorTests.test_missing_executable_is_distinct) ... ok
+test_nonzero_exit_does_not_turn_into_success_envelope (test_probes.SupervisorTests.test_nonzero_exit_does_not_turn_into_success_envelope) ... ok
+test_oversized_source_is_rejected_before_launch (test_probes.SupervisorTests.test_oversized_source_is_rejected_before_launch) ... ok
+test_source_remains_literal_stdin (test_probes.SupervisorTests.test_source_remains_literal_stdin) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.951s
+
+OK

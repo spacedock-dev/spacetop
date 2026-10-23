@@ -1,0 +1,72 @@
+{
+  "platform": "Darwin",
+  "machine": "arm64",
+  "live_generation_launches": 0,
+  "production_ready": false,
+  "boundary": {
+    "outcome": "exited",
+    "exit_code": 0,
+    "checks": {
+      "fork": "EPERM",
+      "outside_read": "EPERM",
+      "outside_write": "EPERM",
+      "network": "EPERM",
+      "scratch_write": "allowed"
+    },
+    "exec": "EPERM",
+    "exec_outcome": "exited",
+    "exec_exit_code": 0,
+    "outside_unchanged": true,
+    "stderr_bytes": 0
+  },
+  "auth": {
+    "claude": {
+      "executable": "/Users/kent/.local/share/claude/versions/2.1.309",
+      "sha256": "5eadc0009cdcdbc0d06e58110d7b2baf88ced6088b1c33a60a21217fe410619c",
+      "network_denied_reference": {
+        "outcome": "exited",
+        "exit_code": 0,
+        "logged_in": true,
+        "claude_ai": true
+      },
+      "strict_nofork": {
+        "outcome": "exited",
+        "exit_code": 1,
+        "logged_in": false,
+        "claude_ai": false
+      },
+      "nofork_diagnostic_only": {
+        "outcome": "exited",
+        "exit_code": 1,
+        "logged_in": false,
+        "claude_ai": false
+      },
+      "exec_helpers_diagnostic_only": {
+        "outcome": "exited",
+        "exit_code": 0,
+        "logged_in": true,
+        "claude_ai": true
+      },
+      "helpers_diagnostic_only": {
+        "outcome": "exited",
+        "exit_code": 1,
+        "logged_in": false,
+        "claude_ai": false
+      }
+    },
+    "codex": {
+      "executable": "/Users/kent/.codex/packages/standalone/releases/0.164.0-aarch64-apple-darwin/bin/codex",
+      "sha256": "d8990e3ee7acfbc26f91265b12a1a83f0fee40d0e0f8f1f40a37d4ec21f499cf",
+      "network_denied_reference": {
+        "outcome": "exited",
+        "exit_code": 0,
+        "logged_in_chatgpt": true
+      },
+      "strict_nofork": {
+        "outcome": "exited",
+        "exit_code": 0,
+        "logged_in_chatgpt": true
+      }
+    }
+  }
+}

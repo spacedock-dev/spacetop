@@ -1,0 +1,42 @@
+{
+  "outcome": "exited",
+  "exit_code": 0,
+  "live_generation_launches": 0,
+  "production_ready": false,
+  "model": "gpt-6-luna",
+  "executable_sha256": "d8990e3ee7acfbc26f91265b12a1a83f0fee40d0e0f8f1f40a37d4ec21f499cf",
+  "local_requests": 2,
+  "tools": [
+    [],
+    []
+  ],
+  "tool_results": [
+    {
+      "type": "function_call_output",
+      "id": "fco_01a1683c-2fc8-7be3-8e59-c460c87082b4",
+      "call_id": "call_exec",
+      "output": "unsupported call: exec_command"
+    },
+    {
+      "type": "custom_tool_call_output",
+      "id": "ctco_01a1683c-2fc9-71d3-b1e9-48ad4a8cae1a",
+      "call_id": "call_patch",
+      "output": "patch rejected: writing is blocked by read-only sandbox; rejected by user approval settings"
+    },
+    {
+      "type": "function_call_output",
+      "id": "fco_01a1683c-2fc9-71d3-b1e9-48b71701ef8e",
+      "call_id": "call_read",
+      "output": "unsupported call: read_file"
+    },
+    {
+      "type": "function_call_output",
+      "id": "fco_01a1683c-2fc9-71d3-b1e9-48c0e13370cd",
+      "call_id": "call_image",
+      "output": "unable to read image at `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-c1egms0p/outside/sentinel`: Operation not permitted (os error 1)"
+    }
+  ],
+  "outside_unchanged": true,
+  "stdout": "Synthetic local response.\n",
+  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-c1egms0p/scratch\" (codex_home: AbsolutePathBuf(\"/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-c1egms0p/scratch/codex-home\"))\nOpenAI Codex v0.164.0\n--------\nworkdir: /private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-c1egms0p/scratch\nmodel: gpt-6-luna\nprovider: summary_probe\napproval: never\nsandbox: read-only\nreasoning effort: none\nreasoning summaries: none\nsession id: 01a1683c-2f0a-7543-91f1-8fa8db3fea4d\n--------\nuser\nSummarize this synthetic task: show library opening hours.\n2026-10-23T10:08:57.288723Z ERROR codex_core::tools::router: error=unsupported call: read_file\n2026-10-23T10:08:57.288779Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-10-23T10:08:57.289188Z ERROR codex_core::tools::router: error=patch rejected: writing is blocked by read-only sandbox; rejected by user approval settings\n2026-10-23T10:08:57.289653Z ERROR codex_core::tools::router: error=unable to read image at `/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-c1egms0p/outside/sentinel`: Operation not permitted (os error 1)\ncodex\nSynthetic local response.\ntokens used\n4\n"
+}
