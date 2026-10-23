@@ -13,7 +13,7 @@ score:
 worktree: .worktrees/spacedock-ensign-show-local-refresh-and-sync-freshness
 issue:
 pr:
-mod-block:
+mod-block: merge:pr-merge
 id: 089
 gates:
     version: 1
