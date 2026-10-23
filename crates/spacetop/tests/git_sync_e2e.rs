@@ -242,3 +242,39 @@ fn sync_up_to_date_when_nothing_to_pull() {
         git_sync::SyncAvailability::Available
     );
 }
+
+#[test]
+fn freshness_success_then_failed_pull_preserves_exact_git_time() {
+    let Some((_holder, _upstream, workflow)) = build_playground() else {
+        return;
+    };
+    let mut app = App::load(workflow.clone()).unwrap();
+    assert_eq!(app.freshness().unwrap().definition.last_success, None);
+    assert!(!app.take_pending_sync());
+    app.reload().unwrap();
+    assert_eq!(app.freshness().unwrap().definition.last_success, None);
+    apply_pending_sync(&mut app, &StdGitRunner);
+    let success = app.freshness().unwrap().definition.last_success.unwrap();
+    let local = app.freshness().unwrap().local.last_success;
+    run_git(
+        workflow.parent().unwrap().parent().unwrap(),
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "file:///definitely/missing/freshness.git",
+        ],
+    );
+    apply_pending_sync(&mut app, &StdGitRunner);
+    assert_eq!(
+        app.freshness().unwrap().definition.last_success,
+        Some(success)
+    );
+    assert_eq!(app.freshness().unwrap().local.last_success, local);
+    assert!(matches!(
+        app.freshness().unwrap().definition.latest,
+        spacetop::app::freshness::Attempt::Failed(_)
+    ));
+    let restarted = App::load(workflow).unwrap();
+    assert_eq!(restarted.freshness().unwrap().definition.last_success, None);
+}

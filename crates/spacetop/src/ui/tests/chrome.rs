@@ -790,3 +790,59 @@ fn help_glossary_distinguishes_coordinator_history_and_action_limits() {
         assert!(text.contains(phrase), "{phrase}: {text}");
     }
 }
+
+#[test]
+fn freshness_survives_long_diagnostics_at_supported_sizes_and_preview() {
+    use crate::app::freshness::Attempt;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
+    let mut app = App::load(root).unwrap();
+    let old = std::time::Instant::now() - std::time::Duration::from_secs(90);
+    let freshness = app.freshness_mut().unwrap();
+    freshness.split_root = true;
+    freshness.definition.record(Attempt::Succeeded, old);
+    freshness.state.record(Attempt::Succeeded, old);
+    freshness.state.record(
+        Attempt::Skipped("detached state checkout; do not repair".repeat(20)),
+        old,
+    );
+    for (width, height) in [(120, 30), (80, 24), (40, 20)] {
+        for preview in [false, true] {
+            if preview {
+                app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+            }
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| render(frame, &app)).unwrap();
+            let rendered = buffer_text(terminal.backend().buffer());
+            assert!(
+                rendered.contains("Local read:"),
+                "{width}x{height}: {rendered}"
+            );
+            assert!(rendered.contains("Git definition: 1m ago"));
+            assert!(rendered.contains("Git state: 1m ago; skipped (?)"));
+            if preview {
+                app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+            }
+        }
+    }
+}
+
+#[test]
+fn freshness_unknown_failure_and_clock_reversal_are_explicit() {
+    use crate::app::freshness::Attempt;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spacetop-dev");
+    let mut app = App::load(root).unwrap();
+    let now = std::time::Instant::now();
+    let freshness = app.freshness_mut().unwrap();
+    freshness
+        .local
+        .record(Attempt::Succeeded, now + std::time::Duration::from_secs(60));
+    freshness
+        .definition
+        .record(Attempt::Failed("offline".into()), now);
+    let mut terminal = Terminal::new(TestBackend::new(40, 20)).unwrap();
+    terminal.draw(|frame| render(frame, &app)).unwrap();
+    let rendered = buffer_text(terminal.backend().buffer());
+    assert!(rendered.contains("Local read: age unavailable"));
+    assert!(rendered.contains("Git definition: unknown; FAILED (?)"));
+}

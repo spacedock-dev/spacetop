@@ -124,6 +124,37 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Line::from("B inspects recorded evidence only. It does not authenticate recorded actors. Spacetop cannot approve requests, move tasks, merge work or repair checkouts."),
     ]);
 
+    if let Some(freshness) = app.freshness() {
+        lines.push(Line::from("Freshness (this session only)"));
+        lines.push(Line::from("Local read: last successful read of local workflow files. Item parse warnings still apply. Local changes do not imply Git sync."));
+        lines.push(Line::from("Git definition / Git state: last successful explicit Y sync of each checkout. Unknown means not observed this session, including after restart."));
+        lines.push(Line::from("A successful Git sync does not prove the remote has no newer work. Failed or skipped attempts preserve older successes. Same checkout has no separate state sync."));
+        let mut observations = vec![
+            ("Local read", &freshness.local),
+            ("Git definition", &freshness.definition),
+        ];
+        if freshness.split_root {
+            observations.push(("Git state", &freshness.state));
+        } else {
+            lines.push(Line::from("Git state: same checkout"));
+        }
+        for (label, observation) in observations {
+            lines.push(Line::from(format!(
+                "{label}: {}",
+                super::footer::observation_age(observation, std::time::Instant::now())
+            )));
+            match &observation.latest {
+                crate::app::freshness::Attempt::Failed(reason) => {
+                    lines.push(Line::from(format!("Latest failed: {reason}")))
+                }
+                crate::app::freshness::Attempt::Skipped(reason) => {
+                    lines.push(Line::from(format!("Latest skipped: {reason}")))
+                }
+                _ => {}
+            }
+        }
+    }
+
     let popup_w = area.width.min(64);
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     let content_height = paragraph.line_count(popup_w.saturating_sub(2));

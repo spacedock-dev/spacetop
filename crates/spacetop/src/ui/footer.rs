@@ -217,3 +217,77 @@ pub(crate) fn sync_pill_color(status: &SyncStatus) -> Color {
         SyncStatus::Unavailable { .. } => Color::Yellow,
     }
 }
+
+/// Separate rows keep freshness visible even when diagnostics fill the footer.
+pub(super) fn render_freshness(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::app::OverviewState,
+) {
+    let now = std::time::Instant::now();
+    let freshness = &state.freshness;
+    let mut lines = vec![
+        freshness_line("Local read", &freshness.local, now, area.width),
+        freshness_line("Git definition", &freshness.definition, now, area.width),
+    ];
+    if freshness.split_root {
+        lines.push(freshness_line(
+            "Git state",
+            &freshness.state,
+            now,
+            area.width,
+        ));
+    } else {
+        lines.push(Line::from("Git state: same checkout"));
+    }
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+fn freshness_line(
+    label: &str,
+    observation: &crate::app::freshness::Observation,
+    now: std::time::Instant,
+    width: u16,
+) -> Line<'static> {
+    use crate::app::freshness::Attempt;
+    let (suffix, color) = match &observation.latest {
+        Attempt::Failed(_) => ("; FAILED (?)", Color::Red),
+        Attempt::Skipped(_) => ("; skipped (?)", Color::Yellow),
+        Attempt::InFlight => ("; syncing", Color::Yellow),
+        _ => ("", Color::DarkGray),
+    };
+    let age = observation_age(observation, now);
+    // Keep failure/skip visible at 40 columns. The full unknown wording and
+    // reason remain in scrollable help.
+    let age = if age == "not observed this session"
+        && label.len() + 2 + age.len() + suffix.len() > usize::from(width)
+    {
+        "unknown".to_string()
+    } else {
+        age
+    };
+    Line::from(Span::styled(
+        format!("{label}: {age}{suffix}"),
+        Style::default().fg(color),
+    ))
+}
+
+pub(super) fn observation_age(
+    observation: &crate::app::freshness::Observation,
+    now: std::time::Instant,
+) -> String {
+    let Some(observed) = observation.last_success else {
+        return "not observed this session".into();
+    };
+    let Some(elapsed) = now.checked_duration_since(observed) else {
+        return "age unavailable".into();
+    };
+    let seconds = elapsed.as_secs();
+    if seconds < 60 {
+        format!("{seconds}s ago")
+    } else if seconds < 3600 {
+        format!("{}m ago", seconds / 60)
+    } else {
+        format!("{}h ago", seconds / 3600)
+    }
+}

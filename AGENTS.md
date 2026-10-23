@@ -104,6 +104,9 @@ Keep module boundaries clear and testable:
   overview sessions, picker state,
   selection, key handling, reload semantics, archived scope state, and pending
   workflow switches.
+- `crates/spacetop/src/app/freshness.rs` owns session-only local-read and
+  per-root Git observations, including target identity and failure retention.
+  Only actual successful operation boundaries advance these observations.
 - `crates/spacetop-core/src/domain/mod.rs` owns typed workflow data, including
   the `Entity` model, and core-owned stage color helpers.
 - `crates/spacetop-core/src/parser.rs` and `crates/spacetop-core/src/parser/*`

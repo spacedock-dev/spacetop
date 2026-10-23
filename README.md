@@ -244,6 +244,34 @@ the TUI. Invalid, duplicate, or reserved keybindings also fall back to defaults
 with warnings. Config and session files are never read from or written into
 Spacedock workflow directories.
 
+## Local read and Git sync ages
+
+The overview shows `Local read`, `Git definition`, and `Git state` above the
+footer diagnostics. Local read is the last successful read of the displayed
+workflow files. It does not mean a Git sync happened, and item parse warnings
+still apply. Git ages record successful explicit `Y` syncs of each checkout,
+including pulls that found no changes. Single-root workflows show `Git state:
+same checkout`.
+
+These observations last only for the current process and stay with each workflow
+tab. `Not observed this session` (or `unknown` at narrow widths) means Spacetop
+has no observation; external syncs and earlier sessions are unknown. A successful
+sync does not prove that the remote has no newer work. Ages use elapsed monotonic
+time; an unavailable age is shown explicitly.
+
+Failed local reads and failed/skipped syncs keep their previous successful ages
+and show `FAILED (?)` or `skipped (?)`. For example, a definition sync can succeed
+while state is detached, missing, on the wrong branch, unverified, or fails to
+pull. Both Git roots can also succeed while the subsequent local read fails.
+Read all three rows; an old success does not hide the latest failure. Press `?`
+and scroll to Freshness for complete reasons. Changing the state target or
+expected branch clears that target's Git observation. No background sync or
+checkout repair is added. On screens below ten rows, freshness is available in
+help so the preview remains usable.
+
+See the [disposable terminal walkthrough](docs/testing/freshness-walkthrough.md)
+for repeatable local-only, successful, partial, failed, and restart scenarios.
+
 ## Safety
 
 Spacetop should be read-only by default. The only current writes are the explicit

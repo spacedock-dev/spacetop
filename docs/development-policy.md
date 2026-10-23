@@ -121,6 +121,8 @@ Current two-crate workspace boundaries:
   belong in `crates/spacetop/src/lib.rs`.
 - App state and input semantics belong in `crates/spacetop/src/app.rs` and
   `crates/spacetop/src/app/*`.
+- `spacetop/src/app/freshness.rs` owns session-only local-read and per-root Git
+  observations. These are not persisted workflow or session metadata.
 - Ratatui rendering belongs in `crates/spacetop/src/ui/*`.
 - Integration checks belong in each owning crate's `tests/` directory, while
   shared fixtures remain in workspace-root `tests/fixtures/`.
