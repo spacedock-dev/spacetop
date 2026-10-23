@@ -64,6 +64,8 @@ pub struct SummaryState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Presentation {
     pub text: String,
+    pub status: String,
+    pub action_hint: &'static str,
     pub running: bool,
     pub stale: bool,
 }
@@ -181,14 +183,6 @@ impl SummaryState {
                     .as_ref()
                     .is_ok_and(|snapshot| snapshot.key == active.request.snapshot.key)
         });
-        if let Some(active) = active {
-            let frame =
-                (now.saturating_duration_since(active.started).as_millis() / 120) as usize % 4;
-            text.push_str(&format!(
-                "{} Generating summary… Esc cancels.\n\n",
-                ["|", "/", "-", "\\"][frame]
-            ));
-        }
         if self.active.is_some() && active.is_none() {
             text.push_str("Another captured snapshot is still running. Esc cancels it before a new request.\n\n");
         }
@@ -221,8 +215,28 @@ impl SummaryState {
         if let Err(error) = &view.snapshot {
             text.push_str(&format!("\n{error}"));
         }
+        let (status, action_hint) = if let Some(active) = active {
+            let frame =
+                (now.saturating_duration_since(active.started).as_millis() / 120) as usize % 4;
+            (
+                format!("{} Generating summary…", ["|", "/", "-", "\\"][frame]),
+                "Esc: cancel",
+            )
+        } else if self.active.is_some() {
+            ("Other request runs".into(), "Esc: cancel")
+        } else if view.notice.is_some() || view.snapshot.is_err() {
+            ("Stopped".into(), "R: retry")
+        } else if stale {
+            ("STALE summary".into(), "R: regenerate")
+        } else if cached.is_some() {
+            ("Summary ready".into(), "S/O: Original")
+        } else {
+            ("Ready to generate".into(), "Enter: generate")
+        };
         Some(Presentation {
             text,
+            status,
+            action_hint,
             running: active.is_some(),
             stale,
         })
@@ -391,10 +405,10 @@ pub(crate) mod tests {
         let request = app.summary.take_request().unwrap();
         let now = app.summary.active.as_ref().unwrap().started;
         assert_ne!(
-            presentation(&app, now).unwrap().text,
+            presentation(&app, now).unwrap().status,
             presentation(&app, now + std::time::Duration::from_millis(120))
                 .unwrap()
-                .text
+                .status
         );
         key(&mut app, KeyCode::Down);
         assert!(presentation(&app, now).is_none());
@@ -546,5 +560,49 @@ pub(crate) mod tests {
         assert!(presentation(&app, Instant::now()).is_none());
         app.complete_summary(finish(&request, "Original workflow result"));
         assert!(presentation(&app, Instant::now()).is_none());
+    }
+    #[test]
+    fn v090_1_mouse_return_marks_changed_cached_summary_stale_without_request() {
+        use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+        use ratatui::{backend::TestBackend, Terminal};
+        for kind in [
+            MouseEventKind::ScrollUp,
+            MouseEventKind::Down(MouseButton::Left),
+        ] {
+            let (mut app, dir) = fixture();
+            key(&mut app, KeyCode::Char('S'));
+            key(&mut app, KeyCode::Enter);
+            let request = app.summary.take_request().unwrap();
+            app.complete_summary(finish(&request, "CACHED OLD PROSE"));
+            key(&mut app, KeyCode::Down);
+            let path = dir.path().join("1.md");
+            let before = std::fs::read_to_string(&path).unwrap();
+            std::fs::write(path, before.replace("Reported work", "Changed loaded body")).unwrap();
+            app.reload().unwrap();
+            let mut terminal = Terminal::new(TestBackend::new(160, 55)).unwrap();
+            terminal
+                .draw(|frame| crate::ui::render(frame, &app))
+                .unwrap();
+            let rows = app.as_overview().unwrap().list_rows_rect.get();
+            app.handle_mouse(MouseEvent {
+                kind,
+                column: rows.x,
+                row: rows.y,
+                modifiers: KeyModifiers::NONE,
+            });
+            assert_eq!(app.selected_item().unwrap().id, "1");
+            assert!(app
+                .selected_item()
+                .unwrap()
+                .body
+                .contains("Changed loaded body"));
+            let view = presentation(&app, Instant::now()).unwrap();
+            assert!(view.text.contains("CACHED OLD PROSE"));
+            assert!(
+                view.stale,
+                "{kind:?} must refresh snapshot identity before presentation"
+            );
+            assert!(app.summary.take_request().is_none());
+        }
     }
 }

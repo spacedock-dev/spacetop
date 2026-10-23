@@ -115,3 +115,25 @@ an actually generated, hash-bound summary and the separate reader questions.
 Do not coach, simulate answers, infer approval or regenerate toward a desired
 human result. Fresh independent verification, illustrated Navigator acceptance
 and native Linux x64 runtime evidence remain distinct open evidence boundaries.
+
+
+## Correction round verify/1
+
+Independent review rejected candidate `74b015d` for V090-1 (mouse return showed
+changed-source cached prose as current) and V090-2 (running progress was hidden
+at 40x15 and scrolled away). These are AC-3/AC-4 defects, not trusted-CLI exceptions.
+The author's three new regressions all failed against the old behavior before
+fixes: `/tmp/spacetop-090-correction-before.log`. The same tests then passed:
+`/tmp/spacetop-090-correction-after.log`.
+
+Mouse event handling now refreshes summary identity after all its selection
+paths, like keyboard handling. The regression returns by both list wheel and
+click after a different selection, disk change and ordinary reload; changed
+loaded body plus retained old prose must immediately show STALE, with no request.
+Request status and its action hint now occupy fixed rows outside scrollable
+prose. Tests inspect actual TestBackend cells at 40x15 before and after scroll,
+and after success, cancellation and timeout; the status remains visible and
+stops animating on terminal outcomes. These are component renders, not actual
+terminal screenshots. Provider input/prompt/argv/process files are unchanged;
+no live call was made. Independent re-verification, Navigator TUI acceptance,
+human AC-1 and native Linux runtime evidence remain pending.

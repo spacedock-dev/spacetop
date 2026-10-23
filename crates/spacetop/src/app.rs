@@ -1101,6 +1101,11 @@ impl App {
     }
 
     pub(crate) fn handle_mouse_at(&mut self, mouse: MouseEvent, now: Instant) {
+        self.handle_mouse_inner(mouse, now);
+        self.refresh_summary_snapshot();
+    }
+
+    fn handle_mouse_inner(&mut self, mouse: MouseEvent, now: Instant) {
         if self.help_open {
             return;
         }

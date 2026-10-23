@@ -255,8 +255,9 @@ or browsing. Read the transfer/trust disclosure, then press `Enter` to send the
 captured task using the configured provider. `Enter` reuses an exact cached
 result; `R` explicitly regenerates. `S` or `O` returns to Original and its
 existing worktree diff. `Esc` cancels a running request before returning to
-Original. A request-bound indeterminate spinner uses the normal UI ticks; you
-can keep reading or navigate elsewhere while it runs.
+Original. A request-bound indeterminate spinner uses the normal UI ticks. Its compact
+status and cancel hint stay fixed above the scrolling prose, including narrow
+previews; you can keep reading or navigate elsewhere while it runs.
 
 The default is `claude -p --model claude-haiku-5-5`. Set `summary.provider: codex`
 for `codex exec --model gpt-6-luna`. Use your existing CLI login/configuration;
