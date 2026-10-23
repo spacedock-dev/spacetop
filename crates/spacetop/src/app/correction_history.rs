@@ -36,6 +36,8 @@ pub struct HistoryBrowser {
     pub records_focus: bool,
     pub stack: Vec<ReviewRecordIdentity>,
     pub relationship: Option<RelationshipSelection>,
+    pub responses_only: bool,
+    return_relationships: Vec<(Option<RelationshipSelection>, bool)>,
     pub preview: Option<String>,
     pub notice: Option<String>,
     initialized: bool,
@@ -45,11 +47,10 @@ impl HistoryBrowser {
         self.facts.correction_round(self.round.as_ref()?)
     }
     pub fn refresh(&mut self, facts: CorrectionHistory) {
-        let prior = self
-            .stack
-            .last()
-            .and_then(|id| self.facts.correction_record(id))
-            .cloned();
+        let detail_changed = self.stack.iter().any(|id| {
+            self.facts.correction_record(id) != facts.correction_record(id)
+                || facts.correction_record(id).is_none()
+        });
         if self.preview.take().is_some() {
             self.notice =
                 Some("Preview invalidated by refresh; Enter revalidates selected evidence".into());
@@ -82,17 +83,12 @@ impl HistoryBrowser {
                 self.selection = None;
                 self.notice = Some("Selected record/item disappeared; select explicitly".into());
             }
-            if prior
-                .as_ref()
-                .is_some_and(|r| self.facts.correction_record(&r.identity) != Some(r))
-            {
+            if detail_changed {
                 self.stack.clear();
+                self.return_relationships.clear();
                 self.notice = Some(
                     "Record detail invalidated: selected evidence changed or disappeared".into(),
                 );
-            } else {
-                self.stack
-                    .retain(|id| self.facts.correction_record(id).is_some());
             }
         }
         if self
@@ -130,7 +126,10 @@ impl HistoryBrowser {
             return Vec::new();
         };
         match self.facts.correction_relationships(id) {
-            CorrectionRelationships::Recorded(edges) => edges,
+            CorrectionRelationships::Recorded(edges) => edges
+                .into_iter()
+                .filter(|edge| !self.responses_only || is_response(edge))
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -145,13 +144,28 @@ impl HistoryBrowser {
                     self.selection = Some(HistorySelection::Record(
                         self.stack.last().cloned().unwrap_or(id),
                     ));
-                    self.relationship = self.edges().first().map(RelationshipSelection::from);
+                    if let Some((relationship, responses_only)) = self.return_relationships.pop() {
+                        self.responses_only = responses_only;
+                        self.relationship = relationship.filter(|selected| {
+                            self.edges().iter().any(|edge| selected.matches(edge))
+                        });
+                    } else {
+                        self.relationship = None;
+                    }
+                    if self.stack.is_empty() {
+                        self.responses_only = false;
+                    }
                 } else {
                     return true;
                 }
             }
             KeyCode::Tab if self.stack.is_empty() && self.preview.is_none() => {
                 self.records_focus = !self.records_focus
+            }
+            KeyCode::Char('f') if !self.stack.is_empty() => {
+                self.responses_only = !self.responses_only;
+                self.relationship = self.edges().first().map(RelationshipSelection::from);
+                self.notice = None;
             }
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(1),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(-1),
@@ -161,6 +175,7 @@ impl HistoryBrowser {
         false
     }
     fn move_selection(&mut self, delta: isize) {
+        self.notice = None;
         if self.preview.is_some() {
             return;
         }
@@ -238,6 +253,8 @@ impl HistoryBrowser {
                 edge.target.clone()
             };
             if self.revalidate_record(state, &entity, &target) {
+                self.return_relationships
+                    .push((self.relationship.clone(), self.responses_only));
                 self.stack.push(target);
                 self.relationship = self.edges().first().map(RelationshipSelection::from);
             }
@@ -273,7 +290,7 @@ impl HistoryBrowser {
                     },
                     Err(error) => {
                         self.preview = None;
-                        self.notice = Some(error.to_string());
+                        self.notice = Some(super::gate_room::evidence_failure(&error));
                     }
                 }
             }
@@ -300,6 +317,7 @@ impl HistoryBrowser {
         self.refresh(fresh);
         if !valid {
             self.stack.clear();
+            self.return_relationships.clear();
             self.notice = Some("Selected evidence changed; detail was not opened".into());
         }
         valid
@@ -341,10 +359,15 @@ impl HistoryBrowser {
             .join("\n")
     }
     pub fn content(&self) -> String {
+        let mut text = self
+            .selected_round()
+            .and_then(|r| r.briefing.as_ref())
+            .map(|b| format!("Question: {}\n", b.question))
+            .unwrap_or_else(|| "Question unavailable: round Briefing not verified.\n".into());
         if let Some(preview) = &self.preview {
-            return preview.clone();
+            text.push_str(preview);
+            return text;
         }
-        let mut text = String::new();
         if !self
             .facts
             .rounds
@@ -373,6 +396,12 @@ impl HistoryBrowser {
             round.decision(),
             round.completeness
         ));
+        text.push_str(&format!(
+            "Briefing: {}\nEntity: {} | Origin: {}\n",
+            round.identity.briefing_id,
+            round.identity.entity_id,
+            round.identity.origin.display()
+        ));
         for diagnostic in &round.diagnostics {
             diagnostic_text(&mut text, diagnostic);
         }
@@ -380,6 +409,12 @@ impl HistoryBrowser {
         if let Some(id) = self.stack.last() {
             if let Some(record) = self.facts.correction_record(id) {
                 record_text(&mut text, record);
+                text.push_str(self.response_status(id));
+                text.push_str(if self.responses_only {
+                    "Recorded responses only (f: all relationships).\n"
+                } else {
+                    "All relationships (f: recorded responses only).\n"
+                });
                 match self.facts.correction_relationships(id) {
                     CorrectionRelationships::NoRecordedRelationship => {
                         text.push_str("No recorded relationship.\n")
@@ -387,14 +422,19 @@ impl HistoryBrowser {
                     CorrectionRelationships::Unavailable => {
                         text.push_str("Relationships unavailable: incomplete/invalid evidence.\n")
                     }
-                    CorrectionRelationships::Recorded(edges) => {
-                        for edge in &edges {
+                    CorrectionRelationships::Recorded(_) => {
+                        for edge in &self.edges() {
                             text.push_str(&format!(
-                                "{} includes {:?} {:?} {:?}: {} -> {}\n",
+                                "{} {} includes {:?} {:?} {:?}: {} -> {}\n",
                                 if self.relationship.as_ref().is_some_and(|s| s.matches(edge)) {
                                     ">"
                                 } else {
                                     " "
+                                },
+                                if is_response(edge) {
+                                    "Recorded response"
+                                } else {
+                                    "Evidence link"
                                 },
                                 edge.direction,
                                 edge.role,
@@ -405,18 +445,8 @@ impl HistoryBrowser {
                         }
                     }
                 }
-                if !self.edges().iter().any(|e| {
-                    e.direction == RelationshipDirection::Incoming
-                        && e.role == RelationshipRole::FollowUp
-                        && e.validation == RelationshipValidation::Valid
-                }) {
-                    text.push_str("No recorded follow-up relationship in the validated prefix; no completion inferred.\n");
-                }
             }
         } else {
-            if let Some(b) = &round.briefing {
-                text.push_str(&format!("Question: {}\n", b.question));
-            }
             for record in &round.records {
                 text.push_str(
                     if self.selection.as_ref()
@@ -466,6 +496,28 @@ impl HistoryBrowser {
         text.push_str("Recorded attribution is not person authentication.\n");
         text
     }
+    fn response_status(&self, id: &ReviewRecordIdentity) -> &'static str {
+        let Some(round) = self.facts.correction_round(&id.round) else {
+            return "Response unknown: round evidence unavailable.\n";
+        };
+        let linked = match self.facts.correction_relationships(id) {
+            CorrectionRelationships::Recorded(edges) => edges
+                .iter()
+                .any(|e| is_response(e) && e.validation == RelationshipValidation::Valid),
+            _ => false,
+        };
+        match (linked, round.completeness == ReviewCompleteness::Invalid) {
+            (true, false) => "Recorded response available; no fix or approval inferred.\n",
+            (true, true) => "Recorded response in validated prefix; additional responses unknown because evidence is incomplete/invalid.\n",
+            (false, true) => "Response unknown: incomplete/invalid evidence; no response in validated prefix.\n",
+            (false, false) if self.facts.correction_record(id).is_some_and(|record| matches!(record.entry, ReviewEntry::Resolution(_))) =>
+                "No later recorded response in this log; no correction-completion claim.\n",
+            (false, false) => "No recorded response: unresolved in this log, not proof of an unfixed correction.\n",
+        }
+    }
+}
+fn is_response(edge: &RecordedRelationship) -> bool {
+    edge.direction == RelationshipDirection::Incoming && edge.role == RelationshipRole::FollowUp
 }
 fn diagnostic_text(text: &mut String, diagnostic: &ReviewDiagnostic) {
     text.push_str(&format!(
@@ -475,7 +527,11 @@ fn diagnostic_text(text: &mut String, diagnostic: &ReviewDiagnostic) {
             .line
             .map(|line| format!(":{line}"))
             .unwrap_or_default(),
-        diagnostic.problem
+        if diagnostic.line.is_some() {
+            format!("Review log is incomplete or invalid; only its validated prefix is shown. Further responses are unknown.\nDetail: {}", diagnostic.problem)
+        } else {
+            super::gate_room::evidence_failure(&diagnostic.problem)
+        }
     ));
 }
 fn record_text(text: &mut String, record: &ReviewRecord) {
@@ -759,3 +815,6 @@ pub(crate) mod tests {
         assert_eq!(browser(&app).status(), "CURRENT UNVERIFIED");
     }
 }
+
+#[cfg(test)]
+mod response_tests;

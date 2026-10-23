@@ -107,8 +107,9 @@ In search and the palette, type the full query (including j/k); use Up/Down
 to select a result and Esc to cancel.
 
 Enter opens the selected report/details; `B` opens its review evidence. In the
-browser, Tab selects inventory, Up/Down or j/k selects an item, Enter opens
-verified bytes, and Esc returns through the item/browser to the same task.
+browser, the question appears first and `r` opens the canonical main report.
+Tab selects inventory, Up/Down or j/k selects an item, Enter opens verified
+bytes, and Esc returns through the item/browser to the same task.
 Full reasons and exact diagnostics remain in the scrollable preview when rows
 are too narrow. Broken task rows show their filename and parse diagnostic.
 
@@ -358,6 +359,10 @@ Press `B` with the entity preview closed to browse recorded gate attempts.
 `Tab` changes focus between attempt history and item inventory; `j/k` or arrows
 select, `Enter` previews the selected supported item, `PgUp/PgDn` scroll,
 `w` toggles wrapping, and `Esc` (or `q`) backs out of the item, then the browser.
+The question (or its explicit absence) leads the content. Browser-local `r`
+opens the Artifact identified as `artifact:gate-review`, never the first item
+or a matching filename. Missing designation and failed report verification are
+different states; recorded decisions remain inspectable in both cases.
 The browser has no approval, recording, consumption, sync, editor or URL action.
 
 Current `index.json` rooms do not need `request.json`. Retained `briefing.json`,
@@ -369,6 +374,11 @@ timestamps, reasons, conn citations, annotation ids, withdrawals and application
 states remain visible when room evidence fails. Binding verification does not
 authenticate a person or the quoted grant. Gate annotation ids remain recorded
 references; browser-local `h` switches to typed correction-round history.
+In history record detail, `f` filters to recorded responses: incoming same-Briefing
+follow-up includes edges, not reviewer evidence or matching prose in another round.
+Enter follows the selected response and Esc restores the source and selected edge.
+No recorded response is distinct from unknown/incomplete evidence, and a response
+never implies fixed, approved, or permission to act.
 
 Evidence reads stay inside the canonical workflow entity/state root. Symlink
 components, traversal, encoded local paths, unsupported external state roots and

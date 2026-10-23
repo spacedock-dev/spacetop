@@ -1,6 +1,8 @@
 use super::OverviewState;
 use crossterm::event::KeyCode;
-use spacetop_core::domain::{GateAttempt, GateRecord, GateRoomView, RoomDiagnostic, RoomProblem};
+use spacetop_core::domain::{
+    GateAttempt, GateRecord, GateRoomView, MainReport, RoomDiagnostic, RoomProblem,
+};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +24,7 @@ pub struct GateBrowser {
     pub view: GateRoomView,
     pub preview: Option<String>,
     pub scroll: usize,
+    pub preview_item: Option<String>,
     pub wrap: bool,
     pub notice: Option<String>,
 }
@@ -46,6 +49,7 @@ impl GateBrowser {
             )),
             preview: None,
             scroll: 0,
+            preview_item: None,
             wrap: true,
             notice: None,
         };
@@ -76,6 +80,8 @@ impl GateBrowser {
             .find(|e| e.evidence_origin.as_deref().unwrap_or(&e.path) == self.entity_path);
         let prior_selection = self.selected.clone();
         let had_preview = self.preview.take().is_some();
+        let preview_item = self.preview_item.take();
+        self.notice = None;
         let Some(entity) = entity else {
             self.dependencies.clear();
             self.attempts.clear();
@@ -85,6 +91,9 @@ impl GateBrowser {
                 RoomProblem::Missing,
                 "selected entity disappeared",
             ));
+            self.item = 0;
+            self.scroll = 0;
+            self.notice = None;
             return;
         };
         self.history
@@ -143,16 +152,12 @@ impl GateBrowser {
             })
             .unwrap_or(0);
         if had_preview && prior_selection == self.selected {
-            if let (Some((g, a)), Some(item)) = (
-                &self.selected,
-                self.view
-                    .briefing
-                    .as_ref()
-                    .and_then(|b| b.items.get(self.item)),
-            ) {
-                match state.index().gate_room_item(&entity, g, a, &item.id) {
-                    Ok(bytes) => self.preview = String::from_utf8(bytes).ok(),
-                    Err(e) => self.notice = Some(format!("Preview invalidated: {e}")),
+            if let (Some((g, a)), Some(id)) = (&self.selected, preview_item) {
+                match state.index().gate_room_item(&entity, g, a, &id) {
+                    Ok(bytes) => self.accept_preview(id, bytes),
+                    Err(e) => {
+                        self.notice = Some(format!("Preview invalidated: {}", evidence_failure(&e)))
+                    }
                 }
             }
         }
@@ -182,6 +187,7 @@ impl GateBrowser {
         match code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 if self.preview.take().is_some() {
+                    self.preview_item = None;
                     self.scroll = 0;
                 } else {
                     return true;
@@ -199,6 +205,7 @@ impl GateBrowser {
             KeyCode::PageDown => self.scroll = self.scroll.saturating_add(5),
             KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(5),
             KeyCode::Char('w') => self.wrap = !self.wrap,
+            KeyCode::Char('r') => self.open_report(state),
             KeyCode::Enter if self.focus == RoomFocus::Items => self.open_item(state),
             _ => {}
         }
@@ -206,6 +213,8 @@ impl GateBrowser {
     }
     fn move_selection(&mut self, delta: isize, state: &OverviewState) {
         self.preview = None;
+        self.preview_item = None;
+        self.notice = None;
         self.scroll = 0;
         if self.focus == RoomFocus::Items {
             let len = self
@@ -236,7 +245,50 @@ impl GateBrowser {
             self.refresh(state);
         }
     }
+    fn open_report(&mut self, state: &OverviewState) {
+        self.preview = None;
+        self.preview_item = None;
+        self.scroll = 0;
+        match self.view.main_report() {
+            MainReport::Identified(item) => self.open_item_id(state, item.id.clone()),
+            MainReport::NotIdentified => {
+                self.notice = Some(
+                    "Main report not identified; browse supporting items with Tab and Enter."
+                        .into(),
+                );
+            }
+            MainReport::Unavailable => {
+                self.notice = Some(
+                    "Main report unavailable: question and inventory could not be verified.".into(),
+                );
+            }
+        }
+    }
     fn open_item(&mut self, state: &OverviewState) {
+        if let Some(item) = self
+            .view
+            .briefing
+            .as_ref()
+            .and_then(|b| b.items.get(self.item))
+        {
+            self.open_item_id(state, item.id.clone());
+        }
+    }
+    fn accept_preview(&mut self, id: String, bytes: Vec<u8>) {
+        match String::from_utf8(bytes) {
+            Ok(text) => {
+                self.preview = Some(text);
+                self.preview_item = Some(id);
+            }
+            Err(_) => {
+                self.notice = Some("Verified bytes are not UTF-8 text; preview unavailable".into())
+            }
+        }
+    }
+    fn open_item_id(&mut self, state: &OverviewState, id: String) {
+        self.preview = None;
+        self.preview_item = None;
+        self.notice = None;
         let Some(entity) = state
             .index()
             .query(spacetop_core::query::EntityQuery {
@@ -252,28 +304,12 @@ impl GateBrowser {
         let Some((gate, attempt)) = &self.selected else {
             return;
         };
-        let Some(item) = self
-            .view
-            .briefing
-            .as_ref()
-            .and_then(|b| b.items.get(self.item))
-        else {
-            return;
-        };
-        let result = state
-            .index()
-            .gate_room_item(&entity, gate, attempt, &item.id);
+        let result = state.index().gate_room_item(&entity, gate, attempt, &id);
         match result {
-            Ok(bytes) => match String::from_utf8(bytes) {
-                Ok(text) => self.preview = Some(text),
-                Err(_) => {
-                    self.notice =
-                        Some("Verified bytes are not UTF-8 text; preview unavailable".into())
-                }
-            },
+            Ok(bytes) => self.accept_preview(id, bytes),
             Err(e) => {
                 self.refresh(state);
-                self.notice = Some(e.to_string());
+                self.notice = Some(evidence_failure(&e));
             }
         }
         self.scroll = 0;
@@ -282,19 +318,40 @@ impl GateBrowser {
         if self.history_mode {
             return self.history.content();
         }
+        let mut text = self
+            .view
+            .briefing
+            .as_ref()
+            .map(|b| format!("Question: {}\n", b.question))
+            .unwrap_or_else(|| "Question unavailable: Briefing not verified.\n".into());
         if let Some(preview) = &self.preview {
-            return preview.clone();
+            if let Some((record, attempt)) = self.attempt() {
+                text.push_str(&format!(
+                    "Stage: {} | Attempt: {}\n",
+                    record.stage, attempt.id
+                ));
+            }
+            text.push_str(&format!(
+                "Item: {}\n\n{preview}",
+                self.preview_item.as_deref().unwrap_or("unknown")
+            ));
+            return text;
         }
-        let mut text = String::new();
         for d in &self.view.diagnostics {
-            text.push_str(&format!("{d}\n"));
+            text.push_str(&format!("{}\nQuestion and inventory are unavailable; recorded decisions remain inspectable.\n", evidence_failure(d)));
         }
         if let Some(notice) = &self.notice {
             text.push_str(&format!("{notice}\n"));
         }
-        if let Some(briefing) = &self.view.briefing {
-            text.push_str(&format!("Question: {}\n", briefing.question));
-        }
+        text.push_str(match self.view.main_report() {
+            MainReport::Identified(_) => {
+                "Main report: r opens canonical report; Tab/Enter opens supporting items.\n"
+            }
+            MainReport::NotIdentified => {
+                "Main report not identified; supporting items remain available.\n"
+            }
+            MainReport::Unavailable => "Main report unavailable: inventory not verified.\n",
+        });
         if let Some((record, attempt)) = self.attempt() {
             text.push_str(&format!(
                 "Stage: {}\nGate: {}\nAttempt: {}\n",
@@ -354,6 +411,28 @@ impl GateBrowser {
         text.push_str("Recorded attribution is not person authentication.\n");
         text
     }
+}
+
+pub(crate) fn evidence_failure(diagnostic: &RoomDiagnostic) -> String {
+    let explanation = match diagnostic.kind {
+        RoomProblem::Missing => "Evidence file is missing or unreadable; its content cannot be verified.",
+        RoomProblem::UnsupportedRoot => "Safe evidence root could not be established; reading was refused.",
+        RoomProblem::UnsupportedScheme => "This link is display-only; no content was opened or fetched.",
+        RoomProblem::UnsafePath | RoomProblem::Symlink | RoomProblem::Nonregular | RoomProblem::Replaced =>
+            "Safe reading was refused because the path or file is unsafe or changed during reading.",
+        RoomProblem::InvalidJson | RoomProblem::InvalidSchema =>
+            "The Briefing is malformed; its question and inventory cannot be trusted.",
+        RoomProblem::IdentityMismatch | RoomProblem::BindingMismatch | RoomProblem::RequestDigestMismatch | RoomProblem::BriefingDigestMismatch =>
+            "The Briefing does not match the recorded request; its question and inventory cannot be trusted.",
+        RoomProblem::SelectedItemMissing =>
+            "The selected item is no longer in the verified inventory; no preview is available. The Briefing question and remaining inventory stay verified.",
+        RoomProblem::ArtifactDigestMismatch =>
+            "Item bytes do not match the recorded SHA-256; no verified preview is available.",
+        RoomProblem::SizeLimit => "Evidence exceeds the safe size limit; content was not read as verified.",
+        RoomProblem::MissingObject =>
+            "The exact local Git object is unavailable; no fetch or current-file fallback is allowed.",
+    };
+    format!("{explanation}\nDetail: {diagnostic}")
 }
 
 pub(crate) fn recorded_reason(reason: &str) -> &str {
@@ -610,3 +689,6 @@ pub(crate) mod tests {
         assert!(keys.warnings().iter().any(|w| w.contains("reserved")));
     }
 }
+
+#[cfg(test)]
+mod review_evidence_tests;

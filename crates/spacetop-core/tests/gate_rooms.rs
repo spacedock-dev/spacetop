@@ -107,6 +107,22 @@ impl Setup {
             Some(decode::canonical_digest(&bytes).unwrap());
     }
 }
+
+#[test]
+fn removed_item_is_distinct_from_invalid_briefing_binding() {
+    let mut s = Setup::new("entity.md");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(s.room().join("index.json")).unwrap()).unwrap();
+    manifest["artifacts"][0]["id"] = "artifact:support".into();
+    s.replace_manifest(manifest);
+    assert!(s.view().verified());
+    assert_eq!(s.read().unwrap_err().kind, RoomProblem::SelectedItemMissing);
+    s.record.attempts[0].briefing.digest = format!("sha256:{}", "0".repeat(64));
+    assert_eq!(
+        s.read().unwrap_err().kind,
+        RoomProblem::BriefingDigestMismatch
+    );
+}
 #[test]
 fn formats_origins_history_and_order_do_not_require_request() {
     assert_eq!(

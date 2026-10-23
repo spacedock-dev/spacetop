@@ -184,7 +184,7 @@ pub fn read_item(
         .items
         .iter()
         .find(|item| item.id == item_id)
-        .ok_or_else(|| problem(RoomProblem::BindingMismatch, "item disappeared"))?;
+        .ok_or_else(|| problem(RoomProblem::SelectedItemMissing, "item disappeared"))?;
     let bytes = if item.uri.starts_with("git-root://") {
         read_git_item(definition, &item.uri)?
     } else {
