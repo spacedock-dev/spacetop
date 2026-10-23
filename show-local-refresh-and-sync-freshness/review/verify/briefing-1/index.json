@@ -1,0 +1,31 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:089:verify:attempt-1:revision-1",
+  "question": "Accept task 089 candidate 1cf70680 for PR publication after independent verification and the explanatory terminal walkthrough?",
+  "artifacts": [
+    {
+      "id": "artifact:089:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/fc3a7411730c47e915e613a1ce42bc88a63aaf0b/show-local-refresh-and-sync-freshness.md",
+      "rev": "sha256:89d894c3bdcf7dec86cd63ee1f2eed336e6576a988f0f520b8f0449c3b54aca1",
+      "mediaType": "text/markdown",
+      "summary": "All four original acceptance criteria pass on candidate 1cf70680. Full suite 764 passed, lint passed, fresh independent checks and immutable-debug terminal scenarios passed. Kent gave positive feedback on the candidate/E2E. No verbal comprehension transcript is claimed; it is not an original acceptance requirement. Publication only; merge remains separate."
+    }
+  ],
+  "context": [
+    {
+      "type": "Reference",
+      "id": "reference:089:verify:attempt-1:revision-1:item-2",
+      "uri": "git-root://main/18c97ec0b9ebd6c7415eda79eb1f8c5c28fa1051/docs/spacetop-dev/README.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:fe0f9d25b139e70020e8277a725eefd4e7a1fa477b151b9485d1f020b8ab428d"
+    },
+    {
+      "type": "Reference",
+      "id": "reference:089:verify:attempt-1:revision-1:item-3",
+      "uri": "git-root://main/1cf70680ce0d564de5c47103c0d46fddf21604ef/docs/testing/freshness-walkthrough.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:5e5f356fef8888c1dd72f8fb64cfc13e2287605ee4460bdae3ccc761bbb3ee48"
+    }
+  ]
+}

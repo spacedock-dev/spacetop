@@ -15,6 +15,17 @@ issue:
 pr:
 mod-block:
 id: 089
+gates:
+    version: 1
+    records:
+        - id: gate:089:verify
+          stage: verify
+          attempts:
+            - id: gate-attempt:089-verify-1
+              briefing:
+                id: briefing:089:verify:attempt-1:revision-1
+                digest: sha256:c80d7d1dad1a68b9b1a808831e660b44bfaa5d0386fb5c39008078cab803cdd5
+                room-ref: ./show-local-refresh-and-sync-freshness/review/verify/briefing-1
 ---
 
 Help users understand how current the displayed information is without confusing local file refresh with shared Git updates.
