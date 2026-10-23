@@ -1,0 +1,21 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:090:verify:round-1",
+  "question": "Have the two reproduced verification findings against task 090 candidate 74b015d been corrected without weakening its amended acceptance criteria?",
+  "artifacts": [
+    {
+      "id": "artifact:090:rejected-74b015d",
+      "uri": "file:///tmp/spacetop-090-fo/review-1/rejected-report.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:e3530ad084aaffc7f2c9348e8e9e47b72a77e44fa99c30458fbbe460e4e1b532"
+    }
+  ],
+  "context": [
+    {
+      "type": "Reference",
+      "id": "reference:090:review-source",
+      "label": "Native reviewer report d0ff15a1510a3f7e9fd2ddeacf822a1be4183269; rejected product 74b015dfea237c0bbb2240aea0748a84882789bb. Advisory correction round only, not Captain gate approval."
+    }
+  ]
+}

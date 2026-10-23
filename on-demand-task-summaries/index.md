@@ -15,6 +15,14 @@ issue:
 pr:
 mod-block:
 id: 090
+review-round:
+    id: round:090:verify:1
+    stage: verify
+    cycle: 1
+    briefing:
+        id: briefing:090:verify:round-1
+        digest: sha256:d176682d755213bf67eabdc2c39dd1c8ce766ebe045c6268ca154595e5c430dc
+        room-ref: ./review/verify/round-1
 ---
 
 Help a person understand a long agent-authored task file without reading its full history. Add an explicitly requested AI summary in the preview while retaining the original text as the source of truth. The captain selected Option A: on-demand generation, not automatic generation while browsing.
