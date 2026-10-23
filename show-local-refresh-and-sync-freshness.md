@@ -1,12 +1,12 @@
 ---
 title: Show local refresh and Git sync freshness
-status: shape
+status: plan
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
 milestone: usability
 proof: "Behavior scenarios and a live terminal walkthrough; see acceptance criteria and proof plan."
-started:
+started: 2026-10-23T08:00:58Z
 completed:
 verdict:
 score:
