@@ -26,6 +26,17 @@ gates:
                 id: briefing:089:verify:attempt-1:revision-1
                 digest: sha256:c80d7d1dad1a68b9b1a808831e660b44bfaa5d0386fb5c39008078cab803cdd5
                 room-ref: ./show-local-refresh-and-sync-freshness/review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:089:verify:1
+                briefing: briefing:089:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-23T08:43:14.869572Z"
+                decision: approve
+                reason: Accepts direction for candidate 1cf70680ce0d564de5c47103c0d46fddf21604ef and task089 PR publication only. Kent said「我看應該是沒問題」after reviewing candidate/E2E; source parent71fac6c1-962e-4f9f-abf3-34a04cc7c166 message fdf654f6-cfa2-4a2c-9020-1f4d2b74ef1d, relayed by Navigator4cc2767b-26a5-4e3d-9c9d-8f25074809f2 messages dbcdaf74-b790-4d03-ada5-43670208da55 and 6e00e4c7-9c40-4c06-9936-84e6282ad0e0. All four original ACs pass with fresh verification and explanatory pinned-debug walkthrough. No human verbal transcript is claimed; no conn or merge grant inferred.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Help users understand how current the displayed information is without confusing local file refresh with shared Git updates.
