@@ -203,3 +203,26 @@ The candidate separates successful local reads from per-checkout Git observation
 ### Summary
 
 Technical verdict: PASS, with no material code defect found on the exact candidate. Navigator terminal scenarios also pass; overall acceptance remains open solely for the recorded AC-1/AC-3 human-comprehension decision. This verdict does not authorize publication or merge.
+
+## Stage Report: verify (cycle 2 — acceptance clarification)
+
+- DONE: Reconcile actual task089 acceptance wording with Kent's reported candidate feedback and existing terminal explanation evidence; record precise per-AC conclusion without inventing a participant requirement, human transcript, gate approval, or merge authority.
+  Original AC-1 requires app-state scenarios and a terminal walkthrough explaining both indicators; AC-3 requires app/Git scenarios. Neither requires an unfamiliar participant or a recorded verbal comprehension response; the later plan and previous verification imposed an extra acceptance condition.
+- DONE: AC-1 — PASS against the original criterion.
+  Startup, local-only refresh, explicit sync and restart checks plus the explanatory walkthrough in `docs/testing/freshness-walkthrough.md` and Navigator's `acceptance.md` distinguish local-read age from per-root Git age and explicit unknown history; Kent subsequently gave positive feedback on the presented candidate/E2E.
+- DONE: AC-2 — PASS, unchanged from prior verification.
+  Deterministic failure-retention checks and pinned terminal failure cases establish preserved success times and no Git success inferred from local changes; this continuation reran no tests.
+- DONE: AC-3 — PASS against the original criterion.
+  App/Git scenarios and pinned full/partial/failed/skipped terminal cases distinguish definition/state results and expose missing, detached, wrong-branch and unverified reasons; no additional human verbal-response requirement appears in the original AC.
+- DONE: AC-4 — PASS, unchanged from prior verification.
+  Existing write guardrails and traced disposable-fixture walkthrough show no pull without Y and only eligible fast-forward pulls after Y; no product code or write boundary changed in this continuation.
+- DONE: Record the actual human evidence and its limits.
+  Navigator message `dbcdaf74-b790-4d03-ada5-43670208da55` relays parent `71fac6c1-962e-4f9f-abf3-34a04cc7c166` message `fdf654f6-cfa2-4a2c-9020-1f4d2b74ef1d`: Kent reviewed the candidate/E2E update and said exactly 「我看應該是沒問題」. This is positive acceptance feedback; no human explanation or unfamiliar-person walkthrough was recorded or is claimed.
+- DONE: Correct the prior disposition without rewriting historical evidence.
+  Withdraw the earlier Needs decision hold based solely on missing human comprehension testimony: it is an evidence limit, not a still-unmet original requirement. Candidate remains `1cf70680ce0d564de5c47103c0d46fddf21604ef`; `/Users/kent/.local/state/spacetop-navigator/2026-10-23-089/acceptance.md` also clarifies that debug-build commands were incremental, not clean-room recompilations.
+- SKIPPED: Code changes, repeated checks, gate/frontmatter changes, publication and merge.
+  This evidence-only clarification preserves all prior task/report bytes and leaves gate authority with the FO; Kent's quote is not a fabricated conn grant or blanket merge authorization.
+
+### Summary
+
+Verification verdict: PASS for all four original task 089 acceptance criteria, with no material code finding and positive human feedback on the candidate/E2E. No concrete original acceptance requirement remains unmet; the missing human explanation remains an accurately recorded evidence limit, and workflow gate/publication/merge decisions remain separate.
