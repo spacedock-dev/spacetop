@@ -1,0 +1,21 @@
+{
+  "outcome": "exited",
+  "exit_code": 0,
+  "live_generation_launches": 0,
+  "production_ready": false,
+  "view_image_disabled": true,
+  "preserve_user_config": true,
+  "clear_mcp": false,
+  "model": "gpt-6-luna",
+  "executable_sha256": "d8990e3ee7acfbc26f91265b12a1a83f0fee40d0e0f8f1f40a37d4ec21f499cf",
+  "local_requests": 1,
+  "tools": [
+    []
+  ],
+  "project_canary_sent": false,
+  "startup_canary_ran": false,
+  "tool_results": [],
+  "outside_unchanged": true,
+  "stdout": "Synthetic local response.\n",
+  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-rub2mwac/scratch\" (codex_home: AbsolutePathBuf(\"/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-rub2mwac/scratch/codex-home\"))\nOpenAI Codex v0.164.0\n--------\nworkdir: /private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-rub2mwac/scratch\nmodel: gpt-6-luna\nprovider: summary_probe\napproval: never\nsandbox: read-only\nreasoning effort: none\nreasoning summaries: none\nsession id: 01a16858-6a1e-7a03-b9da-f2769097ca98\n--------\nuser\nSummarize this synthetic task: show library opening hours.\ncodex\nSynthetic local response.\ntokens used\n2\n"
+}

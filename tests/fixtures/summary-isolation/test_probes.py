@@ -3,6 +3,7 @@
 from dataclasses import replace
 import os
 from pathlib import Path
+import platform
 import signal
 import subprocess
 import sys
@@ -72,6 +73,23 @@ class SupervisorTests(unittest.TestCase):
     def test_cancel_reaps_direct_child(self):
         result = self.invoke("blocked-stdin", cancel_after=0.15)
         self.assertEqual((result.outcome, result.exit_code), ("cancelled", -signal.SIGKILL))
+
+    def test_observer_receives_only_direct_launched_pid(self):
+        observed = set()
+        result = self.invoke("blocked-stdin", cancel_after=0.05, observe=observed.add)
+        self.assertEqual(observed, {result.pid})
+        self.assertEqual(result.exit_code, -signal.SIGKILL)
+
+    @unittest.skipUnless(platform.system() == "Darwin", "libproc is a Darwin API")
+    def test_libproc_child_count_includes_one_child(self):
+        from auth_differential import child_pids
+        child = subprocess.Popen([sys.executable, "-B", CANARY, "blocked-stdin"],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            self.assertIn(child.pid, child_pids(os.getpid()))
+        finally:
+            child.kill()
+            child.wait(timeout=2)
 
     def test_auth_paths_are_all_in_profile(self):
         # The historical helper probe appended only the LAST auth path because

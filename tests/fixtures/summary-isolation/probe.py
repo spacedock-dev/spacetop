@@ -74,11 +74,11 @@ def environment(scratch, real_home=False):
     return env
 
 
-def sandbox_run(policy, argv, scratch, env):
+def sandbox_run(policy, argv, scratch, env, observe=None):
     policy_file = scratch / "policy.sb"
     policy_file.write_text(policy)
     return run([SANDBOX, "-f", str(policy_file), *argv], scratch, env,
-               limits=Limits(seconds=10))
+               limits=Limits(seconds=10), observe=observe)
 
 
 def boundary_probe(scratch, outside):

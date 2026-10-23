@@ -5,6 +5,10 @@ bounded local evidence; they are **not a production summary runner or a supporte
 sandbox**. There is no Spacetop launch path, new user configuration, or runtime
 dependency. Existing inspection behavior is unchanged.
 
+The next bounded comparison is recorded in [ADVANCE.md](ADVANCE.md). It retains
+the original failures and separates new protocol progress from unresolved
+existing-login and lifecycle requirements.
+
 ## Reproduce
 
 Use Python 3.10+ on Unix from the repository root. Tests need no coding CLI,

@@ -1,0 +1,11 @@
+{
+  "fake_token_only": true,
+  "existing_login_preserved": false,
+  "inference_performed": false,
+  "strict_nofork_auth_status": {
+    "outcome": "exited",
+    "exit_code": 0,
+    "logged_in": true,
+    "claude_ai": false
+  }
+}

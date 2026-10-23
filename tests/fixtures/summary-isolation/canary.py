@@ -60,6 +60,23 @@ def detached(lease_fd, scratch):
         time.sleep(0.01)
 
 
+def session_syscalls():
+    for name, action in (("setsid", os.setsid), ("setpgid", lambda: os.setpgid(0, 0))):
+        pid = os.fork()
+        if pid == 0:
+            result = denied(action)
+            print(json.dumps({"operation": name, "result": result}), flush=True)
+            os._exit(0)
+        os.waitpid(pid, 0)
+    for name, options in (("spawn_setsid", {"setsid": True}), ("spawn_setpgroup", {"setpgroup": 0})):
+        try:
+            pid = os.posix_spawn(sys.executable, [sys.executable, "-B", __file__, "identity", name],
+                                 os.environ, **options)
+            os.waitpid(pid, 0)
+        except OSError as error:
+            print(json.dumps({"operation": name, "result": errno.errorcode.get(error.errno)}), flush=True)
+
+
 if __name__ == "__main__":
     mode = sys.argv[1]
     if mode == "boundary":
@@ -79,3 +96,8 @@ if __name__ == "__main__":
     elif mode == "error":
         print('{"subtype":"success","is_error":true}')
         sys.exit(1)
+    elif mode == "session-syscalls":
+        session_syscalls()
+    elif mode == "identity":
+        print(json.dumps({"operation": sys.argv[2], "result": "allowed", "pid": os.getpid(),
+                          "sid": os.getsid(0), "pgrp": os.getpgrp()}), flush=True)

@@ -85,6 +85,9 @@ def main():
                         help="Test a synthetic auth/config read exception; never uses real credentials")
     parser.add_argument("--disable-image-tool", action="store_true",
                         help="Exercise the installed CLI's explicit view_image feature switch")
+    parser.add_argument("--preserve-user-config", action="store_true",
+                        help="Load synthetic provider config and an MCP startup canary")
+    parser.add_argument("--clear-mcp", action="store_true")
     args = parser.parse_args()
     if args.auth_exception and not args.adversarial:
         parser.error("--auth-exception requires --adversarial")
@@ -121,11 +124,30 @@ def main():
         env = environment(scratch)
         env["CODEX_HOME"] = str(scratch / "codex-home")
         (scratch / "codex-home").mkdir(mode=0o700)
+        (scratch / "AGENTS.md").write_text("PROJECT_DISCOVERY_CANARY_DO_NOT_SEND")
         env["SPACETOP_PROBE_TOKEN"] = "synthetic-not-a-real-credential"
         argv = [SANDBOX, "-f", str(policy_file), str(executable), "exec",
-                "--ignore-user-config", "--ignore-rules", "--ephemeral",
+                "--ignore-rules", "--ephemeral",
                 "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never",
                 "--model", "gpt-6-luna"]
+        if not args.preserve_user_config:
+            argv += ["--ignore-user-config"]
+        else:
+            config = f'''model_provider = "summary_probe"
+[model_providers.summary_probe]
+name = "Local synthetic configured provider"
+base_url = "http://127.0.0.1:{port}/v1"
+wire_api = "responses"
+env_key = "SPACETOP_PROBE_TOKEN"
+requires_openai_auth = false
+request_max_retries = 0
+stream_max_retries = 0
+[mcp_servers.summary_startup_canary]
+command = "/bin/sh"
+args = ["-c", "touch {scratch}/startup-hook-ran"]
+startup_timeout_sec = 1
+'''
+            (scratch / "codex-home" / "config.toml").write_text(config)
         for feature in ("hooks", "plugins", "apps", "shell_tool", "multi_agent"):
             argv += ["--disable", feature]
         if args.disable_image_tool:
@@ -141,6 +163,10 @@ def main():
             'model_providers.summary_probe.request_max_retries=0',
             'model_providers.summary_probe.stream_max_retries=0',
         ]
+        if args.preserve_user_config:
+            settings = ['project_doc_max_bytes=0', 'web_search="disabled"']
+        if args.clear_mcp:
+            settings += ['mcp_servers={}']
         for setting in settings:
             argv += ["-c", setting]
         argv += ["-"]
@@ -154,9 +180,12 @@ def main():
         report = {"outcome": result.outcome, "exit_code": result.exit_code,
                   "live_generation_launches": 0, "production_ready": False,
                   "view_image_disabled": args.disable_image_tool,
+                  "preserve_user_config": args.preserve_user_config, "clear_mcp": args.clear_mcp,
                   "model": "gpt-6-luna", "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
                   "local_requests": len(server.requests),
                   "tools": [request.get("tools", []) for request in server.requests],
+                  "project_canary_sent": "PROJECT_DISCOVERY_CANARY_DO_NOT_SEND" in json.dumps(server.requests),
+                  "startup_canary_ran": (scratch / "startup-hook-ran").exists(),
                   "tool_results": [item for request in server.requests for item in request.get("input", [])
                                    if item.get("type") in ("function_call_output", "custom_tool_call_output")],
                   "outside_unchanged": sorted(p.name for p in outside.iterdir()) == (

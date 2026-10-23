@@ -1,0 +1,19 @@
+{
+  "candidate_reads": [],
+  "deny_setcontrol": false,
+  "keychain_metadata_only": true,
+  "auth": {
+    "exit_code": 0,
+    "outcome": "exited",
+    "default_keychain_path": "\"/Users/kent/Library/Keychains/login.keychain-db\"",
+    "stderr": ""
+  },
+  "pid": 96787,
+  "observed_pids": [
+    96787
+  ],
+  "own_pid_denials": [],
+  "log_outcome": "exited",
+  "live_generation_launches": 0,
+  "production_ready": false
+}

@@ -1,0 +1,21 @@
+{
+  "fixture_tests": {
+    "command": "python3 -B -m unittest discover -s tests/fixtures/summary-isolation -v",
+    "passed": 12,
+    "exit": 0
+  },
+  "rust_checks": "Not repeated for fixture/docs-only changes; previous 80245da cargo fmt, cargo test and make lint remain passing baseline, per FO instruction.",
+  "live_generation_launches": 0,
+  "product_ready": false,
+  "source_sha256": {
+    "auth_differential.py": "8b818c33820dd45251246c0c505814721899fb4b04d357a1af95d38006596c6a",
+    "canary.py": "94a9c0989cb750c02318786aea2734f99e226922c0a0a90c11f65fe5e30ed854",
+    "claude_protocol.py": "1588356e9481b8c8108b094e3f5c14b8c73808df5955fb35bf15af7c66a0edaa",
+    "codex_protocol.py": "927e5a9eb07e99fc82c9d13f6af1d5a29e9925d898bec398d1fbcce28f8089f1",
+    "linux_capabilities.py": "b2dbb469b8bc6ffc128e1fa5a421623d46d313e7a4d5475fc84b039d35ea37aa",
+    "probe.py": "da5f83e49e1600b348e6a792412eaf7e933dc071f50c2bfa742767c79ba5b865",
+    "session_policy.py": "877a8f50b0b0a43302c189ddf54763bfd41e71cd817ed76ea517ea407b456096",
+    "supervisor.py": "5978c847c848a5769429b0bc4ac957afd542108301b739b71f1729aacb541472",
+    "test_probes.py": "4544cb25b217d3aefc5e100958c03acfe2f20c037a4e3d7d8c2ec09cc2caac8f"
+  }
+}

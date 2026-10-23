@@ -11,6 +11,7 @@ import selectors
 import signal
 import subprocess
 import time
+from typing import Callable
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class Result:
     exit_code: int | None
     stdout: bytes
     stderr: bytes
+    pid: int | None = None
 
 
 def stop_group(process):
@@ -38,7 +40,8 @@ def stop_group(process):
 
 
 def run(argv: list[str], cwd: Path, env: dict[str, str], source: bytes = b"",
-        limits: Limits = Limits(), cancel_after: float | None = None) -> Result:
+        limits: Limits = Limits(), cancel_after: float | None = None,
+        observe: Callable[[int], None] | None = None) -> Result:
     """Drain both pipes while writing stdin; never collect unbounded output."""
     if len(source) > limits.input_bytes:
         return Result("input_limit", None, b"", b"")
@@ -65,6 +68,8 @@ def run(argv: list[str], cwd: Path, env: dict[str, str], source: bytes = b"",
             else:
                 process.stdin.close()
             while selector.get_map() or process.poll() is None:
+                if observe is not None:
+                    observe(process.pid)
                 elapsed = time.monotonic() - started
                 if cancel_after is not None and elapsed >= cancel_after:
                     outcome = "cancelled"
@@ -104,4 +109,4 @@ def run(argv: list[str], cwd: Path, env: dict[str, str], source: bytes = b"",
         for pipe in (process.stdin, process.stdout, process.stderr):
             pipe.close()
     return Result(outcome, process.returncode, bytes(buffers["stdout"]),
-                  bytes(buffers["stderr"]))
+                  bytes(buffers["stderr"]), process.pid)

@@ -1,0 +1,27 @@
+{
+  "candidate_reads": [
+    "/Users/kent/.claude/settings.json"
+  ],
+  "deny_setcontrol": false,
+  "auth": {
+    "outcome": "exited",
+    "exit_code": 1,
+    "logged_in": false,
+    "claude_ai": false
+  },
+  "pid": 88256,
+  "own_pid_denials": [
+    "Sandbox: 2.1.309(88256) deny(1) file-read-data /private/etc/ssl/cert.pem",
+    "Sandbox: 2.1.309(88256) deny(1) file-read-data /Users/kent/.claude/telemetry",
+    "Sandbox: 2.1.309(88256) deny(1) file-read-data /Users/kent/.claude/cache/model-catalog/masked-ids.json",
+    "Sandbox: 2.1.309(88256) deny(1) network-outbound /private/var/run/mDNSResponder",
+    "Sandbox: 2.1.309(88256) deny(1) file-read-data /Library/Preferences/com.apple.networkd.plist",
+    "Sandbox: 2.1.309(88256) deny(1) network-outbound /private/var/run/mDNSResponder",
+    "Sandbox: 2.1.309(88256) deny(1) file-read-data /private/etc/hosts",
+    "Sandbox: 2.1.309(88256) deny(1) network-outbound /private/var/run/mDNSResponder",
+    "Sandbox: 2.1.309(88256) deny(1) file-read-data /private/etc/hosts"
+  ],
+  "log_outcome": "exited",
+  "live_generation_launches": 0,
+  "production_ready": false
+}
