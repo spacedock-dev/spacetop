@@ -242,3 +242,32 @@ The plan preserves the captain's two small-model adapters, existing-login requir
 ### Summary
 
 All three dispatched planning obligations are fulfilled. The earlier **FAILED** process-group-only/setsid cleanup mechanism and **FAILED** Claude existing-auth containment probe remain unresolved technical findings, not passes; their evidence and original report are unchanged. Only the bounded isolation-only implementation slice is ready: no large UI work or safety acceptance until the remaining containment, tool/egress, platform and human-proof requirements are satisfied at their required gates.
+
+## Stage Report: implement
+
+- FAILED: First implement and prove the smallest isolation/lifecycle boundary for existing-login Claude/Haiku and Codex/Luna on supported platforms; preserve negative results and stop before UI if safety readiness cannot be established.
+  Safety readiness remains unresolved. Committed bounded fixture/evidence slice `80245daa4148e4cc3c2b7be29eadc2a23296e2e8` proves specific local controls and failures, not a supported adapter or complete implementation.
+- SKIPPED: Once isolation is demonstrated, implement all five amended ACs with explicit summary/original navigation, exact snapshot binding, bounded cache/process behavior and request-bound indeterminate progress; no silent provider/model fallback.
+  Prerequisite remains unmet; no production/UI/config changes, provider generation, fallback, PR or code push occurred. AC-1 through AC-4 remain unmet; AC-5 has component evidence only.
+- FAILED: Add meaningful tests and docs/policy updates, pass cargo fmt/cargo test/make lint and existing guardrails, coordinate the shared six-launch live budget and unfamiliar-reader/Navigator proof, and commit exact candidate/evidence with DCO.
+  Tests/docs and DCO commit are complete for the bounded slice; full product policy changes and independent/Navigator/human proof remain pending. Live ledger remains 0/6; no synthetic protocol response is called human or real-model evidence.
+- DONE: Preserve a repository-owned bounded process probe and ten falsifiable synthetic tests.
+  `tests/fixtures/summary-isolation/` tests literal stdin, pre-spawn input rejection, both pipe caps, blocked-stdin timeout, error exits and cancel/reaping; they fail if limits or request transport weaken. The setsid heartbeat test must observe survival after killpg, then closes its own lease to stop the synthetic child.
+- DONE: Reproduce macOS permission denials and isolate the existing-login conflict without reading credentials.
+  `evidence/macos-auth.json`: actual outside read/write, exec, fork and connect return EPERM; private scratch writes work. Claude logs in under network-denied/write-restricted reference, but adding only deny-fork makes it logged-out; Codex recognizes ChatGPT login under strict nofork. These are auth-status calls, not inference.
+- DONE: Correct two historical probe confounders and retain their limits.
+  The helper-read loop previously appended only its last auth path; cleared USER independently caused Claude logged-out. Corrected profiles and environment are regression-tested. Helper exec plus broad reads now logs in; strict helper read allowances still do not. This does not prove isolation impossible.
+- DONE: Exercise Codex/Luna against a local synthetic Responses endpoint under OS egress restriction.
+  `evidence/codex-{normal,adversarial}.json`: normal one request; adversarial two requests, no transport retry. Empty declared tools do not disable all routing: exec/read_file reject, patch rejects by read-only policy, unadvertised view_image reaches the OS and gets EPERM for the outside file.
+- DONE: Probe the allowed auth/config-path exception without real credentials, preserving negative and corrected results.
+  `evidence/codex-auth-exception.json`: a synthetic JSON file allowed like CLI auth data reaches image decoding, so per-process filesystem exceptions do not isolate model-directed reads. `codex-image-disabled.json`: installed `--disable view_image` makes both ordinary and auth-exception image calls unsupported. This closes only that tested route; other in-process tools/auth exceptions, customization and connected egress remain unproved. No real credential exposure was tested or claimed.
+- DONE: Make one Linux amd64 compatibility attempt within the authorized local test scope.
+  Official Python 3.12 slim amd64 image `e8a38829209aea82774882e5157e1f7c3e8c8393ff53a697b3580896e57f345c`, under Docker emulation with network none/read-only/cap-drop/no-new-privileges, passed all ten synthetic tests. Only fixtures were mounted, read-only; the container was removed. This is not native x64 CLI/auth containment proof; compatible CLI artifacts and an existing-login test context remain missing.
+- DONE: Run the required repository checks on the committed slice.
+  `evidence/verification.json`: cargo fmt --check, cargo test (764 passed, six existing ignored) and make lint passed; existing no_write_git_calls/no_terminal_deps remained valid. Ten fixture tests passed on macOS and amd64 emulation. Rust product code is unchanged; watcher/manual TUI tests were not applicable to this slice.
+
+### Summary
+
+Implementation is stopped at the requested safety boundary, not complete or verification-ready. Candidate `80245daa4148e4cc3c2b7be29eadc2a23296e2e8` is committed in `.worktrees/spacedock-ensign-on-demand-task-summaries`; reproducible scripts, raw synthetic results and limits are in `tests/fixtures/summary-isolation/README.md` and `evidence/`.
+
+The concrete tradeoff is Claude's required helper creation versus the only tested effective descendant restriction (deny-fork): no tested profile preserves both login and cleanup. Recommend retaining all ACs and moving only to a bounded helper-capable containment design with an explicit login-plus-setsid cleanup test on both release hosts; any new runtime dependency/auth broker requires a concrete captain decision before adoption. The conservative alternative is to defer summaries while retaining this evidence. Do not proceed to UI/live calls, silently cut an adapter/platform, or treat the narrower Codex tool result as full safety readiness.
