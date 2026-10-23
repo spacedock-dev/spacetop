@@ -132,3 +132,37 @@ Human-comprehension evidence is still unresolved. Automated assertions and Navig
 ### Summary
 
 The implementation plan separates local-read evidence from definition/state Git successes and preserves failures without inventing timestamps. Existing topology tests support reusing the audited orchestration boundary; the new freshness behavior and human interpretation still require implementation and independent proof before publication approval.
+
+
+## Stage Report: implement
+
+- DONE: Implement all four unchanged ACs with typed session-only local/read and per-root Git observations, honest unknowns and failure/skip retention, without broadening writes.
+  Candidate `1cf70680ce0d564de5c47103c0d46fddf21604ef` adds app-owned completion observations, target/branch binding, separate local/definition/state rows and scrollable reasons; no core Git helper, watcher, persistence schema or dependency changes.
+- DONE: Add meaningful deterministic app/orchestration/rendering tests and pass cargo fmt, cargo test, make lint, and existing Git/core safety guardrails.
+  Final `cargo test`: 764 passed, 0 failed, 6 existing ignored; `cargo fmt`/format check, `make lint`, debug build and `git diff --check` passed; logs `/tmp/spacetop-089-cargo-test-final.log`, `/tmp/spacetop-089-lint-final.log`, `/tmp/spacetop-089-build-final.log`.
+- DONE: Update user docs and reproducible terminal fixture walkthrough; commit the candidate with DCO and record exact evidence, falsifying changes, and remaining human proof.
+  README and `docs/testing/freshness-walkthrough.md` describe session-only meaning, errors, partial sync, disposable local remotes and tracing; signed-off code commit is local only, with clean worktree and no PR/code push.
+- DONE: Prove local-read independence and failure retention (AC-1/AC-2).
+  `freshness_disk_read_is_separate_from_sync_and_failed_reload_retains_time`, archive/removal, synthetic-snapshot, tab/rediscovery and watcher/editor tests assert independent or exact unchanged observations; stamping Git on local read, stamping failed reads, or treating editor errors as reads would fail them.
+- DONE: Prove per-root outcomes and identity changes (AC-2/AC-3).
+  Ten `topology_sync_tests` assert exact eligible roots, no cached-state pull, true Git success before final read failure, retained state time on failure/detached/wrong-branch skip and cleared time after target change/unverified identity; enabling cached pulls or marking a failed root successful would fail them.
+- DONE: Prove monotonic age and missing-target behavior.
+  `only_success_advances_observation` injects T1/T2; branch/path/root/unverified tests clear current-target history; the symlink-parent missing-checkout test retains the prior success. Clock-reversal rendering shows `age unavailable`; saturating to zero or clearing a same-target missing success would fail these tests.
+- DONE: Prove usable presentation and unchanged write boundaries (AC-3/AC-4).
+  TestBackend covers 120x30, 80x24 and 40x20 with preview and long skipped reasons; hiding a freshness row or failure marker fails. `git_sync_e2e` passed 5 tests; both `no_write_git_calls` tests and `no_terminal_deps` passed. Existing short-preview tests caught the initial layout regression and passed after reserving preview space.
+- DONE: Exercise real debug TUI behavior in safe local fixtures.
+  Worker PTYs at 120x30/80x24/40x20 observed startup unknown Git, local-only edit, invalid README retaining read success with FAILED, full no-op sync, state-remote failure retaining older state success, restart unknowns and missing-state skip; preview/help worked and all three processes exited 0.
+- DONE: Audit actual fixture Git calls and exact-candidate smoke.
+  Fixture `/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-freshness.Ir1ApD`: zero pulls before explicit Y/restart, two per eligible Y, one for missing state; README/entity hashes returned to baseline after deliberate fixture edits. Raw transcripts `/tmp/spacetop-089-terminal-{120x30,80x24,40x20}.raw`; fixture traces retained.
+- DONE: Verify exact committed candidate without changing its bytes.
+  Candidate debug executable in assigned worktree `target/debug/spacetop` (SHA-1 `57ccb31b2734be96b1c312e5681a10eb03401ab0`) restarted unknown, then Y showed both successful roots and exactly two pulls; exit 0, `/tmp/spacetop-089-terminal-candidate.raw`, fixture `candidate.trace`. Broader worker cases preceded the final missing-target identity fix; its deterministic test and this smoke cover the final candidate.
+- DONE: Preserve unfavorable observations and fix reproducibility limits.
+  An initial fixture pull failed because the machine's Git rebase preference rejected the deliberate local edit; UI correctly showed definition success/state failure. Walkthrough now restores that edit and closes preview before Y; Y is intentionally inactive in preview. No product sync behavior was broadened to avoid this failure.
+- SKIPPED: Human-comprehension proof and independent acceptance.
+  Worker interaction does not prove a human understands local/per-root ages or remote-newness limits. Navigator's exact-candidate terminal run, fresh verifier, and the human's own explanation remain open; this report does not approve publication or merge.
+- SKIPPED: Ignored real watcher checks, PR publication, code push, merge, installation and worktree removal.
+  Watcher mechanics did not change; these publication/destructive actions are outside the assigned stage. Candidate remains available for independent verification.
+
+### Summary
+
+The candidate separates successful local reads from per-checkout Git observations and keeps current failure/skip status visible beside older successes. Automated and worker-terminal evidence support the implementation while independent acceptance and human comprehension remain explicit gates; no workflow-state write path was added.
