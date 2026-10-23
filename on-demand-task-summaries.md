@@ -1,6 +1,6 @@
 ---
 title: Generate human-readable task summaries on demand
-status: plan
+status: implement
 source: "Captain selected Option A and requested an entity file, 2026-10-23"
 kind: feature
 risk: high
@@ -10,7 +10,7 @@ started: 2026-10-23T09:22:08Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-on-demand-task-summaries
 issue:
 pr:
 mod-block:
