@@ -227,3 +227,18 @@ Facilitator only. Do not show before the participant's answers are locked.
 ### Summary
 
 The plan preserves the captain's two small-model adapters, existing-login requirement, progress indicator and all five ACs. Local evidence supports a concrete isolation-only next slice but does not authorize advancing past the safety gate: Claude auth coexistence, actual tool/egress containment, Linux x64 runtime proof and unfamiliar-human evidence remain open.
+
+## Stage Report: plan completion addendum
+
+- DONE: Prove or precisely bound isolation feasibility for existing-login Claude/Haiku and Codex/Luna on actual supported platforms, with installed-version/model-ID evidence and safe lifecycle behavior before large UI work.
+  Commit `e2849834be66bbe50565fbcac16f5a07aa0b484c`, “Observed platform and adapter evidence” and “Local isolation experiments and retained negatives” precisely bound feasibility; full safety remains unproved.
+- DONE: Plan all five amended ACs, request-bound spinner, typed snapshot/cache/race behavior, adapter unavailable errors, bounded real smoke and independent/Navigator proof without silent fallback or safety waivers.
+  Same commit, “Next executable slice: isolation before UI,” owned-module sequence, AC proof map and authorized-smoke section define the implementation path, stop conditions and proof owners.
+- DONE: Prepare the unfamiliar-human synthetic walkthrough with separate source/answer key and reader questions; record actual participant/answers as pending rather than simulated, then commit a complete plan and evidence limits.
+  Same commit preserves separate facilitator source/key and reader questions; participant and actual answers remain pending Navigator coordination, not simulated or waived.
+- SKIPPED: Live provider, product and human acceptance proof at the planning stage.
+  Zero live launches used; no product implementation or safety acceptance is claimed. These remain obligations of later execution and verification.
+
+### Summary
+
+All three dispatched planning obligations are fulfilled. The earlier **FAILED** process-group-only/setsid cleanup mechanism and **FAILED** Claude existing-auth containment probe remain unresolved technical findings, not passes; their evidence and original report are unchanged. Only the bounded isolation-only implementation slice is ready: no large UI work or safety acceptance until the remaining containment, tool/egress, platform and human-proof requirements are satisfied at their required gates.
