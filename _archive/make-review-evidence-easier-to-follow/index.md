@@ -1,19 +1,19 @@
 ---
 title: Make review evidence easier to follow
-status: verify
+status: done
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
 milestone: usability
 proof: "Behavior scenarios and a live terminal walkthrough; see acceptance criteria and proof plan."
 started: 2026-10-22T14:47:06Z
-completed:
-verdict:
+completed: 2026-10-23T00:06:23Z
+verdict: PASSED
 score:
 worktree: .worktrees/spacedock-ensign-make-review-evidence-easier-to-follow
 issue:
-pr: "#90"
-mod-block: merge:pr-merge
+pr: pr-merge:90
+mod-block:
 id: 088
 review-round:
     id: round:088:verify:1
@@ -44,7 +44,8 @@ gates:
                 reason: Captain approved the presented task 088 verify gate for PR publication after all four acceptance criteria passed independent review and F1 was corrected.
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+archived: 2026-10-23T00:06:23Z
 ---
 
 Help reviewers understand the question, read the main report, and follow the supporting evidence without searching through files.
