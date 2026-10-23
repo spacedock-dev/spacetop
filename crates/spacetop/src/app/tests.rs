@@ -3012,3 +3012,110 @@ fn attention_focus_is_transient_per_workflow_and_palette_cancel_is_inert() {
     restored.apply_session(&saved);
     assert!(!restored.needs_attention);
 }
+
+fn freshness_workflow() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("README.md"),
+        "---\nstages:\n  states:\n    - name: plan\n      initial: true\n---\n",
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn freshness_disk_read_is_separate_from_sync_and_failed_reload_retains_time() {
+    use super::freshness::Attempt;
+    let dir = freshness_workflow();
+    let synthetic = super::OverviewState::empty(dir.path().into());
+    assert_eq!(synthetic.freshness.local.last_success, None);
+    let mut app = App::load(dir.path().into()).unwrap();
+    assert!(app.freshness().unwrap().local.last_success.is_some());
+    assert_eq!(app.freshness().unwrap().definition.last_success, None);
+    app.reload().unwrap();
+    assert_eq!(app.freshness().unwrap().definition.last_success, None);
+    let old = std::time::Instant::now() - std::time::Duration::from_secs(60);
+    app.freshness_mut()
+        .unwrap()
+        .local
+        .record(Attempt::Succeeded, old);
+    std::fs::write(dir.path().join("README.md"), "invalid").unwrap();
+    assert!(app.reload().is_err());
+    assert_eq!(app.freshness().unwrap().local.last_success, Some(old));
+    assert!(matches!(
+        app.freshness().unwrap().local.latest,
+        Attempt::Failed(_)
+    ));
+}
+
+#[test]
+fn freshness_archive_failure_and_removed_workflow_keep_prior_read_time() {
+    use super::freshness::Attempt;
+    let dir = freshness_workflow();
+    let mut app = App::load(dir.path().into()).unwrap();
+    let old = std::time::Instant::now() - std::time::Duration::from_secs(60);
+    app.freshness_mut()
+        .unwrap()
+        .local
+        .record(Attempt::Succeeded, old);
+    // An archive path that is a file produces a deterministic directory IO error.
+    std::fs::write(dir.path().join("_archive"), "not a directory").unwrap();
+    app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    assert_eq!(app.freshness().unwrap().local.last_success, Some(old));
+    assert!(app.reload().is_err());
+    assert_eq!(app.freshness().unwrap().local.last_success, Some(old));
+    assert!(matches!(
+        app.freshness().unwrap().local.latest,
+        Attempt::Failed(_)
+    ));
+    std::fs::remove_dir_all(dir.path()).unwrap();
+    app.reload_with_rediscovery().unwrap();
+    assert_eq!(app.freshness().unwrap().local.last_success, Some(old));
+    assert!(matches!(
+        app.freshness().unwrap().local.latest,
+        Attempt::Failed(_)
+    ));
+}
+
+#[test]
+fn freshness_in_memory_snapshot_does_not_certify_read() {
+    let dir = freshness_workflow();
+    let mut app = App::load(dir.path().into()).unwrap();
+    let snapshot = app.snapshot().clone();
+    let old = app.freshness().unwrap().local.clone();
+    app.reload_from_snapshot(snapshot);
+    assert_eq!(app.freshness().unwrap().local, old);
+    assert_eq!(app.freshness().unwrap().definition.last_success, None);
+}
+
+#[test]
+fn freshness_stays_with_workflow_on_switch_and_rediscovery() {
+    use super::freshness::Attempt;
+    let (session, _holder, _roots) = multi_session(2);
+    let mut app = App::from_session(session);
+    let t = std::time::Instant::now();
+    app.freshness_mut()
+        .unwrap()
+        .definition
+        .record(Attempt::Succeeded, t);
+    app.handle_key(key(KeyCode::Right));
+    app.take_pending_switch().unwrap();
+    app.materialize_active();
+    assert_eq!(app.freshness().unwrap().definition.last_success, None);
+    app.handle_key(key(KeyCode::Left));
+    app.take_pending_switch().unwrap();
+    app.reload_with_rediscovery().unwrap();
+    assert_eq!(app.freshness().unwrap().definition.last_success, Some(t));
+}
+
+#[test]
+fn freshness_watcher_and_editor_diagnostics_do_not_claim_read_or_git_failure() {
+    let dir = freshness_workflow();
+    let mut app = App::load(dir.path().into()).unwrap();
+    let original = app.freshness().unwrap().clone();
+    for diagnostic in ["watcher: unavailable", "editor: resume failed"] {
+        app.set_refresh_error(diagnostic.into());
+        assert_eq!(app.freshness().unwrap(), &original);
+        assert_eq!(app.last_refresh_error(), Some(diagnostic));
+    }
+}

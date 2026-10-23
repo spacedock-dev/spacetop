@@ -2,6 +2,9 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
+
+use super::freshness::{Attempt, Freshness};
 
 use ratatui::layout::Rect;
 
@@ -204,6 +207,7 @@ fn write_unverified_diagnostic(
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverviewState {
+    pub freshness: Freshness,
     pub workflow_dir: PathBuf,
     pub repo_root: PathBuf,
     pub index: WorkflowIndex,
@@ -287,6 +291,7 @@ impl OverviewState {
             archive: ArchiveSnapshot::empty(),
         });
         Self {
+            freshness: Freshness::default(),
             workflow_dir,
             repo_root,
             index,
@@ -323,7 +328,12 @@ impl OverviewState {
         let repo_root = resolve_scan_root(&workflow_dir);
         let mut index = WorkflowIndex::load(&workflow_dir, &repo_root)?;
         index.mark_history_loading();
-        Ok(Self::from_index_with_root(workflow_dir, repo_root, index))
+        let mut state = Self::from_index_with_root(workflow_dir, repo_root, index);
+        state
+            .freshness
+            .local
+            .record(Attempt::Succeeded, Instant::now());
+        Ok(state)
     }
 
     pub fn from_snapshot(workflow_dir: PathBuf, snapshot: WorkflowSnapshot) -> Self {
@@ -348,7 +358,10 @@ impl OverviewState {
         repo_root: PathBuf,
         index: WorkflowIndex,
     ) -> Self {
+        let mut freshness = Freshness::default();
+        freshness.bind(&repo_root, index.storage());
         Self {
+            freshness,
             workflow_dir,
             repo_root,
             index,
@@ -394,16 +407,24 @@ impl OverviewState {
         self.reload_from_index(index);
     }
 
-    pub fn reload_from_index(&mut self, mut index: WorkflowIndex) {
+    pub fn reload_from_index(&mut self, index: WorkflowIndex) {
+        self.install_index(index, false);
+    }
+
+    fn install_index(&mut self, mut index: WorkflowIndex, archive_loaded: bool) {
         let prior_path = self.selected_path();
 
         index.retain_session_activity_from(&self.index);
         self.index = index;
+        self.bind_freshness();
         // Invalidate archive view — a watcher-driven reload may have touched
         // `_archive/` too. Dropping the cached list forces a rescan the next
         // time the user toggles to archived scope.
         self.archived_done_count = None;
-        self.archive_loaded = false;
+        self.archive_loaded = archive_loaded;
+        if archive_loaded {
+            self.archived_done_count = Some(count_archived_terminal_items(&self.archived_items()));
+        }
         self.archive_error = None;
 
         if self.view_scope == ViewScope::Archived {
@@ -423,15 +444,37 @@ impl OverviewState {
         match WorkflowIndex::load(&self.workflow_dir, &self.repo_root) {
             Ok(mut index) => {
                 index.mark_history_loading();
-                self.reload_from_index(index);
+                // Archive IO is part of a displayed archived snapshot. Keep
+                // the old snapshot and success time if that read is incomplete.
+                if self.view_scope == ViewScope::Archived {
+                    let archive =
+                        WorkflowSources::load_archive(&self.workflow_dir, index.definition());
+                    if let Some(message) = archive.error {
+                        self.archive_error = Some(message.clone());
+                        self.set_read_error(message.clone());
+                        return Err(ParseError::ReadDirectory {
+                            path: self.workflow_dir.display().to_string(),
+                            source: std::io::Error::other(message),
+                        });
+                    }
+                    index.replace_archive(archive);
+                }
+                self.install_index(index, self.view_scope == ViewScope::Archived);
+                self.freshness
+                    .local
+                    .record(Attempt::Succeeded, Instant::now());
                 Ok(())
             }
             Err(err) => {
                 let msg = err.to_string();
-                self.last_refresh_error = Some(msg);
+                self.set_read_error(msg);
                 Err(err)
             }
         }
+    }
+
+    fn bind_freshness(&mut self) {
+        self.freshness.bind(&self.repo_root, self.index.storage());
     }
 
     pub fn last_refresh_error(&self) -> Option<&str> {
@@ -439,6 +482,13 @@ impl OverviewState {
     }
 
     pub fn set_refresh_error(&mut self, message: String) {
+        self.last_refresh_error = Some(message);
+    }
+
+    pub fn set_read_error(&mut self, message: String) {
+        self.freshness
+            .local
+            .record(Attempt::Failed(message.clone()), Instant::now());
         self.last_refresh_error = Some(message);
     }
 
@@ -756,6 +806,11 @@ impl OverviewState {
         }
         let archive = WorkflowSources::load_archive(&self.workflow_dir, self.index.definition());
         self.archive_error = archive.error.clone();
+        if let Some(message) = &self.archive_error {
+            self.freshness
+                .local
+                .record(Attempt::Failed(message.clone()), Instant::now());
+        }
         self.archived_done_count = Some(count_archived_terminal_items(&archive.entities));
         self.index.replace_archive(archive);
         self.archive_loaded = true;

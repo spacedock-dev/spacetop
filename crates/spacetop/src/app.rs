@@ -12,6 +12,7 @@ use spacetop_core::query::EntityQuery;
 use spacetop_core::session_state::{SessionState, WorkflowSessionKey};
 
 pub mod correction_history;
+pub mod freshness;
 pub mod gate_room;
 mod history_worker;
 mod keys;
@@ -564,6 +565,17 @@ impl App {
         std::mem::replace(&mut self.pending_sync, false)
     }
 
+    pub fn freshness(&self) -> Option<&freshness::Freshness> {
+        self.as_session()
+            .map(|session| &session.active_state().freshness)
+    }
+
+    pub fn freshness_mut(&mut self) -> Option<&mut freshness::Freshness> {
+        self.mode
+            .as_session_mut()
+            .map(|session| &mut session.active_state_mut().freshness)
+    }
+
     /// Current sync status for the active overview tab, if any.
     pub fn sync_status(&self) -> Option<&SyncStatus> {
         self.as_session()
@@ -794,7 +806,8 @@ impl App {
                     // session structurally empty); instead, swap the active
                     // slot for an empty state with a clear message.
                     let mut empty = OverviewState::empty(prior_active_dir);
-                    empty.set_refresh_error("workflow removed".to_string());
+                    empty.freshness = session.active_state().freshness.clone();
+                    empty.set_read_error("workflow removed".to_string());
                     session.install_active_state(empty);
                     return Ok(());
                 }
@@ -812,7 +825,10 @@ impl App {
         let active_dir = session.active_dir().to_path_buf();
         if !active_dir.exists() {
             let mut empty = OverviewState::empty(active_dir);
-            empty.set_refresh_error("workflow removed".to_string());
+            if session.active_slot_loaded() {
+                empty.freshness = session.active_state().freshness.clone();
+            }
+            empty.set_read_error("workflow removed".to_string());
             session.install_active_state(empty);
             return Ok(());
         }
@@ -830,7 +846,7 @@ impl App {
                 }
                 Err(err) => {
                     let mut empty = OverviewState::empty(active_dir);
-                    empty.set_refresh_error(err.to_string());
+                    empty.set_read_error(err.to_string());
                     session.install_active_state(empty);
                     Err(err)
                 }
@@ -859,7 +875,7 @@ impl App {
             }
             Err(err) => {
                 let mut empty = OverviewState::empty(dir);
-                empty.set_refresh_error(err.to_string());
+                empty.set_read_error(err.to_string());
                 session.install_active_state(empty);
             }
         }

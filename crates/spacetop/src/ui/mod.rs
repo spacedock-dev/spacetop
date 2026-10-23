@@ -167,10 +167,13 @@ fn render_overview(
         area
     };
 
-    // Keep attention reasons reachable on short screens rather than giving
-    // the graph all available rows. The ordinary overview retains its layout.
+    // Borrow graph rows on short screens so freshness does not remove the
+    // existing preview body. Below ten rows help remains the details surface.
+    let freshness_height = if dashboard_area.height < 10 { 0 } else { 3 };
     let graph_height = if state.needs_attention {
-        7.min(dashboard_area.height.saturating_sub(7))
+        7.min(dashboard_area.height.saturating_sub(7 + freshness_height))
+    } else if dashboard_area.height < 27 {
+        7 - freshness_height
     } else {
         7
     };
@@ -178,6 +181,7 @@ fn render_overview(
         Constraint::Length(1),
         Constraint::Length(graph_height),
         Constraint::Min(0),
+        Constraint::Length(freshness_height),
         Constraint::Length(1),
     ];
     let chunks = Layout::default()
@@ -188,7 +192,8 @@ fn render_overview(
     let header_area = chunks[0];
     let graph_area = chunks[1];
     let content_area = chunks[2];
-    let footer_area = chunks[3];
+    let freshness_area = chunks[3];
+    let footer_area = chunks[4];
     header::render_header_bar(frame, header_area, state);
     render_stage_graph(frame, graph_area, state);
 
@@ -214,6 +219,7 @@ fn render_overview(
         list::render_task_list(frame, content_area, config, state);
     }
 
+    footer::render_freshness(frame, freshness_area, state);
     footer::render_status_footer(
         frame,
         footer_area,

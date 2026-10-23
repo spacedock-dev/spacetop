@@ -10,6 +10,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
+use app::freshness::Attempt;
 use app::{
     App, AppMode, CopyFeedback, HistoryWorkerResult, SessionActivityWorkerResult, SyncStatus,
 };
@@ -223,6 +224,7 @@ mod topology_sync_tests {
         );
         let runner = RecordingGitRunner::new(successful_sync_responses());
         apply_pending_sync(&mut app, &runner);
+        assert!(app.freshness().unwrap().definition.last_success.is_some());
         assert!(matches!(
             app.sync_status(),
             Some(SyncStatus::Partial { message })
@@ -253,7 +255,17 @@ mod topology_sync_tests {
             },
         );
         let runner = RecordingGitRunner::new(successful_sync_responses());
+        app.freshness_mut()
+            .unwrap()
+            .state
+            .record(Attempt::Succeeded, Instant::now());
         apply_pending_sync(&mut app, &runner);
+        assert_eq!(app.freshness().unwrap().state.last_success, None);
+        assert!(matches!(
+            app.freshness().unwrap().state.latest,
+            Attempt::Skipped(_)
+        ));
+        assert!(app.freshness().unwrap().definition.last_success.is_some());
 
         assert_eq!(
             app.sync_status(),
@@ -311,7 +323,18 @@ mod topology_sync_tests {
         );
         let runner = RecordingGitRunner::new(successful_sync_responses());
 
+        let prior = std::time::Instant::now() - Duration::from_secs(60);
+        app.freshness_mut()
+            .unwrap()
+            .state
+            .record(Attempt::Succeeded, prior);
         apply_pending_sync(&mut app, &runner);
+        assert!(app.freshness().unwrap().definition.last_success.is_some());
+        assert_eq!(app.freshness().unwrap().state.last_success, Some(prior));
+        assert!(matches!(
+            app.freshness().unwrap().state.latest,
+            Attempt::Skipped(_)
+        ));
 
         assert!(matches!(
             app.workflow_storage(),
@@ -346,7 +369,18 @@ mod topology_sync_tests {
         );
         let runner = RecordingGitRunner::new(successful_sync_responses());
 
+        let prior = std::time::Instant::now() - Duration::from_secs(60);
+        app.freshness_mut()
+            .unwrap()
+            .state
+            .record(Attempt::Succeeded, prior);
         apply_pending_sync(&mut app, &runner);
+        assert!(app.freshness().unwrap().definition.last_success.is_some());
+        assert_eq!(app.freshness().unwrap().state.last_success, Some(prior));
+        assert!(matches!(
+            app.freshness().unwrap().state.latest,
+            Attempt::Skipped(_)
+        ));
 
         assert!(matches!(
             app.workflow_storage(),
@@ -381,7 +415,18 @@ mod topology_sync_tests {
         );
         let runner = RecordingGitRunner::new(successful_sync_responses());
 
+        let prior = std::time::Instant::now() - Duration::from_secs(60);
+        app.freshness_mut()
+            .unwrap()
+            .state
+            .record(Attempt::Succeeded, prior);
         apply_pending_sync(&mut app, &runner);
+        assert!(app.freshness().unwrap().definition.last_success.is_some());
+        assert_eq!(app.freshness().unwrap().state.last_success, None);
+        assert!(matches!(
+            app.freshness().unwrap().state.latest,
+            Attempt::Skipped(_)
+        ));
 
         assert!(matches!(
             app.workflow_storage(),
@@ -421,6 +466,7 @@ mod topology_sync_tests {
         let runner = RecordingGitRunner::new(successful_sync_responses());
 
         apply_pending_sync(&mut app, &runner);
+        assert!(app.freshness().unwrap().definition.last_success.is_some());
 
         assert!(matches!(
             app.workflow_storage(),
@@ -460,6 +506,7 @@ mod topology_sync_tests {
         let runner = RecordingGitRunner::new(successful_sync_responses());
 
         apply_pending_sync(&mut app, &runner);
+        assert!(app.freshness().unwrap().definition.last_success.is_some());
 
         assert!(matches!(
             app.workflow_storage(),
@@ -524,6 +571,7 @@ mod topology_sync_tests {
         };
 
         apply_pending_sync(&mut app, &runner);
+        assert!(app.freshness().unwrap().definition.last_success.is_some());
 
         assert!(matches!(
             app.sync_status(),
@@ -532,6 +580,10 @@ mod topology_sync_tests {
                     "Definition + state synced; workflow reload failed:"
                 )
         ));
+        let freshness = app.freshness().unwrap();
+        assert!(freshness.state.last_success.is_some());
+        assert!(matches!(freshness.local.latest, Attempt::Failed(_)));
+        assert!(freshness.local.last_success < freshness.state.last_success);
         assert_eq!(
             runner
                 .calls()
@@ -573,6 +625,7 @@ mod topology_sync_tests {
         ]);
         let runner = RecordingGitRunner::new(responses);
         apply_pending_sync(&mut app, &runner);
+        assert!(app.freshness().unwrap().definition.last_success.is_some());
         let state_calls = runner
             .calls()
             .into_iter()
@@ -589,6 +642,48 @@ mod topology_sync_tests {
             app.sync_status(),
             Some(SyncStatus::SucceededWithState { new_commits: 0 })
         ));
+        assert!(app.freshness().unwrap().state.last_success.is_some());
+        assert_eq!(app.freshness().unwrap().state.latest, Attempt::Succeeded);
+    }
+    #[test]
+    fn state_failure_retains_success_while_definition_advances() {
+        let holder = tempfile::tempdir().unwrap();
+        let workflow_dir = holder.path().join("demo");
+        let state_dir = workflow_dir.join(".spacedock-state");
+        write_split_root_readme(&workflow_dir, ".spacedock-state");
+        init_attached_state_checkout(&state_dir);
+        let mut app = App::load(workflow_dir).unwrap();
+        let prior = std::time::Instant::now() - Duration::from_secs(60);
+        app.freshness_mut()
+            .unwrap()
+            .state
+            .record(Attempt::Succeeded, prior);
+        let mut responses = successful_sync_responses();
+        responses.extend([
+            ok("true\n"),
+            ok("origin/state\n"),
+            ok("local-state\n"),
+            ok("before\n"),
+        ]);
+        // Exhausting responses causes the attempted state pull to fail.
+        let runner = RecordingGitRunner::new(responses);
+        apply_pending_sync(&mut app, &runner);
+        let freshness = app.freshness().unwrap();
+        assert!(freshness.definition.last_success.unwrap() > prior);
+        assert_eq!(freshness.state.last_success, Some(prior));
+        assert!(matches!(freshness.state.latest, Attempt::Failed(_)));
+        assert!(matches!(
+            app.sync_status(),
+            Some(SyncStatus::Partial { .. })
+        ));
+        assert_eq!(
+            runner
+                .calls()
+                .iter()
+                .filter(|call| call.args.first().is_some_and(|arg| arg == "pull"))
+                .count(),
+            2
+        );
     }
 }
 
@@ -840,6 +935,11 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
         // the outcome on the next loop iteration.
         if app.take_pending_sync() {
             app.set_sync_status(SyncStatus::InFlight);
+            if let Some(freshness) = app.freshness_mut() {
+                freshness
+                    .definition
+                    .record(Attempt::InFlight, std::time::Instant::now());
+            }
             terminal
                 .draw(|frame| ui::render(frame, &app))
                 .context("failed to draw terminal UI")?;
@@ -1021,7 +1121,23 @@ pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
         });
         return;
     };
+    let storage = app.workflow_storage().cloned();
+    if let (Some(freshness), Some(storage)) = (app.freshness_mut(), storage) {
+        freshness.bind(&root, &storage);
+        freshness
+            .definition
+            .record(Attempt::InFlight, std::time::Instant::now());
+    }
     let outcome = git_sync::sync(runner, &root);
+    if let Some(freshness) = app.freshness_mut() {
+        let attempt = match &outcome {
+            SyncOutcome::Failed { message } => Attempt::Failed(message.clone()),
+            _ => Attempt::Succeeded,
+        };
+        freshness
+            .definition
+            .record(attempt, std::time::Instant::now());
+    }
     let availability = git_sync::probe_availability(runner, &root);
     let definition_commits = match outcome {
         SyncOutcome::UpToDate => 0,
@@ -1036,6 +1152,10 @@ pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
                 },
                 git_sync::SyncAvailability::Available => SyncStatus::Failed { message },
             };
+            record_state_attempt(
+                app,
+                Attempt::Skipped("definition sync failed; state not attempted".into()),
+            );
             app.set_sync_status(status);
             return;
         }
@@ -1045,6 +1165,10 @@ pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
     // Rebuild the index before deciding whether the state checkout is safe to
     // pull. A failed re-probe must not fall back to cached pre-pull topology.
     if let Err(error) = app.reload() {
+        record_state_attempt(
+            app,
+            Attempt::Skipped(format!("local read failed: {error}; state not attempted")),
+        );
         app.set_sync_status(SyncStatus::Partial {
             message: format!(
                 "Definition synced; workflow reload failed: {error}; state not refreshed"
@@ -1060,33 +1184,52 @@ pub fn apply_pending_sync<R: GitRunner>(app: &mut App, runner: &R) {
             new_commits: definition_commits,
         },
         Some(StateSyncEligibility::Eligible { checkout_root }) => {
-            match git_sync::sync(runner, &checkout_root) {
-                SyncOutcome::UpToDate => SyncStatus::SucceededWithState {
-                    new_commits: definition_commits,
-                },
-                SyncOutcome::Pulled { new_commits } => match app.reload() {
-                    Ok(()) => SyncStatus::SucceededWithState {
-                        new_commits: definition_commits.saturating_add(new_commits),
-                    },
-                    Err(error) => SyncStatus::Partial {
-                        message: format!(
-                            "Definition + state synced; workflow reload failed: {error}"
-                        ),
-                    },
-                },
-                SyncOutcome::Failed { message } => SyncStatus::Partial {
-                    message: format!("Definition synced; state sync failed: {message}"),
-                },
+            record_state_attempt(app, Attempt::InFlight);
+            let outcome = git_sync::sync(runner, &checkout_root);
+            match outcome {
+                SyncOutcome::UpToDate | SyncOutcome::Pulled { .. } => {
+                    record_state_attempt(app, Attempt::Succeeded);
+                    let new_commits = match outcome {
+                        SyncOutcome::Pulled { new_commits } => new_commits,
+                        _ => 0,
+                    };
+                    match app.reload() {
+                        Ok(()) => SyncStatus::SucceededWithState {
+                            new_commits: definition_commits.saturating_add(new_commits),
+                        },
+                        Err(error) => SyncStatus::Partial {
+                            message: format!(
+                                "Definition + state synced; workflow reload failed: {error}"
+                            ),
+                        },
+                    }
+                }
+                SyncOutcome::Failed { message } => {
+                    record_state_attempt(app, Attempt::Failed(message.clone()));
+                    SyncStatus::Partial {
+                        message: format!("Definition synced; state sync failed: {message}"),
+                    }
+                }
             }
         }
-        Some(StateSyncEligibility::Blocked { problem }) => SyncStatus::Partial {
-            message: blocked_state_sync_message(&problem),
-        },
+        Some(StateSyncEligibility::Blocked { problem }) => {
+            let message = blocked_state_sync_message(&problem);
+            record_state_attempt(app, Attempt::Skipped(message.clone()));
+            SyncStatus::Partial { message }
+        }
         None => SyncStatus::Failed {
             message: "no active workflow".to_string(),
         },
     };
     app.set_sync_status(status);
+}
+
+fn record_state_attempt(app: &mut App, attempt: Attempt) {
+    if let Some(freshness) = app.freshness_mut() {
+        if freshness.split_root {
+            freshness.state.record(attempt, std::time::Instant::now());
+        }
+    }
 }
 
 fn blocked_state_sync_message(problem: &StateSyncProblem) -> String {
