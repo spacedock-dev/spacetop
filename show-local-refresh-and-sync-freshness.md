@@ -1,6 +1,6 @@
 ---
 title: Show local refresh and Git sync freshness
-status: plan
+status: implement
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
@@ -10,7 +10,7 @@ started: 2026-10-23T08:00:58Z
 completed:
 verdict:
 score:
-worktree:
+worktree: .worktrees/spacedock-ensign-show-local-refresh-and-sync-freshness
 issue:
 pr:
 mod-block:
