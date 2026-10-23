@@ -166,3 +166,40 @@ The implementation plan separates local-read evidence from definition/state Git 
 ### Summary
 
 The candidate separates successful local reads from per-checkout Git observations and keeps current failure/skip status visible beside older successes. Automated and worker-terminal evidence support the implementation while independent acceptance and human comprehension remain explicit gates; no workflow-state write path was added.
+
+## Stage Report: verify
+
+- DONE: Independently challenge all four unchanged ACs on the exact committed candidate, with per-AC evidence and falsifying cases; distinguish technical proof from missing human comprehension.
+  Reviewed `1cf70680ce0d564de5c47103c0d46fddf21604ef`, its parent diff, repo/development/review policies and commissioned verify policy; technical checks pass, human AC-1/AC-3 proof remains open.
+- DONE: Review changed code and reproduce relevant deterministic transition, partial/skip, rendering and no-write checks; verify full cargo test and make lint evidence and report actual defects with path/line impact.
+  Independent freshness 11, topology 10, Git e2e 5, core guardrails 3, UI 130 and format check passed; inspected full-suite log (764 passed, 0 failed, 6 ignored), successful `make lint` (`-D warnings`) and debug-build logs.
+- DONE: Append a committed verification verdict with candidate SHA, evidence paths, every checklist disposition and all remaining terminal/human proof gaps; do not substitute agent interpretation for human evidence.
+  This path-scoped signed-off state report records the exact candidate and evidence; no product changes, code push, PR, merge, installation or worktree removal were performed.
+- DONE: AC-1 technical proof — local reads, Git observations and unknown history stay separate.
+  `freshness_disk_read_is_separate_from_sync_and_failed_reload_retains_time`, synthetic snapshot, tab/rediscovery and real-Git restart checks pass; stamping Git on a local read or copying another tab/process history would fail them.
+- DONE: AC-2 technical proof — failures retain prior success and remain visible.
+  Fixed-instant `only_success_advances_observation`, local/archive/removal failures, real definition-pull failure and state-pull failure assert unchanged relevant successes; advancing a failed/skipped/in-flight observation would fail these checks.
+- DONE: AC-3 technical proof — partial roots and target identity remain explicit.
+  Topology checks cover missing/detached/wrong-branch/unverified/same-root/external targets, changed target, no-op full sync and final-read failure; cached eligibility, an extra state pull, or a falsely successful state result fails the recorded-call/outcome assertions.
+- DONE: AC-3 rendering challenge — inspect populated preview and long diagnostic reasons.
+  Supplementary TestBackend harness asserts actual selected preview body plus all freshness rows at 120x30/80x24/40x20 and scrollable long reasons at 80/40; hiding a row/body or making help reasons unreachable fails `/tmp/spacetop-089-verifier-populated-render-final.log`.
+- DONE: AC-4 technical proof — no broadened Git writes or persistence.
+  Both `no_write_git_calls` tests and `no_terminal_deps` pass; source review retains explicit-Y dispatch, definition-first fast-forward calls, fresh eligibility and session-only observations; implicit pulls, topology repair or terminal dependencies violate these guards/boundaries.
+- DONE: Inspect Navigator's independent visible-terminal acceptance and safety audit.
+  `/Users/kent/.local/state/spacetop-navigator/2026-10-23-089/acceptance.md` and inspected `terminal-pinned-*` captures show startup/restart unknowns, local-only refresh, full sync, local/definition/state failures, all blocked states and definition-success/read-failure; `pinned-fixture-audit.json` records exact permitted pulls and preserved topology.
+- DONE: Bind terminal evidence to stable candidate bytes and retain limits.
+  Navigator reran required cases on immutable DEBUG `spacetop-1cf70680-debug`, SHA256 `6eeedd061f93210d272eb80f6dcbb657b46d50eda57f99a1dde1a486970014ad`; visible terminal `73fd6a55-4aa1-45f9-9f1e-19402810bdc0` exited 0. Sizes were 125x72, 80x24, 40x20; ages are second-granularity, with no pixel or sub-ten-row proof.
+- DONE: Retain reproducible check provenance without changing product bytes.
+  `/tmp/spacetop-089-verifier-source-audit.json` lists exact candidate, clean tracked tree and independent `/tmp/spacetop-089-verifier-{freshness,topology,e2e,guardrails,ui}.log`; supplied full test/lint/build logs are `/tmp/spacetop-089-{cargo-test,lint,build}-final.log`.
+- DONE: Review code quality separately from acceptance proof.
+  No Material code defect found: observations are typed in app state, UI consumes them, per-root operation outcomes remain explicit, and no dependency/core Git/watcher/session-schema change was introduced. No Correct-but-disproportionate code finding is raised.
+- DONE: Preserve evidence limits and the negative supplementary case.
+  `ui/tests/chrome.rs:798` uses an empty repo-workflow preview here; the populated harness closes current proof. A wrapped title at 40x20 leaves no body row (negative log retained); `ui/mod.rs:172` preserves the parent's content height there, so this is an existing limit, not an introduced regression.
+- SKIPPED: Close AC-1/AC-3 human-comprehension proof — Needs decision.
+  No human explanation is recorded for local age, per-root Git age, skipped/failed state, or why sync cannot prove remote newness; agent tests and terminal observations cannot supply that evidence. FO must keep this acceptance decision open.
+- SKIPPED: Repeat already-green full suite/lint, ignored watcher tests, or publish the candidate.
+  Inspected supplied full-suite/lint/build logs and reran focused meaningful checks; source stayed unchanged and watcher mechanics did not change. Publication remains outside verification authorization.
+
+### Summary
+
+Technical verdict: PASS, with no material code defect found on the exact candidate. Navigator terminal scenarios also pass; overall acceptance remains open solely for the recorded AC-1/AC-3 human-comprehension decision. This verdict does not authorize publication or merge.
