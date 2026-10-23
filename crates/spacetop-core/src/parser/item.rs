@@ -22,7 +22,7 @@ pub fn parse_work_item(
     parse_work_item_contents(path, &contents, allowed_statuses, id_style)
 }
 
-fn parse_work_item_contents(
+pub(crate) fn parse_work_item_contents(
     path: &Path,
     contents: &str,
     allowed_statuses: &[String],

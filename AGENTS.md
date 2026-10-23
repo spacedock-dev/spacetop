@@ -249,6 +249,13 @@ Keep the TUI read-oriented, dense, and predictable:
 
 ## Safety
 
+- Explicit on-demand summaries may launch the selected installed Claude/Haiku or
+  Codex/Luna CLI under the trusted-CLI contract in `docs/development-policy.md`.
+  App-owned effects remain bounded and workflow/project read-only. The CLI owns
+  login/config/helpers/network; native controls are not full isolation. Disclose
+  transfer/charges and that escaped descendants may survive tracked cleanup.
+  Spacetop never reads/copies credentials or adds an auth bridge.
+
 - Do not mutate Spacedock workflow markdown by default.
 - Do not broaden git writes. The static guardrail test
   `crates/spacetop-core/tests/no_write_git_calls.rs` must continue to prove
