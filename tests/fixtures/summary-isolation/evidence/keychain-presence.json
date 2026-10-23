@@ -1,0 +1,18 @@
+{
+  "cli_sha256": "5eadc0009cdcdbc0d06e58110d7b2baf88ced6088b1c33a60a21217fe410619c",
+  "service_mapping": "production/default-config",
+  "policy": "(version 1)\n(allow default)\n(deny network*)\n(deny file-read-data)\n(deny file-write*)\n(deny process-exec)\n(deny process-fork)\n(allow file-read-data (literal \"/\"))\n(allow file-read-data (literal \"/private\"))\n(allow file-read-data (literal \"/private/tmp\"))\n(allow file-read-data (literal \"/private/var/tmp\"))\n(allow file-read-data (literal \"/usr/bin\"))\n(allow file-read-data (subpath \"/System\"))\n(allow file-read-data (subpath \"/dev\"))\n(allow file-read-data (subpath \"/private/preboot\"))\n(allow file-read-data (subpath \"/usr/lib\"))\n(allow file-read-data (subpath \"/usr/share\"))\n(allow file-read-data (subpath \"/private/var/db/dyld\"))\n(allow file-read-data (subpath \"/private/var/db/timezone\"))\n(allow file-read-data (subpath \"<scratch>\"))\n(allow file-write* (subpath \"<scratch>\"))\n(allow file-write-data (literal \"/dev/null\") (literal \"/dev/dtracehelper\"))\n(allow file-read-data (literal \"<scratch>/keychain-presence\"))\n(allow process-exec (literal \"<scratch>/keychain-presence\"))\n(allow file-read-data (literal \"/Users/kent/.claude.json\"))\n(allow file-read-data (literal \"/Users/kent/.claude/.credentials.json\"))\n(allow file-read-data (literal \"/Users/kent/.CFUserTextEncoding\"))\n(allow file-read-data (literal \"/private/var/db/mds/messages/501/se_SecurityMessages\"))\n",
+  "outcome": "exited",
+  "exit_code": 0,
+  "stderr_bytes": 0,
+  "query": {
+    "guard_set_status": 0,
+    "guard_get_status": 0,
+    "interaction_allowed": false,
+    "query_attempted": true,
+    "os_status": -25300,
+    "opaque_reference_present": false
+  },
+  "live_generation_launches": 0,
+  "production_ready": false
+}

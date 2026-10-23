@@ -5,9 +5,11 @@ bounded local evidence; they are **not a production summary runner or a supporte
 sandbox**. There is no Spacetop launch path, new user configuration, or runtime
 dependency. Existing inspection behavior is unchanged.
 
-The next bounded comparison is recorded in [ADVANCE.md](ADVANCE.md). It retains
-the original failures and separates new protocol progress from unresolved
-existing-login and lifecycle requirements.
+The second bounded comparison is recorded in [ADVANCE.md](ADVANCE.md). The
+single subsequent exact-item diagnostic and stopping decision are recorded in
+[KEYCHAIN.md](KEYCHAIN.md). Existing-login and lifecycle requirements remain
+unresolved; synthetic protocol fixtures are diagnostic evidence, not product
+progress.
 
 ## Reproduce
 

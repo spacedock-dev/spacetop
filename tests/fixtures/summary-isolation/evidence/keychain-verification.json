@@ -1,0 +1,19 @@
+{
+  "fixture_tests": {
+    "command": "python3 -B -m unittest discover -s tests/fixtures/summary-isolation -v",
+    "passed": 13,
+    "exit": 0
+  },
+  "native_probe_compile": "xcrun clang -Wall -Wextra -Werror -Wno-deprecated-declarations -framework Security -framework CoreFoundation; success",
+  "native_query_count": 1,
+  "python_parse": "all fixture scripts passed",
+  "rust_checks": "Not repeated for fixture/docs-only changes; 80245da fmt, cargo test and make lint passing baseline retained per FO instruction.",
+  "live_generation_launches": 0,
+  "product_ready": false,
+  "source_sha256": {
+    "keychain_presence.c": "91cc88c8ce0bd2fed8ca3e1258b6c3e12379d5a8b5cf6db475808fd7a55a99cf",
+    "keychain_presence.py": "8b282a842555bdc1761eeca5b8f4d3b37fe0f91df37ebeb8f706641927d9ca52",
+    "test_probes.py": "d262bc231a55c6a009603e88729377ea6d8b688f8bcbf9f14c1452095afa989a",
+    "KEYCHAIN.md": "a59a9323aff89432b14e74baa3303394a06f058b4947f1a9fb842ec1de2f1e7d"
+  }
+}

@@ -120,6 +120,11 @@ remain intact. Evidence: `advance-codex-config-{control,clear-mcp}.json`.
 
 ## Next bounded discriminator
 
+**Follow-up completed:** [KEYCHAIN.md](KEYCHAIN.md) records the one exact-item
+query, its inconclusive `errSecItemNotFound` result and the explicit stop on
+further same-kind auth metadata exploration. The original proposal below is
+retained as provenance, not an instruction to rerun it.
+
 Do not adopt a broker or new runtime on this evidence. One no-new-dependency
 auth branch remains inconclusive. The smallest next local probe is a native
 Security.framework query for the **statically verified exact CLI service and

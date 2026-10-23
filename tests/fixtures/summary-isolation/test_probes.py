@@ -13,10 +13,28 @@ import unittest
 from unittest.mock import patch
 
 from probe import environment, profile
+from keychain_presence import CLI_SHA256, verified_identity
 from supervisor import Limits, run
 
 
 CANARY = str(Path(__file__).resolve().with_name("canary.py"))
+
+
+class KeychainIdentityTests(unittest.TestCase):
+    def test_only_inspected_identity_can_reach_query(self):
+        self.assertEqual(verified_identity(CLI_SHA256, {"USER": "synthetic-user"}),
+                         ("Claude Code-credentials", "synthetic-user"))
+        for digest, env in [
+            ("uninspected", {"USER": "synthetic-user"}),
+            (CLI_SHA256, {}),
+            (CLI_SHA256, {"USER": "uninspected/account"}),
+            *[(CLI_SHA256, {"USER": "synthetic-user", key: value})
+              for key in ("CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR",
+                          "CLAUDE_CODE_CUSTOM_OAUTH_URL")
+              for value in ("", "/synthetic/config")],
+        ]:
+            with self.subTest(digest=digest, env=env), self.assertRaises(ValueError):
+                verified_identity(digest, env)
 
 
 class SupervisorTests(unittest.TestCase):
