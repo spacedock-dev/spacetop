@@ -74,3 +74,156 @@ These explicit decisions amend the original three-adapter scope; they do not wai
 - Progress decision: Kent said 「對了，在 agent 處理 summary 的期間，可以顯示動畫或進度」. Source: same parent, message `78640aa0-e894-472b-b818-2b6045cb852c`, relayed by Navigator message `91dac744-db43-42c5-a01d-96546f30960a`. Use a standard indeterminate spinner and truthful status within the existing render loop; preserve responsive Original/cancel and exact request binding.
 - Authorized live-smoke ceiling: at most **six actual CLI launches total**, normally normal/adversarial/cancel for each of the two adapters, only after adequate local isolation readiness. Each uses at most 8 KiB synthetic input, 45 seconds, 64 KiB stdout and 16 KiB stderr; no automatic retry. Prior launches count toward this ceiling. **Zero actual provider launches used at this amendment.** This is not a dollar hard cap; report observable usage without inventing a cost. Use existing available login/configuration and the verified requested small model; no new model/account/budget questionnaire is required.
 - Missing runtime/login/model is an explicit availability/evidence limit, not a reason to silently choose another provider or claim a live pass. Process-group-only cleanup has a demonstrated detached-child gap and cannot be accepted without an effective containment/lifecycle solution. Hooks, plugins, MCP, project discovery, write/exec restrictions, snapshot races, zero navigation requests and unfamiliar-human proof remain required.
+
+## Implementation plan — scoped 2026-10-23
+
+This plan follows the captain amendments committed as `3ea3608726b5b8b8cfe26472b54764423de19596`. It retains all five amended ACs, both adapter paths, existing CLI login, and the two released platforms. **The plan is ready for a bounded isolation-only implementation/probe slice; provider-connected safety is not yet proved, and large UI work must not start.** No model calls were made and no product files were changed during planning.
+
+### Goal, confidence, risk and next decision
+
+The mission goal is explicit, readable task summaries that help an unfamiliar human understand recorded work without replacing Original or recorded facts. Confidence is high in the typed state/rendering approach and in the measured local denial behavior, but low in complete authenticated isolation until the next slice is exercised. The largest risk is allowing a coding CLI's startup/auth/tool surfaces to exceed summarization. The next FO decision is to dispatch the same worker for the bounded isolation slice below, then require a fresh verifier; this is not approval to bypass its stop conditions. AC-1 still needs an identified unfamiliar human and recorded answers, coordinated by Navigator.
+
+### Observed platform and adapter evidence
+
+Evidence was gathered against product checkout `39498bf199c4e6fab6fe2d2f4173df1457f016ac`. `README.md:21` and `.github/workflows/release.yml:96-99` define macOS Apple Silicon and Linux x64. Windows is not a released target. The local host is macOS 27.0.1 arm64. Docker's available daemon is Linux aarch64, so its result below does not establish Linux x64 CLI support.
+
+| Surface | Observed evidence | Limit |
+| --- | --- | --- |
+| Claude | Installed `claude --version`: 2.1.309. The current local account model catalog under `~/.claude/cache/model-catalog/*-cc.json` lists `claude-haiku-5-5` (Haiku 5.5) and `claude-haiku-4-5-20251001`. The binary also contains these exact IDs. Plan pins `--model claude-haiku-5-5`, subject to real availability validation; no silent substitute. | Cached catalog support is not a successful inference or an entitlement guarantee. |
+| Codex | Installed `codex --version`: 0.164.0. `~/.codex/models_cache.json` lists `gpt-6-luna`, visible and API-supported, alongside `gpt-5.6-luna`. Plan pins `exec --model gpt-6-luna`; no alias or coordinator model. | Cache can become stale; real model availability remains untested. |
+| Existing auth | Network-denied `claude auth status --json` returned logged-in, `claude.ai`, first-party, team; only those fields were retained. `codex login status` returned logged in using ChatGPT. No credential values were inspected or copied. | Status establishes local login recognition, not successful refresh or inference. |
+| Claude auth under containment | Strict file-read/write/exec restrictions plus deny-fork changed Claude status to logged-out. Removing only deny-fork exposed kernel denials of `/usr/bin/security` and `/bin/sh`. Allowing only the security helper and narrow runtime reads still returned logged-out. | This is an unresolved existing-login/containment conflict, not a supported adapter or an ordinary missing-login case. `--bare` explicitly disables OAuth/keychain and is unsuitable for the amended requirement. |
+| Codex auth under containment | Exact existing `auth.json`/config reads by the CLI retained “Logged in using ChatGPT”; CLI PATH-alias writes were denied. | Tools, inference-only egress, credential refresh, and inference remain unproved. No secrets were passed to a model. |
+
+Metadata was read on 2026-10-23; only model IDs/labels/visibility and selected auth-status fields were emitted. Existing global model choices were not changed. CLI binary SHA256: Claude `5eadc0009cdcdbc0d06e58110d7b2baf88ced6088b1c33a60a21217fe410619c`; Codex `d8990e3ee7acfbc26f91265b12a1a83f0fee40d0e0f8f1f40a37d4ec21f499cf`.
+
+### Local isolation experiments and retained negatives
+
+All startup probes used a cleared environment, synthetic text, disposable HOME/cwd, an OS network deny, bounded six-second supervisor timeout, and no real credentials. They were not real-provider launches. `claude -p` used `--safe-mode --bare --tools "" --disable-slash-commands --strict-mcp-config --mcp-config '{"mcpServers":{}}' --setting-sources '' --no-session-persistence --output-format json --model synthetic-nonexistent-model`; the historical `--bare` experiment is not the proposed existing-login invocation. `codex exec` used `--ignore-user-config --ignore-rules --ephemeral --skip-git-repo-check --sandbox read-only --color never`, disabled `hooks/plugins/apps/shell_tool/multi_agent`, set `project_doc_max_bytes=0` and `web_search="disabled"`, and used a synthetic nonexistent model with stdin `-`. These flags are candidates, not complete tool-disable proof.
+
+- With selected-path denials, both CLIs started. Claude exited 1 with zero API usage and “Not logged in”; its structured result had `is_error: true` despite `subtype: success`, so the adapter must inspect exit status and error fields. Codex attempted reconnects despite missing auth/model; the OS denied network and the supervisor killed its group at six seconds. App-level retries must be absent, and CLI internal retries must be accounted for rather than hidden behind that claim.
+- A real local Python canary showed an ordinary forked child disappeared after `killpg`, while a child calling `setsid()` survived. The escaped PID was explicitly killed. This rules out process-group-only cleanup as sufficient proof.
+- A separate kernel canary with deny-fork/exec/network and selected filesystem restrictions returned `EPERM (1)` for `fork`, outside synthetic read/write, `/bin/sh` execution, and loopback connection. It would fail if any of those operations became permitted. Creating a socket alone initially succeeded; the corrected probe tested an actual connection.
+- An initial default-deny file-data profile caused all tested CLIs to abort (`SIGABRT`, no stderr). PID-filtered kernel logs identified a denied read of the literal root directory `/`. Allowing that directory entry, not its descendants, advanced startup. Claude then failed on `/tmp/claude-501`; setting `CLAUDE_CODE_TMPDIR` to request scratch fixed that. Runtime directory entries and timezone reads resolved a subsequent Bun trap in historical OMP testing. With those narrow repairs, default-deny file-data reads plus deny-fork/exec again reached the same no-auth outcomes. These negatives were retained; they do not prove isolation is impossible.
+- The final local startup profile denies network, file-data reads, writes, fork and exec by default for those operations; it allows exact CLI binaries, necessary system/runtime paths and private scratch. This is a feasibility profile, **not a complete hardened sandbox**: other OS capabilities were not audited and authenticated inference was not exercised. Do not reopen general HTTPS and call it safe.
+- A disposable existing Linux arm64 Python image, run with `--pull never --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 16 --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m`, reported zero effective capabilities, `NoNewPrivs=1`, root writes denied with `EROFS (30)`, network denied with `ENETUNREACH (101)`, and scratch writes allowed. No images/tools were installed and the container was removed. This supports testing a Linux namespace/container approach; it does not prove the released x64 CLIs, existing host login, or connected egress work there.
+
+Local recipes, version/help captures, per-variant results and scripts are declared at `/tmp/spacetop-090-probe/`: `probe.py`, `probe-nofork.py`, `probe-strict.py`, `probe-strict-root.py`, `probe-strict-runtime.py`, `boundaries.py`, `boundaries-nofork.py`, `existing-login-default.py`, `existing-login-exec-only.py`, `existing-login-security-runtime.py`, and result JSON files. `manifest.json` records the first probe hashes. They are disposable planning artifacts, not committed regression tests or a prerequisite hidden from future implementers. Promote the relevant recipes into repo-owned fixtures/tests in the first implementation slice. The outcomes and reproduction inputs above remain in this task if scratch is lost.
+
+Historical OMP 18.12.6 evidence is retained only to explain why CLI flags were not assumed sufficient. Pinned [main.ts](https://github.com/can1357/oh-my-pi/blob/v18.12.6/packages/coding-agent/src/main.ts) maps `--no-tools` to an empty built-in tool list, while [sdk.ts](https://github.com/can1357/oh-my-pi/blob/v18.12.6/packages/coding-agent/src/sdk.ts) separately discovers MCP/custom tools/context unless additional SDK restrictions apply. OMP is no longer an implementation or proof obligation.
+
+### Next executable slice: isolation before UI
+
+Use one reusable implementation worker, then a fresh verifier. Work in the task worktree once FO assigns it. Keep this first slice small and independent of rendering:
+
+1. Introduce typed, nonterminal launch/result boundaries and a repo-owned local fixture executable. Build an executable-plus-argv `Command`, never a shell string or source-derived flag. Source text travels only through bounded stdin, never command-line arguments or `@file` interpolation. Start a supervisor before writing stdin; concurrently drain bounded stdout/stderr, close stdin at EOF, and make timeout/cancel/drop reap processes and join I/O workers. Do not use `Command::output()`/`wait_with_output()` as an unbounded collector.
+2. For macOS, turn the measured profile into a minimal explicit capability policy; validate symlink/canonical executable identity and private mode-0700 request scratch. Deny workflow/project/private-file reads except the captured stdin and specific existing CLI-owned auth/config reads. Keep all app-owned writes in scratch; CLI auth/config must remain unmodified. Prove that tools/hooks/plugins/MCP/project instructions cannot load or act, including managed/built-in customization paths. Test any permitted auth helper without exposing credentials or enabling arbitrary child execution. Do not claim Claude support until the existing keychain conflict is resolved under an effective descendant boundary.
+3. For Linux x64, test native user/mount/PID/network namespace plus seccomp/cgroup containment, or a maintained equivalent launcher, on the repo's Ubuntu x64 execution surface. Verify required kernel/user-namespace permissions rather than assuming them. Docker is a local experiment option, not an approved new runtime dependency. Existing-login discovery must work without copying credentials into new accounts/images. Define a typed unsupported-isolation error when prerequisites are absent; keep ordinary inspection usable. Missing Linux evidence is work to do, not proof of impossibility or permission for macOS-only delivery.
+4. Add a localhost-only synthetic protocol probe for Codex/Luna first, using a fake token and no vendor endpoint. Inspect emitted tool declarations and startup context; return adversarial tool-call output and confirm it is rejected/contained. Test inference-only egress: deny all other hosts, protocols, local sockets, metadata endpoints and redirects. No hidden CLI discovery/telemetry/refresh endpoint may become a general network escape. A simple HTTPS host allowlist alone does not prove an inference-only surface. Use a narrow reviewed mediation approach only if needed; it must preserve CLI-owned login and must not turn into app-managed credentials.
+5. Re-run existing-login checks under the final candidate boundary for both adapters. Claude's safe-mode preserves auth according to installed help, but built-in tools/plugins still require explicit restrictions; use `--tools ""`, disabled skills, strict empty MCP and explicit settings-source behavior as tested. Codex's `--sandbox read-only` only describes model shell behavior, and its feature flags are not an all-tools-off contract. Verify the actual tool set and contain remaining in-process capabilities. Ignoring dangerous hook/plugin/project overrides must not silently replace provider/account/model settings; enumerate any required safety overrides in docs and fail closed for incompatible configuration.
+6. Only when local readiness is demonstrated, run the authorized real synthetic smoke below, then have a fresh verifier inspect raw evidence. If the boundary cannot support existing auth, finish the code/evidence slice with a concrete tradeoff and minimal option; do not ask for API keys, switch model families or silently omit an adapter. No large UI implementation until this stop condition is cleared.
+
+The next slice is executable engineering work; the current evidence does not require a new account/model/budget questionnaire. Any need for a new external runtime dependency or a changed product/security contract beyond the approved narrow summarizer allowance is a decision for the captain. Full feasibility and AC-5 remain open now.
+
+### Owned implementation sequence after isolation proof
+
+| Step | Owned modules | Behavior and lowest-layer proof |
+| --- | --- | --- |
+| Typed snapshot/config | New `spacetop-core/src/domain/summary.rs`; `config.rs`; query/source access in `query.rs`/`sources.rs` | `SummaryProvider`, exact model ID, limits, `SummarySnapshot`, cache key, request identity, typed failures. Config loads only through existing absolute user paths. Capture bounded exact source bytes and the authoritative metadata used by the current query snapshot; preserve main metadata versus selected worktree-body provenance explicitly. Reject mismatched/changed reads; never silently truncate. |
+| Prompt/output | New `spacetop-core/src/summary/{prompt,output}.rs` | Versioned fixed instructions; delimit captured source as data. Preserve claimed versus checked evidence, contradictions and missing human proof. No linked-evidence reads. Parse provider envelopes strictly, handle Claude `is_error` and exit status, bound decoding, reject empty/malformed output. Strip/replace terminal controls before display. Plain summary text has no executable links or ANSI. |
+| Adapter/process boundary | New `spacetop-core/src/summary/{adapters,process,isolation}.rs` | Separate Claude/Haiku and Codex/Luna argv builders, version capability checks, safe existing-login handling, effective descendant containment, bounded pipes/deadlines. Use existing threads/channels; no async runtime by default. Extend `rustix` process features only if justified; document any unavoidable maintained sandbox dependency before adding it. |
+| App request/cache state | New `spacetop/src/app/summary.rs` and `summary_worker.rs`; `app/overview.rs`, `app/session.rs`, `app/keys.rs`, `lib.rs` | Explicit request intents; first-generation disclosure; one active request at a time; bounded in-memory cache. Key includes canonical workflow, task identity, selected source-copy identity, exact input digest, authoritative-fact digest, provider, exact model and prompt version. Request nonce/epoch is separate so a canceled or superseded result cannot revive progress. No persistence or automatic regeneration. |
+| Preview/progress | `ui/preview.rs`, new `ui/summary.rs`, help/footer and key tests | `S` is presently unused in inspected preview bindings; reserve it only after complete keymap collision tests. Prefer `S` to enter Summary, `Enter` to generate/regenerate only when explicit, and `Esc` to cancel active work before closing; retain Original/diff access. A typed running request drives an indeterminate spinner and “Generating summary…” using existing ticks only. Completion/error/cancel/timeout stops it. No fake percentage/ETA. |
+| Docs/policy | `README.md`, `AGENTS.md`, `docs/development-policy.md`, `docs/code-review-policy.md`, help/config examples | Narrow allowance for constrained summarizer execution; unchanged workflow read-only and Git-write rules. Explain transfer/charges, CLI/model prerequisites, existing-login use, platform isolation limits, cache staleness, unavailable errors, cancel and no fallback. Update loaders only if references change. |
+
+Source capture must not accidentally send a worktree's conflicting frontmatter as authoritative main status. Capture and label source copies separately; hash the exact assembled input sent to the provider. Re-check identity before presenting a result as current. Source changes mark cached prose stale and require explicit regeneration. Navigation may leave a request active, but its spinner/result belongs only to its captured key; a different task remains Original/idle. Results after cancel/quit are discarded. Cache bounds should cover total bytes as well as entry count; initial proposed runtime limits are 64 KiB source, 64 KiB stdout, 16 KiB stderr, 45 seconds and 16 cached results/1 MiB total, all subject to model context validation. Live smoke uses the stricter 8 KiB source limit.
+
+### AC proof map and falsifiable checks
+
+| AC | Required proof and owner | What fails the check |
+| --- | --- | --- |
+| AC-1 | Navigator coordinates an identified unfamiliar human. Implementation generates the frozen synthetic source's actual summary; facilitator records verbatim answers against the separate key below, source/summary/model hashes, time and candidate. | An agent answer, missing participant/answers, pre-exposed source, invented approval, or inability to identify purpose/progress/open limitation leaves AC-1 unmet. |
+| AC-2 | Core prompt/envelope tests plus app/TestBackend fixtures for rejected reviews, contradiction, unperformed human check, main/worktree facts. Fresh verifier inspects real summary and Original/diff reachability. | Prose mutates typed status/gates, erases rejection/missing proof, invents reconciliation, exposes source links outside captured sections, or blocks Original/diff. |
+| AC-3 | Pure app state tests schedule A/B task, workflow, active/archive and source-copy switches; mutate bytes/metadata; reverse completion order; cancel/retry same key. Verify exact cache reuse and stale labeling. | A completion/spinner attaches to a different selection, changed input appears current, a canceled nonce revives, or navigation/regeneration occurs implicitly. |
+| AC-4 | Real fixture processes cover absent binary, unavailable auth/model, nonzero exit, misleading success envelope, empty/malformed output, oversized input/stdout/stderr, blocked stdin, simultaneous pipe floods, timeouts, cancel, app exit and escaped descendants. TestBackend uses controlled ticks; Navigator drives actual debug TUI and captures in-progress and terminal frames. | Any browse action launches a provider; input silently truncates; progress stalls input or persists after terminal state; extra polls create requests; process survives; Original is inaccessible. |
+| AC-5 | Both adapter paths receive local adversarial protocol/OS tests; actual available configured providers receive synthetic real E2E after readiness. Audit fixture/project/workflow manifests and outside-read/exec/network canaries, not only “no changed files.” Sanitizer tests and actual terminal capture cover ESC/CSI, OSC 8/52, DCS, C0/C1 controls, CR/backspace and malformed UTF-8. | Any requested edit/read/shell/tool action escapes, hidden startup customization runs, credentials leak, terminal control affects UI, or an installed logged-in provider's containment conflict is mislabeled supported. Unavailable live evidence is explicit, never a live pass. |
+
+Run relevant focused tests during each slice, then `cargo fmt --check`, `cargo test`, and required `make lint` on final Rust changes. Keep `cargo test -p spacetop-core --test no_write_git_calls` and `cargo test -p spacetop-core --test no_terminal_deps` valid; do not exempt arbitrary summary commands from existing Git safety checks. Add lower-layer process/isolation tests and test-host-specific CI runs for both release targets. The ignored watcher test is unnecessary unless watcher behavior changes. Planning changed no code, so Rust build/lint tests were not run here.
+
+### Authorized real smoke and acceptance evidence
+
+**Zero of six actual live CLI launches used.** Prior fake-model starts were network-denied, credential-free local probes; auth-status commands do not invoke a model. Before each real launch, the sole worker must reserve number, adapter, purpose, exact model and candidate in `/tmp/spacetop-090-fo/live-smoke-ledger.json` and notify FO. Each attempted generation counts, even auth/model failure. No automatic retries, replacement launches or parallel duplicate worker. Maximum six total, normally normal/adversarial/cancel for each adapter; no more than 8 KiB synthetic input, 45 seconds, 64 KiB stdout and 16 KiB stderr. These limits are not a billing/token ceiling. Record observable usage and any internal CLI retries; do not invent cost or assume killing the local process erases already incurred usage.
+
+Use only `claude-haiku-5-5` and `gpt-6-luna` once locally confirmed for the selected path; if unavailable, surface that exact failure with Original intact. The normal call checks readable, source-grounded output; adversarial source requests outside read, file edit, shell, network/MCP action and false approval; cancellation checks responsiveness and actual process cleanup. Put all attack variants in one source, not unbudgeted calls. A timeout/cancel fixture proves local handling; real provider cancellation alone cannot prove remote computation stopped. Future TUI/Navigator calls also consume this ceiling, so coordinate the same six launches with final debug-TUI acceptance rather than spend all calls on disposable pre-UI probes. Any necessary extra live call requires new authorization.
+
+Fresh verification must review code and raw evidence independently. Navigator then builds the candidate debug app, copies/hash-binds its executable outside the shared target, and retains terminal ID, dimensions, candidate SHA, binary hash, commands/exits, input/source hashes, write audits and actual in-progress/terminal images. Label rendered terminal captures honestly. Current-plan probes are not those product E2E results. Participant remains pending; UI success cannot substitute for AC-1.
+
+### Human walkthrough materials and handling
+
+The synthetic source, reader questions and answer key were prepared separately at `/tmp/spacetop-090-probe/walkthrough/`. They are also preserved in separate facilitator sections below so the plan has no hidden local-fixture dependency. **Do not give this task body, source annex or answer key to the reader before first answers are locked.** Navigator sends only the actual generated summary and reader questions, confirms unfamiliarity first, records the named participant and verbatim answers, then permits Original. Do not coach answers or regenerate toward a desired result. If the reader has seen the source, select a new frozen synthetic case before the walkthrough and record that fact.
+
+Participant: pending Navigator coordination. Actual generated summary: pending implementation/live readiness. Answers and human result: pending. No simulated human evidence is supplied.
+
+Reader questions:
+1. What problem is this task trying to solve, and for whom?
+2. What work has been reported as done? What evidence or approval is still missing?
+3. What decision, defect, or limitation remains open?
+4. Would you treat the task as ready to release based on this summary? Explain using what it says.
+After answers are saved, use Original and identify the source passage behind one answer; record confusion separately.
+
+
+### Facilitator-only synthetic source — do not pre-expose
+
+Source SHA256: `698210b90b684ed69400fcd0ea0f294581b8c13e3354ea817f9a487427e99c8b`.
+
+```markdown
+---
+id: 9001
+title: Explain pickup windows on the Harbor Library reservation kiosk
+status: implement
+---
+
+The fictional Harbor Library kiosk currently shows only a reservation expiry date. Patrons cannot tell when the pickup desk is open. Show the desk's pickup window alongside each reservation so patrons can plan a visit. This task covers the kiosk display only; it does not change reservations, send messages, or alter desk staffing.
+
+## Initial plan
+Use the branch's recorded opening hours. Display the date and opening/closing times. The library manager must choose whether a closure spanning midnight follows the opening day's hours or the calendar day's hours. This choice is still pending.
+
+## Implementation report
+The developer says the new display and missing-hours fallback are implemented. They report six parser unit tests passing. They also wrote that the kiosk is ready to ship. No test transcript, screenshots, or deployed build are attached to this source.
+
+## Review record
+A reviewer rejected the change. Their report says the time range is shifted by one hour after a daylight-saving transition, and that the narrow screen clips the fallback message. The developer later wrote that they fixed the time conversion. There is no recorded reviewer rerun or approval after that claim. The narrow-screen finding has no recorded fix.
+
+## Current verification
+An unfamiliar patron walkthrough was planned but has not happened. There are no recorded patron answers. The six reported unit tests concern parsing; this source does not establish that they cover daylight saving, layout, or patron comprehension. The task remains in implement. Release approval and deployment are not recorded.
+```
+
+### Facilitator-only answer key — separate from reader questions
+
+Facilitator only. Do not show before the participant's answers are locked.
+
+- Purpose: help library patrons plan pickup visits by showing pickup desk hours beside reservations. Display-only scope; no reservation/staffing/message changes. Source: opening paragraph.
+- Recorded progress: developer reports display/fallback implementation and six parser tests, and later claims a time-conversion fix. Source: Implementation report and Review record. These are reported claims, not attached independent proof.
+- Missing proof: no test transcript, screenshots or deployed build; reviewer rejected and has not rerun or approved; no unfamiliar patron walkthrough or answers. Source: Implementation report, Review record, Current verification.
+- Outstanding: manager must choose midnight closure convention; narrow-screen fallback clipping has no recorded fix; daylight-saving correction is claimed but unverified. Source: Initial plan and Review record.
+- Release: source does not justify ready-to-release. Developer's claim conflicts with rejection and outstanding proof; status remains implement, release approval/deployment not recorded. Source: Implementation report and Current verification.
+- Pass rubric: answers identify purpose, distinguish reported progress from accepted verification, and name at least one correct open decision/limitation; no invented approval or completed human test. Record all four answers verbatim, source references, confusion and pass/unmet separately. A weak answer stays negative evidence; do not coach until first answers are locked.
+
+## Stage Report: plan
+
+- DONE: Prove or precisely bound isolation feasibility for existing-login Claude/Haiku and Codex/Luna on actual supported platforms, with installed-version/model-ID evidence and safe lifecycle behavior before large UI work.
+  Version/help, safe cached model IDs, auth-status and kernel/container probes above bound feasibility; complete authenticated containment is explicitly unproved, and macOS/Linux x64 both remain in scope.
+- DONE: Plan all five amended ACs, request-bound spinner, typed snapshot/cache/race behavior, adapter unavailable errors, bounded real smoke and independent/Navigator proof without silent fallback or safety waivers.
+  Owned-module sequence and falsifiable AC map above; next permitted implementation slice is isolation-only, with six reserved live attempts at most and zero used.
+- DONE: Prepare the unfamiliar-human synthetic walkthrough with separate source/answer key and reader questions; record actual participant/answers as pending rather than simulated, then commit a complete plan and evidence limits.
+  Separate frozen facilitator annexes and questions above; participant, generated summary and answers remain pending Navigator coordination.
+- FAILED: Existing-login Claude under the tested strict containment.
+  Auth status changed from logged-in team/claude.ai to logged-out; kernel logs identify blocked auth helpers, and bounded helper-only relaxation did not restore it. This is not claimed supported.
+- FAILED: Process-group-only descendant cleanup.
+  Actual fork/setsid canary survived killpg; explicit cleanup completed. Deny-fork returned EPERM, but compatibility with Claude keychain auth is unresolved.
+- SKIPPED: Real provider smoke and product UI implementation.
+  Safety readiness is not established; no authorized live attempts consumed, no UI/code edits, no Rust checks needed for this planning-only state update.
+
+### Summary
+
+The plan preserves the captain's two small-model adapters, existing-login requirement, progress indicator and all five ACs. Local evidence supports a concrete isolation-only next slice but does not authorize advancing past the safety gate: Claude auth coexistence, actual tool/egress containment, Linux x64 runtime proof and unfamiliar-human evidence remain open.
