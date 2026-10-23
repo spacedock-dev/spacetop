@@ -409,3 +409,7 @@ Request changes for V090-1 and V090-2; this verification stage is complete, whil
 ### Summary
 
 Both authorized material findings are fixed with observed failing-before/passing-after regressions at `63b31f16b4f962f88f665f356c51a1ee21a2b953`. The correction is ready for the original independent reviewer; acceptance remains incomplete. FO can record the truthful closed advisory prefix once, reuse that reviewer and route the rebuilt candidate to Navigator without any additional worker live allocation.
+
+### Feedback Cycles
+
+- verify/1 — Reviewer report `d0ff15a1510a3f7e9fd2ddeacf822a1be4183269` rejected candidate `74b015dfea237c0bbb2240aea0748a84882789bb`. FO authorized both findings as Material: V090-1 High, refresh/invalidate summary identity for mouse click/wheel and preserve zero navigation requests; V090-2 Medium, pin running/terminal status and cancel hint outside scrolling prose at 40x15. Original author corrected both in `63b31f16b4f962f88f665f356c51a1ee21a2b953`; three regressions failed before and passed after, full suite 789 passed/6 existing ignored, fmt/lint passed. Advisory log preserves reviewer findings, distinct FO authorization and actual author closure; independent re-review and human/Navigator evidence remain pending. No scope waiver, provider call or Captain approval.
