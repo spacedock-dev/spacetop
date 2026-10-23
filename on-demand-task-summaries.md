@@ -1,12 +1,12 @@
 ---
 title: Generate human-readable task summaries on demand
-status: shape
+status: plan
 source: "Captain selected Option A and requested an entity file, 2026-10-23"
 kind: feature
 risk: high
 milestone: usability
 proof: "Human comprehension walkthrough, snapshot/race scenarios, and adversarial provider-isolation checks; see acceptance criteria."
-started:
+started: 2026-10-23T09:22:08Z
 completed:
 verdict:
 score:
