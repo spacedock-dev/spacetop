@@ -1,19 +1,19 @@
 ---
 title: Show local refresh and Git sync freshness
-status: verify
+status: done
 source: "User-requested product improvement brief, 2026-10-22"
 kind: feature
 risk: medium
 milestone: usability
 proof: "Behavior scenarios and a live terminal walkthrough; see acceptance criteria and proof plan."
 started: 2026-10-23T08:00:58Z
-completed:
-verdict:
+completed: 2026-10-23T09:06:20Z
+verdict: PASSED
 score:
 worktree: .worktrees/spacedock-ensign-show-local-refresh-and-sync-freshness
 issue:
-pr: "#91"
-mod-block: merge:pr-merge
+pr: pr-merge:91
+mod-block:
 id: 089
 gates:
     version: 1
@@ -36,7 +36,8 @@ gates:
                 reason: Accepts direction for candidate 1cf70680ce0d564de5c47103c0d46fddf21604ef and task089 PR publication only. Kent said「我看應該是沒問題」after reviewing candidate/E2E; source parent71fac6c1-962e-4f9f-abf3-34a04cc7c166 message fdf654f6-cfa2-4a2c-9020-1f4d2b74ef1d, relayed by Navigator4cc2767b-26a5-4e3d-9c9d-8f25074809f2 messages dbcdaf74-b790-4d03-ada5-43670208da55 and 6e00e4c7-9c40-4c06-9936-84e6282ad0e0. All four original ACs pass with fresh verification and explanatory pinned-debug walkthrough. No human verbal transcript is claimed; no conn or merge grant inferred.
               application:
                 target-stage: done
-                state: pending
+                state: consumed
+archived: 2026-10-23T09:06:20Z
 ---
 
 Help users understand how current the displayed information is without confusing local file refresh with shared Git updates.
