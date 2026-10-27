@@ -12,7 +12,7 @@ verdict:
 score:
 worktree: .worktrees/spacedock-ensign-on-demand-task-summaries
 issue:
-pr: "#92"
+pr: pr-merge:92
 mod-block: merge:pr-merge
 id: 090
 review-round:
