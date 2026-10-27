@@ -525,3 +525,14 @@ The native empty-table override does not suppress configured MCP startup, and th
 ### Summary
 
 Technical verification and Navigator acceptance are complete on `63b31f16b4f962f88f665f356c51a1ee21a2b953`, with no open Material finding and no further required technical scenario identified. **AC-1 is the sole remaining acceptance boundary, so full task/gate readiness remains unmet.** Navigator/parent must obtain the actual unfamiliar-reader confirmation and answers; this same verifier can audit that evidence without any additional provider generation. No publication, gate approval or merge authority is inferred.
+
+
+## Captain accepted exception and publication decision — 2026-10-27
+
+This explicit human decision supersedes only the prior stop for absent AC-1 evidence. The original AC, all historical reports, failed probes and missing human answers remain unchanged. **AC-1: NOT PERFORMED / UNVERIFIED, never PASS.** The Captain accepts this named evidence gap for task090 gate approval and PR publication only; this is not evidence that a reader understood the summary.
+
+- Parent agent `71fac6c1-962e-4f9f-abf3-34a04cc7c166`, message `bb0cda50-2771-41be-85f9-3d4a0ce85676`, recorded the exact clarification: 「你是要接受『尚未做真人閱讀測試』的缺口，先批准090建立PR嗎？若是，我會保留『AC-1未驗證』的紀錄，不把approve當成測試通過；這次批准也不包含合併。」 Kent's exact answer: 「對」, following 「approve」. Relayed by Navigator `4cc2767b-26a5-4e3d-9c9d-8f25074809f2`, message `68864c3b-33cf-4b40-8ad0-97390003e631`.
+- Supplementary actual human design approval: Kent said “checked the screenshot approve this design”, relayed by the same parent in message `e1c08260-34b8-4e56-bd0e-90d198d25c8d` and Navigator message `0590a9e1-7542-477a-b446-de5da72884ab`. Preserve his quote; the actual images are terminal capture renderings, not pixel screenshots. This is visual/design approval, not AC-1 reader evidence.
+- Binding: unchanged product candidate `63b31f16b4f962f88f665f356c51a1ee21a2b953`; frozen Navigator acceptance report SHA256 `9d1aa4d77882f78fd1786dabbdb7c7d3db888a26af99c8e85a7ecdde692c3f3a`; immutable debug binary SHA256 `ec3bbbdd2a7e140ff8979f835fab2afcd7a754c8a2c365f677207d86cc538580`; technical evidence in verify cycle4 and prior reports. AC-2–AC-5 retain their tested-scope PASS and documented trusted-CLI/native Linux evidence limits.
+- Authority: record the actual Captain decision against the prepared native Briefing and publish one PR. No blanket conn, merge, cleanup, changed-candidate approval or extra provider launch is granted. Six of six actual calls remain exhausted. Preserve terminal, worktree, evidence and unrelated entities. Run one normal FO-owned review follow-up after publication.
+- FO is explicitly instructed to persist this exception before evidence-only readiness reconciliation. No product bytes, AC wording, historical results or frozen acceptance bytes were changed by this record. Private provenance also exists in Navigator's mission journal outside the repository.
