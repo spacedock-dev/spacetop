@@ -22,6 +22,8 @@ mod picker;
 mod search;
 mod session;
 mod session_activity_worker;
+pub mod summary;
+pub mod summary_worker;
 
 pub use history_worker::{spawn_history_worker, HistoryWorkerRequest, HistoryWorkerResult};
 pub use overview::{
@@ -235,6 +237,7 @@ fn definition_scroll_up(scroll: &mut usize, rows: usize, max_scroll: usize) {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct App {
+    pub summary: summary::SummaryState,
     mode: AppMode,
     definition_max_scroll: Cell<usize>,
     config: SpacetopConfig,
@@ -385,6 +388,7 @@ impl App {
         Self {
             mode,
             definition_max_scroll: Cell::new(usize::MAX),
+            summary: summary::SummaryState::default(),
             config,
             config_warnings,
             resolved_keymap,
@@ -746,6 +750,7 @@ impl App {
             session.active_state_mut().reload_from_snapshot(snapshot);
         }
         self.refresh_gate_browser();
+        self.refresh_summary_snapshot();
     }
 
     pub fn reload(&mut self) -> Result<(), ParseError> {
@@ -754,6 +759,7 @@ impl App {
             None => Ok(()),
         };
         self.refresh_gate_browser();
+        self.refresh_summary_snapshot();
         result
     }
     fn refresh_gate_browser(&mut self) {
@@ -787,6 +793,7 @@ impl App {
     pub fn reload_with_rediscovery(&mut self) -> Result<(), ParseError> {
         let result = self.reload_discovery_inner();
         self.refresh_gate_browser();
+        self.refresh_summary_snapshot();
         result
     }
     fn reload_discovery_inner(&mut self) -> Result<(), ParseError> {
@@ -886,7 +893,15 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        self.handle_key_inner(key);
+        self.refresh_summary_snapshot();
+    }
+
+    fn handle_key_inner(&mut self, key: KeyEvent) {
         if self.consume_help_key(key) {
+            return;
+        }
+        if self.handle_summary_key(key) {
             return;
         }
         let overview_action = match &mut self.mode {
@@ -1086,6 +1101,11 @@ impl App {
     }
 
     pub(crate) fn handle_mouse_at(&mut self, mouse: MouseEvent, now: Instant) {
+        self.handle_mouse_inner(mouse, now);
+        self.refresh_summary_snapshot();
+    }
+
+    fn handle_mouse_inner(&mut self, mouse: MouseEvent, now: Instant) {
         if self.help_open {
             return;
         }

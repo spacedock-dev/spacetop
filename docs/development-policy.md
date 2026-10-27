@@ -295,3 +295,18 @@ On Unix, `rustix` fs APIs supply safe descriptor-relative `openat` with
 races. Each parent is opened by descriptor, final files must be regular and
 bounded, and path identity is rechecked before returning evidence. Unsupported
 platforms return diagnostics instead of reading under a weaker boundary.
+
+## Explicit trusted-CLI summaries
+
+Task 090's approved contract permits an explicit summary request to launch the
+user's installed Claude/Haiku or Codex/Luna CLI. Spacetop supplies captured task
+data on bounded stdin, invokes an executable/argv without shell interpolation,
+and uses a private scratch directory outside the project. Spacetop does not
+read credentials, query Keychain, follow evidence links, write task/project
+files or persist summary results. The CLI owns existing login, configuration,
+helpers and network behavior. Native controls reduce behavior but do not make
+this a complete sandbox. Cancellation/deadlines terminate and reap the tracked
+process/group; escaped or untracked descendants may survive. These limits and
+possible data transfer/usage charges must be disclosed before generation.
+Historical strict-isolation failures remain failures under their original
+contract. They do not block the explicitly approved trusted-CLI implementation.

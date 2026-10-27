@@ -56,6 +56,18 @@ pub(super) fn render_help_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
         key_line("Esc", "close help"),
     ]);
     if preview_open {
+        lines.push(key_line(
+            "S / O",
+            "Summary / Original (no automatic request)",
+        ));
+        lines.push(key_line(
+            "Enter / R",
+            "generate/reuse / regenerate in Summary",
+        ));
+        lines.push(key_line(
+            "Esc",
+            "cancel active summary, then return to Original",
+        ));
         lines.push(key_line("Space / PgDn", "page preview down"));
         lines.push(key_line("b / PgUp", "page preview up"));
         lines.push(key_line("g / G", "preview top / bottom"));

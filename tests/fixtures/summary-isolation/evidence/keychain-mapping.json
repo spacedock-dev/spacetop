@@ -1,0 +1,39 @@
+{
+  "artifact": "/Users/kent/.local/share/claude/versions/2.1.309",
+  "sha256": "5eadc0009cdcdbc0d06e58110d7b2baf88ced6088b1c33a60a21217fe410619c",
+  "static_only_no_command_execution": true,
+  "snippets": [
+    {
+      "offset_bytes": 218369363,
+      "snippet": "function E(){return\"prod\"}"
+    },
+    {
+      "offset_bytes": 218371157,
+      "snippet": "OAUTH_FILE_SUFFIX:\"\""
+    },
+    {
+      "offset_bytes": 220808116,
+      "snippet": "function vj(e=\"\"){let n=process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR,t=n!==void 0?!n:!process.env.CLAUDE_CONFIG_DIR,r=n!==void 0?n.normalize(\"NFC\"):Le(),a=t?\"\":`-${c(\"sha256\").update(r).digest(\"hex\").substring(0,8)}`;return`Claude Code${an().OAUTH_FILE_SUFFIX}${e}${a}`}var s=/^[a-zA-Z0-9._-]+$/;function eI(){let e;try{e=process.env.USER||l().usernam"
+    },
+    {
+      "offset_bytes": 220808411,
+      "snippet": "function eI(){let e;try{e=process.env.USER||l().username}catch{e=\"claude-code-user\"}if(!s.test(e))return\"claude-code-user\";return e}var C6t=30000;class i{cache={data:null,cachedAt:"
+    },
+    {
+      "offset_bytes": 220814679,
+      "snippet": "let s=vj(lRe),n=eI(),o=rFe(`security find-generic-password -a \"${n}\" -w -s \"${s}\"`,{timeout:l});if(o){e.keychainHoldsItem=!0;let i=Z(o);return e.cache={data:i,cachedAt:Da"
+    },
+    {
+      "offset_bytes": 220807922,
+      "snippet": "var lRe=\"-credentials\""
+    }
+  ],
+  "config_override_presence": {
+    "CLAUDE_CONFIG_DIR": false,
+    "CLAUDE_SECURESTORAGE_CONFIG_DIR": false,
+    "CLAUDE_CODE_CUSTOM_OAUTH_URL": false
+  },
+  "account_selection": "inherited USER; valid shipped ASCII allowlist; account value not recorded",
+  "derived_service": "Claude Code-credentials",
+  "limitations": "Pinned artifact and default config only. Value-reading security command appears only as static provenance and was never executed."
+}

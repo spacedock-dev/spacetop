@@ -1,0 +1,33 @@
+Unable to find image 'python:3.12-slim' locally
+3.12-slim: Pulling from library/python
+5c397e4307db: Pulling fs layer
+f2be67225471: Pulling fs layer
+be6443c06d3c: Pulling fs layer
+b524bb3aba73: Pulling fs layer
+5c397e4307db: Download complete
+be6443c06d3c: Download complete
+b524bb3aba73: Download complete
+a19c1c598c82: Download complete
+9a229e332182: Download complete
+f2be67225471: Download complete
+f2be67225471: Pull complete
+be6443c06d3c: Pull complete
+5c397e4307db: Pull complete
+b524bb3aba73: Pull complete
+Digest: sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
+Status: Downloaded newer image for python:3.12-slim
+test_auth_environment_preserves_account_metadata_without_invented_overrides (test_probes.SupervisorTests.test_auth_environment_preserves_account_metadata_without_invented_overrides) ... ok
+test_auth_paths_are_all_in_profile (test_probes.SupervisorTests.test_auth_paths_are_all_in_profile) ... ok
+test_both_pipe_caps_are_enforced_during_flood (test_probes.SupervisorTests.test_both_pipe_caps_are_enforced_during_flood) ... ok
+test_cancel_reaps_direct_child (test_probes.SupervisorTests.test_cancel_reaps_direct_child) ... ok
+test_deadline_includes_blocked_stdin (test_probes.SupervisorTests.test_deadline_includes_blocked_stdin) ... ok
+test_killpg_does_not_contain_setsid_child (test_probes.SupervisorTests.test_killpg_does_not_contain_setsid_child) ... ok
+test_missing_executable_is_distinct (test_probes.SupervisorTests.test_missing_executable_is_distinct) ... ok
+test_nonzero_exit_does_not_turn_into_success_envelope (test_probes.SupervisorTests.test_nonzero_exit_does_not_turn_into_success_envelope) ... ok
+test_oversized_source_is_rejected_before_launch (test_probes.SupervisorTests.test_oversized_source_is_rejected_before_launch) ... ok
+test_source_remains_literal_stdin (test_probes.SupervisorTests.test_source_remains_literal_stdin) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 1.562s
+
+OK

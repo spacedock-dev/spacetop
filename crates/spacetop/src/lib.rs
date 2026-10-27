@@ -835,10 +835,12 @@ fn run_terminal(mut app: App) -> anyhow::Result<()> {
         WorkflowWatcher,
         std::sync::mpsc::Receiver<watcher::RefreshSignal>,
     )> = start_watcher_for(&mut app);
+    let mut summary_worker = app::summary_worker::SummaryWorker::default();
     let mut history_worker_state = start_history_worker_for(&app);
     let mut session_activity_worker_state = SessionActivityWorkerState::start_for(&app);
 
     loop {
+        summary_worker.tick(&mut app);
         terminal
             .draw(|frame| ui::render(frame, &app))
             .context("failed to draw terminal UI")?;

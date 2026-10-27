@@ -133,6 +133,7 @@ fn status_footer_hints_with_keymap_and_copy(
     hints.push(("\u{23CE}: toggle preview".to_string(), Color::White));
     hints.push(("a: archive".to_string(), Color::White));
     if preview_open {
+        hints.push(("S: Summary / Original".to_string(), Color::White));
         // One compact scroll pill advertises the real keys; the full vocabulary
         // (incl. \u{2190}/\u{2192} horizontal scroll) lives in the help popup so this
         // single center-aligned line stays within ~80 cols.

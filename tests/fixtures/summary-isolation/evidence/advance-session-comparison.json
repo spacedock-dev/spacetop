@@ -1,0 +1,34 @@
+{
+  "source": "Observed console results of the session-syscalls canary on macOS arm64, 2026-10-23; no inference",
+  "setcontrol": {
+    "exit_code": 0,
+    "direct_setsid": "allowed",
+    "direct_setpgid": "allowed",
+    "spawn_setsid": {
+      "pid": 87996,
+      "sid": 87996,
+      "pgrp": 87996
+    },
+    "spawn_setpgroup": {
+      "pid": 87998,
+      "sid": 87993,
+      "pgrp": 87998
+    }
+  },
+  "direct_syscalls": {
+    "exit_code": 0,
+    "direct_setsid": "EPERM",
+    "direct_setpgid": "EPERM",
+    "spawn_setsid": {
+      "pid": 88002,
+      "sid": 88002,
+      "pgrp": 88002
+    },
+    "spawn_setpgroup": {
+      "pid": 88003,
+      "sid": 87999,
+      "pgrp": 88003
+    }
+  },
+  "production_ready": false
+}

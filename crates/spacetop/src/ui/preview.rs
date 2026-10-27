@@ -105,6 +105,7 @@ pub(super) fn render_preview(
     area: Rect,
     state: &OverviewState,
     placement: PreviewPlacement,
+    summary: Option<crate::app::summary::Presentation>,
 ) {
     let borders = match placement {
         PreviewPlacement::Left => Borders::LEFT,
@@ -146,7 +147,13 @@ pub(super) fn render_preview(
     let divider_height = wrapped_lines_height(std::slice::from_ref(&divider_line), inner.width);
     // Keep recorded facts and their explanation reachable even when the fixed
     // metadata would otherwise consume the entire short preview pane.
-    let body_reserve = if gate_body.is_empty() { 0 } else { 3 };
+    let body_reserve = if summary.is_some() {
+        8
+    } else if gate_body.is_empty() {
+        0
+    } else {
+        3
+    };
     let metadata_height = wrapped_lines_height(&header_lines, inner.width)
         .min(inner.height.saturating_sub(divider_height + body_reserve));
     let header_area = Rect {
@@ -182,6 +189,10 @@ pub(super) fn render_preview(
             .height
             .saturating_sub(metadata_height + divider_area.height),
     };
+    if let Some(presentation) = summary {
+        super::summary::render(frame, body_inner, state, presentation, &gate_body);
+        return;
+    }
     // When a worktree copy of this task has a body that diverges from the
     // root (main) copy, render a unified diff between the two bodies instead
     // of the plain markdown body. Otherwise fall back to the normal markdown

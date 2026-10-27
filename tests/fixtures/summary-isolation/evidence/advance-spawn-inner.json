@@ -1,0 +1,6 @@
+{
+  "outcome": "exited",
+  "exit_code": 0,
+  "stdout": "{\"operation\": \"setsid\", \"result\": \"EPERM\"}\n{\"operation\": \"setpgid\", \"result\": \"EPERM\"}\n{\"operation\": \"spawn_setsid\", \"result\": \"EPERM\"}\n{\"operation\": \"spawn_setpgroup\", \"result\": \"EPERM\"}\n",
+  "stderr": ""
+}

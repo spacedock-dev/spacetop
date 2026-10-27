@@ -1,0 +1,49 @@
+{
+  "outcome": "exited",
+  "exit_code": 0,
+  "live_generation_launches": 0,
+  "production_ready": false,
+  "view_image_disabled": true,
+  "model": "gpt-6-luna",
+  "executable_sha256": "d8990e3ee7acfbc26f91265b12a1a83f0fee40d0e0f8f1f40a37d4ec21f499cf",
+  "local_requests": 2,
+  "tools": [
+    [],
+    []
+  ],
+  "tool_results": [
+    {
+      "type": "function_call_output",
+      "id": "fco_01a1683e-f962-73f2-8f5c-40616e3f9c91",
+      "call_id": "call_exec",
+      "output": "unsupported call: exec_command"
+    },
+    {
+      "type": "custom_tool_call_output",
+      "id": "ctco_01a1683e-f963-78f0-ba43-9d331c83d7bb",
+      "call_id": "call_patch",
+      "output": "patch rejected: writing is blocked by read-only sandbox; rejected by user approval settings"
+    },
+    {
+      "type": "function_call_output",
+      "id": "fco_01a1683e-f963-78f0-ba43-9d4b848528f8",
+      "call_id": "call_read",
+      "output": "unsupported call: read_file"
+    },
+    {
+      "type": "function_call_output",
+      "id": "fco_01a1683e-f963-78f0-ba43-9d53673b1302",
+      "call_id": "call_image",
+      "output": "unsupported call: view_image"
+    },
+    {
+      "type": "function_call_output",
+      "id": "fco_01a1683e-f963-78f0-ba43-9d659bf8f7a4",
+      "call_id": "call_auth",
+      "output": "unsupported call: view_image"
+    }
+  ],
+  "outside_unchanged": true,
+  "stdout": "Synthetic local response.\n",
+  "stderr": "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-azazpe7z/scratch\" (codex_home: AbsolutePathBuf(\"/private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-azazpe7z/scratch/codex-home\"))\nOpenAI Codex v0.164.0\n--------\nworkdir: /private/var/folders/h_/tb6bynfj41g1dcvpb2472vrh0000gn/T/spacetop-protocol-azazpe7z/scratch\nmodel: gpt-6-luna\nprovider: summary_probe\napproval: never\nsandbox: read-only\nreasoning effort: none\nreasoning summaries: none\nsession id: 01a1683e-f912-7f42-8119-d39e2f9a7a50\n--------\nuser\nSummarize this synthetic task: show library opening hours.\n2026-10-23T10:11:59.970695Z ERROR codex_core::tools::router: error=unsupported call: exec_command\n2026-10-23T10:11:59.970989Z ERROR codex_core::tools::router: error=patch rejected: writing is blocked by read-only sandbox; rejected by user approval settings\n2026-10-23T10:11:59.971040Z ERROR codex_core::tools::router: error=unsupported call: read_file\n2026-10-23T10:11:59.971089Z ERROR codex_core::tools::router: error=unsupported call: view_image\n2026-10-23T10:11:59.971131Z ERROR codex_core::tools::router: error=unsupported call: view_image\ncodex\nSynthetic local response.\ntokens used\n4\n"
+}

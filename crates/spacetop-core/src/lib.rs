@@ -21,3 +21,5 @@ pub mod watcher;
 
 pub mod gate_proof;
 pub mod gates;
+
+pub mod summary;

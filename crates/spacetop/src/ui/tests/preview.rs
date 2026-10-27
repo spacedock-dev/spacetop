@@ -216,6 +216,7 @@ fn preview_ignores_runtime_preserving_metadata_and_body() {
                                 frame.area(),
                                 &state,
                                 placement,
+                                None,
                             )
                         })
                         .unwrap();

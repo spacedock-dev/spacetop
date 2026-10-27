@@ -1,0 +1,10 @@
+{
+  "machine": "x86_64",
+  "kernel": "7.0.14-linuxkit",
+  "pid": 1,
+  "unshare_user_pid": "EPERM",
+  "cgroup_kill_present": true,
+  "cgroup_root_writable": false,
+  "subreaper_set": 0,
+  "native_cli_auth_proved": false
+}

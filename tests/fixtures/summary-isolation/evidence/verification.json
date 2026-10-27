@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-23",
+  "host": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "python": "3.14.6",
+  "commands": {
+    "cargo fmt --check": {
+      "exit": 0
+    },
+    "cargo test": {
+      "exit": 0,
+      "passed": 764,
+      "failed": 0,
+      "ignored": 6,
+      "includes": [
+        "no_write_git_calls",
+        "no_terminal_deps"
+      ]
+    },
+    "make lint": {
+      "exit": 0
+    },
+    "python3 -B -m unittest discover -s tests/fixtures/summary-isolation -v": {
+      "exit": 0,
+      "passed": 10
+    },
+    "docker amd64 synthetic tests": {
+      "exit": 0,
+      "passed": 10,
+      "image": "python:3.12-slim",
+      "image_id": "sha256:e8a38829209aea82774882e5157e1f7c3e8c8393ff53a697b3580896e57f345c",
+      "platform": "linux/amd64",
+      "native_host": false
+    }
+  },
+  "live_generation_launches": 0,
+  "product_implementation_complete": false,
+  "raw_rust_logs": [
+    "/tmp/spacetop-090-implement-cargo-test.log",
+    "/tmp/spacetop-090-implement-lint.log"
+  ],
+  "fixture_sha256": {
+    "canary.py": "97e387febe195f5636984960f12d6e3350fbf0b0421b9d37d50d8cff77787ab8",
+    "codex_protocol.py": "ce7a43e560d90e263f00df0071c02f5de13b573b89766e93c910d4dfea0c54f1",
+    "probe.py": "837bbf94db25f3bdcb99221f7ea3617c25739e065941463b0278ac25b958f323",
+    "supervisor.py": "cd2b3cec5cb71c38022039ad40f6e2f2c33663acbb849ccda9f213f66375129c",
+    "test_probes.py": "ab24926ad9d8ee842d790c82017d46d5a92e9932b9bd6aab8e4981fc88faffc3"
+  }
+}

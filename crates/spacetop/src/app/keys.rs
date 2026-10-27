@@ -193,7 +193,9 @@ fn parse_binding(value: &str) -> Option<char> {
 fn is_reserved_key(key: char) -> bool {
     matches!(
         key,
-        'B' | 'a'
+        'S' | 'O'
+            | 'B'
+            | 'a'
             | 's'
             | 'D'
             | 'Y'

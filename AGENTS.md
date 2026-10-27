@@ -171,6 +171,12 @@ Keep module boundaries clear and testable:
 - `crates/spacetop-core/src/editor.rs` owns opening selected files in an
   external editor/viewer path; it must not become a workflow-state writer
   without explicit policy change.
+- `crates/spacetop-core/src/summary/` owns typed capture/key, prompt, native
+  adapter argv, output sanitization and bounded trusted-CLI process supervision.
+  App `summary.rs` owns explicit requests/cache/nonces; `summary_worker.rs` owns
+  the cancellable worker; UI `summary.rs` renders plain advisory prose under
+  the existing recorded-fact header. No source-linked evidence or credentials
+  are read by this feature; no workflow/project writes or persistent cache.
 - `crates/spacetop-core/src/config.rs` and
   `crates/spacetop-core/src/session_state.rs` own user config/session models,
   absolute XDG/HOME path resolution, and YAML load/save behavior.
@@ -248,6 +254,13 @@ Keep the TUI read-oriented, dense, and predictable:
 - Keep Unicode graph/list glyphs usable, and preserve ASCII fallbacks where `SPACETOP_ASCII=1` applies.
 
 ## Safety
+
+- Explicit on-demand summaries may launch the selected installed Claude/Haiku or
+  Codex/Luna CLI under the trusted-CLI contract in `docs/development-policy.md`.
+  App-owned effects remain bounded and workflow/project read-only. The CLI owns
+  login/config/helpers/network; native controls are not full isolation. Disclose
+  transfer/charges and that escaped descendants may survive tracked cleanup.
+  Spacetop never reads/copies credentials or adds an auth bridge.
 
 - Do not mutate Spacedock workflow markdown by default.
 - Do not broaden git writes. The static guardrail test
