@@ -536,3 +536,35 @@ This explicit human decision supersedes only the prior stop for absent AC-1 evid
 - Binding: unchanged product candidate `63b31f16b4f962f88f665f356c51a1ee21a2b953`; frozen Navigator acceptance report SHA256 `9d1aa4d77882f78fd1786dabbdb7c7d3db888a26af99c8e85a7ecdde692c3f3a`; immutable debug binary SHA256 `ec3bbbdd2a7e140ff8979f835fab2afcd7a754c8a2c365f677207d86cc538580`; technical evidence in verify cycle4 and prior reports. AC-2–AC-5 retain their tested-scope PASS and documented trusted-CLI/native Linux evidence limits.
 - Authority: record the actual Captain decision against the prepared native Briefing and publish one PR. No blanket conn, merge, cleanup, changed-candidate approval or extra provider launch is granted. Six of six actual calls remain exhausted. Preserve terminal, worktree, evidence and unrelated entities. Run one normal FO-owned review follow-up after publication.
 - FO is explicitly instructed to persist this exception before evidence-only readiness reconciliation. No product bytes, AC wording, historical results or frozen acceptance bytes were changed by this record. Private provenance also exists in Navigator's mission journal outside the repository.
+
+
+## Stage Report: verify (cycle 5 — accepted AC-1 publication exception)
+
+- DONE: Reconcile the explicit actual-human AC-1 exception and design approval against the unchanged candidate and frozen technical evidence.
+  The retained original verifier handle read cycle4 and the appended Captain decision. Product HEAD remains `63b31f16b4f962f88f665f356c51a1ee21a2b953` with a clean code worktree. This is evidence-only reconciliation, not a fresh technical test or replacement reviewer.
+- DONE: Record per-AC readiness for native gate and PR publication only, preserving technical limits and prior findings.
+  The Captain's explicit acceptance removes the publication hold for the named missing human test. It does not supply the missing answers or convert AC-1 to PASS. No open Material technical finding is introduced or erased.
+- DONE: Preserve the operational publication limit separately from product acceptance.
+  State commit `167fbe0f8179cbe525af0174d492368ff391e982` was published without Signed-off-by because the temporary hook was absent. Signed-off follow-up `d3491b0` adds `publication-exception.md` attestation; it does not retroactively sign or rewrite the original commit. This report uses explicit `git commit -s` and task-path-only state sync.
+- SKIPPED (explicit scope): New provider calls, technical reruns, product edits, human-answer simulation, gate/PR/frontmatter writes and facilitator-source disclosure. Six of six calls remain exhausted.
+
+### Authority and evidence binding
+
+- The recorded exact question asks whether to accept the absent human reading test, approve task090 PR creation, retain AC-1 unverified and exclude merge. Kent answered 「對」 following 「approve」. Source: parent `71fac6c1-962e-4f9f-abf3-34a04cc7c166`, message `bb0cda50-2771-41be-85f9-3d4a0ce85676`; Navigator relay `68864c3b-33cf-4b40-8ad0-97390003e631`. This verifier relies on that attributed human decision, not an inferred waiver.
+- Kent's “checked the screenshot approve this design” is separately recorded visual/design approval (parent message `e1c08260-34b8-4e56-bd0e-90d198d25c8d`, Navigator `0590a9e1-7542-477a-b446-de5da72884ab`). The images remain terminal capture renderings, not pixel screenshots; the quote is not reader-comprehension evidence.
+- Frozen evidence remains cycle4's Navigator acceptance SHA256 `9d1aa4d77882f78fd1786dabbdb7c7d3db888a26af99c8e85a7ecdde692c3f3a`, immutable debug binary SHA256 `ec3bbbdd2a7e140ff8979f835fab2afcd7a754c8a2c365f677207d86cc538580`, and six-call ledger SHA256 `17f484f404624161a9dc1535a1b952a7811ab9cdcc83c0fe764b42ae9d741afe`. These are retained audited bindings; this continuation does not claim to regenerate or retest them.
+- All prior limits remain: trusted installed CLI/auth/config/helpers rather than universal isolation; accepted MCP startup; unknown-origin sampled shell processes neither proven model calls nor proven benign; bounded known-path/process effects, not complete filesystem/network/descendant proof; native Linux authenticated runtime unobserved. Real, synthetic and component evidence remain distinct.
+- V090-1/V090-2 remain closed by the recorded corrected-candidate evidence. Mouse closure uses successful typed capture/key checks after click and wheel without keyboard refresh; the ambiguous Navigator Stopped+STALE frame remains excluded. Fixed/scrolled status, cancel and cleanup conclusions retain cycle4's exact scope.
+
+### Current per-AC disposition and readiness
+
+- AC-1 — **NOT PERFORMED / UNVERIFIED; Captain-accepted exception for native gate and PR publication only.** No identified unfamiliar-reader answers have arrived. User comprehension remains unproven.
+- AC-2 — **PASS within tested scope.** Existing advisory/typed-fact separation, adversarial output and Original access evidence remains unchanged.
+- AC-3 — **PASS within tested scope.** Existing successful capture/key, stale/race, cache/nonce/source-copy and navigation evidence remains unchanged.
+- AC-4 — **PASS within tested scope.** Existing explicit generation, fixed running/terminal status, real cancellation and synthetic/error lifecycle evidence remains unchanged.
+- AC-5 — **PASS under the approved trusted-CLI contract.** Existing both-adapter/local-provider evidence and disclosed platform/helper/process limits remain unchanged.
+- **Ready for FO native gate decision recording and one PR publication under the explicit exception.** This is scoped publication readiness, not all-AC PASS, a recorded gate action, PR creation, merge permission or approval of another candidate. No further generation is authorized.
+
+### Summary
+
+The sole previous publication hold is now an explicitly accepted evidence gap. Technical findings and evidence remain unchanged on `63b31f16b4f962f88f665f356c51a1ee21a2b953`; AC-1 stays NOT PERFORMED / UNVERIFIED. FO may record the actual Captain decision and publish one PR within the stated scope, preserving the evidence and existing review-follow-up requirement. No merge or cleanup is authorized by this report.
