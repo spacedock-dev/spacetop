@@ -1,0 +1,31 @@
+{
+  "type": "Briefing",
+  "version": "1",
+  "id": "briefing:090:verify:attempt-1:revision-1",
+  "question": "Approve publication of task090 candidate 63b31f16b4f962f88f665f356c51a1ee21a2b953 as one PR, accepting the explicitly documented AC-1 NOT PERFORMED / UNVERIFIED exception and existing technical limits, without merge authority?",
+  "artifacts": [
+    {
+      "id": "artifact:090:verify:attempt-1:revision-1:item-1",
+      "uri": "git-root://state/2f635e40be2aa223cf3b2d87d3029749c3674582/on-demand-task-summaries/index.md",
+      "rev": "sha256:693ed2a11dbe8a1687b8fb7117ebf6a440e27bd6291dd524e08d0e440935556b",
+      "mediaType": "text/markdown",
+      "summary": "Original independent verifier reconciled the actual Captain question and answer plus visual/design approval. AC-1 remains NOT PERFORMED / UNVERIFIED; the Captain explicitly accepts that gap for gate and PR publication only. AC-2 through AC-5 retain scoped PASS on unchanged clean candidate63b31f16. Evidence:789 tests passed,six existing ignored,fmt/lint and frozen Navigator debug/TUI acceptance9d1aa4d77882f78fd1786dabbdb7c7d3db888a26af99c8e85a7ecdde692c3f3a. Six provider launches exhausted. Trusted CLI/config/helper effects and unobserved native Linux authenticated runtime remain disclosed. No merge,cleanup,extra calls or changed-candidate approval. Original unsigned exception commit167fbe0 is preserved with signed follow-up attestationd3491b0."
+    }
+  ],
+  "context": [
+    {
+      "type": "Reference",
+      "id": "reference:090:verify:attempt-1:revision-1:item-2",
+      "uri": "git-root://main/39498bf199c4e6fab6fe2d2f4173df1457f016ac/docs/spacetop-dev/README.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:fe0f9d25b139e70020e8277a725eefd4e7a1fa477b151b9485d1f020b8ab428d"
+    },
+    {
+      "type": "Reference",
+      "id": "reference:090:verify:attempt-1:revision-1:item-3",
+      "uri": "git-root://state/2f635e40be2aa223cf3b2d87d3029749c3674582/on-demand-task-summaries/publication-exception.md",
+      "mediaType": "text/markdown",
+      "rev": "sha256:7be10d22ed35ea4d4a132f278473c3b125504623d3b1f6440e3f44e14cab65bf"
+    }
+  ]
+}

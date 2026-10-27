@@ -23,6 +23,17 @@ review-round:
         id: briefing:090:verify:round-1
         digest: sha256:d176682d755213bf67eabdc2c39dd1c8ce766ebe045c6268ca154595e5c430dc
         room-ref: ./review/verify/round-1
+gates:
+    version: 1
+    records:
+        - id: gate:090:verify
+          stage: verify
+          attempts:
+            - id: gate-attempt:090-verify-1
+              briefing:
+                id: briefing:090:verify:attempt-1:revision-1
+                digest: sha256:1ea833e319dacab62168e6897ea4953c2070be555f6d7c5fe57e7896f929ae24
+                room-ref: ./review/verify/briefing-1
 ---
 
 Help a person understand a long agent-authored task file without reading its full history. Add an explicitly requested AI summary in the preview while retaining the original text as the source of truth. The captain selected Option A: on-demand generation, not automatic generation while browsing.
