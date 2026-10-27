@@ -34,6 +34,17 @@ gates:
                 id: briefing:090:verify:attempt-1:revision-1
                 digest: sha256:1ea833e319dacab62168e6897ea4953c2070be555f6d7c5fe57e7896f929ae24
                 room-ref: ./review/verify/briefing-1
+              resolution:
+                type: Resolution
+                id: resolution:spacedock:090:verify:1
+                briefing: briefing:090:verify:attempt-1:revision-1
+                by: person:captain
+                at: "2026-10-27T03:47:03.080092Z"
+                decision: approve
+                reason: Actual Kent decision, not FO or Navigator judgment. Parent71fac6c1-962e-4f9f-abf3-34a04cc7c166 messagebb0cda50-2771-41be-85f9-3d4a0ce85676 asked:「你是要接受『尚未做真人閱讀測試』的缺口，先批准090建立PR嗎？若是，我會保留『AC-1未驗證』的紀錄，不把approve當成測試通過；這次批准也不包含合併。」 Kent answered「對」following「approve」; Navigator relay68864c3b-33cf-4b40-8ad0-97390003e631. Supplementary Kent quote “checked the screenshot approve this design”, parent messagee1c08260-34b8-4e56-bd0e-90d198d25c8d, relay0590a9e1-7542-477a-b446-de5da72884ab; images technically remain terminal capture renderings. Accepts direction and AC1 NOT PERFORMED/UNVERIFIED exception for unchanged63b31f16b4f962f88f665f356c51a1ee21a2b953 and frozen acceptance9d1aa4d77882f78fd1786dabbdb7c7d3db888a26af99c8e85a7ecdde692c3f3a. PR publication only; no merge,cleanup,additional provider calls or changed-candidate approval. AC2–5 retain scoped PASS and documented limits.
+              application:
+                target-stage: done
+                state: pending
 ---
 
 Help a person understand a long agent-authored task file without reading its full history. Add an explicitly requested AI summary in the preview while retaining the original text as the source of truth. The captain selected Option A: on-demand generation, not automatic generation while browsing.
